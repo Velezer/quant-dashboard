@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Screener</title>
+    <!-- Tailwind CSS allowlisted CDN -->
+    <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+    <link rel="stylesheet" href="/web/styles/dashboard.css">
+    <link rel="stylesheet" href="/web/styles/dashboard_workspace.css">
+    <link rel="stylesheet" href="/web/styles/dashboard_components.css">
+</head>
+<body class="tv-terminal bg-gray-950 text-gray-200 min-h-screen flex flex-col font-sans selection:bg-blue-500 selection:text-white p-4 md:p-6">
+
+    <!-- TOP APP BAR -->
+    <header id="top-app-bar" class="border-b border-gray-800 bg-gray-950/90 backdrop-blur sticky top-0 z-40 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <span id="sse-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800" title="App update stream status" aria-label="App update stream connected">
+                <span id="sse-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-live" aria-hidden="true"></span>
+                <span id="sse-status">EVENTS ON</span>
+            </span>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <details id="signalAlertsDetails" class="relative">
+                <summary id="signalAlertsToggle" class="list-none cursor-pointer rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-xs font-semibold text-gray-200 hover:border-amber-600 focus:outline focus:outline-2 focus:outline-amber-400" aria-label="Open notifications">
+                    Notifications <span id="signalAlertUnreadCount" class="ml-1 rounded-full bg-gray-700 px-1.5 py-0.5 text-[10px] font-mono" role="status" aria-live="polite">0</span>
+                </summary>
+                <section id="signalAlertsPanel" class="fixed right-2 top-20 z-50 w-[min(26rem,calc(100vw-1rem))] max-h-[70vh] overflow-y-auto rounded-xl border border-gray-700 bg-gray-950 p-3 shadow-2xl" aria-label="Recent notifications">
+                    <div class="flex items-center justify-between gap-3">
+                        <h2 class="text-sm font-semibold text-white">Notifications</h2>
+                        <button id="signalAlertsMarkRead" type="button" aria-label="Mark all notifications read" class="rounded border border-gray-700 px-2 py-1 text-[10px] font-semibold text-gray-300 hover:bg-gray-800 focus:outline focus:outline-2 focus:outline-cyan-400" disabled>Mark all read</button>
+                    </div>
+                    <p id="signalAlertsStatus" class="mt-2 text-xs text-gray-400" role="status" aria-live="polite">Loading saved signal alerts…</p>
+                    <button id="signalAlertsRetry" type="button" class="mt-2 hidden rounded border border-amber-800 px-2 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-950 focus:outline focus:outline-2 focus:outline-amber-400">Retry alerts</button>
+                    <ol id="signalAlertsList" class="mt-2 space-y-2"></ol>
+                    <p class="mt-3 border-t border-gray-800 pt-2 text-[10px] leading-relaxed text-gray-500">Most signal records expire after two hours. Stockbit NWE/DSS rows stay visible and rescore independently from each timeframe's fresh bar; a held score is marked stale when inputs are missing. Signals are informational, may be unvalidated, and never create positions or orders.</p>
+                </section>
+            </details>
+            <details id="scanScheduleDetails">
+                <summary aria-label="Open scan schedule settings" title="Scan schedule">SCAN</summary>
+                <div class="scan-schedule-panel space-y-2">
+                    <span class="block text-[10px] text-gray-400 uppercase font-semibold">Signal refresh cycle</span>
+                    <div id="scanIntervalSelect" role="status" aria-live="polite" class="w-full rounded border border-gray-700 bg-gray-950 px-2 py-1 text-xs font-mono text-white">Every 15 minutes</div>
+                    <p class="text-[10px] leading-relaxed text-gray-500">Uses completed 15m candles. Stale data is withheld until refreshed.</p>
+                    <div class="flex items-center justify-between text-[10px] text-gray-400">
+                        <span>Next scan in</span><span id="countdown-timer" class="font-mono font-bold text-amber-400">14m 59s</span>
+                    </div>
+                    <p id="daemon-health-badge" class="text-[10px] font-semibold text-gray-400" role="status" aria-live="polite">Scanner status unavailable.</p>
+                    <span id="scan-countdown-label" class="hidden"></span>
+                    <span id="last-updated-label" class="hidden"></span>
+                    <span id="daemon-pulse-dot" class="hidden"></span>
+                    <span id="daemon-health-status" class="hidden"></span>
+                    <span id="chart-storage-badge" class="hidden"></span>
+                    <span id="chart-storage-status" class="hidden"></span>
+                </div>
+            </details>
+            <button id="refreshBtn" data-dashboard-action="triggerManualRefresh" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md transition cursor-pointer" title="Refresh market data and rescan signals" aria-label="Refresh signals from market data">
+                <svg id="refreshIcon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                <span>⚡ Refresh signals</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- LIVE SIGNAL SCREENER -->
+    <div id="viewScreener" class="flex flex-col gap-5 flex-1">
+        <!-- Live Scan Progress Banner (Event-Driven) -->
+        <div id="scan-progress-banner" class="hidden bg-blue-950/80 border border-blue-800 rounded-xl p-3 flex items-center justify-between gap-4 shadow-lg transition-all duration-300 mb-1">
+            <div class="flex items-center gap-3">
+                <span class="inline-block w-2.5 h-2.5 rounded-full bg-blue-400 animate-ping"></span>
+                <div class="flex flex-col">
+                    <span id="scan-progress-title" class="text-xs font-bold text-white font-mono">⚡ Scanning Market in Background...</span>
+                    <span id="scan-progress-subtitle" class="text-[11px] text-blue-300 font-mono">Analyzing symbol: <span id="scan-current-symbol" class="text-white font-bold">BTC-USD</span></span>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 w-48 sm:w-64">
+                <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden border border-blue-700/50">
+                    <div id="scan-progress-bar" class="bg-gradient-to-r from-blue-500 to-cyan-400 h-2 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <span id="scan-progress-pct" class="text-xs font-mono font-bold text-cyan-300 min-w-[36px] text-right">0%</span>
+            </div>
+        </div>
+
+        <!-- Top KPI Cards (Simplified & Clean) -->
+        <div id="kpi-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-1">
+            <!-- Injected dynamically -->
+        </div>
+
+        <!-- Selected signal chart and ranked screener -->
+        <div id="workspaceGrid" class="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1">
+        
+        <!-- Left: Interactive Candlestick & Price-Time Zone Chart -->
+        <div class="tv-chart-column lg:col-span-8 flex flex-col gap-4">
+            <div id="signal-banner" class="tv-signal-strip bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-wrap justify-between items-center gap-4" aria-live="polite">
+                <div><p class="text-[10px] font-semibold uppercase tracking-wide text-cyan-300">Selected signal</p><p id="signal-selection-summary" class="mt-1 text-sm text-gray-300">Select a screener row to inspect its timeframe and stored candles.</p></div>
+                <div class="flex items-center gap-2">
+                    <p id="signal-selection-updated" class="text-[10px] font-mono text-gray-500"></p>
+                    <button id="openSelectedSignalMarkov" type="button" data-dashboard-action="openSelectedSignalMarkov" disabled aria-label="Open Markov regime analysis for the selected signal" class="rounded border border-violet-800 bg-violet-950/50 px-2.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-900 disabled:cursor-not-allowed disabled:opacity-40">Regime model</button>
+                </div>
+            </div>
+
+            <!-- Chart Canvas Container -->
+            <div id="chartShell" class="tv-chart-shell bg-gray-900 border border-gray-800 rounded-xl p-4 relative flex flex-col gap-2">
+                <div class="tv-symbol-toolbar flex flex-wrap justify-between items-center mb-1 gap-2">
+                    <div class="tv-symbol-line flex items-center gap-2">
+                        <span id="chart-symbol-badge" class="font-bold text-lg text-white">Select a signal</span>
+                        <span id="chart-signal-timeframe-badge" class="text-xs px-2.5 py-0.5 rounded font-semibold font-mono"></span>
+                        <span id="chart-style-badge" class="text-xs px-2.5 py-0.5 rounded font-semibold font-mono" aria-live="polite"></span>
+                        <span id="chart-evidence-badge" aria-live="polite" aria-label="Historical evidence"></span>
+                        <span id="chart-score-summary" class="text-[11px] font-mono text-gray-300" aria-live="polite"></span>
+                        <span id="chart-timeframe-context" class="text-[10px] px-1.5 py-0.5 rounded border font-mono font-bold" aria-live="polite" title="The selected screener signal owns this timeframe."></span>
+                    </div>
+                    
+
+                    <!-- Interactive Chart Controls: Timeframe + Scale + Lookback Presets (Clean, NO Sliders!) -->
+                    <div id="tv-chart-toolbar" class="tv-chart-toolbar flex flex-wrap items-center gap-2">
+                        <!-- Chart candles can be matched to any enabled screener timeframe. -->
+                        <div class="tv-timeframe-group flex items-center gap-1 bg-gray-800/90 p-1 rounded-xl border border-gray-700 shadow-inner" role="group" aria-label="Chart timeframe">
+                            <span class="text-[10px] text-gray-400 font-bold px-1.5 uppercase tracking-wider">CHART</span>
+                            <div id="chartTimeframeButtons" class="flex items-center gap-1" aria-live="polite"></div>
+                        </div>
+                        <button id="openPineIndicators" type="button" class="tv-tool-group rounded-lg border border-cyan-800 bg-cyan-950/60 px-2.5 py-1.5 text-[10px] font-bold text-cyan-200 hover:bg-cyan-900 focus:outline focus:outline-2 focus:outline-cyan-400" aria-haspopup="dialog" aria-controls="pineIndicatorDialog">Pine indicators</button>
+                        <button id="toggleMarkovRegimeBtn" type="button" data-dashboard-action="toggleMarkovRegimeIndicator" aria-label="Toggle the Markov regime indicator ribbon" aria-pressed="true" title="Causal historical regime states for the selected chart timeframe. These states are descriptive, not forecasts." class="tv-tool-group rounded-lg border border-fuchsia-500 bg-fuchsia-700 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-fuchsia-600 focus:outline focus:outline-2 focus:outline-fuchsia-400">REGIME ON</button>
+                        <span id="markov-regime-status" class="text-[10px] font-mono text-fuchsia-200" role="status" aria-live="polite">Markov: select a signal</span>
+
+                        <!-- Secondary chart tools stay available without competing
+                             with timeframe and zoom controls on every chart. -->
+                        <details id="chartToolsDetails" class="tv-tool-group chart-tools-disclosure">
+                            <summary aria-label="Open chart tools">Tools</summary>
+                            <div class="chart-tools-menu">
+                                <!-- Log / Linear Scale Toggle -->
+                                <div class="tv-tool-group flex items-center gap-1 bg-gray-800/90 p-1 rounded-xl border border-gray-700 shadow-inner">
+                                    <span class="text-[10px] text-gray-400 font-bold px-1.5 uppercase tracking-wider">SCALE</span>
+                                    <button id="logScaleBtn" data-dashboard-action="toggleLogScale" aria-label="Toggle logarithmic or linear price scale" title="Toggle Logarithmic / Linear Price Scale" class="px-2.5 py-1 rounded-lg text-xs font-bold font-mono text-gray-400 hover:text-cyan-300 hover:bg-gray-700 cursor-pointer border border-gray-600/50 tracking-wider">LIN</button>
+                                </div>
+
+                                <!-- Liquidation Areas Toggle (Default OFF per user request: 'dont show liquidation area') -->
+                                <div class="tv-tool-group flex items-center gap-1 bg-gray-800/90 p-1 rounded-xl border border-gray-700 shadow-inner">
+                                    <span class="text-[10px] text-gray-400 font-bold px-1.5 uppercase tracking-wider">LIQ</span>
+                                    <button id="toggleLiqBtn" data-dashboard-action="toggleLiquidationZones" aria-label="Toggle liquidation area zones" title="Toggle Liquidation Area Zones (Default OFF)" class="px-2 py-1 rounded-lg text-xs font-bold font-mono text-gray-400 hover:text-purple-300 hover:bg-gray-700 cursor-pointer border border-gray-600/50 tracking-wider">LIQ OFF</button>
+                                </div>
+
+                                <div class="tv-tool-group flex items-center gap-1 bg-gray-800/90 p-1 rounded-xl border border-gray-700 shadow-inner">
+                                    <span class="text-[10px] text-gray-400 font-bold px-1.5 uppercase tracking-wider">STUDY</span>
+                                    <button id="toggleNweEnvelopeBtn" data-dashboard-action="toggleNadarayaWatsonEnvelope" aria-label="Toggle Nadaraya-Watson Envelope research overlay" aria-pressed="true" title="LuxAlgo Nadaraya-Watson Envelope study. See chart study attribution and license details in the legend." class="px-2 py-1 rounded-lg text-xs font-bold font-mono bg-violet-700 text-white hover:bg-violet-600 cursor-pointer border border-violet-500 tracking-wider">NWE ON</button>
+                                    <button id="toggleNweRepaintBtn" data-dashboard-action="toggleNadarayaWatsonRepainting" aria-label="Toggle repainting mode for the Nadaraya-Watson Envelope" aria-pressed="true" title="Repainting uses later bars for historical points; historical values may change as the series grows. Select Endpoint for one-sided values." class="px-2 py-1 rounded-lg text-[10px] font-bold font-mono bg-amber-700 text-white hover:bg-amber-600 cursor-pointer border border-amber-500 tracking-wider">REPAINT ON</button>
+                                </div>
+                            </div>
+                        </details>
+
+                        <button id="chartDataDebugBtn" type="button" data-dashboard-action="toggleChartDataDiagnostics" class="tv-tool-group px-2.5 py-1 rounded-lg border border-amber-700/70 bg-amber-950/50 text-[10px] font-bold text-amber-300 hover:bg-amber-900/70 focus:outline focus:outline-2 focus:outline-amber-400" aria-label="Open chart data details" aria-controls="chartDataDiagnostics" aria-expanded="false" title="Open chart data details">
+                            ⚙ Data
+                        </button>
+
+                        <!-- TradingView-style time scale controls. These change the
+                             number of visible candles; price scale remains on the
+                             right axis and in chart tools. -->
+                        <div id="chart-time-scale-controls" role="group" aria-label="Time scale controls" class="tv-tool-group flex items-center gap-0 border-l border-gray-700 pl-2">
+                            <span class="text-[10px] text-gray-400 font-bold px-1.5 uppercase tracking-wider" title="Time scale controls how many candles are visible">TIME</span>
+                            <button id="timeScaleZoomInBtn" type="button" class="tv-icon-tool" data-dashboard-action="zoomChart" data-dashboard-action-argument="-8" aria-label="Zoom in time scale and show fewer candles" title="Time scale in · fewer candles">＋</button>
+                            <button id="timeScaleZoomOutBtn" type="button" class="tv-icon-tool" data-dashboard-action="zoomChart" data-dashboard-action-argument="8" aria-label="Zoom out time scale and show more candles" title="Time scale out · more candles">−</button>
+                            <button id="timeScaleFitBtn" type="button" class="tv-icon-tool" data-dashboard-action="resetChartAll" aria-label="Fit time scale to chart data" title="Fit time scale to chart data">Fit</button>
+                            <span id="chartZoomReadout" class="text-[10px] font-mono text-gray-500 px-2" role="status" aria-live="polite" aria-label="Current time scale: 45 bars">45 bars</span>
+                            <span class="tv-chart-help hidden xl:inline text-[10px] text-gray-500 border-l border-gray-700 pl-2">Scroll time · drag pan · Home fit</span>
+                        </div>
+
+                    </div>
+
+                    <dialog id="pineIndicatorDialog" class="w-[min(860px,96vw)] max-w-none overflow-hidden rounded-xl border border-gray-700 bg-gray-950 p-0 text-gray-200 shadow-2xl" aria-labelledby="pineIndicatorTitle">
+                        <section class="max-h-[88vh] overflow-x-hidden overflow-y-auto p-4 sm:p-5">
+                            <header class="flex items-start justify-between gap-4">
+                                <div>
+                                    <h2 id="pineIndicatorTitle" class="text-base font-bold text-white">Pine indicators</h2>
+                                    <p class="mt-1 max-w-3xl text-[11px] leading-relaxed text-gray-400">Paste a script you own or have rights to adapt and use. Registered source and rights provenance are stored in app SQLite. Indicators run on selected chart candles; Pine strategies run as read-only historical research against registered app candles.</p>
+                                </div>
+                                <button id="closePineIndicators" type="button" class="rounded border border-gray-700 px-2 py-1 text-xs text-gray-300 hover:bg-gray-800" aria-label="Close Pine indicators">Close</button>
+                            </header>
+                            <div class="mt-3 flex flex-wrap items-center gap-2 rounded border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-[10px] text-amber-200">
+                                <strong>Historical only</strong><span id="pineRealtimeStatus">Realtime is unavailable because no approved live candle stream is connected.</span>
+                            </div>
+                              <div class="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+                                  <fieldset class="min-w-0 text-[10px] font-semibold text-gray-300">
+                                      <legend>Chart and registered indicators <span class="font-normal text-gray-500">· choose up to two</span></legend>
+                                      <div id="pineRegisteredIndicators" class="mt-1 max-h-32 space-y-1 overflow-y-auto rounded border border-gray-700 bg-gray-900 p-2" role="group" aria-label="Registered Pine indicators"></div>
+                                  </fieldset>
+                                  <button id="usePineIndicator" type="button" class="rounded border border-cyan-800 px-3 py-2 text-[10px] font-bold text-cyan-200 hover:bg-cyan-950 disabled:opacity-50" disabled>Use selected on chart</button>
+                                  <button id="retryPineRuntime" type="button" class="rounded border border-gray-700 px-3 py-2 text-[10px] font-semibold text-gray-300 hover:bg-gray-800">Retry WASM</button>
+                              </div>
+                              <p id="pineIndicatorSelectionSummary" class="mt-1 text-[10px] text-gray-500" role="status" aria-live="polite">Select up to two saved indicators. Each runs in browser WASM on stored candles.</p>
+                              <details id="pineSourceViewer" class="mt-2 rounded border border-gray-800 bg-gray-900/50">
+                                  <summary class="cursor-pointer px-3 py-2 text-[10px] font-semibold text-gray-300">Pine source viewer</summary>
+                                  <div class="space-y-2 border-t border-gray-800 p-3">
+                                      <div class="flex flex-wrap items-center justify-between gap-2">
+                                          <span id="pineSourceViewerTitle" class="text-[10px] text-gray-400">Choose View Pine source beside an indicator.</span>
+                                          <button id="copyPineSource" type="button" class="rounded border border-gray-700 px-2 py-1 text-[10px] text-gray-300 hover:bg-gray-800" disabled>Copy source</button>
+                                      </div>
+                                      <textarea id="pineSourceViewerCode" readonly rows="12" spellcheck="false" class="w-full resize-y rounded border border-gray-700 bg-gray-950 p-2 font-mono text-[10px] leading-relaxed text-gray-200" aria-label="Selected indicator Pine Script source" placeholder="Select an indicator source to inspect it here."></textarea>
+                                      <p id="pineSourceViewerStatus" class="text-[10px] text-gray-500" role="status" aria-live="polite"></p>
+                                  </div>
+                              </details>
+                              <section id="nweExcursionReport" class="mt-3 rounded border border-gray-800 bg-gray-900/50 p-3" aria-labelledby="nweExcursionReportTitle">
+                                  <div class="flex flex-wrap items-center justify-between gap-2">
+                                      <h3 id="nweExcursionReportTitle" class="text-[11px] font-semibold text-gray-200">NWE maximum outside-distance report</h3>
+                                      <div class="flex items-center gap-2">
+                                          <label for="nweExcursionReportTimeframe" class="text-[10px] text-gray-400">Report timeframe</label>
+                                          <select id="nweExcursionReportTimeframe" class="rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" aria-label="NWE report timeframe">
+                                              <option value="1h" selected>1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="15m">15M</option>
+                                          </select>
+                                          <button id="runNweExcursionReport" type="button" class="rounded border border-violet-700 bg-violet-950/60 px-2.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-900">Run for registered tickers</button>
+                                          <button id="cancelNweExcursionReport" type="button" class="hidden rounded border border-gray-700 px-2 py-1.5 text-[10px] text-gray-300 hover:bg-gray-800">Cancel</button>
+                                      </div>
+                                  </div>
+                                  <p id="nweExcursionReportDefinition" class="mt-1 text-[10px] leading-relaxed text-gray-500">Largest candle-wick excursion beyond the upper or lower NWE after a candle touches that band, divided by the touched band price. The all-ticker report defaults to 1H; the chart pane follows the chart timeframe. Historical research only; proxy and stale sources stay labeled.</p>
+                                  <p id="nweExcursionReportStatus" class="mt-2 text-[10px] text-gray-400" role="status" aria-live="polite">Run the report to calculate a summary for active registered tickers.</p>
+                                  <div class="mt-2 max-h-64 overflow-auto rounded border border-gray-800">
+                                      <table class="w-full min-w-[760px] border-collapse text-left text-[10px]">
+                                          <caption class="sr-only">NWE maximum outside distance by registered ticker</caption>
+                                          <thead class="sticky top-0 bg-gray-950 text-gray-400">
+                                              <tr><th class="px-2 py-1.5">Ticker · app · category</th><th class="px-2 py-1.5">Max outside</th><th class="px-2 py-1.5">Upper max</th><th class="px-2 py-1.5">Lower max</th><th class="px-2 py-1.5">Peak bar · WIB</th><th class="min-w-[145px] px-2 py-1.5">Stored source</th><th class="px-2 py-1.5">History</th></tr>
+                                          </thead>
+                                          <tbody id="nweExcursionReportRows"><tr><td colspan="7" class="px-2 py-3 text-center text-gray-500">No report yet.</td></tr></tbody>
+                                      </table>
+                                  </div>
+                              </section>
+                              <section id="nweDssBacktestReport" class="mt-3 rounded border border-cyan-900/70 bg-cyan-950/10 p-3" aria-labelledby="nweDssBacktestTitle">
+                                  <div class="flex flex-wrap items-center justify-between gap-2">
+                                      <h3 id="nweDssBacktestTitle" class="text-[11px] font-semibold text-gray-200">NWE + DSS Bressert · per-ticker research</h3>
+                                      <div class="flex items-center gap-2">
+                                          <label for="nweDssBacktestTimeframe" class="text-[10px] text-gray-400">Signal timeframe</label>
+                                          <select id="nweDssBacktestTimeframe" class="rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" aria-label="NWE and DSS Bressert backtest timeframe">
+                                              <option value="15m">15M</option><option value="1h">1H</option><option value="2h">2H</option><option value="4h" selected>4H</option><option value="1d">1D</option><option value="1w">1W</option>
+                                          </select>
+                                          <button id="runNweDssBacktest" type="button" class="rounded border border-cyan-700 bg-cyan-950/60 px-2.5 py-1.5 text-[10px] font-bold text-cyan-200 hover:bg-cyan-900">Backtest all scoped tickers</button>
+                                          <button id="cancelNweDssBacktest" type="button" class="hidden rounded border border-gray-700 px-2 py-1.5 text-[10px] text-gray-300 hover:bg-gray-800">Cancel</button>
+                                      </div>
+                                  </div>
+                                  <label for="nweDssBacktestSymbols" class="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-gray-400">Optional ticker filter<input id="nweDssBacktestSymbols" type="text" class="min-w-56 flex-1 rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" placeholder="Blank = all tickers in the active scope" autocomplete="off" aria-label="Optional registered tickers for the NWE and DSS Bressert research report"></label>
+                                  <p class="mt-1 text-[10px] leading-relaxed text-gray-500">Causal completed-bar NWE/DSS entry; compares 4, 8, and 12-bar timeouts using chronological training, validation selection, and untouched holdout. Next-bar-open entry, one position at a time. No order-book, slippage, impact, funding, or borrow model. A research candidate is not an execution recommendation.</p>
+                                  <p id="nweDssBacktestStatus" class="mt-2 text-[10px] text-gray-400" role="status" aria-live="polite">Run in the active app/category scope. Stored source, fee coverage, sample size, and holdout status remain visible per ticker.</p>
+                                  <div class="mt-2 max-h-72 overflow-auto rounded border border-gray-800">
+                                      <table class="w-full min-w-[1000px] border-collapse text-left text-[10px]">
+                                          <caption class="sr-only">Per-ticker NWE and DSS Bressert exit selection and untouched holdout</caption>
+                                          <thead class="sticky top-0 bg-gray-950 text-gray-400"><tr><th class="px-2 py-1.5">Ticker · app/category</th><th class="px-2 py-1.5">Exit</th><th class="px-2 py-1.5">Holdout · trades</th><th class="px-2 py-1.5">Win rate</th><th class="px-2 py-1.5">Mean return</th><th class="px-2 py-1.5">Profit factor</th><th class="min-w-[260px] px-2 py-1.5">Rule candidate · status</th><th class="min-w-[150px] px-2 py-1.5">Source · history</th></tr></thead>
+                                          <tbody id="nweDssBacktestRows"><tr><td colspan="8" class="px-2 py-3 text-center text-gray-500">No backtest run yet.</td></tr></tbody>
+                                      </table>
+                                  </div>
+                              </section>
+                              <section id="pineStrategyBacktest" class="mt-3 rounded border border-violet-900/70 bg-violet-950/10 p-3" aria-labelledby="pineStrategyBacktestTitle">
+                                  <div class="flex flex-wrap items-end justify-between gap-2">
+                                      <div><h3 id="pineStrategyBacktestTitle" class="text-[11px] font-semibold text-gray-200">Registered Pine strategy · historical backtest</h3>
+                                          <p class="mt-1 max-w-3xl text-[10px] leading-relaxed text-gray-400">Runs a supported saved `strategy()` source on registered SQLite candles, up to the runtime’s bounded history limit. Choose an optional UTC date range to calculate only candles opened within it; leaving both dates blank uses the latest selected bar count. Supported Pine inputs appear below the status and can be overridden for this run. A wide range may be clipped by the selected history cap. Results report the actual sample dates and source. Backtests run as bounded background jobs with progress and a stop control; changing settings requests the previous run to stop. Strategy fills remain approximate and research-only; this does not create an account or place orders.</p></div>
+                                      <div class="flex items-end gap-2">
+                                          <label class="text-[10px] text-gray-400">History<select id="pineStrategyHistoryLimit" class="mt-1 block rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" aria-label="Pine strategy backtest history depth"><option value="">Loading limits…</option></select></label>
+                                          <label class="text-[10px] text-gray-400">From (UTC)<input id="pineStrategyBacktestFrom" type="date" class="mt-1 block rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" aria-label="Backtest start date in UTC" /></label>
+                                          <label class="text-[10px] text-gray-400">Through (UTC)<input id="pineStrategyBacktestTo" type="date" class="mt-1 block rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" aria-label="Backtest end date in UTC" /></label>
+                                          <label class="text-[10px] text-gray-400">Training share<select id="pineStrategyWalkForwardSplit" class="mt-1 block rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" aria-label="Chronological training share"><option value="50">50% train</option><option value="60">60% train</option><option value="70" selected>70% train</option><option value="80">80% train</option><option value="90">90% train</option></select></label>
+                                          <label class="text-[10px] text-gray-400">Saved strategy<select id="pineStrategySelect" class="mt-1 block max-w-64 rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" aria-label="Registered Pine strategy"><option value="">Loading registered strategies…</option></select></label>
+                                          <button id="openPineStrategyEditor" type="button" aria-label="Open Pine source editor to add a strategy" class="rounded border border-cyan-800 px-2 py-1.5 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-950">Add strategy source</button>
+                                          <button id="retryPineStrategies" type="button" class="rounded border border-gray-700 px-2 py-1.5 text-[10px] font-semibold text-gray-300 hover:bg-gray-800">Reload list</button>
+                                          <button id="runPineStrategyBacktest" type="button" class="rounded border border-violet-700 bg-violet-950/60 px-2.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-900 disabled:cursor-not-allowed disabled:opacity-50" disabled>Run selected strategy</button>
+                                          <button id="cancelPineStrategyBacktest" type="button" class="rounded border border-rose-900 px-2.5 py-1.5 text-[10px] font-semibold text-rose-200 hover:bg-rose-950 disabled:cursor-not-allowed disabled:opacity-50" hidden disabled>Cancel backtest</button>
+                                      </div>
+                                  </div>
+                                  <p id="pineStrategyBacktestGuidance" class="mt-2 max-w-4xl text-[9px] leading-relaxed text-gray-500">Chronological tail check: Pine indicators warm up over the full selected history, while strategy orders are suppressed during training. The validation tail starts as a fresh simulation with initial capital. Choose the training share above. The report includes win-rate uncertainty and monthly return stability as descriptive sample statistics. This single split is not an untouched holdout if you tune the source or inputs against its results.</p>
+                                  <div id="pineStrategyBacktestProgressContainer" class="mt-2" role="group" aria-label="Pine backtest job progress" hidden>
+                                      <div class="flex items-center gap-2"><progress id="pineStrategyBacktestProgress" class="h-2 w-full max-w-sm accent-violet-500" max="100" value="0" aria-label="Pine backtest progress" aria-valuetext="0%"></progress><span id="pineStrategyBacktestProgressLabel" class="text-[9px] text-gray-400" aria-live="polite">Waiting for a backtest run.</span></div>
+                                  </div>
+                                  <p id="pineStrategyBacktestStatus" class="mt-2 text-[10px] text-gray-400" role="status" aria-live="polite">Select a chart signal and a registered strategy. No strategy run yet.</p>
+                                  <p id="pineStrategyRegistryState" class="mt-1 text-[9px] text-gray-500" role="status" aria-live="polite">Registered strategy list is loading from app SQLite.</p>
+                                  <div id="pineStrategyInputControls" class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3" aria-label="Pine strategy input overrides"></div>
+                                  <div id="pineStrategyBacktestSummary" class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Pine strategy backtest summary">
+                                      <div class="rounded border border-gray-800 p-2"><span class="block text-[9px] text-gray-500">Closed trades</span><strong data-metric="trades" class="text-xs text-gray-300">—</strong></div>
+                                      <div class="rounded border border-gray-800 p-2"><span class="block text-[9px] text-gray-500">Win rate</span><strong data-metric="win-rate" class="text-xs text-gray-300">—</strong></div>
+                                      <div class="rounded border border-gray-800 p-2"><span class="block text-[9px] text-gray-500">Mean trade return</span><strong data-metric="mean-return" class="text-xs text-gray-300">—</strong></div>
+                                      <div class="rounded border border-gray-800 p-2"><span class="block text-[9px] text-gray-500">Profit factor</span><strong data-metric="profit-factor" class="text-xs text-gray-300">—</strong></div>
+                                      <div class="rounded border border-gray-800 p-2"><span id="pineBacktestPnlLabel" class="block text-[9px] text-gray-500">Closed-trade P&amp;L</span><strong data-metric="net-profit" class="text-xs text-gray-300">—</strong></div>
+                                      <div class="rounded border border-gray-800 p-2"><span id="pineBacktestPnlPctLabel" class="block text-[9px] text-gray-500">Closed-trade return · % of initial capital</span><strong data-metric="net-profit-pct" class="text-xs text-gray-300">—</strong></div>
+                                      <div class="rounded border border-gray-800 p-2"><span class="block text-[9px] text-gray-500">Max marked-to-market drawdown</span><strong data-metric="max-drawdown" class="text-xs text-gray-300">—</strong></div>
+                                      <div class="rounded border border-gray-800 p-2"><span class="block text-[9px] text-gray-500">Underlying price return · no costs</span><strong data-metric="buy-hold-return" class="text-xs text-gray-300">—</strong></div>
+                                      <div class="rounded border border-gray-800 p-2"><span class="block text-[9px] text-gray-500">Max close-to-close drawdown</span><strong data-metric="close-drawdown" class="text-xs text-gray-300">—</strong></div>
+                                      <div class="rounded border border-gray-800 p-2"><span class="block text-[9px] text-gray-500">Current close-to-close drawdown</span><strong data-metric="current-drawdown" class="text-xs text-gray-300">—</strong></div>
+                                  </div>
+                                  <details id="pineBacktestExecutionDetails" class="mt-2 rounded border border-gray-800 bg-gray-950/60">
+                                      <summary class="cursor-pointer px-2.5 py-2 text-[10px] font-semibold text-gray-300">Execution assumptions and lower-timeframe coverage</summary>
+                                      <p id="pineStrategyFillAssumptions" class="px-2.5 pb-1.5 text-[9px] leading-relaxed text-gray-400" role="status" aria-live="polite" data-state="empty">Fill assumptions appear after a successful backtest.</p>
+                                      <p id="pineStrategyMagnifierCoverage" class="px-2.5 pb-2 text-[9px] leading-relaxed text-gray-400" role="status" aria-live="polite" data-state="empty">Bar Magnifier coverage appears after a successful backtest.</p>
+                                  </details>
+                                  <details id="pineBacktestRuntimeDiagnosticsDetails" class="mt-2 rounded border border-gray-800 bg-gray-950/60">
+                                      <summary class="cursor-pointer px-2.5 py-2 text-[10px] font-semibold text-gray-300">Runtime diagnostics</summary>
+                                      <p id="pineStrategyRuntimeDiagnostics" class="whitespace-pre-wrap px-2.5 pb-2 text-[9px] leading-relaxed text-gray-400" role="status" aria-live="polite" data-state="empty">Runtime diagnostics appear after a successful backtest.</p>
+                                  </details>
+                                  <details id="pineBacktestDetails" class="mt-2 rounded border border-gray-800 bg-gray-950/60">
+                                      <summary class="cursor-pointer px-2.5 py-2 text-[10px] font-semibold text-gray-300">Equity curve and closed trades</summary>
+                                      <p class="px-2.5 pb-2 text-[9px] leading-relaxed text-gray-500">Illustrative strategy equity from the Pine simulator, marked to each stored candle close; open-position P&amp;L is included in the curve but excluded from closed-trade metrics. Dashed buy-and-hold uses the same first and last closes and initial capital, with no fees or execution model. The drawdown plot uses candle-close equity peaks; the max marked-to-market metric above includes intrabar OHLC excursions. P&amp;L is in simulator price and quantity units. This is not account equity or TradingView broker-emulator parity.</p>
+                                      <div id="pineBacktestEquity" class="px-2.5 pb-2 font-mono text-[9px] text-gray-400">Run a backtest to view the bounded equity curve.</div>
+                                      <div class="px-2.5 pb-1 text-[9px] text-gray-500">UTC calendar-month performance · marked equity includes open-position P&amp;L; first and last months may be partial</div>
+                                      <p class="px-2.5 pb-1 text-[9px] leading-relaxed text-gray-500">Each month compares its final candle-close equity with the previous observed candle's equity; the first sampled month uses initial capital. Underlying return is the same-period raw price benchmark with no costs. Monthly equity changes are simulator output, not persisted account performance.</p>
+                                      <div id="pineBacktestMonthlyPerformance" class="max-w-full overflow-auto px-2.5 pb-2 font-mono text-[9px] text-gray-400">Run a backtest to view monthly performance.</div>
+                                      <div class="px-2.5 pb-1 text-[9px] text-gray-500">Chronological training and validation tail · validation starts flat after full-history indicator warm-up · descriptive uncertainty and monthly stability</div>
+                                      <div id="pineBacktestChronologicalValidation" class="max-w-full overflow-auto px-2.5 pb-2 font-mono text-[9px] text-gray-400">Run a backtest to view its chronological training and validation tail breakdown.</div>
+                                      <div class="px-2.5 pb-1 text-[9px] text-gray-500">Close-to-close drawdown periods · percentage below the latest equity peak</div>
+                                      <div id="pineBacktestDrawdown" class="px-2.5 pb-2 font-mono text-[9px] text-gray-400">Run a backtest to view candle-close drawdown periods.</div>
+                                      <div class="px-2.5 pb-1 text-[9px] text-gray-500">Closed-trade return distribution · full run · equal-width bins</div>
+                                      <div id="pineBacktestReturnDistribution" class="px-2.5 pb-2 font-mono text-[9px] text-gray-400">Run a backtest to view the full-sample return distribution.</div>
+                                      <div class="px-2.5 pb-1 text-[9px] leading-relaxed text-gray-500">Full-sample trade analysis · all closed trades · P&amp;L and MFE/MAE amounts use simulator price and quantity units. MFE is the largest favorable unrealized P&amp;L; MAE is the positive magnitude of the largest adverse unrealized P&amp;L before exit. Excursion percentages use entry notional; adverse percentages retain their negative sign. All are descriptive only.</div>
+                                      <div id="pineBacktestTradeAnalysis" class="max-w-full overflow-auto border-t border-gray-800" aria-label="Full-sample trade analysis by direction">Run a backtest to view full-sample trade statistics.</div>
+                                      <div class="px-2.5 pb-1 text-[9px] leading-relaxed text-gray-500"><span id="pineBacktestTradeLimit">The recent closed-trade row limit appears after a successful backtest.</span> · Per-trade net MFE/MAE amounts include modeled costs, use simulator price and quantity units, and record the largest favorable/adverse excursion before exit. Excursion percentages use entry notional; adverse values remain negative.</div>
+                                      <div class="max-h-52 overflow-auto border-t border-gray-800">
+                                          <table class="w-full min-w-[720px] border-collapse text-left text-[9px]">
+                                              <caption class="sr-only">Most recent closed trades from the historical Pine strategy run</caption>
+                                              <thead class="sticky top-0 bg-gray-950 text-gray-500"><tr><th class="px-2 py-1.5"># · side</th><th class="px-2 py-1.5">Entry time</th><th class="px-2 py-1.5">Entry price</th><th class="px-2 py-1.5">Exit time</th><th class="px-2 py-1.5">Exit price</th><th class="px-2 py-1.5">Quantity</th><th id="pineBacktestTradePnlHeading" class="px-2 py-1.5">P&amp;L</th><th id="pineBacktestTradeReturnHeading" class="px-2 py-1.5">Return</th><th class="px-2 py-1.5">Net MFE</th><th class="px-2 py-1.5">Net MAE</th><th class="px-2 py-1.5">MFE %</th><th class="px-2 py-1.5">MAE %</th></tr></thead>
+                                              <tbody id="pineBacktestTrades"><tr><td colspan="12" class="px-2 py-3 text-center text-gray-600">No backtest run yet.</td></tr></tbody>
+                                          </table>
+                                      </div>
+                                  </details>
+</section>
+                            <p id="pineIndicatorStatus" class="mt-2 text-[10px] text-gray-400" role="status" aria-live="polite">Loading saved indicators and the browser runtime…</p>
+                            <form id="pineIndicatorForm" class="mt-3 space-y-2">
+                                <label class="inline-flex items-center gap-2 text-[10px] text-gray-300">Script type<select id="pineScriptType" class="rounded border border-gray-700 bg-gray-900 px-2 py-1.5"><option value="indicator">Indicator</option><option value="strategy">Strategy · backtest</option></select></label>
+                                <label class="block text-[10px] text-gray-300">Pine source <span id="pineSourceLimitLabel" class="font-normal text-gray-500">(loading runtime limit)</span><textarea id="pineIndicatorSource" required rows="11" spellcheck="false" class="mt-1 w-full resize-y rounded border border-gray-700 bg-gray-900 p-2 font-mono text-[11px] leading-relaxed" placeholder="Paste a supported Pine indicator or strategy() source you have rights to use."></textarea></label>
+                                <label class="inline-flex cursor-pointer items-center gap-2 rounded border border-gray-700 px-2.5 py-1.5 text-[10px] text-gray-300 hover:bg-gray-900">Import .pine file<input id="pineIndicatorFile" type="file" accept=".pine,text/plain" class="sr-only"></label>
+                                <details id="pineIndicatorProvenance" class="rounded border border-gray-800 bg-gray-900/40">
+                                    <summary class="cursor-pointer px-3 py-2 text-[10px] font-semibold text-gray-300">Source and license details · filled from the script when available</summary>
+                                    <div class="space-y-2 border-t border-gray-800 p-3">
+                                        <div class="grid gap-2 sm:grid-cols-2">
+                                            <label class="text-[10px] text-gray-300">Display name<input id="pineIndicatorName" required maxlength="96" class="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-2 text-xs" autocomplete="off"></label>
+                                            <label class="text-[10px] text-gray-300">Author<input id="pineIndicatorAuthor" required maxlength="160" class="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-2 text-xs" autocomplete="name"></label>
+                                        </div>
+                                        <label class="block text-[10px] text-gray-300">Source URL or provenance<input id="pineIndicatorSourceReference" required maxlength="512" class="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-2 text-xs" placeholder="Original publication or provenance"></label>
+                                        <label class="block text-[10px] text-gray-300">Rights basis<select id="pineIndicatorRightsBasis" class="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-2 text-xs"><option value="original">I created and own this source</option><option value="permission">Permission to adapt and use it</option><option value="license">License permits this adaptation and use</option></select></label>
+                                        <label class="block text-[10px] text-gray-300">License terms or permission<input id="pineIndicatorLicense" maxlength="512" class="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-2 text-xs" placeholder="Required for permission or license; keep original notices in the source"></label>
+                                        <label class="block text-[10px] text-gray-300">Required attribution<input id="pineIndicatorAttribution" required maxlength="512" class="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-2 text-xs" placeholder="Attribution required by terms, or state none is required"></label>
+                                    </div>
+                                </details>
+                                <p id="pineRightsTermsNote" class="hidden rounded border border-amber-900/60 bg-amber-950/30 p-2 text-[10px] leading-relaxed text-amber-200" role="note"></p>
+                                <label class="flex items-start gap-2 rounded border border-rose-900/60 bg-rose-950/20 p-2.5 text-[10px] leading-relaxed text-rose-200"><input id="pineIndicatorRightsConfirmed" type="checkbox" class="mt-0.5 accent-cyan-500"><span>I have the rights for this use, including any noncommercial restriction, and preserved the required attribution and license notices.</span></label>
+                                <div class="flex flex-wrap items-center gap-2 border-t border-gray-800 pt-2">
+                                    <button id="validatePineIndicator" type="button" class="rounded border border-gray-700 px-3 py-2 text-[10px] font-semibold text-gray-200 hover:bg-gray-800">Validate</button>
+                                    <button id="registerPineIndicator" type="submit" class="rounded border border-cyan-700 bg-cyan-950/70 px-3 py-2 text-[10px] font-bold text-cyan-100 hover:bg-cyan-900">Register and use indicator</button>
+                                    <span id="pineIndicatorSourceState" class="text-[10px] text-gray-500" aria-live="polite">Indicators render historical chart output; registered strategies run as read-only historical backtests.</span>
+                                </div>
+                            </form>
+                            <details id="pineIndicatorDiagnostics" class="mt-3 rounded border border-gray-800 bg-gray-900/50">
+                                <summary class="cursor-pointer px-3 py-2 text-[10px] font-semibold text-gray-300">Compatibility and diagnostics</summary>
+                                <div id="pineIndicatorDiagnosticList" class="border-t border-gray-800 px-3 py-2 text-[10px] leading-relaxed text-gray-400">Unsupported features are reported instead of silently approximated.</div>
+                            </details>
+                        </section>
+                    </dialog>
+
+                    <!-- Chart Legend (Price Chart Only) -->
+                    <div id="tv-chart-legend" class="tv-chart-legend flex items-center gap-2.5 text-xs flex-wrap text-gray-300">
+                        <div class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-amber-400 inline-block"></span> Now</div>
+                        <div id="legendNweEnvelope" class="flex items-center gap-1 border-l border-gray-700 pl-2 transition" title="Nadaraya-Watson Envelope [LuxAlgo], © LuxAlgo. Licensed under CC BY-NC-SA 4.0: https://creativecommons.org/licenses/by-nc-sa/4.0/. Research study only; crossing markers are not trade instructions."><span class="w-2.5 h-0.5 bg-teal-400 inline-block"></span> NWE upper <span class="w-2.5 h-0.5 bg-red-500 inline-block ml-1"></span> lower <span class="text-teal-400 ml-1">▲</span><span class="text-red-400">▼</span></div>
+                        <div id="legendLiqIndicator" class="flex items-center gap-1 border-l border-gray-700 pl-2 transition" style="opacity: 0.35;"><span class="w-2.5 h-0.5 bg-purple-400 inline-block"></span> 10x/25x Liq</div>
+                    </div>
+                </div>
+
+                <!-- TradingView Dynamic Live Bar Inspect Header -->
+                <div id="tv-ohlc-bar" class="flex items-center justify-between px-3 py-1.5 bg-gray-950/80 rounded-lg border border-gray-800/80 text-xs font-mono select-none">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span id="tv-ohlc-symbol" class="font-bold text-white tracking-wide text-sm">--</span>
+                        <span id="tv-ohlc-tf" class="text-[10px] px-1.5 py-0.2 rounded bg-blue-900/60 text-blue-300 font-bold border border-blue-800">1D</span>
+                        <span id="tv-ohlc-exchange" class="text-[10px] px-1.5 py-0.2 rounded bg-emerald-900/60 text-emerald-300 font-bold border border-emerald-800">APP --</span>
+                        <span id="tv-ohlc-source" class="hidden text-[10px] px-1.5 py-0.2 rounded bg-purple-900/60 text-purple-300 font-bold border border-purple-800" aria-live="polite"></span>
+                        <div class="flex items-center gap-3 text-xs flex-wrap">
+                            <span>O <b id="tv-ohlc-o" class="text-gray-200">--</b></span>
+                            <span>H <b id="tv-ohlc-h" class="text-gray-200">--</b></span>
+                            <span>L <b id="tv-ohlc-l" class="text-gray-200">--</b></span>
+                            <span>C <b id="tv-ohlc-c" class="text-gray-200">--</b></span>
+                            <span id="tv-ohlc-chg" class="font-bold">--</span>
+                            <span id="nwe-envelope-status" class="font-bold text-violet-300 border-l border-gray-700 pl-2" role="status" aria-live="polite" title="Research-only price location; not a buy or sell signal.">NWE: Select a signal</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 text-[11px] text-gray-400 flex-wrap justify-end">
+                        <span id="chart-data-warning" class="hidden max-w-[280px] px-2 py-0.5 rounded border text-[10px] font-bold leading-tight" role="status" aria-live="polite"></span>
+                        <span class="sr-only">Selected bar time (UTC+7):</span>
+                        <span id="tv-crosshair-date" class="sr-only" aria-label="Selected chart bar time in WIB" title="Selected chart bar time (UTC+7)">Latest Bar</span>
+                    </div>
+                </div>
+
+                <!-- Selected-series data diagnostics. Keep the normal chart
+                     compact while making a stale/latest-bar timestamp
+                     explainable without relying on a hover tooltip. -->
+                <details id="chartDataDiagnostics" class="mt-2 rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden">
+                    <summary class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer list-none text-[11px] font-bold text-gray-300 hover:bg-gray-900/80 focus:outline focus:outline-2 focus:outline-blue-500" aria-controls="chartDataDiagnosticsPanel">
+                        <span class="flex items-center gap-2 min-w-0">
+                            <span aria-hidden="true">🧭</span>
+                            <span class="shrink-0">Data details</span>
+                            <span id="chart-data-diagnostics-summary" class="truncate text-gray-500 font-normal">Select a chart to inspect stored data</span>
+                        </span>
+                        <span id="chart-data-diagnostics-state" class="shrink-0 px-1.5 py-0.5 rounded border border-gray-700 bg-gray-900 text-[9px] font-mono text-gray-500">NO SIGNAL SELECTED</span>
+                    </summary>
+                    <div id="chartDataDiagnosticsPanel" class="border-t border-gray-800 px-3 py-3 space-y-3" role="region" aria-label="Selected chart data diagnostics">
+                        <p id="chart-diagnostics-why" class="text-[11px] leading-relaxed text-gray-400" aria-live="polite">Select a signal to inspect its local history and provider sync state.</p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 text-[10px]">
+                            <div class="rounded border border-gray-800 bg-gray-900/70 p-2">
+                                <div class="text-gray-500 uppercase tracking-wide">Latest stored bar</div>
+                                <div id="chart-diagnostics-latest" class="mt-1 font-mono font-bold text-white">--</div>
+                            </div>
+                            <div class="rounded border border-gray-800 bg-gray-900/70 p-2">
+                                <div class="text-gray-500 uppercase tracking-wide">Data age</div>
+                                <div id="chart-diagnostics-age" class="mt-1 font-mono font-bold text-amber-300">--</div>
+                            </div>
+                            <div class="rounded border border-gray-800 bg-gray-900/70 p-2">
+                                <div class="text-gray-500 uppercase tracking-wide">Bars · coverage</div>
+                                <div id="chart-diagnostics-coverage" class="mt-1 font-mono font-bold text-gray-200">--</div>
+                            </div>
+                            <div class="rounded border border-gray-800 bg-gray-900/70 p-2">
+                                <div class="text-gray-500 uppercase tracking-wide">Exchange · source</div>
+                                <div id="chart-diagnostics-source" class="mt-1 font-mono font-bold text-cyan-300 break-words">--</div>
+                            </div>
+                            <div class="rounded border border-gray-800 bg-gray-900/70 p-2">
+                                <div class="text-gray-500 uppercase tracking-wide">Last sync attempt</div>
+                                <div id="chart-diagnostics-attempt" class="mt-1 font-mono font-bold text-gray-200">--</div>
+                            </div>
+                            <div class="rounded border border-gray-800 bg-gray-900/70 p-2">
+                                <div class="text-gray-500 uppercase tracking-wide">Last successful sync</div>
+                                <div id="chart-diagnostics-success" class="mt-1 font-mono font-bold text-emerald-300">--</div>
+                            </div>
+                            <div class="rounded border border-gray-800 bg-gray-900/70 p-2 sm:col-span-2">
+                                <div class="text-gray-500 uppercase tracking-wide">Sync reason</div>
+                                <div id="chart-diagnostics-error" class="mt-1 font-mono font-bold text-amber-300 break-words">--</div>
+                            </div>
+                        </div>
+                        <details id="chartDiagnosticsRuns" class="rounded border border-gray-800 bg-gray-900/50">
+                            <summary class="px-2.5 py-2 cursor-pointer text-[10px] font-bold text-gray-400 hover:text-gray-200">Recent sync events</summary>
+                            <div id="chart-diagnostics-run-list" class="border-t border-gray-800 px-2.5 py-2 space-y-1 text-[10px] font-mono text-gray-500">No sync events loaded.</div>
+                        </details>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button id="chart-diagnostics-retry" type="button" class="px-2.5 py-1.5 rounded border border-blue-700 bg-blue-950/70 text-blue-200 text-[10px] font-bold hover:bg-blue-900 focus:outline focus:outline-2 focus:outline-blue-400">Retry chart data</button>
+                            <button id="chart-diagnostics-sync" type="button" data-refresh-action="diagnostics" class="px-2.5 py-1.5 rounded border border-blue-700 bg-blue-950/70 text-blue-200 text-[10px] font-bold hover:bg-blue-900 focus:outline focus:outline-2 focus:outline-blue-400 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Sync unavailable</button>
+                            <span id="chart-diagnostics-sync-note" class="text-[10px] text-gray-400" role="status" aria-live="polite">Sync availability depends on a compatible provider. Retry chart data reads stored candles.</span>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- MAIN CHART: Candlesticks and research indicators -->
+                <div id="chartContainer" class="tv-price-pane relative w-full overflow-hidden h-[min(52vh,480px)] min-h-[320px] rounded-lg bg-gray-950/40 border border-gray-800/60 select-none">
+                    <canvas id="candleCanvas" tabindex="0" role="img" aria-label="Selected screener signal candlestick chart. Time scale buttons show fewer or more candles; arrow keys pan; Home fits. Scroll to zoom at cursor; drag to pan; drag right axis to scale price." class="w-full h-full block cursor-crosshair focus:outline focus:outline-2 focus:outline-blue-500" title="TIME + / − changes visible candles | Scroll to zoom at cursor | Drag to pan | Drag right axis to scale price | Double-click or Home to fit"></canvas>
+                    <div id="chart-status-overlay" class="hidden absolute inset-0 z-20 flex items-center justify-center p-4 pointer-events-none" role="status" aria-live="polite" aria-atomic="true">
+                        <div class="rounded-lg p-4 pointer-events-auto">
+                            <div class="flex items-center gap-2">
+                                <span id="chart-status-dot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                <strong id="chart-status-title" class="text-xs font-bold tracking-wide text-amber-300 uppercase">Loading chart</strong>
+                            </div>
+                            <p id="chart-status-detail" class="mt-2 text-xs leading-relaxed text-gray-300">Loading stored candles for the selected app and timeframe.</p>
+                            <button id="chart-status-retry" type="button" class="mt-3 px-3 py-1.5 rounded border border-blue-700 bg-blue-950/80 text-blue-200 text-[11px] font-bold hover:bg-blue-900 focus:outline focus:outline-2 focus:outline-blue-400">Retry chart</button>
+                        </div>
+                    </div>
+                </div>
+
+                <details id="markov-regime-legend" class="rounded border border-gray-800 bg-gray-950/40 px-2.5 py-1.5">
+                    <summary class="cursor-pointer text-[10px] font-semibold text-gray-400">Markov regime ribbon legend · causal completed-bar states, descriptive history</summary>
+                    <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-300">
+                        <span><i class="mr-1 inline-block h-2 w-2 rounded-sm bg-emerald-500"></i>Bull trend</span>
+                        <span><i class="mr-1 inline-block h-2 w-2 rounded-sm bg-rose-500"></i>Bear trend</span>
+                        <span><i class="mr-1 inline-block h-2 w-2 rounded-sm bg-cyan-500"></i>Accumulation</span>
+                        <span><i class="mr-1 inline-block h-2 w-2 rounded-sm bg-orange-500"></i>Distribution</span>
+                        <span><i class="mr-1 inline-block h-2 w-2 rounded-sm bg-violet-400"></i>Pullback reset</span>
+                        <span><i class="mr-1 inline-block h-2 w-2 rounded-sm bg-slate-400"></i>Consolidation / chop</span>
+                    </div>
+                </details>
+
+                <div id="chart-pane-resizer" role="separator" aria-orientation="horizontal" aria-label="Resize momentum pane and price chart" aria-valuemin="130" aria-valuemax="360" aria-valuenow="180" aria-valuetext="Momentum plot height 180 pixels" aria-controls="momentum-pane" tabindex="0" title="Drag to resize the momentum pane; the price chart uses the remaining height"><span class="tv-resizer-grip" aria-hidden="true"></span></div>
+
+                <!-- Keep momentum context available without competing with the price chart. -->
+                <details id="momentum-pane" open class="tv-indicator-pane dss-indicator-disclosure flex flex-col rounded-lg bg-gray-950/50 border border-gray-800/80 overflow-hidden">
+                    <summary class="dss-indicator-summary">
+                        <span class="dss-summary-title">Momentum</span>
+                        <span id="dssLiveReadout" class="dss-summary-value font-mono text-[10px] font-semibold text-gray-300" aria-label="Momentum value unavailable">--</span>
+                        <span id="dssStatusBadge" class="dss-signal-status text-[10px] font-semibold px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700" role="status" aria-live="polite">No reading</span>
+                        <span id="dssIndicatorComputeStatus" class="dss-compute-status text-[10px] font-semibold px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700" role="status" aria-live="polite">Not computed</span>
+                        <button id="dssScaleFitBtn" type="button" class="dss-scale-fit" aria-label="Fit indicator scale to plotted values" title="Restore a scale that fits the active indicator plots">Fit scale</button>
+                        <span class="dss-disclosure-cue" aria-hidden="true"><span class="dss-show-chart">Show chart</span><span class="dss-hide-chart">Hide chart</span></span>
+                    </summary>
+                    <details id="dssLegendDetails" class="dss-legend-disclosure">
+                        <summary>Legend</summary>
+                        <div id="dssLegend" class="dss-legend-items">
+                            <div><span class="dss-legend-line bg-cyan-400"></span> Momentum</div>
+                            <div><span class="dss-legend-line bg-amber-400"></span> Signal</div>
+                            <div><span class="dss-legend-dot bg-[#089981]"></span> Turning up</div>
+                            <div><span class="dss-legend-dot bg-[#f23645]"></span> Turning down</div>
+                            <div><span class="dss-legend-swatch bg-rose-500/30 border border-rose-500/60"></span> High (&gt; 80)</div>
+                            <div><span class="dss-legend-swatch bg-emerald-500/30 border border-emerald-500/60"></span> Low (&lt; 30)</div>
+                        </div>
+                    </details>
+
+                    <!-- Dedicated Indicator Canvas (Clean, Direct Horizontal Time Drag on Timeline Axis) -->
+                    <div id="dssChartContainer" class="relative w-full overflow-hidden h-[155px]">
+                        <canvas id="dssCanvas" class="w-full h-full block cursor-grab" title="Drag to inspect values · drag the right scale to zoom · Shift-drag to pan vertically"></canvas>
+                    </div>
+                </details>
+            </div>
+
+        </div>
+
+        <div id="workspace-resizer" role="separator" aria-orientation="vertical" aria-label="Resize chart and signal screener panels" aria-valuemin="320" aria-valuemax="560" aria-valuenow="400" tabindex="0" title="Drag to resize the chart and signal screener panels"><span class="tv-resizer-grip" aria-hidden="true"></span></div>
+
+        <aside class="tv-watchlist-column tv-watchlist-panel lg:col-span-4 flex flex-col gap-3" aria-label="Signal screener">
+            <section id="watchlistPanel" class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3">
+                <div class="tv-watchlist-header flex items-center justify-between">
+                    <div class="tv-watchlist-title-group flex min-w-0 flex-col items-start gap-0.5">
+                        <h2 class="text-sm font-semibold text-gray-100">Signal screener</h2>
+                        <span id="signal-count-badge" class="max-w-full whitespace-normal break-words text-[10px] leading-tight text-gray-400 font-mono">Loading</span>
+                    </div>
+                    <div class="tv-watchlist-actions ml-2 flex shrink-0 items-center gap-1">
+                        <button id="openInstrumentRegistry" type="button" class="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-[10px] font-semibold text-gray-300 hover:border-cyan-700 hover:text-cyan-200 focus:outline focus:outline-2 focus:outline-cyan-500" aria-haspopup="dialog" aria-controls="instrumentRegistryDialog">Tickers</button>
+                    </div>
+                </div>
+                <p class="text-[10px] leading-relaxed text-gray-400">Market-entry signals appear only when the latest strategy bar qualifies and a fresh same-source 15m price is available. Score measures setup strength, not win probability or execution availability. Price is a candle close, not live bid/ask; this is not an executable order and no order is placed.</p>
+
+                <div id="screener-status" class="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-2 text-[11px] leading-relaxed text-gray-300" role="status" aria-live="polite">
+                    <div class="flex items-center justify-between gap-3">
+                        <span id="screener-status-text">Loading the latest signal snapshot…</span>
+                        <button id="screener-retry" type="button" class="hidden shrink-0 rounded border border-gray-600 px-2 py-1 font-semibold text-gray-200 hover:bg-gray-800 focus:outline focus:outline-2 focus:outline-cyan-400">Retry</button>
+                    </div>
+                    <p id="screener-freshness" class="mt-1 text-[10px] font-mono text-gray-500"></p>
+                </div>
+
+                <div id="watchlist-exchange-filter" class="flex items-center gap-1.5 text-xs flex-wrap pt-1 border-t border-gray-800/60" role="group" aria-label="Choose app">
+                    <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">App</span>
+                    <button type="button" class="exchange-btn active px-2.5 py-1 rounded bg-gray-800 text-white font-medium border border-gray-700" data-exchange="stockbit" aria-pressed="true">📈 Stockbit</button>
+                    <button type="button" class="exchange-btn px-2.5 py-1 rounded bg-gray-900 text-gray-400 font-medium border border-purple-800/70" data-exchange="pintu" aria-pressed="false">⚡ Pintu</button>
+                    <button type="button" class="exchange-btn px-2.5 py-1 rounded bg-gray-900 text-gray-400 font-medium border border-purple-800/70" data-exchange="pluang" aria-pressed="false">◈ Pluang</button>
+                    <button type="button" class="exchange-btn px-2.5 py-1 rounded bg-gray-900 text-cyan-300 hover:text-white font-medium border border-cyan-800/70" data-exchange="tokocrypto" aria-pressed="false">🪙 Tokocrypto</button>
+                </div>
+                <div id="screener-product-filters" class="flex items-center gap-1.5 text-xs flex-wrap" role="group" aria-label="Filter by app product or asset category">
+                    <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Category / product</span>
+                    <button type="button" class="product-btn" data-product="all" aria-pressed="true">All</button>
+                    <button type="button" class="product-btn" data-product="stockbit_regular" aria-pressed="false" hidden>IDX Stocks</button>
+                    <button type="button" class="product-btn" data-product="pintu_retail_spot" aria-pressed="false">Retail Spot</button>
+                    <button type="button" class="product-btn" data-product="pintu_pro_spot" aria-pressed="false">Pro Spot</button>
+                    <button type="button" class="product-btn" data-product="pintu_pro_futures" aria-pressed="false">Pro Futures</button>
+                    <button type="button" class="product-btn" data-product="pluang_spot" aria-pressed="false" hidden>Spot</button>
+                    <button type="button" class="product-btn" data-product="pluang_perpetual" aria-pressed="false" hidden>Perpetual</button>
+                    <button type="button" class="product-btn" data-product="tokocrypto_spot" aria-pressed="false" hidden>Crypto Spot</button>
+                    <button type="button" class="product-btn" data-product="tokocrypto_tokenized_stock" aria-pressed="false" hidden>Tokenized Stocks</button>
+                </div>
+                <div id="screenerTimeframeButtons" class="flex flex-wrap items-center gap-1.5 border-t border-gray-800/60 pt-2" role="group" aria-label="Filter by signal timeframe" aria-live="polite">
+                    <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Timeframe</span>
+                </div>
+                <div id="signalSearch" class="signal-search-panel" role="search" aria-label="Search screener signals">
+                    <label for="searchInput" class="signal-search-label">Search signals</label>
+                    <div class="signal-search-row">
+                        <input type="search" id="searchInput" placeholder="Symbol or strategy" aria-label="Search signals by symbol or strategy" class="refine-filter-search">
+                        <button type="button" id="clearSearchBtn" class="signal-search-clear" disabled>Clear</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-gray-900 border border-gray-800 rounded-xl p-2 flex-1 flex flex-col min-h-[500px]" aria-label="Signal results">
+                <div id="signalsList" class="flex-1 overflow-y-auto custom-scroll space-y-2 p-1 max-h-[680px]" role="list" aria-label="Signal records matching the selected app, product, timeframe, and search filters" tabindex="0">
+                    <p class="rounded-lg border border-gray-800 bg-gray-950/70 p-4 text-xs text-gray-400">Loading screener signals…</p>
+                </div>
+            </section>
+        </aside>
+    </div>
+    </div>
+    <!-- END OF LIVE SIGNAL SCREENER -->
+
+    <!-- Markov analytics render on demand for the selected signal. -->
+
+    <!-- MODAL: Background Daemon Health & Real-Time Diagnostics -->
+    <div id="daemonDiagnosticModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <!-- Modal Header -->
+            <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between bg-gray-950/70">
+                <div class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center p-2 rounded-xl bg-emerald-950 border border-emerald-800 text-emerald-400 font-bold text-lg">⚙️</span>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-lg font-bold text-white">Background Daemon Status &amp; Diagnostics</h3>
+                            <span id="daemonModalStatusBadge" class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 font-mono border border-emerald-800">ACTIVE &amp; SCHEDULED</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-0.5">Autonomous multi-asset market scanner with configurable interval &amp; SSE event stream</p>
+                    </div>
+                </div>
+
+                <button data-dashboard-action="closeDaemonDiagnosticModal" class="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-gray-800 transition cursor-pointer text-xl font-bold">✕</button>
+            </div>
+
+            <!-- Modal Content -->
+            <div class="p-5 overflow-y-auto custom-scroll space-y-4 flex-1">
+                <!-- Status KPI Cards -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                    <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3">
+                        <div class="text-[10px] text-gray-400 uppercase font-semibold">Daemon Process</div>
+                        <div id="daemonModalProcessState" class="text-base font-bold font-mono text-emerald-400 mt-1">🟢 RUNNING</div>
+                        <div id="daemonModalPID" class="text-[10px] text-gray-500 font-mono">Local service · Async Thread</div>
+                    </div>
+                    <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3">
+                        <div class="text-[10px] text-gray-400 uppercase font-semibold">Last Completed Scan</div>
+                        <div id="daemonModalLastScan" class="text-sm font-bold font-mono text-white mt-1">--:--:--</div>
+                        <div class="text-[10px] text-gray-400 font-mono">Walk-Forward Cycle</div>
+                    </div>
+                    <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3">
+                        <div class="text-[10px] text-gray-400 uppercase font-semibold">Next Scheduled Scan</div>
+                        <div id="daemonModalNextScan" class="text-sm font-bold font-mono text-amber-400 mt-1">--:--:--</div>
+                        <div id="daemonModalCountdown" class="text-[10px] text-amber-300 font-mono">Every 30 mins</div>
+                    </div>
+                    <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3">
+                        <div class="text-[10px] text-gray-400 uppercase font-semibold">SSE Stream &amp; Tab</div>
+                        <div id="daemonModalSSEState" class="text-base font-bold font-mono text-blue-400 mt-1">⚡ LIVE</div>
+                        <div id="daemonModalHeartbeatAge" class="text-[10px] text-gray-400 font-mono">Heartbeat: Active</div>
+                    </div>
+                </div>
+
+                <!-- Live Scan Activity Status -->
+                <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold text-gray-200 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            Live Scan Activity State
+                        </span>
+                        <span id="daemonModalScanStatusText" class="text-xs font-mono text-emerald-400">IDLE · SCHEDULED</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
+                        <div id="daemonModalScanProgressBar" class="bg-emerald-500 h-2 rounded-full transition-all duration-300" style="width: 100%"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-gray-500 mt-1 font-mono">
+                        <span id="daemonModalScanSymbol">Active Symbol: All Complete</span>
+                        <span id="daemonModalScanPct">100%</span>
+                    </div>
+                </div>
+
+                <!-- How It Works & Verification Guide -->
+                <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-4 text-xs space-y-3">
+                    <h4 class="font-bold text-white text-sm flex items-center gap-1.5">
+                        <span>🔍</span> How to Verify Background Updates Are Working
+                    </h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-gray-300">
+                        <div class="bg-gray-900/60 p-3 rounded-lg border border-gray-800/80">
+                            <div class="font-bold text-emerald-400 flex items-center gap-1">
+                                <span>1.</span> Live Header Countdown
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1">Check the configurable <code class="text-amber-300 font-mono">Next Scan In</code> countdown at the top right. It updates every second towards 00:00.</p>
+                        </div>
+                        <div class="bg-gray-900/60 p-3 rounded-lg border border-gray-800/80">
+                            <div class="font-bold text-blue-400 flex items-center gap-1">
+                                <span>2.</span> Pulsing SSE Stream Badge
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1">The <code class="text-emerald-300 font-mono">⚡ SSE Live Stream</code> badge with a pulsing dot confirms that real-time push events from the daemon are connected.</p>
+                        </div>
+                        <div class="bg-gray-900/60 p-3 rounded-lg border border-gray-800/80">
+                            <div class="font-bold text-amber-400 flex items-center gap-1">
+                                <span>3.</span> Real-Time Progress Bar
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1">When a scheduled or manual scan cycle triggers, an amber/blue progress banner automatically pops up showing live candle ingestion across all tickers.</p>
+                        </div>
+                        <div class="bg-gray-900/60 p-3 rounded-lg border border-gray-800/80">
+                            <div class="font-bold text-purple-400 flex items-center gap-1">
+                                <span>4.</span> Direct HTTP Status API
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1">Visit <a href="/api/status" target="_blank" class="text-purple-300 underline font-mono">/api/status</a> to inspect the real-time server timestamp, tab active state, and next scan epoch.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-5 py-3 border-t border-gray-800 bg-gray-950/70 flex items-center justify-between">
+                <button data-dashboard-action="fetchDaemonDiagnostics" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold cursor-pointer transition">
+                    <span>↻ Refresh Diagnostics</span>
+                </button>
+                <div class="flex items-center gap-2">
+                    <button data-dashboard-action="triggerManualRefresh" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer transition shadow">
+                        <span>⚡ Trigger Immediate Scan Cycle</span>
+                    </button>
+                    <button data-dashboard-action="closeDaemonDiagnosticModal" class="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold cursor-pointer transition">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Markov Regime Model & Historical Transition Frequencies -->
+    <div id="markovDetailModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 md:p-6" data-dashboard-action="onMarkovModalBackdropClick">
+        <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden" data-dashboard-action="stop-propagation">
+            <!-- Modal Header -->
+            <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between bg-gray-950/70">
+                <div class="flex items-center gap-3">
+                    <span id="mdmModalIconBadge" class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-purple-950 border border-purple-800 text-purple-300 font-bold text-lg">🔄</span>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h3 id="mdmModalTitle" class="text-lg font-bold text-white">Markov Regime Model</h3>
+                            <span id="mdmModalSymbolBadge" class="text-xs px-2.5 py-0.5 rounded-lg font-mono font-bold bg-blue-900/60 text-blue-300 border border-blue-700/50">BTC-USD</span>
+                            <span id="mdmModalClassBadge" class="text-[10px] px-2 py-0.5 rounded font-mono text-gray-400 bg-gray-800 border border-gray-700 uppercase">Crypto Futures</span>
+                        </div>
+                        <p id="mdmModalSubtitle" class="text-xs text-gray-400 mt-0.5">Observed-state Markov transitions from causal DSS Bressert, NWE endpoint, and trend context</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="mdmModalStatusBadge" class="hidden text-xs px-2.5 py-1 rounded font-bold font-mono"></span>
+                    <button data-dashboard-action="closeMarkovModal" class="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-gray-800 transition cursor-pointer text-xl font-bold" title="Close modal (Esc)">✕</button>
+                </div>
+            </div>
+
+            <!-- Modal Body (Scrollable) -->
+            <div class="p-5 overflow-y-auto flex-1 flex flex-col gap-4 custom-scroll">
+                <p id="mdmDataStatus" class="text-xs text-gray-400" role="status" aria-live="polite"></p>
+                <button id="mdmRetryLoad" type="button" data-dashboard-action="retryMarkovLoad" class="hidden w-fit rounded border border-gray-700 px-2 py-1 text-[10px] text-gray-300 hover:bg-gray-800">Retry regime data</button>
+                <!-- Regime context and model evidence -->
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                    <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3">
+                        <div class="text-[10px] text-gray-400 uppercase font-semibold">Current Regime</div>
+                        <div id="mdmKpiRegime" class="text-sm font-bold font-mono text-emerald-400 mt-1 truncate">--</div>
+                        <div id="mdmKpiRegimeShare" class="text-[10px] text-gray-400 font-mono">Stationary Share: --%</div>
+                    </div>
+                    <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3">
+                        <div class="text-[10px] text-gray-400 uppercase font-semibold">Dwell Time</div>
+                        <div id="mdmKpiDwell" class="text-xl font-bold font-mono text-white mt-1">--d</div>
+                        <div id="mdmKpiDwellStatus" class="text-[10px] text-gray-400 font-mono">Current dwell</div>
+                    </div>
+                    <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3">
+                        <div class="text-[10px] text-gray-400 uppercase font-semibold">Empirical Mean Dwell</div>
+                        <div id="mdmKpiExpDuration" class="text-xl font-bold font-mono text-cyan-400 mt-1">--d</div>
+                        <div class="text-[10px] text-gray-400 font-mono">Geometric estimate from observed transitions</div>
+                    </div>
+                    <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3">
+                        <div class="text-[10px] text-gray-400 uppercase font-semibold">Historical Persistence P_ii</div>
+                        <div id="mdmKpiPersistence" class="text-xl font-bold font-mono text-purple-300 mt-1">--%</div>
+                        <div class="text-[10px] text-gray-400 font-mono">Stay Probability</div>
+                    </div>
+                    <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3 col-span-2 sm:col-span-1">
+                        <div class="text-[10px] text-gray-400 uppercase font-semibold">Most Frequent Historical Next State</div>
+                        <div id="mdmKpiNextShift" class="text-sm font-bold font-mono text-amber-400 mt-1 truncate">--</div>
+                        <div id="mdmKpiNextProb" class="text-[10px] text-gray-400 font-mono">Historical frequency: --%</div>
+                    </div>
+                </div>
+
+                <!-- Overdue Warning Alert Banner (if applicable) -->
+                <div id="mdmOverdueBanner" class="hidden bg-amber-950/50 border border-amber-800/80 rounded-xl p-3 flex items-center justify-between gap-3 text-amber-300 text-xs">
+                    <div class="flex items-center gap-2">
+                        <span class="text-base">⚠️</span>
+                        <span><strong>Longer than historical average:</strong> This asset has spent <span id="mdmOverdueDays" class="font-bold font-mono">--</span> in this state versus an empirical mean of <span id="mdmOverdueAvg" class="font-bold font-mono">--</span>. This does not imply a shift is imminent.</span>
+                    </div>
+                    <span class="px-2 py-0.5 rounded bg-amber-900/80 border border-amber-700 text-[10px] font-bold font-mono whitespace-nowrap">HISTORICAL COMPARISON</span>
+                </div>
+
+                <!-- Main Content: Graph + Historical Transition Frequencies & Matrix -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <!-- Left Column: Directed Transition Graph & Timeline -->
+                    <div class="flex flex-col gap-4">
+                        <!-- Directed Transition Graph -->
+                        <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3.5 flex flex-col">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold text-gray-200">Directed State Transition Network</span>
+                                    <span class="text-[10px] text-gray-400 font-mono">| Node = Regime, Edge = P_ij</span>
+                                </div>
+                                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-300">Active Node Highlighted</span>
+                            </div>
+                            <div class="relative w-full h-[250px] bg-gray-950/90 rounded-lg border border-gray-800/60 overflow-hidden flex items-center justify-center">
+                                <canvas id="mdmGraphCanvas" class="w-full h-full block cursor-pointer"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Latest classified regime observations -->
+                        <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3.5 flex flex-col">
+                            <div class="flex items-center justify-between text-xs text-gray-300 font-semibold mb-2">
+                                <span>Recent Regime History</span>
+                                <span class="text-[10px] font-mono text-gray-400">Chronological ➔ Latest</span>
+                            </div>
+                            <div id="mdmTimelineRibbon" class="flex items-center gap-0.5 h-6 rounded-lg overflow-hidden bg-gray-900 p-0.5 border border-gray-800">
+                                <!-- Populated dynamically -->
+                            </div>
+                            <div class="flex items-center justify-between text-[10px] text-gray-400 font-mono mt-1.5 px-1">
+                                <span id="mdmTimelineStart">Earlier Bars</span>
+                                <span id="mdmTimelineEnd">Latest Bar</span>
+                            </div>
+                        </div>
+                        <details class="bg-gray-950/70 border border-gray-800 rounded-xl p-3.5">
+                            <summary class="cursor-pointer text-xs font-bold text-gray-200">One-step walk-forward check</summary>
+                            <p id="mdmWalkForwardEvaluation" class="mt-2 text-[10px] leading-relaxed text-gray-400">Select a ticker to inspect its chronological validation diagnostic. This within-sample check is not an untouched holdout.</p>
+                        </details>
+                        <details class="bg-gray-950/70 border border-gray-800 rounded-xl p-3.5">
+                            <summary class="cursor-pointer text-xs font-bold text-gray-200">Causal classifier settings</summary>
+                            <p class="mt-2 text-[10px] leading-relaxed text-gray-400">Completed-bar DSS Bressert and causal NWE endpoint settings. Warm-up bars are excluded from transitions.</p>
+                            <pre id="mdmClassifierConfig" class="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-[10px] text-gray-400"></pre>
+                        </details>
+                    </div>
+
+                    <!-- Right Column: Historical Transition Frequencies & Full Matrix -->
+                    <div class="flex flex-col gap-4">
+                        <!-- Empirical transition frequencies from current state -->
+                        <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3.5 flex flex-col">
+                            <div class="flex items-center justify-between mb-2.5">
+                                <span class="text-xs font-bold text-gray-200">Observed Transition Frequencies from Current State</span>
+                                <span id="mdmForecastOriginBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">Origin: --</span>
+                            </div>
+                            <div id="mdmTransitionBars" class="flex flex-col gap-2">
+                                <!-- Populated dynamically with smoothed historical frequency bars -->
+                            </div>
+                        </div>
+
+                        <!-- Full 6x6 Markov Transition Matrix Table -->
+                        <div class="bg-gray-950/70 border border-gray-800 rounded-xl p-3.5 flex flex-col">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold text-gray-200">Empirical Transition Frequency Matrix P_ij</span>
+                                    <span class="text-[10px] text-gray-400 font-mono">| Row = From, Col = To</span>
+                                </div>
+                                <span class="text-[9px] font-mono text-emerald-400">Highlighted = Current Row</span>
+                            </div>
+                            <div class="overflow-x-auto custom-scroll">
+                                <table class="w-full text-center text-xs border-collapse font-mono" id="mdmMatrixTable">
+                                    <!-- Populated dynamically -->
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-5 py-3 border-t border-gray-800 bg-gray-950/70 flex items-center justify-between">
+                <button data-dashboard-action="openBacktestFromMarkovModal" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-cyan-300 border border-gray-700 text-xs font-semibold cursor-pointer transition">
+                    <span>📊 Inspect Backtest History</span>
+                </button>
+                <div class="flex items-center gap-2">
+                    <button data-dashboard-action="closeMarkovModal" class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold cursor-pointer transition shadow">
+                        <span>✕ Close &amp; Back to Screener</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <dialog id="instrumentRegistryDialog" class="instrument-registry-dialog w-[min(920px,96vw)] max-w-none overflow-hidden rounded-xl border border-gray-700 bg-gray-950 p-0 text-gray-200 shadow-2xl" aria-labelledby="instrumentRegistryTitle">
+        <section class="flex max-h-[88vh] flex-col">
+            <header class="flex items-start justify-between gap-4 border-b border-gray-800 px-4 py-3">
+                <div>
+                    <h2 id="instrumentRegistryTitle" class="text-sm font-semibold text-white">Ticker registry</h2>
+                    <p class="mt-1 text-[11px] leading-relaxed text-gray-400">Registered symbols stay separate from market data and trading support. Pintu codes here are regulator-approved; Pluang rows are public listing snapshots.</p>
+                </div>
+                <button id="closeInstrumentRegistry" type="button" class="rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-300 hover:bg-gray-800 focus:outline focus:outline-2 focus:outline-cyan-500" aria-label="Close ticker registry">Close</button>
+            </header>
+            <div class="flex flex-col gap-3 overflow-y-auto p-4">
+                <form id="instrumentRegisterForm" class="grid grid-cols-1 gap-2 rounded-lg border border-gray-800 bg-gray-900/60 p-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:items-end">
+                    <label class="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400" for="instrumentExchangeSelect">
+                        Venue
+                        <select id="instrumentExchangeSelect" name="exchange_id" required class="rounded-md border border-gray-700 bg-gray-950 px-2 py-2 text-xs normal-case tracking-normal text-gray-100 focus:border-cyan-600 focus:outline-none">
+                            <option value="stockbit">Stockbit</option>
+                            <option value="pintu">Pintu</option>
+                            <option value="tokocrypto">Tokocrypto</option>
+                            <option value="pluang">Pluang</option>
+                        </select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400" for="instrumentProductSelect">
+                        Product
+                        <select id="instrumentProductSelect" name="product_id" class="rounded-md border border-gray-700 bg-gray-950 px-2 py-2 text-xs normal-case tracking-normal text-gray-100 focus:border-cyan-600 focus:outline-none"></select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400" for="instrumentCategorySelect">
+                        Asset type
+                        <select id="instrumentCategorySelect" name="asset_category_id" required class="rounded-md border border-gray-700 bg-gray-950 px-2 py-2 text-xs normal-case tracking-normal text-gray-100 focus:border-cyan-600 focus:outline-none"></select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400" for="instrumentTickerInput">
+                        Ticker
+                        <input id="instrumentTickerInput" name="symbol" type="text" maxlength="24" autocomplete="off" placeholder="e.g. BBCA or BTC" required class="rounded-md border border-gray-700 bg-gray-950 px-2 py-2 text-xs normal-case tracking-normal text-white placeholder:text-gray-600 focus:border-cyan-600 focus:outline-none">
+                    </label>
+                    <button type="submit" class="rounded-md bg-cyan-700 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-600 focus:outline focus:outline-2 focus:outline-cyan-300">Register</button>
+                    <p id="instrumentRegistryFormNote" class="text-[10px] leading-relaxed text-gray-500 sm:col-span-5" aria-live="polite"></p>
+                </form>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                    <label for="instrumentSearchInput" class="sr-only">Search registered tickers</label>
+                    <input id="instrumentSearchInput" type="search" autocomplete="off" placeholder="Search ticker or venue…" class="min-w-0 flex-1 rounded-md border border-gray-800 bg-gray-900 px-3 py-2 text-xs text-white placeholder:text-gray-500 focus:border-cyan-700 focus:outline-none">
+                    <label for="instrumentVenueFilter" class="sr-only">Filter by venue</label>
+                    <select id="instrumentVenueFilter" class="rounded-md border border-gray-800 bg-gray-900 px-3 py-2 text-xs text-gray-200 focus:border-cyan-700 focus:outline-none">
+                        <option value="all">All venues</option>
+                        <option value="stockbit">Stockbit</option>
+                        <option value="pintu">Pintu</option>
+                        <option value="tokocrypto">Tokocrypto</option>
+                        <option value="pluang">Pluang</option>
+                    </select>
+                </div>
+                <p id="instrumentRegistryStatus" class="text-[11px] text-gray-400" role="status" aria-live="polite">Open the registry to load registered tickers.</p>
+                <button id="instrumentRegistryRetry" type="button" class="hidden self-start rounded-md border border-amber-800 px-2.5 py-1 text-[10px] text-amber-200 hover:bg-amber-950 focus:outline focus:outline-2 focus:outline-amber-400">Retry loading</button>
+                <div class="max-h-[46vh] overflow-auto rounded-lg border border-gray-800">
+                    <table class="w-full min-w-[620px] text-left text-[11px]">
+                        <thead class="sticky top-0 bg-gray-900 text-[10px] uppercase tracking-wide text-gray-500">
+                            <tr><th class="px-3 py-2">Venue</th><th class="px-3 py-2">Ticker</th><th class="px-3 py-2">Registration</th><th class="px-3 py-2">Price source</th><th class="px-3 py-2">Execution</th></tr>
+                        </thead>
+                        <tbody id="instrumentRegistryRows" class="divide-y divide-gray-800/80"></tbody>
+                    </table>
+                </div>
+                <button id="instrumentRegistryMore" type="button" class="hidden self-center rounded-md border border-gray-700 px-3 py-1.5 text-[11px] text-gray-300 hover:bg-gray-800 focus:outline focus:outline-2 focus:outline-cyan-500">Show more</button>
+            </div>
+        </section>
+    </dialog>
+
+    <!-- The page shell is static; signal and reference data load from the Rust API. -->
+    <div id="floating-toast" class="fixed bottom-5 right-5 z-50 opacity-0 pointer-events-none" role="status" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/web/scripts/dashboard.js"></script>
+</body>
+</html>

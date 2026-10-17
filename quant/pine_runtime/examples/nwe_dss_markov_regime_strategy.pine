@@ -1,0 +1,269 @@
+//@version=6
+// Causal NWE endpoint calculation adapted from the repository's LuxAlgo implementation.
+// Copyright (C) quant project contributors.
+// NWE method attribution: © LuxAlgo, CC BY-NC-SA 4.0.
+// https://creativecommons.org/licenses/by-nc-sa/4.0/
+// Six-state classifier and defaults match quant/core/src/markov/regime.rs.
+// The Markov matrix describes smoothed historical transition frequencies, not validated forecasts.
+// This standalone script targets TradingView Pine v6; the dashboard's bounded Pine runtime does
+// not execute the loop and table constructs used by this full strategy.
+strategy("DSS Bressert + NWE · Markov Regime Strategy", overlay=true, max_bars_back=1000, pyramiding=0, default_qty_type=strategy.percent_of_equity, default_qty_value=100, process_orders_on_close=false)
+
+// Inputs mirror MarkovRegimeConfig and the canonical indicator defaults.
+int nweWindow = input.int(500, "NWE window", minval=2, maxval=500)
+float nweBandwidth = input.float(8.0, "NWE bandwidth (bars)", minval=0.1, maxval=500.0)
+float nweMultiplier = input.float(3.0, "NWE envelope multiplier", minval=0.0, maxval=100.0)
+int dssPds = input.int(10, "DSS stochastic period", minval=1, maxval=500)
+int dssEmaLength = input.int(9, "DSS smoothing EMA", minval=1, maxval=500)
+int dssTriggerLength = input.int(5, "DSS trigger EMA", minval=1, maxval=500)
+int trendEmaSpan = input.int(50, "Trend EMA span (bars)", minval=1, maxval=500)
+float oversoldMax = input.float(30.0, "DSS accumulation maximum", minval=0.0, maxval=100.0)
+float overboughtMin = input.float(70.0, "DSS distribution minimum", minval=0.0, maxval=100.0)
+float neutralLevel = input.float(50.0, "DSS midpoint", minval=0.0, maxval=100.0)
+float bullPullbackMin = input.float(30.0, "Bull pullback DSS minimum", minval=0.0, maxval=100.0)
+float bullPullbackMax = input.float(65.0, "Bull pullback DSS maximum", minval=0.0, maxval=100.0)
+float bearPullbackMin = input.float(35.0, "Bear pullback DSS minimum", minval=0.0, maxval=100.0)
+float bearPullbackMax = input.float(70.0, "Bear pullback DSS maximum", minval=0.0, maxval=100.0)
+float nearCrossSpread = input.float(10.0, "DSS near-cross spread", minval=0.0, maxval=100.0)
+float trendEmaTolerance = input.float(0.01, "Trend EMA tolerance (fraction)", minval=0.0, maxval=0.5)
+float pullbackEmaTolerance = input.float(0.02, "Pullback EMA tolerance (fraction)", minval=0.0, maxval=0.5)
+int transitionLookback = input.int(200, "Markov transition lookback (bars)", minval=20, maxval=800)
+int minimumRowSupport = input.int(30, "Minimum observed transitions per row", minval=1, maxval=500)
+float dirichletAlpha = input.float(0.5, "Prior per destination state", minval=0.0, maxval=10.0)
+bool tradeTrendRegimes = input.bool(true, "Trade Bull/Bear Trend regime changes")
+bool tradeReversalRegimes = input.bool(false, "Trade Accumulation/Distribution regime changes")
+bool showMatrix = input.bool(true, "Show observed Markov transition matrix")
+bool showEnvelope = input.bool(true, "Show causal NWE envelope")
+
+// Endpoint NWE: trailing Gaussian-weighted close and rolling endpoint MAE.
+int sampleCount = nweWindow
+float weightedClose = 0.0
+float weightTotal = 0.0
+for age = 0 to sampleCount - 1
+    float sample = close[age]
+    float weight = math.exp(-(age * age) / (2.0 * nweBandwidth * nweBandwidth))
+    weightedClose += sample * weight
+    weightTotal += weight
+float partialNweMid = weightTotal > 0 ? weightedClose / weightTotal : na
+float nweMid = bar_index >= nweWindow - 1 ? partialNweMid : na
+float endpointError = not na(partialNweMid) ? math.abs(close - partialNweMid) : na
+float rollingMae = ta.sma(endpointError, nweWindow - 1) * nweMultiplier
+float nweUpper = nweMid + rollingMae
+float nweLower = nweMid - rollingMae
+
+// DSS Bressert (double stochastic, EMA-smoothed twice; defaults 10/9/5).
+float rangeLow = ta.lowest(low, dssPds)
+float rangeHigh = ta.highest(high, dssPds)
+float stoch = rangeHigh == rangeLow ? 50.0 : 100.0 * (close - rangeLow) / (rangeHigh - rangeLow)
+float smooth1 = ta.ema(stoch, dssEmaLength)
+float smoothLow = ta.lowest(smooth1, dssPds)
+float smoothHigh = ta.highest(smooth1, dssPds)
+float secondRange = smoothHigh - smoothLow
+float stoch2 = na(secondRange) ? na : secondRange == 0 ? 50.0 : 100.0 * (smooth1 - smoothLow) / secondRange
+float dss = ta.ema(stoch2, dssEmaLength)
+float trigger = ta.ema(dss, dssTriggerLength)
+float trendEma = ta.ema(close, trendEmaSpan)
+bool indicatorsReady = not na(dss) and not na(dss[1]) and not na(trigger) and not na(trigger[1]) and not na(nweUpper) and not na(nweLower) and not na(nweMid) and not na(trendEma)
+float spread = dss - trigger
+float previousSpread = dss[1] - trigger[1]
+bool bullCross = previousSpread <= 0 and spread > 0
+bool bearCross = previousSpread >= 0 and spread < 0
+bool aboveMidline = close >= nweMid
+bool belowMidline = close <= nweMid
+bool lowerBandTurn = close <= nweLower
+bool upperBandTurn = close >= nweUpper
+
+// Canonical state ids match RegimeId in quant/core/src/markov/dtmc.rs.
+int BULL_TREND = 0
+int BEAR_TREND = 1
+int ACCUMULATION = 2
+int DISTRIBUTION = 3
+int PULLBACK_RESET = 4
+int CONSOLIDATION_CHOP = 5
+int regime = not indicatorsReady ? na :
+     lowerBandTurn and dss <= oversoldMax and (bullCross or (dss > dss[1] and spread > -nearCrossSpread)) ? ACCUMULATION :
+     upperBandTurn and dss >= overboughtMin and (bearCross or (dss < dss[1] and spread < nearCrossSpread)) ? DISTRIBUTION :
+     ((bullCross and dss > bullPullbackMin and dss < bullPullbackMax and aboveMidline and close >= trendEma * (1.0 - pullbackEmaTolerance)) or
+      (bearCross and dss > bearPullbackMin and dss < bearPullbackMax and belowMidline and close <= trendEma * (1.0 + pullbackEmaTolerance))) ? PULLBACK_RESET :
+     dss > trigger and dss >= neutralLevel and aboveMidline and close >= trendEma * (1.0 - trendEmaTolerance) ? BULL_TREND :
+     dss < trigger and dss <= neutralLevel and belowMidline and close <= trendEma * (1.0 + trendEmaTolerance) ? BEAR_TREND :
+     CONSOLIDATION_CHOP
+
+// Keep unknown warm-up bars out of transition counts rather than inventing a state.
+int previousRegime = nz(regime[1], -1)
+bool validTransition = barstate.isconfirmed and not na(regime) and previousRegime >= 0
+int c00 = int(math.sum(validTransition and previousRegime == 0 and regime == 0 ? 1 : 0, transitionLookback))
+int c01 = int(math.sum(validTransition and previousRegime == 0 and regime == 1 ? 1 : 0, transitionLookback))
+int c02 = int(math.sum(validTransition and previousRegime == 0 and regime == 2 ? 1 : 0, transitionLookback))
+int c03 = int(math.sum(validTransition and previousRegime == 0 and regime == 3 ? 1 : 0, transitionLookback))
+int c04 = int(math.sum(validTransition and previousRegime == 0 and regime == 4 ? 1 : 0, transitionLookback))
+int c05 = int(math.sum(validTransition and previousRegime == 0 and regime == 5 ? 1 : 0, transitionLookback))
+int c10 = int(math.sum(validTransition and previousRegime == 1 and regime == 0 ? 1 : 0, transitionLookback))
+int c11 = int(math.sum(validTransition and previousRegime == 1 and regime == 1 ? 1 : 0, transitionLookback))
+int c12 = int(math.sum(validTransition and previousRegime == 1 and regime == 2 ? 1 : 0, transitionLookback))
+int c13 = int(math.sum(validTransition and previousRegime == 1 and regime == 3 ? 1 : 0, transitionLookback))
+int c14 = int(math.sum(validTransition and previousRegime == 1 and regime == 4 ? 1 : 0, transitionLookback))
+int c15 = int(math.sum(validTransition and previousRegime == 1 and regime == 5 ? 1 : 0, transitionLookback))
+int c20 = int(math.sum(validTransition and previousRegime == 2 and regime == 0 ? 1 : 0, transitionLookback))
+int c21 = int(math.sum(validTransition and previousRegime == 2 and regime == 1 ? 1 : 0, transitionLookback))
+int c22 = int(math.sum(validTransition and previousRegime == 2 and regime == 2 ? 1 : 0, transitionLookback))
+int c23 = int(math.sum(validTransition and previousRegime == 2 and regime == 3 ? 1 : 0, transitionLookback))
+int c24 = int(math.sum(validTransition and previousRegime == 2 and regime == 4 ? 1 : 0, transitionLookback))
+int c25 = int(math.sum(validTransition and previousRegime == 2 and regime == 5 ? 1 : 0, transitionLookback))
+int c30 = int(math.sum(validTransition and previousRegime == 3 and regime == 0 ? 1 : 0, transitionLookback))
+int c31 = int(math.sum(validTransition and previousRegime == 3 and regime == 1 ? 1 : 0, transitionLookback))
+int c32 = int(math.sum(validTransition and previousRegime == 3 and regime == 2 ? 1 : 0, transitionLookback))
+int c33 = int(math.sum(validTransition and previousRegime == 3 and regime == 3 ? 1 : 0, transitionLookback))
+int c34 = int(math.sum(validTransition and previousRegime == 3 and regime == 4 ? 1 : 0, transitionLookback))
+int c35 = int(math.sum(validTransition and previousRegime == 3 and regime == 5 ? 1 : 0, transitionLookback))
+int c40 = int(math.sum(validTransition and previousRegime == 4 and regime == 0 ? 1 : 0, transitionLookback))
+int c41 = int(math.sum(validTransition and previousRegime == 4 and regime == 1 ? 1 : 0, transitionLookback))
+int c42 = int(math.sum(validTransition and previousRegime == 4 and regime == 2 ? 1 : 0, transitionLookback))
+int c43 = int(math.sum(validTransition and previousRegime == 4 and regime == 3 ? 1 : 0, transitionLookback))
+int c44 = int(math.sum(validTransition and previousRegime == 4 and regime == 4 ? 1 : 0, transitionLookback))
+int c45 = int(math.sum(validTransition and previousRegime == 4 and regime == 5 ? 1 : 0, transitionLookback))
+int c50 = int(math.sum(validTransition and previousRegime == 5 and regime == 0 ? 1 : 0, transitionLookback))
+int c51 = int(math.sum(validTransition and previousRegime == 5 and regime == 1 ? 1 : 0, transitionLookback))
+int c52 = int(math.sum(validTransition and previousRegime == 5 and regime == 2 ? 1 : 0, transitionLookback))
+int c53 = int(math.sum(validTransition and previousRegime == 5 and regime == 3 ? 1 : 0, transitionLookback))
+int c54 = int(math.sum(validTransition and previousRegime == 5 and regime == 4 ? 1 : 0, transitionLookback))
+int c55 = int(math.sum(validTransition and previousRegime == 5 and regime == 5 ? 1 : 0, transitionLookback))
+int r0 = c00 + c01 + c02 + c03 + c04 + c05
+int r1 = c10 + c11 + c12 + c13 + c14 + c15
+int r2 = c20 + c21 + c22 + c23 + c24 + c25
+int r3 = c30 + c31 + c32 + c33 + c34 + c35
+int r4 = c40 + c41 + c42 + c43 + c44 + c45
+int r5 = c50 + c51 + c52 + c53 + c54 + c55
+
+// Dirichlet-smoothed row estimates: (observed count + alpha) / (row total + 6*alpha).
+float currentRowSupport = regime == 0 ? r0 : regime == 1 ? r1 : regime == 2 ? r2 : regime == 3 ? r3 : regime == 4 ? r4 : regime == 5 ? r5 : na
+bool matrixReady = currentRowSupport >= minimumRowSupport
+float priorMass = 6.0 * dirichletAlpha
+float p00 = (c00 + dirichletAlpha) / math.max(r0 + priorMass, 1e-12)
+float p01 = (c01 + dirichletAlpha) / math.max(r0 + priorMass, 1e-12)
+float p02 = (c02 + dirichletAlpha) / math.max(r0 + priorMass, 1e-12)
+float p03 = (c03 + dirichletAlpha) / math.max(r0 + priorMass, 1e-12)
+float p04 = (c04 + dirichletAlpha) / math.max(r0 + priorMass, 1e-12)
+float p05 = (c05 + dirichletAlpha) / math.max(r0 + priorMass, 1e-12)
+float p10 = (c10 + dirichletAlpha) / math.max(r1 + priorMass, 1e-12)
+float p11 = (c11 + dirichletAlpha) / math.max(r1 + priorMass, 1e-12)
+float p12 = (c12 + dirichletAlpha) / math.max(r1 + priorMass, 1e-12)
+float p13 = (c13 + dirichletAlpha) / math.max(r1 + priorMass, 1e-12)
+float p14 = (c14 + dirichletAlpha) / math.max(r1 + priorMass, 1e-12)
+float p15 = (c15 + dirichletAlpha) / math.max(r1 + priorMass, 1e-12)
+float p20 = (c20 + dirichletAlpha) / math.max(r2 + priorMass, 1e-12)
+float p21 = (c21 + dirichletAlpha) / math.max(r2 + priorMass, 1e-12)
+float p22 = (c22 + dirichletAlpha) / math.max(r2 + priorMass, 1e-12)
+float p23 = (c23 + dirichletAlpha) / math.max(r2 + priorMass, 1e-12)
+float p24 = (c24 + dirichletAlpha) / math.max(r2 + priorMass, 1e-12)
+float p25 = (c25 + dirichletAlpha) / math.max(r2 + priorMass, 1e-12)
+float p30 = (c30 + dirichletAlpha) / math.max(r3 + priorMass, 1e-12)
+float p31 = (c31 + dirichletAlpha) / math.max(r3 + priorMass, 1e-12)
+float p32 = (c32 + dirichletAlpha) / math.max(r3 + priorMass, 1e-12)
+float p33 = (c33 + dirichletAlpha) / math.max(r3 + priorMass, 1e-12)
+float p34 = (c34 + dirichletAlpha) / math.max(r3 + priorMass, 1e-12)
+float p35 = (c35 + dirichletAlpha) / math.max(r3 + priorMass, 1e-12)
+float p40 = (c40 + dirichletAlpha) / math.max(r4 + priorMass, 1e-12)
+float p41 = (c41 + dirichletAlpha) / math.max(r4 + priorMass, 1e-12)
+float p42 = (c42 + dirichletAlpha) / math.max(r4 + priorMass, 1e-12)
+float p43 = (c43 + dirichletAlpha) / math.max(r4 + priorMass, 1e-12)
+float p44 = (c44 + dirichletAlpha) / math.max(r4 + priorMass, 1e-12)
+float p45 = (c45 + dirichletAlpha) / math.max(r4 + priorMass, 1e-12)
+float p50 = (c50 + dirichletAlpha) / math.max(r5 + priorMass, 1e-12)
+float p51 = (c51 + dirichletAlpha) / math.max(r5 + priorMass, 1e-12)
+float p52 = (c52 + dirichletAlpha) / math.max(r5 + priorMass, 1e-12)
+float p53 = (c53 + dirichletAlpha) / math.max(r5 + priorMass, 1e-12)
+float p54 = (c54 + dirichletAlpha) / math.max(r5 + priorMass, 1e-12)
+float p55 = (c55 + dirichletAlpha) / math.max(r5 + priorMass, 1e-12)
+
+// Trade state changes as a transparent illustrative strategy; Markov probabilities
+// are reported for analysis and are deliberately not used as a predictive trade gate.
+bool newBull = barstate.isconfirmed and regime == BULL_TREND and nz(regime[1], -1) != BULL_TREND
+bool newBear = barstate.isconfirmed and regime == BEAR_TREND and nz(regime[1], -1) != BEAR_TREND
+bool newAccumulation = barstate.isconfirmed and regime == ACCUMULATION and nz(regime[1], -1) != ACCUMULATION
+bool newDistribution = barstate.isconfirmed and regime == DISTRIBUTION and nz(regime[1], -1) != DISTRIBUTION
+bool longEntry = newBull and tradeTrendRegimes or newAccumulation and tradeReversalRegimes
+bool shortEntry = newBear and tradeTrendRegimes or newDistribution and tradeReversalRegimes
+if longEntry and strategy.position_size <= 0
+    strategy.entry("Long", strategy.long)
+if shortEntry and strategy.position_size >= 0
+    strategy.entry("Short", strategy.short)
+bool longContextEnded = strategy.position_size > 0 and regime != BULL_TREND and not (tradeReversalRegimes and regime == ACCUMULATION)
+bool shortContextEnded = strategy.position_size < 0 and regime != BEAR_TREND and not (tradeReversalRegimes and regime == DISTRIBUTION)
+if barstate.isconfirmed and longContextEnded
+    strategy.close("Long", comment="Bull context ended")
+if barstate.isconfirmed and shortContextEnded
+    strategy.close("Short", comment="Bear context ended")
+
+color regimeColor = regime == BULL_TREND ? color.new(color.lime, 84) : regime == BEAR_TREND ? color.new(color.red, 84) : regime == ACCUMULATION ? color.new(color.aqua, 82) : regime == DISTRIBUTION ? color.new(color.orange, 82) : regime == PULLBACK_RESET ? color.new(color.purple, 84) : regime == CONSOLIDATION_CHOP ? color.new(color.gray, 90) : na
+bgcolor(regimeColor, title="DSS Bressert + NWE regime")
+plot(showEnvelope ? nweMid : na, "Causal NWE midline", color=color.new(color.silver, 15))
+plot(showEnvelope ? nweUpper : na, "Causal NWE upper", color=color.new(color.orange, 10))
+plot(showEnvelope ? nweLower : na, "Causal NWE lower", color=color.new(color.aqua, 10))
+plotshape(newBull, "Bull trend state", shape.triangleup, location.belowbar, color=color.lime, text="BULL", textcolor=color.black, size=size.tiny)
+plotshape(newBear, "Bear trend state", shape.triangledown, location.abovebar, color=color.red, text="BEAR", textcolor=color.white, size=size.tiny)
+plotshape(newAccumulation, "Accumulation state", shape.circle, location.belowbar, color=color.aqua, text="ACC", textcolor=color.black, size=size.tiny)
+plotshape(newDistribution, "Distribution state", shape.circle, location.abovebar, color=color.orange, text="DIST", textcolor=color.black, size=size.tiny)
+
+var table matrix = table.new(position.top_right, 7, 8, border_width=1)
+if barstate.islast and showMatrix
+    table.cell(matrix, 0, 0, "P(next | current)", bgcolor=color.new(color.blue, 60), text_color=color.white)
+    table.cell(matrix, 1, 0, "Bull")
+    table.cell(matrix, 2, 0, "Bear")
+    table.cell(matrix, 3, 0, "Accum")
+    table.cell(matrix, 4, 0, "Distrib")
+    table.cell(matrix, 5, 0, "Pullback")
+    table.cell(matrix, 6, 0, "Chop")
+    table.cell(matrix, 0, 1, "Bull →")
+    table.cell(matrix, 0, 2, "Bear →")
+    table.cell(matrix, 0, 3, "Accum →")
+    table.cell(matrix, 0, 4, "Distrib →")
+    table.cell(matrix, 0, 5, "Pullback →")
+    table.cell(matrix, 0, 6, "Chop →")
+    table.cell(matrix, 0, 7, "N row / estimate")
+    table.cell(matrix, 1, 1, r0 >= minimumRowSupport ? str.tostring(p00 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 2, 1, r0 >= minimumRowSupport ? str.tostring(p01 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 3, 1, r0 >= minimumRowSupport ? str.tostring(p02 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 4, 1, r0 >= minimumRowSupport ? str.tostring(p03 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 5, 1, r0 >= minimumRowSupport ? str.tostring(p04 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 6, 1, r0 >= minimumRowSupport ? str.tostring(p05 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 1, 2, r1 >= minimumRowSupport ? str.tostring(p10 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 2, 2, r1 >= minimumRowSupport ? str.tostring(p11 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 3, 2, r1 >= minimumRowSupport ? str.tostring(p12 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 4, 2, r1 >= minimumRowSupport ? str.tostring(p13 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 5, 2, r1 >= minimumRowSupport ? str.tostring(p14 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 6, 2, r1 >= minimumRowSupport ? str.tostring(p15 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 1, 3, r2 >= minimumRowSupport ? str.tostring(p20 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 2, 3, r2 >= minimumRowSupport ? str.tostring(p21 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 3, 3, r2 >= minimumRowSupport ? str.tostring(p22 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 4, 3, r2 >= minimumRowSupport ? str.tostring(p23 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 5, 3, r2 >= minimumRowSupport ? str.tostring(p24 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 6, 3, r2 >= minimumRowSupport ? str.tostring(p25 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 1, 4, r3 >= minimumRowSupport ? str.tostring(p30 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 2, 4, r3 >= minimumRowSupport ? str.tostring(p31 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 3, 4, r3 >= minimumRowSupport ? str.tostring(p32 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 4, 4, r3 >= minimumRowSupport ? str.tostring(p33 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 5, 4, r3 >= minimumRowSupport ? str.tostring(p34 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 6, 4, r3 >= minimumRowSupport ? str.tostring(p35 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 1, 5, r4 >= minimumRowSupport ? str.tostring(p40 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 2, 5, r4 >= minimumRowSupport ? str.tostring(p41 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 3, 5, r4 >= minimumRowSupport ? str.tostring(p42 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 4, 5, r4 >= minimumRowSupport ? str.tostring(p43 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 5, 5, r4 >= minimumRowSupport ? str.tostring(p44 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 6, 5, r4 >= minimumRowSupport ? str.tostring(p45 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 1, 6, r5 >= minimumRowSupport ? str.tostring(p50 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 2, 6, r5 >= minimumRowSupport ? str.tostring(p51 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 3, 6, r5 >= minimumRowSupport ? str.tostring(p52 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 4, 6, r5 >= minimumRowSupport ? str.tostring(p53 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 5, 6, r5 >= minimumRowSupport ? str.tostring(p54 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 6, 6, r5 >= minimumRowSupport ? str.tostring(p55 * 100, "#.0") + "%" : "n<" + str.tostring(minimumRowSupport))
+    table.cell(matrix, 1, 7, "Bull " + str.tostring(r0))
+    table.cell(matrix, 2, 7, "Bear " + str.tostring(r1))
+    table.cell(matrix, 3, 7, "Acc " + str.tostring(r2))
+    table.cell(matrix, 4, 7, "Dist " + str.tostring(r3))
+    table.cell(matrix, 5, 7, "Pull " + str.tostring(r4))
+    table.cell(matrix, 6, 7, "Chop " + str.tostring(r5))
+
+// Status line makes row support and state available without interpreting the table.
+plot(currentRowSupport, "Current regime transition support", display=display.data_window)
+plot(regime, "Current regime id: Bull=0 Bear=1 Acc=2 Dist=3 Pullback=4 Chop=5", display=display.data_window)

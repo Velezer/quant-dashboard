@@ -1,0 +1,6 @@
+interface:
+  display_name: "Python → Rust Migration"
+  short_description: "Migrate Python compute to Rust with parity and benchmarks"
+  default_prompt: "Use $python-to-rust-migration to plan and execute a safe Python-to-Rust migration with behavioral parity."
+policy:
+  allow_implicit_invocation: true

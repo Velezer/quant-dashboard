@@ -1,0 +1,65 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+htmlcov/
+.hypothesis/
+.tox/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+.BIN/
+
+# Logs and runtime artifacts
+*.log
+*.tmp
+*.bak
+
+# Temporary scratch and media storage
+scratch/
+.tempmediaStorage/
+
+# Durable application data is local and belongs in the app and ticker SQLite databases.
+# Keep the databases and their SQLite-managed journal files out of Git.
+/data/
+
+# Generated runtime exports and Rust build products
+backend/service/target/
+quant/core/target/
+/target/
+
+# Local dashboard runtime output
+/server_runtime*.err
+/server_runtime*.out
+

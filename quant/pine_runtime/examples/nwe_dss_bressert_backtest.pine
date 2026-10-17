@@ -1,0 +1,114 @@
+//@version=6
+// NWE endpoint calculation adapted from the repository's LuxAlgo implementation.
+// Copyright (C) quant project contributors.
+// This file is distributed under CC BY-NC-SA 4.0.
+// NWE method attribution: © LuxAlgo, CC BY-NC-SA 4.0.
+// https://creativecommons.org/licenses/by-nc-sa/4.0/
+strategy("NWE + DSS Bressert · Fixed-Horizon Backtest", overlay=true, pyramiding=1, default_qty_type=strategy.percent_of_equity, default_qty_value=100, process_orders_on_close=false)
+
+// Research parity defaults. See quant/core/src/evidence/nwe_dss.rs and
+// quant/core/src/strategies/dss_bressert_4h.rs in the source project.
+// Note: the Rust NWE warm-up requires window + 1 bars for prior-band crossing.
+int nweWindow = input.int(500, "NWE window", minval=2, maxval=500)
+float nweBandwidth = input.float(8.0, "NWE bandwidth (bars)", minval=0.1, maxval=500.0)
+float nweMultiplier = input.float(3.0, "NWE envelope multiplier", minval=0.0, maxval=100.0)
+int dssPds = input.int(10, "DSS stochastic period", minval=1, maxval=200)
+int dssEmaLength = input.int(9, "DSS smoothing EMA", minval=1, maxval=200)
+int dssTriggerLength = input.int(5, "DSS trigger EMA", minval=1, maxval=200)
+float nearSpread = input.float(5.0, "DSS near-cross spread", minval=0.0, maxval=100.0)
+float minimumCombinedScore = input.float(1.0, "Minimum combined DSS + NWE score (out of 20)", minval=0.0, maxval=20.0)
+int holdBars = input.int(8, "Forward exit horizon (bars)", minval=1, maxval=100)
+bool allowShort = input.bool(true, "Include short signals")
+bool showEnvelope = input.bool(true, "Show causal NWE envelope")
+
+// Endpoint NWE: trailing Gaussian-weighted close and rolling endpoint MAE.
+int nweSampleCount = math.min(bar_index + 1, nweWindow)
+float weightedClose = 0.0
+float weightTotal = 0.0
+bool completeWindow = bar_index >= nweWindow - 1
+for age = 0 to nweSampleCount - 1
+    float sample = close[age]
+    float weight = math.exp(-(age * age) / (2.0 * nweBandwidth * nweBandwidth))
+    weightedClose += sample * weight
+    weightTotal += weight
+float partialNweMid = weightTotal > 0 ? weightedClose / weightTotal : na
+float nweMid = completeWindow ? partialNweMid : na
+
+// The core records endpoint residuals during partial-window warm-up, then
+// exposes the full-window midline and bands once enough history is available.
+float endpointError = not na(partialNweMid) ? math.abs(close - partialNweMid) : na
+float rollingMae = ta.sma(endpointError, nweWindow - 1) * nweMultiplier
+float nweUpper = nweMid + rollingMae
+float nweLower = nweMid - rollingMae
+float envelopeWidth = nweUpper - nweLower
+bool nweReady = bar_index >= nweWindow and not na(nweUpper) and not na(nweLower) and not na(nweUpper[1]) and not na(nweLower[1]) and envelopeWidth > 0
+bool crossedBelowLower = nweReady and close < nweLower and close[1] >= nweLower[1]
+bool crossedAboveUpper = nweReady and close > nweUpper and close[1] <= nweUpper[1]
+float maxBandDistance = envelopeWidth * 0.5
+float lowerDistance = math.abs(close - nweLower)
+float upperDistance = math.abs(nweUpper - close)
+bool nweLongNear = nweReady and not crossedBelowLower and not crossedAboveUpper and lowerDistance < upperDistance and lowerDistance <= maxBandDistance
+bool nweShortNear = nweReady and not crossedBelowLower and not crossedAboveUpper and upperDistance < lowerDistance and upperDistance <= maxBandDistance
+bool nweLong = crossedBelowLower or nweLongNear
+bool nweShort = crossedAboveUpper or nweShortNear
+
+// DSS Bressert defaults: 10 / 9 / 5. Double stochastic EMA smoothing.
+float rangeLow = ta.lowest(low, dssPds)
+float rangeHigh = ta.highest(high, dssPds)
+float stoch = rangeHigh == rangeLow ? 50.0 : (close - rangeLow) / (rangeHigh - rangeLow) * 100.0
+float smooth1 = ta.ema(stoch, dssEmaLength)
+// The Rust calculate_dss contract stochastically normalizes the smoothed line
+// against the same bar's high/low value (smooth1, smooth1, smooth1).
+float smoothLow = ta.lowest(smooth1, dssPds)
+float smoothHigh = ta.highest(smooth1, dssPds)
+float secondRange = smoothHigh - smoothLow
+float stoch2 = not na(secondRange) ? (secondRange == 0 ? 50.0 : 100.0 * (smooth1 - smoothLow) / secondRange) : na
+float dss = ta.ema(stoch2, dssEmaLength)
+float trigger = ta.ema(dss, dssTriggerLength)
+float spread = dss - trigger
+float previousSpread = dss[1] - trigger[1]
+bool bullishCross = previousSpread <= 0 and spread > 0
+bool bearishCross = previousSpread >= 0 and spread < 0
+bool bullishNear = spread < 0 and spread > previousSpread and math.abs(spread) <= nearSpread
+bool bearishNear = spread > 0 and spread < previousSpread and math.abs(spread) <= nearSpread
+bool dssLong = bullishCross or bullishNear
+bool dssShort = bearishCross or bearishNear
+float dssStrength = bullishCross or bearishCross ? 10.0 : nearSpread > 0 ? 10.0 * (1.0 - math.abs(spread) / nearSpread) : 0.0
+float nweStrength = crossedBelowLower or crossedAboveUpper ? 10.0 : nweLongNear ? 10.0 * (1.0 - lowerDistance / maxBandDistance) : nweShortNear ? 10.0 * (1.0 - upperDistance / maxBandDistance) : 0.0
+float combinedScore = dssStrength + nweStrength
+
+// Match only same-direction DSS and causal NWE states. With order processing
+// on close disabled, entries fill on the next bar's open. Exit on the close of
+// the selected holding bar, matching the research engine's timeout meaning.
+bool longSignal = barstate.isconfirmed and dssLong and nweReady and nweLong and combinedScore >= minimumCombinedScore
+bool shortSignal = allowShort and barstate.isconfirmed and dssShort and nweReady and nweShort and combinedScore >= minimumCombinedScore
+bool flat = strategy.position_size == 0
+bool longEntry = longSignal and flat
+bool shortEntry = shortSignal and flat
+var int entrySignalBar = na
+if longEntry
+    strategy.entry("Long", strategy.long)
+    entrySignalBar := bar_index
+if shortEntry
+    strategy.entry("Short", strategy.short)
+    entrySignalBar := bar_index
+
+// The entry signal occurs one bar before its next-open fill. Therefore the
+// timeout close is the signal bar + holdBars, at that bar's closing tick.
+bool timeoutExit = strategy.position_size != 0 and not na(entrySignalBar) and bar_index - entrySignalBar >= holdBars
+if timeoutExit
+    if strategy.position_size > 0
+        strategy.close("Long", immediately=true)
+    else
+        strategy.close("Short", immediately=true)
+    entrySignalBar := na
+
+// Entry signals while a position is open are ignored; no pyramiding or reversal.
+barcolor(longEntry ? color.lime : shortEntry ? color.red : na, title="NWE + DSS strategy entries")
+
+plot(showEnvelope ? partialNweMid : na, "Causal NWE midline · develops during warm-up", color=color.new(color.silver, 25))
+plot(showEnvelope ? nweUpper : na, "Causal NWE upper", color=color.new(color.orange, 15))
+plot(showEnvelope ? nweLower : na, "Causal NWE lower", color=color.new(color.aqua, 15))
+plotshape(longEntry, "NWE + DSS LONG entry", shape.triangleup, location.belowbar, color=color.lime, text="L", textcolor=color.black, size=size.tiny)
+plotshape(shortEntry, "NWE + DSS SHORT entry", shape.triangledown, location.abovebar, color=color.red, text="S", textcolor=color.white, size=size.tiny)
+

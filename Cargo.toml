@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "quant/core",
+    "quant/pine_runtime",
+    "backend/service",
+]
+resolver = "2"
+
+[profile.release]
+opt-level = "s"       # Optimize for minimum binary size and RAM footprint
+lto = true             # Link-time optimization: eliminates dead code across crates
+codegen-units = 1      # Maximize whole-program optimization
+panic = "abort"        # Eliminates unwinding landing pads and EH frame tables
+strip = true           # Strip all debug symbols and names from final binary
