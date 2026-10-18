@@ -157,7 +157,11 @@ struct Candle {
 }
 
 fn main() {
-    let address = env::var("QUANT_RUST_ADDR").unwrap_or_else(|_| "127.0.0.1:7777".into());
+    let address = env::var("QUANT_RUST_ADDR").unwrap_or_else(|_| {
+        env::var("PORT")
+            .map(|port| format!("0.0.0.0:{port}"))
+            .unwrap_or_else(|_| "127.0.0.1:7777".into())
+    });
     let market_dir = env::var("QUANT_MARKET_DIR").unwrap_or_else(|_| DEFAULT_MARKET_DIR.into());
     let app_database = env::var("QUANT_APP_DB").unwrap_or_else(|_| DEFAULT_APP_DB.into());
     let signal_database = database::configured_signal_database_path()

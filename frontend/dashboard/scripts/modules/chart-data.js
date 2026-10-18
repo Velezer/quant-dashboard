@@ -14,6 +14,43 @@ export { CHART_INDICATOR_IDS } from './chart-indicator-data.js';
 export function installChartData() {
             let windowPanOffset = 0;
             let showMarkovRegimeIndicator = true;
+            let showVolumeDelta = false;
+
+            function updateVolumeDeltaStatus(candles = [], signal = selectedSignal) {
+                const status = document.getElementById('volumeDeltaStatus');
+                const button = document.getElementById('toggleVolumeDeltaBtn');
+                const legend = document.getElementById('legendVolumeDelta');
+                if (button) {
+                    button.textContent = showVolumeDelta ? 'VOL Δ ON' : 'VOL Δ OFF';
+                    button.setAttribute('aria-pressed', String(showVolumeDelta));
+                    button.classList.toggle('bg-teal-700', showVolumeDelta);
+                    button.classList.toggle('text-white', showVolumeDelta);
+                    button.classList.toggle('border-teal-500', showVolumeDelta);
+                    button.classList.toggle('text-gray-400', !showVolumeDelta);
+                    button.classList.toggle('border-gray-600/50', !showVolumeDelta);
+                }
+                if (legend) legend.classList.toggle('hidden', !showVolumeDelta);
+                if (status) {
+                    status.classList.toggle('hidden', !showVolumeDelta);
+                    if (!showVolumeDelta) return;
+                    const available = (Array.isArray(candles) ? candles : [])
+                        .some(candle => Number.isFinite(Number(candle?.volume)) && Number(candle.volume) > 0);
+                    status.textContent = !signal
+                        ? 'VOL Δ: Select a signal'
+                        : available
+                            ? `VOL Δ estimate · ${String(activeTimeframe || 'chart').toUpperCase()}`
+                            : 'VOL Δ: Volume unavailable';
+                    status.title = available
+                        ? 'Research estimate from selected chart bars. Up/down direction is inferred by comparing chart-bar closes; TradingView lower-timeframe and 1 tick aggregation are unavailable.'
+                        : 'The selected symbol has no usable volume history. Choose a symbol with volume data or reload chart history.';
+                }
+            }
+
+            function toggleVolumeDelta() {
+                showVolumeDelta = !showVolumeDelta;
+                updateVolumeDeltaStatus(getDashboardBinding('getChartCandles')?.() || []);
+                if (selectedSignal) drawCandleChart(selectedSignal);
+            }
 
             function updateMarkovRegimeStatus(signal = selectedSignal) {
                 const status = document.getElementById('markov-regime-status');
@@ -656,6 +693,9 @@ export function installChartData() {
     publishDashboardBindings('chart-data', {
         windowPanOffset: { get: () => windowPanOffset, set: value => { windowPanOffset = value; } },
         showMarkovRegimeIndicator: { get: () => showMarkovRegimeIndicator, set: value => { showMarkovRegimeIndicator = value; } },
+        showVolumeDelta: { get: () => showVolumeDelta },
+        toggleVolumeDelta: { get: () => toggleVolumeDelta },
+        updateVolumeDeltaStatus: { get: () => updateVolumeDeltaStatus },
         updateMarkovRegimeStatus: { get: () => updateMarkovRegimeStatus },
         toggleMarkovRegimeIndicator: { get: () => toggleMarkovRegimeIndicator },
         CHART_INDICATOR_IDS: { get: () => CHART_INDICATOR_IDS },
