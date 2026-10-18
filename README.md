@@ -32,6 +32,24 @@ tooling/                      Canonical launcher and harness scripts
 
 The Rust workspace contains `backend/service` and `quant/core`. The backend serves dashboard files from `frontend/dashboard` while retaining the existing `/web/...` asset URLs. Retired backtest URLs redirect to the live dashboard; plan cards read any historical evidence from SQLite.
 
+## Railway deployment preparation
+
+The repository includes a Docker build and `railway.toml`. Create a Railway service from this repository root and attach a persistent volume mounted at `/data`. The image listens on Railway's `PORT` and serves `/api/health` for the configured health check. The volume must retain all three SQLite stores; the container filesystem is disposable. The startup command initializes empty databases, while market history and registry data must be gathered or restored separately.
+
+The service configuration sets these storage paths in the image:
+
+```text
+QUANT_MARKET_DIR=/data/market/tickers
+QUANT_APP_DB=/data/app/app.sqlite3
+QUANT_SIGNAL_DB=/data/signals/signals.sqlite3
+```
+
+The dashboard does not currently provide user authentication. Keep the Railway service private or put an authenticated access layer in front of it before assigning a public domain. The first deployment needs an empty persistent volume or a validated copy of the local SQLite stores; do not point the app database and signal database at the same file.
+
+## Volume Delta study
+
+The chart's **VOL Δ** control renders a per-bar volume delta estimate in the chart volume band. It classifies each selected chart candle's volume by comparing its close with the preceding chart candle's close (using the candle body for ties). This keeps the study available on the chart while making the data-resolution limit explicit. TradingView's lower-timeframe scan, custom timeframe selection, and expert-plan `1 tick` aggregation are not available in this dashboard runtime; the displayed estimate is not a parity implementation of `ta.requestVolumeDelta()`.
+
 SQLite is the only durable application-data store. `QUANT_MARKET_DIR` (default `data/market/tickers`) holds one SQLite database per exact storage symbol, with its canonical `bars`, `series`, and `ingestion_runs`. `QUANT_APP_DB` (default `data/app/app.sqlite3`) holds catalogs, instruments, plans, evidence, listing status, scheduler cursors, signal-alert history, indicator-model settings, and app metadata. `QUANT_SIGNAL_DB` (default `data/signals/signals.sqlite3`) holds the active signal-screener snapshot and scan status; every successful scan replaces the previous snapshot transactionally. `QUANT_MARKET_DB` (default `data/market/market.sqlite3`) is only the explicit offline migration source. `data/` contains the app database, signal database, ticker databases, and SQLite-managed journal files. The browser receives authoritative data from the Rust API; the HTML is a static shell. Structured requests, responses, and browser/server messages use plain JSON with `application/json`.
 
 For an existing legacy combined database, stop the service. Run `tooling/split-market-database.bat` if app-owned tables remain, then run `tooling/shard-market-database.bat` to distribute history by storage symbol. Both migrations validate row counts and stored values, record hashes and counts in SQLite, and retire source data only after validation succeeds. Startup never migrates implicitly.

@@ -4,6 +4,7 @@ import { getDashboardBinding, publishDashboardBindings } from './runtime-context
 import { drawMomentumPane } from './chart-momentum-renderer.js';
 import { pineChartPlots } from './pine-chart-output.js';
 import { isIntradayChartTimeframe } from './chart-candle-time.js';
+import { estimateVolumeDeltaBars, volumeDeltaExtent } from './volume-delta.js';
 
 /** Draws the selected signal's candles, current price, and indicator pane. */
 export function installChartRenderer() {
@@ -20,11 +21,12 @@ export function installChartRenderer() {
                 const chartCurrency = isIdrChart ? 'IDR' : 'USD';
                 const venue = executionVenueMeta(signal);
                 const signalTimeframe = String(signal.timeframe || '--').toUpperCase();
+                const volumeDeltaEnabled = getDashboardBinding('showVolumeDelta') === true;
                 const latestMarkovState = signal.markov_regimes_by_tf?.[activeTimeframe]?.at(-1)?.state;
                 const markovDescription = getDashboardBinding('showMarkovRegimeIndicator') === false
                     ? 'Markov regime ribbon hidden.'
                     : `Markov regime ribbon shows causal historical states; latest is ${latestMarkovState?.replaceAll('_', ' ') || 'warming up or unavailable'}.`;
-                canvas.setAttribute('aria-label', `${venue.label} · ${signal.asset || signal.symbol || 'Selected asset'} · ${activeTimeframe.toUpperCase()} chart. Signal timeframe ${signalTimeframe}. Signal price ${validCurrentPrice === null ? 'unavailable' : formatPrice(validCurrentPrice)}. Synchronized volume histogram. ${markovDescription} Plus/minus zoom, arrows pan, Home fits.`);
+                canvas.setAttribute('aria-label', `${venue.label} · ${signal.asset || signal.symbol || 'Selected asset'} · ${activeTimeframe.toUpperCase()} chart. Signal timeframe ${signalTimeframe}. Signal price ${validCurrentPrice === null ? 'unavailable' : formatPrice(validCurrentPrice)}. ${volumeDeltaEnabled ? 'Volume delta estimate from chart-bar direction.' : 'Synchronized volume histogram.'} ${markovDescription} Plus/minus zoom, arrows pan, Home fits.`);
                 if (typeof updateChartDataWarning === 'function') updateChartDataWarning(signal);
 
                 const ctx = canvas.getContext('2d');
@@ -43,6 +45,8 @@ export function installChartRenderer() {
                 ctx.clearRect(0, 0, width, height);
 
                 const allCandles = getChartCandles(signal);
+                const allVolumeDeltaBars = estimateVolumeDeltaBars(allCandles);
+                getDashboardBinding('updateVolumeDeltaStatus')?.(allCandles, signal);
                 if (allCandles.length === 0) {
                     chartViewport = null;
                     clearMomentumSummary();
@@ -489,10 +493,8 @@ export function installChartRenderer() {
                     ctx.fillRect(x - barW / 2, bodyTop, barW, bodyH);
                 });
 
-                // Compact volume histogram. It shares the exact candle geometry,
-                // so zooming or panning never desynchronizes participation from
-                // price. A missing volume series stays explicit instead of
-                // inventing bars.
+                // Compact volume histogram or the selected chart-bar delta
+                // estimate. Both share candle geometry so panning stays aligned.
                 const volumeValues = candles.map(c => Number(c.volume));
                 const maxVolume = volumeValues.reduce((max, value) => Number.isFinite(value) && value > max ? value : max, 0);
                 const volumePlotHeight = Math.max(8, volumeBottom - volumeTop - 12);
@@ -505,8 +507,51 @@ export function installChartRenderer() {
                 ctx.fillStyle = '#787b86';
                 ctx.font = 'bold 9px monospace';
                 ctx.textAlign = 'left';
-                ctx.fillText('VOL', padding.left, volumeTop + 10);
-                if (maxVolume > 0) {
+                if (volumeDeltaEnabled) {
+                    const visibleDeltaBars = candles.map((_candle, index) => allVolumeDeltaBars[startIndex + index]);
+                    const { maxAbsDelta, hasVolume } = volumeDeltaExtent(visibleDeltaBars);
+                    ctx.fillText('VOL Δ', padding.left, volumeTop + 10);
+                    if (hasVolume && maxAbsDelta > 0) {
+                        const centerY = volumeTop + 12 + (volumeBottom - volumeTop - 18) / 2;
+                        const halfHeight = Math.max(4, (volumeBottom - volumeTop - 18) / 2);
+                        ctx.strokeStyle = 'rgba(120, 123, 134, 0.45)';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(padding.left, centerY);
+                        ctx.lineTo(width - padding.right, centerY);
+                        ctx.stroke();
+                        visibleDeltaBars.forEach((deltaBar, i) => {
+                            if (!Number.isFinite(deltaBar?.close)) return;
+                            const x = padding.left + (i - barFraction) * stepX + stepX / 2;
+                            const yForDelta = value => centerY - value / maxAbsDelta * halfHeight;
+                            const color = deltaBar.close >= 0 ? '#089981' : '#f23645';
+                            ctx.strokeStyle = color;
+                            ctx.lineWidth = Math.max(1, Math.min(1.4, barW));
+                            ctx.beginPath();
+                            ctx.moveTo(x, yForDelta(deltaBar.high));
+                            ctx.lineTo(x, yForDelta(deltaBar.low));
+                            ctx.stroke();
+                            const yOpen = yForDelta(deltaBar.open);
+                            const yClose = yForDelta(deltaBar.close);
+                            ctx.fillStyle = color;
+                            ctx.fillRect(x - Math.max(1, barW / 2), Math.min(yOpen, yClose), Math.max(1, barW), Math.max(1, Math.abs(yClose - yOpen)));
+                        });
+                        const latestDelta = visibleDeltaBars.at(-1)?.close;
+                        const absDelta = Math.abs(latestDelta);
+                        const deltaLabel = absDelta >= 1e9 ? `${(absDelta / 1e9).toFixed(1)}B`
+                            : absDelta >= 1e6 ? `${(absDelta / 1e6).toFixed(1)}M`
+                                : absDelta >= 1e3 ? `${(absDelta / 1e3).toFixed(1)}K`
+                                    : `${Math.round(absDelta)}`;
+                        ctx.textAlign = 'right';
+                        ctx.fillStyle = latestDelta >= 0 ? '#5eead4' : '#fda4af';
+                        ctx.fillText(`VOL Δ ${latestDelta >= 0 ? '+' : '−'}${deltaLabel}`, width - padding.right - 6, volumeTop + 10);
+                    } else {
+                        ctx.fillStyle = '#64748b';
+                        ctx.font = '9px monospace';
+                        ctx.fillText(hasVolume ? 'VOL Δ · ZERO' : 'VOLUME · UNAVAILABLE', padding.left + 42, volumeTop + 10);
+                    }
+                } else if (maxVolume > 0) {
+                    ctx.fillText('VOL', padding.left, volumeTop + 10);
                     candles.forEach((c, i) => {
                         const volume = Number(c.volume);
                         if (!Number.isFinite(volume) || volume <= 0) return;
@@ -523,6 +568,7 @@ export function installChartRenderer() {
                     ctx.textAlign = 'right';
                     ctx.fillText(`VOL ${volumeLabel}`, width - padding.right - 6, volumeTop + 10);
                 } else {
+                    ctx.fillText('VOL', padding.left, volumeTop + 10);
                     ctx.fillStyle = '#64748b';
                     ctx.font = '9px monospace';
                     ctx.fillText('VOLUME · UNAVAILABLE', padding.left + 32, volumeTop + 10);

@@ -1,0 +1,10 @@
+.git
+.agents
+.serena
+.env*
+data
+scratch
+target
+**/target
+*.log
+*.tmp

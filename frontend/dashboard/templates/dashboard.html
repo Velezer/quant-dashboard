@@ -142,6 +142,7 @@
 
                                 <div class="tv-tool-group flex items-center gap-1 bg-gray-800/90 p-1 rounded-xl border border-gray-700 shadow-inner">
                                     <span class="text-[10px] text-gray-400 font-bold px-1.5 uppercase tracking-wider">STUDY</span>
+                                    <button id="toggleVolumeDeltaBtn" data-dashboard-action="toggleVolumeDelta" aria-label="Toggle Volume Delta chart study" aria-pressed="false" title="Volume Delta estimate using the selected chart bars. Direction is inferred from chart-bar closes; TradingView lower-timeframe and tick aggregation are not available in this dashboard runtime." class="px-2 py-1 rounded-lg text-xs font-bold font-mono text-gray-400 hover:text-teal-300 hover:bg-gray-700 cursor-pointer border border-gray-600/50 tracking-wider">VOL Δ OFF</button>
                                     <button id="toggleNweEnvelopeBtn" data-dashboard-action="toggleNadarayaWatsonEnvelope" aria-label="Toggle Nadaraya-Watson Envelope research overlay" aria-pressed="true" title="LuxAlgo Nadaraya-Watson Envelope study. See chart study attribution and license details in the legend." class="px-2 py-1 rounded-lg text-xs font-bold font-mono bg-violet-700 text-white hover:bg-violet-600 cursor-pointer border border-violet-500 tracking-wider">NWE ON</button>
                                     <button id="toggleNweRepaintBtn" data-dashboard-action="toggleNadarayaWatsonRepainting" aria-label="Toggle repainting mode for the Nadaraya-Watson Envelope" aria-pressed="true" title="Repainting uses later bars for historical points; historical values may change as the series grows. Select Endpoint for one-sided values." class="px-2 py-1 rounded-lg text-[10px] font-bold font-mono bg-amber-700 text-white hover:bg-amber-600 cursor-pointer border border-amber-500 tracking-wider">REPAINT ON</button>
                                 </div>
@@ -351,6 +352,7 @@
                     <div id="tv-chart-legend" class="tv-chart-legend flex items-center gap-2.5 text-xs flex-wrap text-gray-300">
                         <div class="flex items-center gap-1"><span class="w-2.5 h-0.5 bg-amber-400 inline-block"></span> Now</div>
                         <div id="legendNweEnvelope" class="flex items-center gap-1 border-l border-gray-700 pl-2 transition" title="Nadaraya-Watson Envelope [LuxAlgo], © LuxAlgo. Licensed under CC BY-NC-SA 4.0: https://creativecommons.org/licenses/by-nc-sa/4.0/. Research study only; crossing markers are not trade instructions."><span class="w-2.5 h-0.5 bg-teal-400 inline-block"></span> NWE upper <span class="w-2.5 h-0.5 bg-red-500 inline-block ml-1"></span> lower <span class="text-teal-400 ml-1">▲</span><span class="text-red-400">▼</span></div>
+                        <div id="legendVolumeDelta" class="hidden items-center gap-1 border-l border-gray-700 pl-2" title="Chart-bar volume delta estimate. Up/down volume is inferred from candle closes, without lower-timeframe or tick data."><span class="text-teal-400">▮</span> Volume delta estimate</div>
                         <div id="legendLiqIndicator" class="flex items-center gap-1 border-l border-gray-700 pl-2 transition" style="opacity: 0.35;"><span class="w-2.5 h-0.5 bg-purple-400 inline-block"></span> 10x/25x Liq</div>
                     </div>
                 </div>
@@ -369,6 +371,7 @@
                             <span>C <b id="tv-ohlc-c" class="text-gray-200">--</b></span>
                             <span id="tv-ohlc-chg" class="font-bold">--</span>
                             <span id="nwe-envelope-status" class="font-bold text-violet-300 border-l border-gray-700 pl-2" role="status" aria-live="polite" title="Research-only price location; not a buy or sell signal.">NWE: Select a signal</span>
+                            <span id="volumeDeltaStatus" class="hidden font-bold text-teal-300 border-l border-gray-700 pl-2" role="status" aria-live="polite"></span>
                         </div>
                     </div>
                     <div class="flex items-center gap-2 text-[11px] text-gray-400 flex-wrap justify-end">
