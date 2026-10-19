@@ -245,11 +245,11 @@ fn freshness_thresholds_match_market_cadence() {
 #[test]
 fn provider_sync_errors_have_actionable_reasons() {
     assert_eq!(
-        sync_error_reason("curl exit code: Some(7)"),
+        sync_error_reason("public HTTP request failed: Connection refused"),
         "Market-data provider could not connect"
     );
     assert_eq!(
-        sync_error_reason("curl exit code: Some(28)"),
+        sync_error_reason("public HTTP request failed: timed out"),
         "Market-data provider request timed out"
     );
     assert_eq!(
@@ -381,14 +381,14 @@ fn sync_diagnostics_keep_the_latest_unresolved_series_reason() {
             "INSERT INTO series (symbol, interval, source, timezone, price_basis, instrument_kind,
                  last_success, last_attempt, last_error)
                  VALUES ('TEST-USD', '15m', 'yfinance_fallback', 'UTC', 'unadjusted', 'test',
-                 '2026-09-22 14:00:00 UTC', '2026-09-22 15:00:00 UTC', 'curl exit code: Some(7)')",
+                 '2026-09-22 14:00:00 UTC', '2026-09-22 15:00:00 UTC', 'public HTTP request failed: Connection refused')",
             [],
         )
         .expect("failed series metadata should persist");
     connection
             .execute(
                 "INSERT INTO ingestion_runs (symbol, interval, source, attempted_at, status, rows_received, error)
-                 VALUES ('MISSING-USD', '15m', 'yfinance_fallback', '2026-09-23 10:46:43 UTC', 'error', 0, 'curl exit code: Some(7)')",
+                 VALUES ('MISSING-USD', '15m', 'yfinance_fallback', '2026-09-23 10:46:43 UTC', 'error', 0, 'public HTTP request failed: Connection refused')",
                 [],
             )
             .expect("latest failed ingestion run should persist");
@@ -404,7 +404,7 @@ fn sync_diagnostics_keep_the_latest_unresolved_series_reason() {
     connection
             .execute(
                 "INSERT INTO ingestion_runs (symbol, interval, source, attempted_at, status, rows_received, error)
-                 VALUES ('RESOLVED-USD', '15m', 'yfinance_fallback', '2026-09-23 10:50:00 UTC', 'error', 0, 'curl exit code: Some(7)')",
+                 VALUES ('RESOLVED-USD', '15m', 'yfinance_fallback', '2026-09-23 10:50:00 UTC', 'error', 0, 'public HTTP request failed: Connection refused')",
                 [],
             )
             .expect("resolved failed ingestion run should persist");

@@ -19,7 +19,7 @@ pub struct Listing {
 pub fn fetch_all() -> Result<Vec<Listing>, String> {
     let body = super::tokocrypto::get_public_document(
         LISTED_COMPANY_DIRECTORY_URL,
-        "30",
+        30,
         "text/html,application/xhtml+xml",
     )?;
     parse_directory(&body)

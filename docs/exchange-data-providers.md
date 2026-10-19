@@ -101,7 +101,7 @@ Decision effects, scaled to the data and reliability impact:
 [Alpha Vantage API documentation](https://www.alphavantage.co/documentation/),
 and [EODHD pricing](https://eodhd.com/pricing).
 
-## Windows market-data transport recovery — 2026-10-02
+## Historical Windows market-data transport recovery — 2026-10-02 (superseded)
 
 **Observed failure:** The app's Windows `curl.exe` request to Yahoo failed with
 Schannel `CRYPT_E_NO_REVOCATION_CHECK`. The same bounded `.JK` 15-minute query
@@ -110,48 +110,44 @@ with `--ssl-revoke-best-effort` returned HTTP 200. Binance Spot's public
 Futures' documented `fapi.binance.com` request reset the connection even with
 that option. Spot candles are not substituted for the Pintu Futures product.
 
-The research-candle transport now adds `--ssl-revoke-best-effort` on Windows.
-When Windows `curl.exe` cannot complete the request, the bounded Yahoo request
-uses Windows PowerShell's HTTP client with TLS 1.2 and basic parsing. Both
-paths retain the same response-size bound, typed candle validation, provider
-identity, and research-only source label.
-Per curl's documentation, this tolerates only missing or offline certificate
-revocation distribution points; peer trust, certificate chain, hostname, and
-validity checks remain enabled. It does not disable certificate revocation
-checks as `--ssl-no-revoke` would. This lets a public candle request proceed
-when Windows cannot reach an issuer's revocation endpoint. If a provider host
-continues to reset connections, ingestion remains failed, stale data remains
-visible, and the screener withholds current signals.
+At that time, the research-candle transport added
+`--ssl-revoke-best-effort` on Windows and fell back to PowerShell. The service
+has since moved these requests to the Rust `ureq` HTTP client. That change
+removes the runtime dependency on `curl` and PowerShell, keeps bounded request
+timeouts and response sizes, and uses the platform certificate verifier with
+strict TLS validation. It does not implement curl's best-effort behavior for
+offline revocation checks. A TLS validation failure remains a failed request;
+stored history remains visible and current signals stay withheld until fresh
+data is available.
 
 Decision effects for this transport adjustment:
 
-1. **Direct effect:** Windows research-candle requests can succeed when the
-   only failure is an unreachable revocation distribution point. A live HTTP
-   200 and fresh completed bars are the acceptance evidence.
-2. **Immediate consequence:** Yahoo `.JK` can supply recent research candles;
-   all providers remain subject to bounded response parsing and freshness
-   checks.
+1. **Direct effect:** The historical workaround could allow Windows
+   research-candle requests when only a revocation lookup was unreachable.
+   That behavior no longer describes the active transport.
+2. **Immediate consequence:** Yahoo `.JK` could supply recent research
+   candles under the historical workaround. All providers remain subject to
+   bounded response parsing and freshness checks.
 3. **Repeated operation:** The existing per-symbol SQLite upsert and scheduled
    refresh cadence are unchanged; provider errors remain recorded on failure.
-4. **Interactions:** The option applies at the shared research-candle HTTP
-   boundary on Windows only. It does not relabel proxy data or change venue and
-   instrument identity.
+4. **Interactions:** The historical option applied at the shared
+   research-candle boundary on Windows only. The current Rust transport does
+   not relabel proxy data or change venue and instrument identity.
 5. **Accumulation:** No extra database, cache, retry loop, or response memory
    is added; the fixed response bound remains in effect.
-6. **Failure boundary:** Untrusted chains, invalid hostnames, expired
-   certificates, oversized responses, malformed candles, and connection resets
-   still fail closed. Only an unavailable revocation lookup is tolerated.
+6. **Failure boundary:** The active Rust transport fails closed on TLS errors,
+   oversized responses, malformed candles, and connection failures.
 7. **Recovery:** Failed ingestion leaves the UI stale and keeps current signals
-   withheld. A restored revocation service allows normal strict revocation
-   checks to complete.
-8. **Governance:** The change adds no credentials, proxy, scraping, provider,
+   withheld. Once certificate validation can complete, subsequent refreshes
+   resume normal ingestion.
+8. **Governance:** The transport adds no credentials, scraping, new provider,
    or redistribution right.
-9. **Longer-term hypothesis:** Best-effort checks may improve operation on
-   restricted Windows networks; repeated TLS or host failures would show that
-   network egress still needs repair.
-10. **Decision and learning:** This is the smallest reversible transport fix
-    supported by an HTTP 200 comparison. The Binance Futures reset remains a
-    separate network failure and is not hidden by a Spot-data fallback.
+9. **Longer-term hypothesis:** If Windows revocation endpoints are unreachable,
+   requests may fail until network access or the certificate environment is
+   repaired.
+10. **Decision and learning:** The Rust client removes executable availability
+    as a runtime dependency. Binance Futures resets remain separate network
+    failures and are not hidden by a Spot-data fallback.
 
 **Source:** [curl TLS revocation options](https://curl.se/docs/manpage.html#--ssl-revoke-best-effort).
 

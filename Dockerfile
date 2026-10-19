@@ -8,7 +8,7 @@ RUN cargo build --release --target wasm32-unknown-unknown -p quant_pine_runtime 
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /build/target/release/rust_chart_api /app/rust_chart_api

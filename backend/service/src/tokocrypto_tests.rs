@@ -70,8 +70,21 @@ fn rejects_duplicate_or_invalid_bars() {
 
 #[test]
 fn reports_rate_limit_retry_after() {
-    let response = b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 30\r\n\r\n{}";
-    let (status, retry_after, _) = split_http_response(response).unwrap();
-    assert_eq!(status, 429);
-    assert_eq!(retry_after, Some(30));
+    assert_eq!(
+        public_provider_status_error(429, Some(30)).as_deref(),
+        Some("Public provider HTTP 429 rate limit; Retry-After: 30 seconds")
+    );
+}
+
+#[test]
+fn rejects_provider_errors_and_accepts_success_status() {
+    assert_eq!(
+        public_provider_status_error(418, None).as_deref(),
+        Some("Public provider HTTP 418 rate limit")
+    );
+    assert_eq!(
+        public_provider_status_error(503, None).as_deref(),
+        Some("Public provider HTTP 503")
+    );
+    assert_eq!(public_provider_status_error(200, None), None);
 }

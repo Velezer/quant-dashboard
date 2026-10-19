@@ -1,6 +1,5 @@
 use super::{
-    curl_ssl_revocation_options, parse_binance_candles, parse_yahoo_candles, recent_proxy_result,
-    yahoo_request_window,
+    parse_binance_candles, parse_yahoo_candles, recent_proxy_result, yahoo_request_window,
 };
 use rusqlite::Connection;
 
@@ -211,21 +210,6 @@ fn yahoo_non_15m_request_windows_keep_the_existing_interval_mapping() {
         ("1d", "10y")
     );
     assert!(yahoo_request_window("idx_stock", "5m").is_err());
-}
-
-#[test]
-fn windows_research_candle_requests_allow_only_offline_revocation_lookup_errors() {
-    assert_eq!(
-        curl_ssl_revocation_options(true),
-        &["--ssl-revoke-best-effort"]
-    );
-    assert!(curl_ssl_revocation_options(false).is_empty());
-    #[cfg(windows)]
-    {
-        assert!(super::POWERSHELL_RESEARCH_REQUEST.contains("-UseBasicParsing"));
-        assert!(super::POWERSHELL_RESEARCH_REQUEST.contains("SecurityProtocolType]::Tls12"));
-        assert!(super::POWERSHELL_RESEARCH_REQUEST.contains("-gt 524288"));
-    }
 }
 
 #[test]

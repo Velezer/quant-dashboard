@@ -19,9 +19,9 @@ pub struct Listing {
 
 pub fn fetch_all() -> Result<Vec<Listing>, String> {
     // Fetch and validate every product before the registry starts a transaction.
-    let retail = super::tokocrypto::get_public_json(RETAIL_URL, "25")?;
-    let spot = super::tokocrypto::get_public_json(PRO_SPOT_URL, "25")?;
-    let futures = super::tokocrypto::get_public_json(PRO_FUTURES_URL, "25")?;
+    let retail = super::tokocrypto::get_public_json(RETAIL_URL, 25)?;
+    let spot = super::tokocrypto::get_public_json(PRO_SPOT_URL, 25)?;
+    let futures = super::tokocrypto::get_public_json(PRO_FUTURES_URL, 25)?;
     let mut all = parse_retail(&retail)?;
     all.extend(parse_pro_spot(&spot)?);
     all.extend(parse_pro_futures(&futures)?);

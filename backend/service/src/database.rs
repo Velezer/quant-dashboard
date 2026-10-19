@@ -18,6 +18,8 @@ pub(super) const LAYOUT_VERSION: &str = "3";
 #[path = "database_sharding.rs"]
 mod sharding;
 pub(super) use sharding::shard_market_database;
+#[cfg(test)]
+use sharding::within;
 #[path = "database_signal_screener.rs"]
 mod signal_screener_migration;
 pub(super) use signal_screener_migration::migrate_signal_screener_snapshot;
