@@ -1,23 +1,10 @@
 # syntax=docker/dockerfile:1.7
 FROM rust:1-bookworm AS build
 WORKDIR /build
-RUN --mount=type=secret,id=proxy_ca,required=false \
-    if [ -f /run/secrets/proxy_ca ]; then \
-        SSL_CERT_FILE=/run/secrets/proxy_ca rustup target add wasm32-unknown-unknown; \
-    else \
-        rustup target add wasm32-unknown-unknown; \
-    fi
+RUN rustup target add wasm32-unknown-unknown
 COPY . .
-RUN --mount=type=secret,id=proxy_ca,required=false \
-    if [ -f /run/secrets/proxy_ca ]; then \
-        SSL_CERT_FILE=/run/secrets/proxy_ca CARGO_HTTP_CAINFO=/run/secrets/proxy_ca \
-            cargo build --release --target wasm32-unknown-unknown -p quant_pine_runtime \
-            && SSL_CERT_FILE=/run/secrets/proxy_ca CARGO_HTTP_CAINFO=/run/secrets/proxy_ca \
-                cargo build --release -p rust_chart_api; \
-    else \
-        cargo build --release --target wasm32-unknown-unknown -p quant_pine_runtime \
-            && cargo build --release -p rust_chart_api; \
-    fi
+RUN cargo build --release --target wasm32-unknown-unknown -p quant_pine_runtime \
+    && cargo build --release -p rust_chart_api
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
