@@ -5,12 +5,14 @@ use super::*;
 
 pub fn sync_error_reason(error: &str) -> &'static str {
     let normalized = error.to_ascii_lowercase();
-    if normalized.contains("exit code: some(7)") || normalized.contains("could not connect") {
-        "Market-data provider could not connect"
-    } else if normalized.contains("exit code: some(28)") || normalized.contains("timed out") {
+    if normalized.contains("exit code: some(28)")
+        || normalized.contains("timed out")
+        || normalized.contains("timeout")
+    {
         "Market-data provider request timed out"
     } else if normalized.contains("exit code: some(6)")
         || normalized.contains("could not resolve host")
+        || normalized.contains("dns")
     {
         "Market-data provider hostname could not be resolved"
     } else if normalized.contains("exit code: some(35)")
@@ -18,6 +20,13 @@ pub fn sync_error_reason(error: &str) -> &'static str {
         || normalized.contains("tls")
     {
         "Market-data provider TLS connection failed"
+    } else if normalized.contains("exit code: some(7)")
+        || normalized.contains("could not connect")
+        || normalized.contains("connection refused")
+        || normalized.contains("connect error")
+        || normalized.contains("network is unreachable")
+    {
+        "Market-data provider could not connect"
     } else if normalized.contains("disabled") {
         "Market-data provider sync is disabled"
     } else if normalized.contains("no chart result")

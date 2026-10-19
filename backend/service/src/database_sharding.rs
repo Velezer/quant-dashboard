@@ -621,7 +621,7 @@ fn normalize(path: &str) -> Result<PathBuf, String> {
 pub(super) fn same_path(a: &str, b: &str) -> Result<bool, String> {
     Ok(normalize(a)? == normalize(b)?)
 }
-fn within(path: &str, dir: &str) -> Result<bool, String> {
+pub(super) fn within(path: &str, dir: &str) -> Result<bool, String> {
     Ok(normalize(path)?.starts_with(normalize(dir)?))
 }
 struct Fnv64(u64);

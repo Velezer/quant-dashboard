@@ -23,11 +23,7 @@ use providers::{
 };
 #[path = "research_proxy_warmup.rs"]
 mod warmup;
-#[cfg(any(not(windows), test))]
-pub(crate) use transport::curl_ssl_revocation_options;
 pub(crate) use transport::fetch_bounded_url;
-#[cfg(all(windows, test))]
-pub(crate) use transport::POWERSHELL_RESEARCH_REQUEST;
 
 use parsing::{
     parse_binance_candles, parse_yahoo_candles, validate_bar, FIFTEEN_MINUTE_INTERVAL_SECONDS,

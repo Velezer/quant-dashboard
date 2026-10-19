@@ -1,16 +1,15 @@
 //! Bounded, public Tokocrypto market-data reads. No account or order endpoints.
 
 use serde_json::Value;
-use std::collections::HashSet;
-use std::io::Read;
-use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashSet,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 pub(super) const SYMBOLS_URL: &str = "https://www.tokocrypto.com/open/v1/common/symbols";
 pub(super) const MAIN_KLINES_URL: &str = "https://www.tokocrypto.site/api/v3/klines";
 pub(super) const NEXT_KLINES_URL: &str = "https://cloudme-toko.2meta.app/api/v1/klines";
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
-const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_SYMBOLS: usize = 20_000;
 const MAX_KLINES: usize = 1_000;
 
@@ -36,7 +35,7 @@ pub struct MarketBar {
 /// Read the venue's current supported-symbol list. Unsupported symbol types are
 /// retained in the result so callers can distinguish them from missing symbols.
 pub fn fetch_symbols() -> Result<Vec<VenueSymbol>, String> {
-    let body = get_public_json(SYMBOLS_URL, "45")?;
+    let body = get_public_json(SYMBOLS_URL, 45)?;
     parse_symbols(&body)
 }
 
@@ -48,7 +47,7 @@ pub fn fetch_klines(
     limit: usize,
 ) -> Result<Vec<MarketBar>, String> {
     let url = kline_url(symbol, interval, limit)?;
-    let body = get_public_json(&url, "12")?;
+    let body = get_public_json(&url, 12)?;
     let now_ms = now_millis()?;
     parse_klines(&body, limit, now_ms)
 }
@@ -161,135 +160,44 @@ fn now_millis() -> Result<i64, String> {
     i64::try_from(millis).map_err(|_| "system time is outside i64 milliseconds".into())
 }
 
-pub(super) fn get_public_json(url: &str, max_time_seconds: &str) -> Result<Vec<u8>, String> {
+pub(super) fn get_public_json(url: &str, max_time_seconds: u64) -> Result<Vec<u8>, String> {
     get_public_document(url, max_time_seconds, "application/json")
 }
 
 pub(super) fn get_public_document(
     url: &str,
-    max_time_seconds: &str,
+    max_time_seconds: u64,
     accept: &str,
 ) -> Result<Vec<u8>, String> {
-    // curl supplies TLS verification and a whole-request timeout. Read its pipe
-    // ourselves because Command::output() would permit an unbounded response.
-    let accept_header = format!("Accept: {accept}");
-    let mut args = vec![
-        "--silent",
-        "--show-error",
-        "--http1.1",
-        "--compressed",
-        "--include",
-        "--max-time",
-        max_time_seconds,
-        "--connect-timeout",
-        "5",
-        "--max-filesize",
-        "4194304",
-        "--header",
-        accept_header.as_str(),
-    ];
-    if cfg!(windows)
-        && [MAIN_KLINES_URL, NEXT_KLINES_URL].iter().any(|endpoint| {
-            url.strip_prefix(endpoint)
-                .is_some_and(|suffix| suffix.starts_with('?'))
-        })
+    let response = super::public_http::get_bounded(
+        url,
+        super::public_http::RequestOptions {
+            connect_timeout: Duration::from_secs(5),
+            total_timeout: Duration::from_secs(max_time_seconds),
+            max_body_bytes: MAX_BODY_BYTES,
+            max_redirects: 0,
+            accept,
+            user_agent: None,
+            accept_encoding: Some("gzip, br"),
+        },
+    )?;
+    if let Some(error) = public_provider_status_error(response.status, response.retry_after_seconds)
     {
-        // Windows Schannel can fail closed when a certificate revocation
-        // distribution point is offline. Keep chain and host verification;
-        // tolerate only an unavailable revocation lookup for candle hosts.
-        args.push("--ssl-revoke-best-effort");
+        return Err(error);
     }
-    args.push(url);
-    let mut child = Command::new(if cfg!(windows) { "curl.exe" } else { "curl" })
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| format!("could not start curl: {error}"))?;
+    Ok(response.body)
+}
 
-    let mut response = Vec::new();
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "curl stdout was unavailable".to_string())?;
-    let maximum = MAX_BODY_BYTES + MAX_HEADER_BYTES;
-    let read_result = stdout
-        .by_ref()
-        .take((maximum + 1) as u64)
-        .read_to_end(&mut response);
-    if response.len() > maximum || read_result.is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(if response.len() > maximum {
-            "Public provider HTTP response exceeded 4 MiB body limit".into()
-        } else {
-            format!(
-                "could not read public provider HTTP response: {}",
-                read_result.unwrap_err()
-            )
-        });
-    }
-    let exit = child.wait().map_err(|error| error.to_string())?;
-    if !exit.success() {
-        return Err(format!(
-            "Public provider HTTP request failed (curl exit code {:?})",
-            exit.code()
-        ));
-    }
-    let (status, retry_after, body) = split_http_response(&response)?;
+fn public_provider_status_error(status: u16, retry_after: Option<u64>) -> Option<String> {
     if status == 429 || status == 418 {
         let wait = retry_after
             .map(|seconds| format!("; Retry-After: {seconds} seconds"))
             .unwrap_or_default();
-        return Err(format!("Public provider HTTP {status} rate limit{wait}"));
-    }
-    if status != 200 {
-        return Err(format!("Public provider HTTP {status}"));
-    }
-    if body.len() > MAX_BODY_BYTES {
-        return Err("Public provider body exceeded 4 MiB".into());
-    }
-    Ok(body.to_vec())
-}
-
-fn split_http_response(response: &[u8]) -> Result<(u16, Option<u64>, &[u8]), String> {
-    let mut start = 0;
-    loop {
-        let relative_end = response[start..]
-            .windows(4)
-            .position(|bytes| bytes == b"\r\n\r\n")
-            .ok_or_else(|| "Public provider HTTP response has no complete headers".to_string())?;
-        let end = start + relative_end;
-        if end > MAX_HEADER_BYTES {
-            return Err("Public provider HTTP headers exceeded 16 KiB".into());
-        }
-        let header = std::str::from_utf8(&response[start..end])
-            .map_err(|_| "Public provider HTTP headers were not ASCII/UTF-8".to_string())?;
-        let mut lines = header.split("\r\n");
-        let status_line = lines.next().unwrap_or("");
-        let status = status_line
-            .split_ascii_whitespace()
-            .nth(1)
-            .and_then(|word| word.parse::<u16>().ok())
-            .filter(|_| status_line.starts_with("HTTP/"))
-            .ok_or_else(|| "Public provider HTTP status was malformed".to_string())?;
-        let retry_after = lines.find_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            if key.eq_ignore_ascii_case("Retry-After") {
-                value.trim().parse::<u64>().ok()
-            } else {
-                None
-            }
-        });
-        let body_start = end + 4;
-        // A CONNECT tunnel or informational response may precede the origin's
-        // headers. curl does not follow redirects here.
-        if response[body_start..].starts_with(b"HTTP/") {
-            start = body_start;
-            continue;
-        }
-        return Ok((status, retry_after, &response[body_start..]));
+        Some(format!("Public provider HTTP {status} rate limit{wait}"))
+    } else if status != 200 {
+        Some(format!("Public provider HTTP {status}"))
+    } else {
+        None
     }
 }
 
