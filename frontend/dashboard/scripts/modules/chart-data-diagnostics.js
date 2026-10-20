@@ -154,7 +154,7 @@ export function installChartDataDiagnostics() {
                 ) || {};
                 const rows = Number(meta.rows ?? storedSeries.rows ?? 0);
                 const coverageDays = Number(meta.coverage_days ?? storedSeries.coverage_days);
-                const targetDays = Number(meta.history_target_days ?? storedSeries.history_target_days ?? 730);
+                const targetDays = Number(meta.history_target_days ?? storedSeries.history_target_days);
                 const lastTs = meta.last_ts ?? meta.last_bar_ts ?? storedSeries.last_ts;
                 const lastError = String(meta.last_error || storedSeries.last_error || '').trim();
                 const reason = String(meta.error_reason || storedSeries.error_reason || (lastError ? syncFailureLabel(lastError) : '')).trim();
@@ -185,7 +185,9 @@ export function installChartDataDiagnostics() {
                 state.className = stateClass;
                 setText(latest, latestText);
                 setText(age, ageSeconds !== null ? formatDataAge(ageSeconds) : '--');
-                setText(coverage, `${rows || 0} bars · ${Number.isFinite(coverageDays) ? Math.floor(coverageDays) : 0}/${Number.isFinite(targetDays) ? Math.floor(targetDays) : 730} days`);
+                const storedSpan = Number.isFinite(coverageDays) ? `${Math.floor(coverageDays)} calendar days stored` : 'Stored span unavailable';
+                const validationMinimum = Number.isFinite(targetDays) && targetDays > 0 ? `${Math.floor(targetDays)} days minimum for validation` : 'Validation minimum unavailable';
+                setText(coverage, `${rows || 0} bars · ${storedSpan} · ${validationMinimum}`);
                 setText(source, sourceText);
                 setText(attempt, attemptText);
                 setText(success, successText);
@@ -278,7 +280,7 @@ export function installChartDataDiagnostics() {
                 updateChartDataSource(signal);
                 const rows = Number(meta?.rows || 0);
                 const coverageDays = Number(meta?.coverage_days);
-                const targetDays = Number(meta?.history_target_days || 730);
+                const targetDays = Number(meta?.history_target_days);
                 const underHistoryTarget = rows > 0
                     && Number.isFinite(coverageDays)
                     && Number.isFinite(targetDays)
@@ -309,10 +311,10 @@ export function installChartDataDiagnostics() {
                         : missingSessionDate
                             ? '⚠ LATEST SESSION BAR MISSING'
                         : underHistoryTarget
-                            ? `⚠ HISTORY ${Math.floor(coverageDays)}/${Math.floor(targetDays)}D`
+                            ? `⚠ HISTORY ${Math.floor(coverageDays)}D · BELOW MINIMUM`
                         : `⚠ DATA STALE · ${age} old`;
                 const coverageText = underHistoryTarget
-                    ? `History coverage is ${Math.floor(coverageDays)}/${Math.floor(targetDays)} calendar days. ${meta.history_warning || 'Extend local history before treating long-horizon evidence as complete.'}`
+                    ? `Stored history covers ${Math.floor(coverageDays)} calendar days; validation needs at least ${Math.floor(targetDays)} days. ${meta.history_warning || 'Extend local history before treating long-horizon evidence as complete.'}`
                     : '';
                 badge.className = 'max-w-[280px] px-2 py-0.5 rounded border border-amber-700/80 bg-amber-950/70 text-amber-300 text-[10px] font-bold leading-tight';
                 badge.textContent = message;

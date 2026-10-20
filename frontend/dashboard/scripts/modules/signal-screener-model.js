@@ -187,6 +187,25 @@ export function signalIndicatorScores(signal, model) {
     });
 }
 
+// A presentation threshold only; registered model eligibility owns its own floor.
+const LOW_TOTAL_INDICATOR_POINTS = 10;
+
+export function signalTotalStrength(signal, model) {
+    if (!hasFourIndicatorScores(signal, model)) return null;
+    const indicators = signalIndicatorScores(signal, model);
+    const known = indicators.every(item => item.points !== null);
+    const total = known ? indicators.reduce((sum, item) => sum + item.points, 0) : null;
+    const low = known && total < LOW_TOTAL_INDICATOR_POINTS;
+    const label = !known ? 'Total strength unavailable' : low ? 'Low total strength' : `${LOW_TOTAL_INDICATOR_POINTS}+ combined points`;
+    const retained = signalScoreState(signal)?.tone === 'stale';
+    return {
+        tone: !known ? 'unavailable' : low ? 'low' : 'standard',
+        label: retained ? `Last recorded: ${label.toLowerCase()}` : label,
+        description: !known ? 'All four numeric indicator contributions are needed to classify total strength.'
+            : `The four indicator scores add up to ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} points (before rounding).`,
+    };
+}
+
 export function signalIndicatorSummary(signal, model) {
     return signalIndicatorScores(signal, model).map(item =>
         `${item.label} ${item.points === null ? '—' : item.points.toFixed(1)}/10 (${scoreWeightLabel(item.weight)}${item.state.toUpperCase() === 'UNAVAILABLE' ? ', unavailable' : ''})`
@@ -234,7 +253,10 @@ export function signalScoreSummary(signal, model, scoreState = null) {
         : '';
     if (hasFourIndicatorScores(signal, model)) {
         const label = scoreState?.tone === 'stale' ? 'Last recorded indicator scores' : 'Indicator scores';
-        return `${label}: ${signalIndicatorSummary(signal, model)}${state} · setup strength, not win probability or execution availability`;
+        const strength = signalTotalStrength(signal, model);
+        const indicators = `${label}: ${signalIndicatorSummary(signal, model)}${state}`;
+        const summary = strength.tone === 'low' ? `${strength.label} · ${indicators}` : `${indicators} · ${strength.label}`;
+        return `${summary} · ${strength.description} · setup strength, not win probability or execution availability`;
     }
     const displayScore = signalDisplayScore(signal);
     const scoreLabel = scoreState?.tone === 'stale'

@@ -13,6 +13,18 @@ Compare rows only when their `score_model_id`, app/product/category, timeframe,
 and data-source basis match. Keep legacy score bases at their recorded scale;
 never convert an old `/10` or `/20` value into `/40` by multiplying it.
 
+## Total-strength display distinction
+
+For current four-indicator rows, sum the four unrounded numeric contributions.
+A sum below 10 shows **Low total strength** with an amber label and left border;
+exactly 10 or above shows the neutral **10+ combined points** label. Missing
+numeric contributions show **Total strength unavailable**. An indicator with
+recorded zero points and an unavailable state keeps that state visible. Stale
+rows qualify the label as last recorded. This is a presentation distinction,
+not a change to eligibility, ordering, evidence validation, or notifications.
+Legacy score models keep their recorded scales and do not use this distinction.
+The four separate /10 values and 25% weights remain the primary score display.
+
 ## Four indicator scores (`/10` each; 25% weight each)
 
 The registered NWE/DSS score models
