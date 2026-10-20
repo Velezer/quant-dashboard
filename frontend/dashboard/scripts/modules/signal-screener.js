@@ -27,8 +27,6 @@ import {
     scoreWeightLabel,
 } from './signal-screener-model.js';
 
-const DEFAULT_SIGNAL_SCORE_SCALE_MAX = 20;
-
 export {
     SIGNAL_LIST_PAGE_SIZE,
     cryptoSignalModelsForSelection,
@@ -150,11 +148,7 @@ export function installSignalScreener() {
                 : `${timeframeFilter} scores are stale. Retry or wait for a fresh scan.`;
         }
         const timeframeLabel = timeframeFilter === 'all' ? 'Fresh bars' : `Fresh ${timeframeFilter} bars`;
-        const minimumScore = models.length === 1
-            ? signalScorePresentation(null, models[0]).minimumScore ?? 1
-            : 1;
-        const scoreScale = scoreScaleForModels(models);
-        return `No market-entry signal now. The latest ${timeframeLabel.toLowerCase()} must qualify at ≥${minimumScore}/${scoreScale}, with a fresh same-source 15m price.`;
+        return `No market-entry signal now. The latest ${timeframeLabel.toLowerCase()} must qualify at the model’s minimum, with four /10 indicators and a fresh same-source 15m price.`;
     }
 
     function cryptoSignalModelsForView() {
@@ -166,18 +160,10 @@ export function installSignalScreener() {
         );
     }
 
-    function cryptoSignalEmptyText(models) {
+    function cryptoSignalEmptyText() {
         if (summary.stale) return 'The snapshot is stale. Retry or wait for a fresh scan.';
         const timeframeLabel = timeframeFilter === 'all' ? 'Fresh bars' : `Fresh ${timeframeFilter} bars`;
-        const minimum = models.length
-            ? signalScorePresentation(null, models[0]).minimumScore
-            : 1;
-        const scoreScale = scoreScaleForModels(models);
-        return `No market-entry signal now. Latest ${timeframeLabel.toLowerCase()} must qualify at ≥${minimum}/${scoreScale}, with a fresh same-source 15m price.`;
-    }
-
-    function scoreScaleForModels(models) {
-        return Number(models[0]?.score_scale_max) || DEFAULT_SIGNAL_SCORE_SCALE_MAX;
+        return `No market-entry signal now. Latest ${timeframeLabel.toLowerCase()} must qualify at the model’s minimum, with four /10 indicators and a fresh same-source 15m price.`;
     }
 
     function filteredSignals() {

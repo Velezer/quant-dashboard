@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createSignalScoreBasisMarkup } from './signal-score-basis.js';
 import { createSignalScreenerCard } from './signal-screener-card.js';
 import { signalDisplayScore, signalScoreState } from './signal-screener-model.js';
 
@@ -20,7 +21,7 @@ test('signal card presenter preserves stale labels, score basis, provenance, and
         signalPriceBarAgeLabel: value => value ? 'fresh' : 'age unavailable',
         formatPrice: () => '9500',
         ageLabel: () => '1 minute ago',
-        renderScoreBasis: () => '<div class="score-basis">details</div>',
+        renderScoreBasis: createSignalScoreBasisMarkup({ escape: escapeHtml, scoreModelFor: () => ({ score_scale_max: 40 }) }),
     });
 
     const markup = renderSignalCard({
@@ -42,7 +43,7 @@ test('signal card presenter preserves stale labels, score basis, provenance, and
         data_provider: 'authorized_provider',
         data_source: 'venue_native',
         data_quality: 'validated',
-        score_basis: { components: [{ indicator: 'DSS', state: 'near_cross', points: 6 }] },
+        score_basis: { components: [{ indicator: 'DSS Bressert', state: 'near_cross', points: 6 }] },
     }, 1, true);
 
     assert.match(markup, /data-signal-id="signal-&quot;quoted&quot;"/);
@@ -50,21 +51,26 @@ test('signal card presenter preserves stale labels, score basis, provenance, and
     assert.match(markup, /&lt;BBCA&gt;/);
     assert.match(markup, /LAST LONG/);
     assert.match(markup, /STALE · NO MARKET ENTRY · HELD/);
-    assert.match(markup, /Last recorded score <strong>12\.0<\/strong>/);
+    assert.match(markup, /Last recorded indicators · 25% each/);
+    assert.equal((markup.match(/class="signal-indicator-score"/g) || []).length, 4);
+    assert.equal((markup.match(/class="signal-indicator-weight">25% weight/g) || []).length, 4);
+    assert.match(markup, /6\.0<small>\/10<\/small>/);
+    assert.match(markup, /—<small>\/10<\/small>/);
+    assert.doesNotMatch(markup, /out of 40|\/40|\/ 40/);
     assert.doesNotMatch(markup, /Market-entry score <strong>0\.0<\/strong>/);
-    assert.match(markup, /no current market-entry signal, last recorded score 12\.0 out of 40/);
+    assert.match(markup, /no current market-entry signal, indicator scores NWE.*unavailable.*DSS Bressert 6\.0\/10/);
     assert.match(markup, /RESEARCH ONLY/);
     assert.match(markup, /authorized provider · venue native · validated/);
-    assert.match(markup, /score-basis/);
+    assert.match(markup, /signal-score-basis/);
 });
 
 test('signal cards distinguish a fresh non-qualifying zero from an unavailable score', () => {
     const renderSignalCard = createSignalScreenerCard({
         escape: escapeHtml,
         appLabel: () => 'Stockbit',
-        scoreModelFor: () => ({ short_label: 'Daily DSS', score_scale_max: 40 }),
+        scoreModelFor: () => ({ short_label: 'Daily DSS', score_scale_max: 20 }),
         signalScoreState,
-        signalScorePresentation: () => ({ scoreScaleMax: 40 }),
+        signalScorePresentation: () => ({ scoreScaleMax: 20 }),
         signalDisplayScore,
         signalScoreWeightSummary: () => 'Price 50%; volume 50%',
         signalPriceBarAgeLabel: () => 'fresh',

@@ -41,6 +41,50 @@ and recovery states and the keyboard-accessible path.
 6. **Report evidence.** State what passed, what remains unknown, and the exact
    recovery signal if the behavior regresses.
 
+## Indicator scores, browser alerts, and app readiness
+
+Signal cards and selected-chart summaries show four independent indicator
+values out of 10, each with its equal 25% maximum weight. The combined /40
+value remains an internal ordering value; the interface and scoring guide
+present the four factors instead. Verify all four values remain visible on
+selected and unselected cards without hover, including narrow screens; old
+compact-layout rules can hide nested score sections. Missing components remain unavailable;
+legacy score models retain their original basis. This presentation change does
+not change signal eligibility, source identity, formulas, or stored scores.
+
+The Notifications panel offers Enable browser alerts, Disable, and a test
+notification. Permission is requested only from the enable-button gesture.
+Delivery applies to new server signal events from all apps while this dashboard
+is open, including a background tab; reloading or closing it stops delivery. Unsupported,
+insecure, denied, and disconnected states explain recovery. Fetched inbox
+history is never replayed. Keep duplicate IDs only in bounded session memory,
+group each incoming batch, and focus the existing inbox on notification click.
+Actual display/sound remains subject to browser and operating-system settings.
+
+Each selected app has an in-context readiness explanation and listing-retry
+control. Missing listings, provider failures, gathering history, stale prices,
+and no qualifying setups are distinct. No app receives fabricated signals.
+
+1. **Direct effect:** Show four /10 values and deliver opted-in new alerts.
+2. **Immediate consequence:** A reader can identify each factor and receive a
+   browser notice without watching the current app's filter.
+3. **Response:** Batch/deduplicate notifications and disable controls while
+   requesting permission or refreshing listings to prevent repeated work.
+4. **Interactions:** Wire existing scan SSE events to existing alert consumers;
+   keep app/product/source/timeframe identity and freshness gates intact.
+5. **Accumulation:** Do not persist financial events in browser storage or
+   create a push service, duplicate market cache, or new database.
+6. **Failure boundaries:** Preserve unavailable scores and explicit empty-app
+   reasons; permission denial and provider errors do not become success.
+7. **Recovery:** Native browser settings, test delivery, listing retry, and the
+   existing scan refresh expose the recovery path in the application.
+8. **Governance:** Use existing frontend, SSE, registry, and SQLite boundaries;
+   no execution behavior or provider-policy bypass is introduced.
+9. **Trajectory:** Hypothesis: explicit factors and readiness reduce misleading
+   zeros and blank screens; reconsider if users confuse a held value for fresh.
+10. **Decision:** Correct existing delivery/presentation paths, verify all four
+    app identities and permission states, and retain honest qualification rules.
+
 ## Scoring guide UX contract
 
 The primary task is to understand a signal's displayed score and decide whether
@@ -48,7 +92,7 @@ its model, timeframe, source, and freshness make it comparable to another row.
 The dashboard links to `/scoring`, a single page with a return link, section
 navigation, four-factor explanations, an illustrative points example, status
 definitions, and the separate strategy/confluence and Tokocrypto voting rules.
-The example adds supplied factor points; it does not evaluate market candles,
+The example displays supplied factor points separately; it does not evaluate market candles,
 qualify a setup, or produce a signal. Current model identities and thresholds
 come from the existing master-data API. Explanations remain readable while that
 catalog loads or is unavailable; the catalog area exposes loading, empty, error,
@@ -56,8 +100,7 @@ and Retry states. All controls use native links, labels, and keyboard behavior.
 
 1. **Direct effect:** One discoverable page explains the score and its factors.
    Acceptance: dashboard → Scoring guide → dashboard works in a fresh browser.
-2. **Immediate consequence:** Readers can reconcile four displayed factors with
-   their total and distinguish a retained value from a current setup.
+2. **Immediate consequence:** Readers can inspect four displayed factors and their weights and distinguish a retained value from a current setup.
 3. **Response:** Illustrative inputs update only the example; navigation or
    Retry never requests a market scan or changes stored scores.
 4. **Interactions:** Strategy source owns formulas and catalog metadata owns
@@ -102,7 +145,8 @@ and Retry states. All controls use native links, labels, and keyboard behavior.
   near-line/cross states when available. The NWE/DSS research ranking also
   shows its four equal-weight factors: NWE, DSS Bressert, 20-bar relative
   volume, and the explicitly estimated OHLCV volume-delta proxy. Distinguish
-  the `/40` total, `/20` price and volume groups, and `/10` individual factors.
+  each indicator as its own `/10` score with 25% weight; retain the sum only
+  for internal ranking. Avoid a combined `/40` score in the current model UI.
   Keep component values, direction/alignment, and unavailable states visible so
   a score is interpretable. Missing components are unavailable, not silently
   treated as agreement. The candle-derived delta is not aggressor-side trade

@@ -100,7 +100,7 @@ pub(super) fn append_nwe_dss_model_signals(
         ) {
             if bar.close.is_finite() && bar.close > 0.0 {
                 let (score_components, four_factor_groups) =
-                    four_indicator_score_outputs(bars, signal, "DSS");
+                    four_indicator_score_outputs(bars, signal, "DSS Bressert");
                 if let Some(strategy_id) =
                     quant_core::crypto_dss_bressert_signal_strategy_id(timeframe)
                 {
@@ -124,3 +124,7 @@ pub(super) fn append_nwe_dss_model_signals(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "nwe_dss_models_tests.rs"]
+mod tests;

@@ -12,6 +12,7 @@ const dashboardModules = [
     ['chart-data-diagnostics.js', 'installChartDataDiagnostics'],
     ['signal-refresh.js', 'installSignalRefresh'],
     ['signal-alerts.js', 'installSignalAlerts'],
+    ['signal-app-readiness.js', 'installSignalAppReadiness'],
     ['signal-screener.js', 'installSignalScreener'],
     ['rule-simulator.js', 'installRuleSimulator'],
     ['chart-inspection.js', 'installChartInspection'],

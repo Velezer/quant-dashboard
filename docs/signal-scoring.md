@@ -13,14 +13,15 @@ Compare rows only when their `score_model_id`, app/product/category, timeframe,
 and data-source basis match. Keep legacy score bases at their recorded scale;
 never convert an old `/10` or `/20` value into `/40` by multiplying it.
 
-## Four-factor setup score (`/40`)
+## Four indicator scores (`/10` each; 25% weight each)
 
 The registered NWE/DSS score models
 `nwe_dss_relative_volume_estimated_delta_rank_v6` and
 `dss_bressert_near_cross_nwe_volume_rank_v4` use four factors. Each factor is
 capped at 10 points. NWE and DSS form price evidence (0–20); relative volume
-and the OHLCV delta estimate form volume evidence (0–20). The total is the sum
-of those four displayed factor values. The current minimum accepted score is
+and the OHLCV delta estimate form volume evidence (0–20). The dashboard shows
+those four values separately, each out of 10 with 25% maximum weight. Their sum
+remains an internal ranking value. The current minimum accepted score is
 1/40; the active catalog and strategy configuration own that floor.
 
 | Factor | Rule |
@@ -100,8 +101,8 @@ preserve the last recorded value only with its stale/unavailable status and
 source provenance. A non-qualifying current strategy state is distinct from a
 stale retained score.
 
-Stale rows display their stored value as **Last recorded score**, beside the
-stale/no-current-entry status. Staleness does not replace that recorded value
+Stale four-indicator rows display their recorded factor values as **Last recorded
+indicators**, beside the stale/no-current-entry status. Staleness does not replace that recorded value
 with zero. A fresh `not_qualifying` state still displays zero; missing numeric
 scores display unavailable rather than an invented zero.
 

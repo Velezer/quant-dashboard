@@ -1,4 +1,4 @@
-import { scoreWeightLabel, signalScoreComponentWeights, signalScorePresentation } from './signal-screener-model.js';
+import { hasFourIndicatorScores, signalIndicatorScores, scoreWeightLabel, signalScoreComponentWeights, signalScorePresentation } from './signal-screener-model.js';
 
 export function createSignalScoreBasisMarkup({ escape, scoreModelFor }) {
     function componentLabel(component) {
@@ -21,6 +21,17 @@ export function createSignalScoreBasisMarkup({ escape, scoreModelFor }) {
         const basis = signal.score_basis || {};
         const scoreModel = scoreModelFor(signal);
         const presentation = signalScorePresentation(signal, scoreModel);
+        if (hasFourIndicatorScores(signal, scoreModel)) {
+            const factors = signalIndicatorScores(signal, scoreModel).map(item => {
+                const state = item.state.replaceAll('_', ' ').toLowerCase();
+                const value = typeof item.value === 'number' && Number.isFinite(item.value)
+                    ? item.label === 'Relative volume' ? ` · ${item.value.toFixed(2)}× baseline`
+                        : item.label === 'Delta proxy' ? ` · close-location ${item.value.toFixed(2)}` : ''
+                    : '';
+                return `<span class="signal-indicator-score"><span>${escape(item.label)}</span><strong>${item.points === null ? '—' : item.points.toFixed(1)}<small>/10</small></strong><span class="signal-indicator-weight">${scoreWeightLabel(item.weight)}</span><span class="signal-indicator-state">${escape(state + value)}</span></span>`;
+            }).join('');
+            return `<div class="signal-score-basis signal-score-basis-indicators"><div class="signal-indicator-grid" aria-label="Four indicator scores, each weighted equally">${factors}</div></div>`;
+        }
         const componentScaleMax = presentation.componentScoreScaleMax;
         const indicatorComponentScaleMax = presentation.indicatorComponentScoreScaleMax;
         const components = Array.isArray(basis.components) ? basis.components : [];
