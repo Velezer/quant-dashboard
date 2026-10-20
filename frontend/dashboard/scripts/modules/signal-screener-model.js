@@ -181,10 +181,14 @@ export function signalMeetsRenderMinimum(signal, model) {
         || (Number.isFinite(score) && score >= minimumScore);
 }
 
-export function signalEntryScore(signal, scoreState = null) {
-    if (scoreState?.current === false) return 0;
-    const score = Number(signal?.score);
-    return Number.isFinite(score) ? score : 0;
+export function signalDisplayScore(signal) {
+    if (signal?.persistent_score === true && signal.score_status === 'not_qualifying') return 0;
+    const value = signal?.score;
+    const isNumericInput = typeof value === 'number'
+        || (typeof value === 'string' && value.trim() !== '');
+    if (!isNumericInput) return null;
+    const score = Number(value);
+    return Number.isFinite(score) ? score : null;
 }
 
 export function signalScoreSummary(signal, model, scoreState = null) {
@@ -200,11 +204,14 @@ export function signalScoreSummary(signal, model, scoreState = null) {
                 ? 'closed'
                 : stateLabel.toLowerCase()}`
         : '';
-    const entryScore = signalEntryScore(signal, scoreState);
-    const heldScore = scoreState?.current === false && Number(signal.score) > 0
-        ? ` · last recorded ${Number(signal.score).toFixed(1)}/${scoreScaleMax}`
-        : '';
-    return `Market-entry setup score ${entryScore.toFixed(1)}/${scoreScaleMax}${state}${heldScore} · ${signalScoreWeightSummary(signal, model)} · setup strength, not win probability or execution availability`;
+    const displayScore = signalDisplayScore(signal);
+    const scoreLabel = scoreState?.tone === 'stale'
+        ? 'Last recorded setup score'
+        : 'Market-entry setup score';
+    const scoreValue = Number.isFinite(displayScore)
+        ? `${displayScore.toFixed(1)}/${scoreScaleMax}`
+        : 'unavailable';
+    return `${scoreLabel} ${scoreValue}${state} · ${signalScoreWeightSummary(signal, model)} · setup strength, not win probability or execution availability`;
 }
 
 export function averageNormalizedScore(signals) {

@@ -183,7 +183,7 @@ pub(crate) fn list_signal_screener_page(
                     } else {
                         crate::completed_bar_is_fresh_at(
                             &symbol,
-                            &timeframe,
+                            &signal_timeframe,
                             score_bar_time,
                             now_ns,
                         )
