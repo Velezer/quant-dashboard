@@ -464,8 +464,8 @@ test('selected signal summary stays concise and preserves the score scale', () =
 
 test('retained scores remain visible while stale and unavailable values never become zero', () => {
     const model = {
-        score_scale_max: 40,
-        component_score_scale_max: 20,
+        score_scale_max: 20,
+        component_score_scale_max: 10,
         strategy_weight: 0.5,
         confluence_weight: 0.5,
     };
@@ -473,13 +473,13 @@ test('retained scores remain visible while stale and unavailable values never be
     assert.equal(signalDisplayScore(staleSignal), 12);
     assert.equal(
         signalScoreSummary(staleSignal, model, signalScoreState(staleSignal)),
-        'Last recorded setup score 12.0/40 · stale · no market entry · held · Strategy 50%, Confluence 50% · setup strength, not win probability or execution availability',
+        'Last recorded setup score 12.0/20 · stale · no market entry · held · Strategy 50%, Confluence 50% · setup strength, not win probability or execution availability',
     );
     const nonQualifyingSignal = { ...staleSignal, score: 0, score_status: 'not_qualifying' };
     assert.equal(signalDisplayScore(nonQualifyingSignal), 0);
     assert.match(
         signalScoreSummary(nonQualifyingSignal, model, signalScoreState(nonQualifyingSignal)),
-        /^Market-entry setup score 0\.0\/40 · no market entry · score 0/,
+        /^Market-entry setup score 0\.0\/20 · no market entry · score 0/,
     );
     assert.equal(signalDisplayScore({ score: 7.4, persistent_score: true, score_status: 'current' }), 7.4);
     for (const score of [null, undefined, '', ' ', NaN, 'invalid', true, {}, []]) {

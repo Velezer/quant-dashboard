@@ -47,6 +47,7 @@ export function installSignalRefresh() {
                 getDashboardBinding('applyMasterData')?.(payload.master_data);
             }
             getDashboardBinding('applySignalSnapshot')?.(payload, { append });
+            void getDashboardBinding('refreshAppSignalReadiness')?.(String(query.exchange || 'stockbit'), payload.summary);
             lastRequestAt = Date.now();
         } catch (error) {
             if (currentRequest === requestSerial) {
@@ -124,6 +125,7 @@ export function installSignalRefresh() {
     }
 
     function updateSseBadge(connected) {
+        window.dispatchEvent(new CustomEvent('dashboard:signal-stream', { detail: { connected } }));
         const badge = document.getElementById('sse-badge');
         const dot = document.getElementById('sse-dot');
         const label = document.getElementById('sse-status');
@@ -215,6 +217,9 @@ export function installSignalRefresh() {
                 const data = JSON.parse(event.data);
                 nextScanEpoch = Number(data.next_scan_epoch) || nextScanEpoch;
                 getDashboardBinding('setNextScanEpoch')?.(nextScanEpoch);
+                if (Array.isArray(data.new_signal_alerts) && data.new_signal_alerts.length) {
+                    window.dispatchEvent(new CustomEvent('dashboard:signal-alerts', { detail: data.new_signal_alerts }));
+                }
             } catch (_) { /* The API snapshot remains authoritative. */ }
             lastRequestAt = 0;
             void fetchFreshSignals({ quiet: true });

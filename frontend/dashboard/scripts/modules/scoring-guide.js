@@ -50,11 +50,9 @@ function setupExample(doc) {
         inputs.forEach((input, index) => {
             doc.getElementById(`example-${factors[index]}-value`).value = points[index].toFixed(1);
             input.setAttribute('aria-valuetext', `${points[index]} of ${input.max} points`);
-            doc.getElementById(`example-bar-${factors[index]}`).style.width = `${points[index] / 40 * 100}%`;
+            doc.getElementById(`example-bar-${factors[index]}`).style.width = `${points[index] / Number(input.max) * 100}%`;
+            doc.getElementById(`example-summary-${factors[index]}`).value = points[index].toFixed(1);
         });
-        doc.getElementById('example-total').value = totals.total.toFixed(1);
-        doc.getElementById('example-price').value = totals.price.toFixed(1);
-        doc.getElementById('example-flow').value = totals.volume.toFixed(1);
         doc.getElementById('example-mode').textContent = inputs.every(input => input.value === input.defaultValue)
             ? 'Worked example values'
             : 'Hypothetical points · candle example unchanged';
@@ -94,8 +92,12 @@ function renderModel(doc, model) {
     const metrics = element(doc, 'div', 'model-metrics');
     const scale = numericValue(model.score_scale_max);
     const minimum = numericValue(model[`minimum_score_out_of_${scale}`] ?? model.minimum_score);
-    metrics.append(element(doc, 'span', '', `Scale /${scale}`));
-    if (minimum !== null) metrics.append(element(doc, 'span', '', `Minimum ${minimum}/${scale}`));
+    metrics.append(element(doc, 'span', '', scale === 40 ? 'Four indicators · /10 each' : `Scale /${scale}`));
+    if (scale === 40) {
+        metrics.append(element(doc, 'span', '', '25% weight each'));
+        if (minimum !== null) metrics.append(element(doc, 'span', '', `Eligibility floor: ${minimum} points across indicators`));
+    }
+    else if (minimum !== null) metrics.append(element(doc, 'span', '', `Minimum ${minimum}/${scale}`));
     const history = numericValue(model.minimum_history_bars);
     if (history !== null && history > 0) metrics.append(element(doc, 'span', '', `History ${history} bars`));
     card.append(metrics, element(doc, 'p', 'model-id', model.score_model_id));
@@ -104,7 +106,7 @@ function renderModel(doc, model) {
     card.append(element(doc, 'p', 'model-id', context.join(' · ')));
     const details = element(doc, 'details');
     details.append(element(doc, 'summary', '', 'Read the registered rules'),
-        element(doc, 'p', '', model.score_basis_description || model.description || 'No additional description is supplied by this catalog.'));
+        element(doc, 'p', '', scale === 40 ? 'NWE, DSS Bressert, relative volume, and estimated OHLCV delta are each scored out of 10 with equal 25% weight. Eligibility, history requirements, timeframe, and source must also match this registered model.' : model.score_basis_description || model.description || 'No additional description is supplied by this catalog.'));
     card.append(details);
     return card;
 }

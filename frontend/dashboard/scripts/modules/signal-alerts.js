@@ -1,5 +1,6 @@
 import { getDashboardBinding } from './runtime-context.js';
 import { readApiResponse } from './api.js';
+import { createBrowserSignalNotifications } from './browser-signal-notifications.js';
 
 /** Shows durable signal alerts from the app database. */
 export function installSignalAlerts() {
@@ -14,6 +15,28 @@ export function installSignalAlerts() {
     let hasLoaded = false;
     let requestInFlight = false;
     let statusError = '';
+    const browserToggle = document.getElementById('browserAlertsToggle');
+    const browserTest = document.getElementById('browserAlertsTest');
+    const browserStatus = document.getElementById('browserAlertsStatus');
+    const browserAlerts = createBrowserSignalNotifications({
+        onOpen() { window.focus(); if (details) details.open = true; },
+        onChange(state) {
+            if (browserStatus) browserStatus.textContent = state.message;
+            if (browserToggle) {
+                browserToggle.disabled = !state.supported || state.pending;
+                browserToggle.textContent = state.enabled ? 'Disable browser alerts' : 'Enable browser alerts';
+                browserToggle.setAttribute('aria-pressed', String(state.enabled));
+            }
+            if (browserTest) browserTest.disabled = !state.enabled || state.pending;
+        },
+    });
+    browserToggle?.addEventListener('click', () => {
+        if (browserAlerts.state().enabled) browserAlerts.disable();
+        else void browserAlerts.enable();
+    });
+    browserTest?.addEventListener('click', () => browserAlerts.test());
+    window.addEventListener('dashboard:signal-stream', event => browserAlerts.connection(event.detail?.connected));
+    browserAlerts.connection(false);
 
     function setStatus(message, state = 'ready') {
         if (!status) return;
@@ -153,6 +176,7 @@ export function installSignalAlerts() {
     window.addEventListener('dashboard:signal-alerts', event => {
         const incoming = Array.isArray(event.detail) ? event.detail : [];
         if (!incoming.length) return;
+        browserAlerts.notify(incoming);
         const first = incoming[0];
         const count = incoming.length;
         const model = first.signal_strategy_name || 'Signal update';

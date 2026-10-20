@@ -166,7 +166,35 @@ export function scoreWeightLabel(weight) {
     return Number.isFinite(weight) ? `${Math.round(weight * 100)}% weight` : 'weight unavailable';
 }
 
+export function hasFourIndicatorScores(signal, model) {
+    const presentation = signalScorePresentation(signal, model);
+    return presentation.scoreScaleMax === 40 && !presentation.legacy;
+}
+
+export function signalIndicatorScores(signal, model) {
+    if (!hasFourIndicatorScores(signal, model)) return [];
+    const names = [
+        ['Nadaraya-Watson Envelope', 'NWE'], ['DSS Bressert', 'DSS Bressert'],
+        ['Relative Volume', 'Relative volume'], ['Estimated Volume Delta (OHLCV proxy)', 'Delta proxy'],
+    ];
+    const components = Array.isArray(signal?.score_basis?.components) ? signal.score_basis.components : [];
+    return names.map(([indicator, label]) => {
+        const component = components.find(item => item?.indicator === indicator);
+        const value = component?.points;
+        const points = typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 10 ? value : null;
+        return { indicator, label, points, scale: 10, weight: 1 / names.length,
+            state: String(component?.state || 'UNAVAILABLE'), value: component?.value };
+    });
+}
+
+export function signalIndicatorSummary(signal, model) {
+    return signalIndicatorScores(signal, model).map(item =>
+        `${item.label} ${item.points === null ? '—' : item.points.toFixed(1)}/10 (${scoreWeightLabel(item.weight)}${item.state.toUpperCase() === 'UNAVAILABLE' ? ', unavailable' : ''})`
+    ).join(' · ');
+}
+
 export function signalScoreWeightSummary(signal, model) {
+    if (hasFourIndicatorScores(signal, model)) return signalIndicatorScores(signal, model).map(item => `${item.label} ${Math.round(item.weight * 100)}%`).join(', ');
     const weights = signalScoreComponentWeights(signal, model);
     const strategyLabel = String(model?.strategy_score_label || 'Strategy');
     const confluenceLabel = String(model?.confluence_score_label || 'Confluence');
@@ -204,6 +232,10 @@ export function signalScoreSummary(signal, model, scoreState = null) {
                 ? 'closed'
                 : stateLabel.toLowerCase()}`
         : '';
+    if (hasFourIndicatorScores(signal, model)) {
+        const label = scoreState?.tone === 'stale' ? 'Last recorded indicator scores' : 'Indicator scores';
+        return `${label}: ${signalIndicatorSummary(signal, model)}${state} · setup strength, not win probability or execution availability`;
+    }
     const displayScore = signalDisplayScore(signal);
     const scoreLabel = scoreState?.tone === 'stale'
         ? 'Last recorded setup score'

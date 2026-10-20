@@ -366,6 +366,13 @@ pub(super) fn selected_candle_source_metadata_for_product(
     for interval in
         std::iter::once(timeframe).chain(lower_timeframe_candidates(timeframe).iter().copied())
     {
+        let now_ns = (now_secs() as i64).saturating_mul(NANOS_PER_SECOND);
+        let oldest_fresh_ns = now_ns.saturating_sub(
+            freshness_threshold_seconds(symbol, timeframe).saturating_mul(NANOS_PER_SECOND),
+        );
+        let latest_completed_ns = now_ns.saturating_sub(
+            timeframe_duration_ns(interval).unwrap_or_default(),
+        );
         let metadata = connection
             .query_row(
                 "SELECT candidate.source,candidate.data_provider
@@ -377,7 +384,13 @@ pub(super) fn selected_candle_source_metadata_for_product(
                          WHERE symbol=candidate.symbol AND interval=candidate.interval
                            AND source=candidate.source
                     )
-                  ORDER BY CASE
+                  ORDER BY CASE WHEN EXISTS (
+                      SELECT 1 FROM bars AS fresh
+                       WHERE fresh.symbol=candidate.symbol AND fresh.interval=candidate.interval
+                         AND fresh.source=candidate.source AND fresh.close>0
+                         AND fresh.ts BETWEEN ?5 AND ?6
+                  ) THEN 0 ELSE 1 END,
+                  CASE
                       WHEN candidate.data_provider=?2 OR candidate.source=?2 || '_native' THEN 0
                       WHEN candidate.data_provider='binance' THEN 1
                       WHEN candidate.data_provider='coinbase' THEN 2
@@ -388,7 +401,7 @@ pub(super) fn selected_candle_source_metadata_for_product(
                            COALESCE(candidate.last_success,'') DESC,
                            candidate.source ASC
                   LIMIT 1",
-                params![symbol, exchange, product_id, interval],
+                params![symbol, exchange, product_id, interval, oldest_fresh_ns, latest_completed_ns],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,

@@ -33,6 +33,14 @@
                         <button id="signalAlertsMarkRead" type="button" aria-label="Mark all notifications read" class="rounded border border-gray-700 px-2 py-1 text-[10px] font-semibold text-gray-300 hover:bg-gray-800 focus:outline focus:outline-2 focus:outline-cyan-400" disabled>Mark all read</button>
                     </div>
                     <p id="signalAlertsStatus" class="mt-2 text-xs text-gray-400" role="status" aria-live="polite">Loading saved signal alerts…</p>
+                    <section class="mt-3 rounded-lg border border-cyan-900 bg-cyan-950/20 p-3" aria-label="Browser signal notifications">
+                        <p id="browserAlertsStatus" class="text-[11px] leading-relaxed text-gray-300" role="status" aria-live="polite">Browser alerts are off. Enable to receive fresh signals from every app while this dashboard is open.</p>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            <button id="browserAlertsToggle" type="button" aria-pressed="false" class="rounded border border-cyan-700 px-2 py-2 text-[11px] font-semibold text-cyan-200">Enable browser alerts</button>
+                            <button id="browserAlertsTest" type="button" disabled class="rounded border border-gray-600 px-2 py-2 text-[11px] text-gray-300 disabled:opacity-40">Test notification</button>
+                        </div>
+                        <p class="mt-2 text-[10px] text-gray-400">Works in background tabs for this page session. Reloading or closing the dashboard stops delivery. Browser and operating-system settings control display and sound.</p>
+                    </section>
                     <button id="signalAlertsRetry" type="button" class="mt-2 hidden rounded border border-amber-800 px-2 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-950 focus:outline focus:outline-2 focus:outline-amber-400">Retry alerts</button>
                     <ol id="signalAlertsList" class="mt-2 space-y-2"></ol>
                     <p class="mt-3 border-t border-gray-800 pt-2 text-[10px] leading-relaxed text-gray-500">Most signal records expire after two hours. Stockbit NWE/DSS rows stay visible and rescore independently from each timeframe's fresh bar; a held score is marked stale when inputs are missing. Signals are informational, may be unvalidated, and never create positions or orders.</p>
@@ -528,6 +536,13 @@
                     <button type="button" class="exchange-btn px-2.5 py-1 rounded bg-gray-900 text-gray-400 font-medium border border-purple-800/70" data-exchange="pluang" aria-pressed="false">◈ Pluang</button>
                     <button type="button" class="exchange-btn px-2.5 py-1 rounded bg-gray-900 text-cyan-300 hover:text-white font-medium border border-cyan-800/70" data-exchange="tokocrypto" aria-pressed="false">🪙 Tokocrypto</button>
                 </div>
+                <section class="rounded border border-gray-700 bg-gray-950/60 p-2" aria-label="Selected app signal readiness">
+                    <p id="appSignalReadinessStatus" class="text-[10px] leading-relaxed text-gray-300" role="status" aria-live="polite">Checking this app’s listing and data readiness…</p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <button id="appSignalReadinessRetry" type="button" class="rounded border border-gray-600 px-2 py-1 text-[10px] text-gray-300">Recheck app data</button>
+                        <button id="appSignalListingRetry" type="button" hidden class="rounded border border-cyan-700 px-2 py-1 text-[10px] text-cyan-200">Retry listings and scan</button>
+                    </div>
+                </section>
                 <div id="screener-product-filters" class="flex items-center gap-1.5 text-xs flex-wrap" role="group" aria-label="Filter by app product or asset category">
                     <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Category / product</span>
                     <button type="button" class="product-btn" data-product="all" aria-pressed="true">All</button>
