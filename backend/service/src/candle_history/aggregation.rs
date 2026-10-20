@@ -141,6 +141,7 @@ pub(crate) fn aggregate_candles_from_base_source_with_cap_and_range(
     Ok(aggregated)
 }
 
+#[cfg(test)]
 pub(crate) fn required_aggregation_source_candles(
     timeframe: &str,
     base: &str,
@@ -148,17 +149,14 @@ pub(crate) fn required_aggregation_source_candles(
 ) -> Option<i64> {
     let duration_ns = timeframe_duration_ns(timeframe)?;
     let base_duration_ns = timeframe_duration_ns(base)?;
-    (duration_ns > base_duration_ns)
-        .then(|| aggregation_source_candle_limit(duration_ns, base_duration_ns, limit))
-}
-
-fn aggregation_source_candle_limit(duration_ns: i64, base_duration_ns: i64, limit: i64) -> i64 {
-    aggregation_source_candle_limit_with_cap(
-        duration_ns,
-        base_duration_ns,
-        limit,
-        MAX_AGGREGATION_SOURCE_CANDLES,
-    )
+    (duration_ns > base_duration_ns).then(|| {
+        aggregation_source_candle_limit_with_cap(
+            duration_ns,
+            base_duration_ns,
+            limit,
+            MAX_AGGREGATION_SOURCE_CANDLES,
+        )
+    })
 }
 
 fn aggregation_source_candle_limit_with_cap(

@@ -1059,11 +1059,16 @@ hourly histories were far shorter. Recent Yahoo `.JK` requests also failed
 with curl exit code 7, so no current signal can be claimed from the existing
 data.
 
+**Retention update — 2026-10-20:** Keep the full accepted bounded provider
+response; the former strategy-sized trim discarded older downloaded candles.
+Storage has no 730-day horizon. The 2026-10-06 observations below describe the
+earlier implementation.
+
 **Decision:** When an active Stockbit regular IDX ticker lacks enough derived
 4h history, make a bounded Yahoo 60-minute history request through the existing
-research-proxy adapter. Decode at most 4,000 hourly rows, then retain only the
-existing candle-history aggregator's source limit for the required 4h window
-(currently 2,124 hourly rows). Persist through the existing
+research-proxy adapter. Decode at most 4,000 hourly rows and persist every
+accepted candle, including history beyond the current 4h aggregation window.
+The strategy's bounded read does not limit stored history. Persist through the existing
 `stockbit_regular_yfinance_fallback` series in the symbol's SQLite database.
 Keep the regular 1h request at five days. Once there is enough history, normal
 hourly refreshes continue as before. A provider failure may retry after one
@@ -1078,7 +1083,7 @@ Decision effects:
    Acceptance requires at least 501 completed 4h bars from the existing
    500-bar Envelope configuration, a fresh latest completed 4h candle, and an
    actual crossing above the upper envelope before a row is emitted.
-2. **Immediate consequence:** The first warm-up can add at most 2,124 hourly
+2. **Immediate consequence:** The first warm-up can add at most 4,000 hourly
    bars for one ticker and never changes the five-day refresh used for ordinary
    hourly maintenance. The data stays explicitly research-proxy data.
 3. **Repeated operation:** Enough stored history suppresses further warm-ups.
@@ -1092,7 +1097,7 @@ Decision effects:
    for this one strategy.
 5. **Accumulation:** The warm-up upserts into canonical per-symbol SQLite
    `bars`; it adds no parallel 4h cache, new database, or runtime file. At the
-   observed 962 instruments, the hard ceiling is 2,043,288 added hourly rows
+   observed 962 instruments, one full warm-up pass can add at most 3,848,000 hourly rows
    if every ticker needs a full warm-up; actual row counts depend on Yahoo
    coverage and existing history.
 6. **Failure boundary:** Yahoo timeouts, oversized responses, malformed or

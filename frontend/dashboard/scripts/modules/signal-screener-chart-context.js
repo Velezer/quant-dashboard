@@ -5,6 +5,7 @@ import {
     signalPriceBarAgeLabel,
     signalScoreState,
     signalScoreSummary,
+    signalTotalStrength,
 } from './signal-screener-model.js';
 
 export function createSignalScreenerChartContext({
@@ -88,7 +89,10 @@ export function createSignalScreenerChartContext({
             if (timeframeBadge) timeframeBadge.textContent = '';
             if (directionBadge) directionBadge.textContent = '';
             if (evidenceBadge) evidenceBadge.textContent = '';
-            if (scoreSummary) scoreSummary.textContent = '';
+            if (scoreSummary) {
+                scoreSummary.textContent = '';
+                scoreSummary.classList.remove('signal-chart-low-total');
+            }
             updateAppContextChip(null);
             return;
         }
@@ -104,11 +108,11 @@ export function createSignalScreenerChartContext({
         if (timeframeBadge) timeframeBadge.textContent = `${signal.timeframe.toUpperCase()} SIGNAL`;
         if (directionBadge) directionBadge.textContent = directionLabel.toUpperCase();
         if (evidenceBadge) evidenceBadge.textContent = String(signal.evidence_status || 'VALIDATION_PENDING').replaceAll('_', ' ');
-        if (scoreSummary) scoreSummary.textContent = signalScoreSummary(
-            signal,
-            scoreModelFor(signal),
-            scoreState,
-        );
+        if (scoreSummary) {
+            const model = scoreModelFor(signal);
+            scoreSummary.textContent = signalScoreSummary(signal, model, scoreState);
+            scoreSummary.classList.toggle('signal-chart-low-total', signalTotalStrength(signal, model)?.tone === 'low');
+        }
         updateAppContextChip(signal);
         updateChartTimeframeContext(signal);
     }

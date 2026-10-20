@@ -27,6 +27,21 @@ persistence system, file-backed catalogs, manifests, caches, exports, or runtime
 state. Browser storage holds only disposable presentation preferences. The
 dashboard remains read-only with respect to execution.
 
+## Candle retention
+
+Canonical candle history has no application-imposed maximum age or total-row
+retention cap. Candles older than 730 days remain stored, and newly acquired
+older candles can be added. The 730-day value is a minimum coverage requirement
+for evidence validation, not a storage limit. Syncs upsert the exact
+symbol/interval/source/timestamp and preserve other timestamps.
+
+Provider request windows and per-response budgets bound acquisition. Chart,
+strategy, aggregation, and evidence row limits bound transient reads and memory;
+they do not expire saved candles. Persist every validated candle accepted in a
+bounded provider response, including rows beyond the current strategy's warm-up
+requirement. Physical capacity depends on the persistent volume's available
+disk space. Signal/alert expiry is separate from candle retention.
+
 ## Decision record: dedicated active signal snapshot database
 
 The user approved `data/signals/signals.sqlite3` for current screener rows and

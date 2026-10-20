@@ -121,26 +121,15 @@ fn sync_stockbit_4h_history(
 }
 
 fn fetch_stockbit_4h_history(yahoo_symbol: &str) -> Result<Vec<Bar>, String> {
-    let mut bars = super::fetch_chart_interval(
+    // The provider response is bounded; retain all accepted candles, including
+    // history beyond the current strategy's transient aggregation window.
+    super::fetch_chart_interval(
         yahoo_symbol,
         "60m",
         STOCKBIT_4H_HISTORY_RANGE,
         super::ONE_HOUR_INTERVAL_SECONDS,
         MAX_STOCKBIT_4H_HISTORY_RESPONSE_ROWS,
-    )?;
-    let target_rows = super::super::required_aggregation_source_candles(
-        "4h",
-        "1h",
-        i64::try_from(quant_core::stockbit_nwe_4h_minimum_history_bars())
-            .map_err(|_| "Stockbit 4h history limit exceeds its bound")?,
     )
-    .ok_or("Stockbit 4h hourly history window is unavailable")?;
-    let target_rows = usize::try_from(target_rows)
-        .map_err(|_| "Stockbit 4h hourly history window exceeds its bound")?;
-    if bars.len() > target_rows {
-        bars.drain(..bars.len() - target_rows);
-    }
-    Ok(bars)
 }
 
 fn record_insufficient_history(

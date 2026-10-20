@@ -41,6 +41,47 @@ and recovery states and the keyboard-accessible path.
 6. **Report evidence.** State what passed, what remains unknown, and the exact
    recovery signal if the behavior regresses.
 
+## Candle retention and low total strength
+
+The user must be able to retain history beyond 730 days and identify a
+four-indicator signal with fewer than 10 combined points. Candle storage has no
+application age or total-row retention cap. Data details shows actual stored
+coverage and labels the evidence minimum separately, with an explanation of
+provider download windows and bounded chart/backtest reads. Sync Market keeps
+its existing recovery path and merges accepted candles into canonical SQLite.
+
+Four-indicator cards show an amber **Low total strength** label and left border
+when all four numeric contributions sum to less than 10, using unrounded
+points. A sum of exactly 10 belongs to the neutral **10+ combined points**
+category, which is not a validation or strong-signal claim. Missing numeric
+components show **Total strength unavailable**. Recorded zero contributions
+with an unavailable indicator state retain that state. Keep four /10 values,
+25% weights, existing freshness/entry labels, and a last-recorded qualifier for
+stale scores. The same distinction appears in the selected-chart summary and
+accessible card label. This presentation does not change ranking, model
+qualification, or browser alert delivery. Explain the threshold in the guide.
+
+1. **Direct effect:** Persist every accepted warm-up candle and distinguish
+   below-10 combined indicator points in the UI.
+2. **Immediate consequence:** Older history can accumulate beyond any evidence
+   minimum; readers can identify a low recorded contribution without arithmetic.
+3. **Response:** Repeated syncs upsert exact timestamps rather than replacing
+   history; below-threshold signals remain selectable and eligible for alerts.
+4. **Interactions:** Keep source/product identity, four-factor semantics,
+   SQLite ownership, validation minimums, and bounded per-request work.
+5. **Accumulation:** Disk use may grow; a chart or strategy read cap is never
+   a reason to prune canonical candles or trim an accepted response before save.
+6. **Failure boundaries:** Preserve old bars on provider failure, and do not
+   classify absent component points as zero or promote stale scores to current.
+7. **Recovery:** Show stored coverage, source and provider errors in Data details;
+   expose the existing Sync Market action and keep the last usable history.
+8. **Governance:** The user explicitly requires no storage horizon and a
+   below-10 visual distinction; no new storage, execution, or provider adapter.
+9. **Trajectory:** Hypothesis: distinct retention and validation labels prevent
+   a minimum from being mistaken for a storage maximum. Inspect actual spans.
+10. **Decision:** Remove the strategy-sized warm-up trim, clarify the existing
+    retention behavior, and centralize the visual threshold in the score presenter.
+
 ## Indicator scores, browser alerts, and app readiness
 
 Signal cards and selected-chart summaries show four independent indicator

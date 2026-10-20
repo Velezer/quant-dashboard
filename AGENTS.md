@@ -258,6 +258,8 @@ from its authorized source. Make that operation idempotent, preserve
 provenance, and validate completeness; never trigger it implicitly during
 startup.
 
+Canonical candles have no application-imposed maximum age or total-row
+retention cap; see [candle retention](docs/market-data-storage.md#candle-retention).
 Canonical chart history lives only in the SQLite `bars` table. Do not persist,
 import, retain, or add fallback reads for duplicate chart-cache datasets; caches
 the user has rejected must be discarded, including their migration records.

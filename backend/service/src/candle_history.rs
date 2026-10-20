@@ -3,8 +3,9 @@ mod aggregation;
 pub(super) use aggregation::{
     aggregate_candles_from_base_source, aggregate_candles_from_base_source_with_cap,
     aggregate_candles_from_base_source_with_cap_and_range, aggregate_candles_from_source,
-    required_aggregation_source_candles,
 };
+#[cfg(test)]
+pub(super) use aggregation::required_aggregation_source_candles;
 
 pub(super) fn timezone_offset_from_name_ns(timezone: &str) -> i64 {
     if timezone == "Asia/Jakarta" {
