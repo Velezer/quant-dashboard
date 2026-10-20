@@ -165,6 +165,8 @@ pub(crate) fn reconcile_tokocrypto(
                 count,
             )?;
         }
+        super::super::schema::sync_normalized_dimensions(conn)
+            .map_err(|error| error.to_string())?;
         Ok((inserted, deactivated))
     })();
     match result {

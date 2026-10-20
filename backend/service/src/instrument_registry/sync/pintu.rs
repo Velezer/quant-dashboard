@@ -152,6 +152,8 @@ pub(crate) fn reconcile_pintu(
             )
             .map_err(|e| e.to_string())?;
         }
+        super::super::schema::sync_normalized_dimensions(conn)
+            .map_err(|error| error.to_string())?;
         Ok((inserted, deactivated))
     })();
     match result {
