@@ -14,7 +14,7 @@ import {
     stockbitSignalModelsForSelection,
     signalIdentity,
     normalizeSignalRecord,
-    signalEntryScore,
+    signalDisplayScore,
     signalMeetsRenderMinimum,
     signalPriceBarAgeLabel,
     signalPriceCoverageMessage,
@@ -34,7 +34,7 @@ export {
     cryptoSignalModelsForSelection,
     stockbitSignalModelsForSelection,
     signalIdentity,
-    signalEntryScore,
+    signalDisplayScore,
     signalMeetsRenderMinimum,
     signalPriceBarAgeLabel,
     signalPriceCoverageMessage,
@@ -67,7 +67,7 @@ export function installSignalScreener() {
         scoreModelFor,
         signalScoreState,
         signalScorePresentation,
-        signalEntryScore,
+        signalDisplayScore,
         signalScoreWeightSummary,
         signalPriceBarAgeLabel,
         formatPrice,
@@ -197,8 +197,7 @@ export function installSignalScreener() {
             const leftIsCurrent = signalScoreState(left)?.current !== false;
             const rightIsCurrent = signalScoreState(right)?.current !== false;
             return Number(rightIsCurrent) - Number(leftIsCurrent)
-                || signalEntryScore(right, signalScoreState(right))
-                    - signalEntryScore(left, signalScoreState(left))
+                || (signalDisplayScore(right) ?? -1) - (signalDisplayScore(left) ?? -1)
                 || right.last_updated_at - left.last_updated_at
                 || left.symbol.localeCompare(right.symbol);
         });

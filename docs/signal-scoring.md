@@ -96,6 +96,16 @@ preserve the last recorded value only with its stale/unavailable status and
 source provenance. A non-qualifying current strategy state is distinct from a
 stale retained score.
 
+Stale rows display their stored value as **Last recorded score**, beside the
+stale/no-current-entry status. Staleness does not replace that recorded value
+with zero. A fresh `not_qualifying` state still displays zero; missing numeric
+scores display unavailable rather than an invented zero.
+
+A completed score bar is checked for freshness using its signal timeframe,
+including hourly, daily, and weekly rows. The separate current-price check
+keeps its own price timeframe; it must not make a completed higher-timeframe
+score bar stale merely because that bar opened more than 15 minutes ago.
+
 The signal-card presentation reads the active catalog and persisted score
 basis. It must keep scale, component names, status, source, and timeframe
 visible together so unlike models are not mistaken for comparable values.
@@ -108,3 +118,28 @@ Implementation references: [four-factor combination](../quant/core/src/strategie
 [Stockbit score catalog](../backend/service/src/master_data/stockbit_signal_catalog.rs),
 [crypto score catalog](../backend/service/src/master_data/crypto_signal_catalog.rs),
 and [score presentation](../frontend/dashboard/scripts/modules/signal-screener-model.js).
+
+## Decision record: preserve retained values and timeframe freshness
+
+1. **Direct effect:** A stale retained score remains visible with its original
+   scale. Acceptance: stored 12/40 displays as last recorded 12/40, not 0/40.
+2. **Immediate consequence:** Cards and selected-chart summaries describe the
+   same stored value and retain their stale/no-current-entry warning.
+3. **Response:** Refresh still requests fresh inputs; viewing a held score does
+   not make it a current qualifying setup.
+4. **Interactions:** Keep model identity, component arithmetic, timeframe,
+   provider provenance, render floors, and current-first ordering unchanged.
+   Check completed score-bar freshness using its signal timeframe, separately
+   from the current-price timeframe.
+5. **Accumulation:** No persisted scores or migrations change; repeated reads
+   continue to show the authoritative stored snapshot.
+6. **Failure boundaries:** Genuine non-qualifying zeros remain zero. Missing or
+   invalid values remain unavailable and never become current evidence.
+7. **Recovery:** The existing stale status and Retry action explain recovery;
+   regression checks cover both cards and selected summaries.
+8. **Governance:** This repairs presentation under the existing retained-score
+   contract without changing scoring policy or execution boundaries.
+9. **Trajectory:** Hypothesis: showing held values explicitly reduces confusion
+   between unavailable fresh inputs and a freshly computed zero.
+10. **Decision:** Correct the shared display helper and labels. Reconsider if a
+    stale row loses its warning, changes scale, or changes its stored score.

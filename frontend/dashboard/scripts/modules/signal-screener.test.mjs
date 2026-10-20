@@ -5,6 +5,7 @@ import {
     stockbitSignalModelsForSelection,
     installSignalScreener,
     signalIdentity,
+    signalDisplayScore,
     signalMeetsRenderMinimum,
     signalPriceBarAgeLabel,
     signalPriceCoverageMessage,
@@ -17,7 +18,7 @@ import {
     SIGNAL_LIST_PAGE_SIZE,
 } from './signal-screener.js';
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
-import { normalizeSignalRecord } from './signal-screener-model.js';
+import { normalizeSignalRecord, signalScoreState } from './signal-screener-model.js';
 
 test('screener row normalization preserves app identity and product category', () => {
     const strategies = [{ id: 'nwe', short_label: 'NWE' }];
@@ -459,6 +460,36 @@ test('selected signal summary stays concise and preserves the score scale', () =
         signalScoreSummary(legacySignal, currentModel),
         'Market-entry setup score 7.4/10 · Strategy 70%, Confluence 30% · setup strength, not win probability or execution availability',
     );
+});
+
+test('retained scores remain visible while stale and unavailable values never become zero', () => {
+    const model = {
+        score_scale_max: 40,
+        component_score_scale_max: 20,
+        strategy_weight: 0.5,
+        confluence_weight: 0.5,
+    };
+    const staleSignal = { score: 12, persistent_score: true, score_status: 'stale' };
+    assert.equal(signalDisplayScore(staleSignal), 12);
+    assert.equal(
+        signalScoreSummary(staleSignal, model, signalScoreState(staleSignal)),
+        'Last recorded setup score 12.0/40 · stale · no market entry · held · Strategy 50%, Confluence 50% · setup strength, not win probability or execution availability',
+    );
+    const nonQualifyingSignal = { ...staleSignal, score: 0, score_status: 'not_qualifying' };
+    assert.equal(signalDisplayScore(nonQualifyingSignal), 0);
+    assert.match(
+        signalScoreSummary(nonQualifyingSignal, model, signalScoreState(nonQualifyingSignal)),
+        /^Market-entry setup score 0\.0\/40 · no market entry · score 0/,
+    );
+    assert.equal(signalDisplayScore({ score: 7.4, persistent_score: true, score_status: 'current' }), 7.4);
+    for (const score of [null, undefined, '', ' ', NaN, 'invalid', true, {}, []]) {
+        const unavailable = { ...staleSignal, score };
+        assert.equal(signalDisplayScore(unavailable), null);
+        assert.match(
+            signalScoreSummary(unavailable, model, signalScoreState(unavailable)),
+            /^Last recorded setup score unavailable/,
+        );
+    }
 });
 
 test('screener hides retained scores below the model render minimum', () => {
