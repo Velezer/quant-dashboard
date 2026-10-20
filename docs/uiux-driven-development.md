@@ -41,6 +41,40 @@ and recovery states and the keyboard-accessible path.
 6. **Report evidence.** State what passed, what remains unknown, and the exact
    recovery signal if the behavior regresses.
 
+## Scoring guide UX contract
+
+The primary task is to understand a signal's displayed score and decide whether
+its model, timeframe, source, and freshness make it comparable to another row.
+The dashboard links to `/scoring`, a single page with a return link, section
+navigation, four-factor explanations, an illustrative points example, status
+definitions, and the separate strategy/confluence and Tokocrypto voting rules.
+The example adds supplied factor points; it does not evaluate market candles,
+qualify a setup, or produce a signal. Current model identities and thresholds
+come from the existing master-data API. Explanations remain readable while that
+catalog loads or is unavailable; the catalog area exposes loading, empty, error,
+and Retry states. All controls use native links, labels, and keyboard behavior.
+
+1. **Direct effect:** One discoverable page explains the score and its factors.
+   Acceptance: dashboard → Scoring guide → dashboard works in a fresh browser.
+2. **Immediate consequence:** Readers can reconcile four displayed factors with
+   their total and distinguish a retained value from a current setup.
+3. **Response:** Illustrative inputs update only the example; navigation or
+   Retry never requests a market scan or changes stored scores.
+4. **Interactions:** Strategy source owns formulas and catalog metadata owns
+   active model labels, scales, and floors. Model-specific DSS rules stay distinct.
+5. **Accumulation:** No application data, preferences, or example inputs persist.
+   Keep the explanation synchronized with the owned scoring definitions.
+6. **Failure boundaries:** Missing catalog data has an explicit recovery state;
+   stale, provisional, non-qualifying, unavailable, and legacy scores stay distinct.
+7. **Recovery:** Retry reloads the catalog; the return link reaches the screener
+   and its existing data-refresh controls.
+8. **Governance:** This adds explanation within the existing frontend and Rust
+   routing boundaries, without changing scoring, execution, or storage policy.
+9. **Trajectory:** Hypothesis: one reference page reduces confusion about zero
+   and held scores; reconsider if readers mistake the example for a real signal.
+10. **Decision:** Add one small page using existing asset serving and metadata.
+    Check arithmetic, content provenance, keyboard use, mobile layout, and errors.
+
 ## Screener product contract
 
 - **Primary task and decision:** Find current, ranked LONG or SHORT signals for

@@ -277,6 +277,11 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
     }
 
     // ─── Static / Dashboard routes ──────────────────────────────────────────
+    if route == "/scoring" && method == "GET" {
+        serve_static(stream, "frontend/dashboard/templates/scoring.html");
+        return Ok(());
+    }
+
     if route == "/" || route == "/index.html" {
         match fs::read_to_string("frontend/dashboard/templates/dashboard.html") {
             Ok(html) => respond_html(stream, html, "200 OK"),

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Understand the signal screener's score factors, calculations, model differences, and freshness labels.">
+    <meta name="color-scheme" content="dark">
+    <title>Scoring guide · Signal Screener</title>
+    <link rel="stylesheet" href="/web/styles/scoring-guide.css">
+    <script type="module" src="/web/scripts/modules/scoring-guide.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to scoring guide</a>
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="Signal Screener dashboard">
+            <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+            SIGNAL SCREENER <span class="brand-divider">/</span> <span class="brand-section">GUIDE</span>
+        </a>
+        <a class="back-link" href="/"><span aria-hidden="true">←</span> Back to screener</a>
+    </header>
+
+    <div class="page-shell">
+        <nav class="contents" aria-label="On this page">
+            <p class="eyebrow">ON THIS PAGE</p>
+            <a href="#overview"><span>01</span> The score</a>
+            <a href="#factors"><span>02</span> Four factors</a>
+            <a href="#example"><span>03</span> Worked example</a>
+            <a href="#status"><span>04</span> Score states</a>
+            <a href="#other-models"><span>05</span> Other models</a>
+            <a href="#catalog"><span>06</span> Model reference</a>
+            <p class="contents-note">Read the number with its model, timeframe, and source.</p>
+        </nav>
+
+        <main id="main">
+            <section id="overview" class="hero" aria-labelledby="page-title">
+                <p class="eyebrow accent">THE SCORING GUIDE</p>
+                <h1 id="page-title">Understand every point.</h1>
+                <p class="lede">A signal score describes the strength of a research setup. Here’s how the points add up, what a zero means, and when a recorded score is still useful.</p>
+                <div class="hero-tags"><span>Four factors · /40</span><span>Scored per timeframe</span><span>Source stays attached</span></div>
+                <div class="meaning-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>25/40 is a setup score.</strong> It does not mean a 62.5% chance of winning. Historical validation, price freshness, and execution availability are separate facts.</p></div>
+                <div class="score-overview" aria-label="NWE and DSS form price evidence, relative volume and estimated delta form volume evidence; together they add to forty points">
+                    <div class="overview-group price-group"><span class="eyebrow">PRICE EVIDENCE</span><strong>NWE <span>+</span> DSS</strong><small>Up to 20 points</small></div>
+                    <span class="equation-symbol" aria-hidden="true">+</span>
+                    <div class="overview-group volume-group"><span class="eyebrow">VOLUME EVIDENCE</span><strong>Relative volume <span>+</span> Delta proxy</strong><small>Up to 20 points</small></div>
+                    <span class="equation-symbol" aria-hidden="true">=</span>
+                    <div class="overview-total"><strong>40</strong><small>possible points</small></div>
+                </div>
+                <p class="section-note">Each factor contributes 0–10 points. The total adds the four factors with equal maximum weight. A model must also qualify on its own rules before it becomes a signal.</p>
+            </section>
+
+            <section id="factors" class="guide-section" aria-labelledby="factors-title">
+                <div class="section-heading"><p class="eyebrow">02 / THE INGREDIENTS</p><h2 id="factors-title">Four factors. One total.</h2><p>Price structure and momentum contribute half the possible points. Volume and estimated candle pressure contribute the other half.</p></div>
+                <div class="factor-grid">
+                    <article class="factor-card nwe"><div class="factor-heading"><span class="factor-number">01</span><span class="points-cap">0–10 pts</span></div><h3>Nadaraya–Watson Envelope</h3><p>How close is price to an envelope band, or has it crossed that band? The lower-band setup points LONG; the upper-band setup points SHORT.</p><div class="factor-rule">Closer to the selected band → more points</div><p class="muted">A registered cross earns 10. Near-band strength falls as the close moves away from its nearest band. Opposing NWE support adds zero to a DSS-led setup.</p></article>
+                    <article class="factor-card dss"><div class="factor-heading"><span class="factor-number">02</span><span class="points-cap">0–10 pts</span></div><h3>DSS Bressert</h3><p>Is the oscillator crossing its trigger or approaching a cross in the setup’s direction? The exact points depend on which model leads the setup.</p><div class="factor-rule">Cross or near-cross → directional evidence</div><p class="muted">A DSS-led cross earns 10. NWE-led models instead score supporting DSS cross/near-cross and recent extreme-turn evidence.</p></article>
+                    <article class="factor-card relative-volume"><div class="factor-heading"><span class="factor-number">03</span><span class="points-cap">0–10 pts</span></div><h3>Relative volume</h3><p>Compare the current bar’s volume with the average of its preceding 20 bars, for the same instrument, timeframe, and source.</p><div class="factor-rule">1× or less → 0 · 1.5× → 5 · 2× or more → 10</div><p class="muted">Points count only if the candle direction agrees with the signal: rising for LONG, falling for SHORT. A neutral or opposing candle contributes zero.</p></article>
+                    <article class="factor-card delta"><div class="factor-heading"><span class="factor-number">04</span><span class="points-cap">0–10 pts</span></div><h3>Estimated volume delta</h3><p>Estimate candle pressure from where the close sits within its high–low range. A close near the high supports LONG; near the low supports SHORT.</p><div class="factor-rule">More aligned close location → more points</div><p class="muted">This OHLCV proxy is not aggressor-side buy/sell trade delta. The volume factors use related observations, so they are not independent trade-flow measurements.</p></article>
+                </div>
+                <details class="formula-details"><summary>Show the formulas and model differences</summary><div class="formula-body">
+                    <div><h3>NWE band proximity</h3><code>10 × clamp(1 − distance / (0.5 × band width), 0, 1)</code><p>Band width is upper minus lower; distance is from the close to the nearest band. An equidistant midpoint has no direction. Signal scoring uses causal endpoint bands; the chart’s repainting overlay is a separate view.</p></div>
+                    <div><h3>DSS-led near-cross</h3><code>10 × (1 − |DSS − trigger| / 5)</code><p>Applies to a qualifying approach within a 5-point oscillator spread. A confirmed directional cross earns 10. Being nearby alone is not enough: the model must classify a directional approach.</p></div>
+                    <div><h3>DSS support in an NWE-led model</h3><code>10 × (cross/near points + extreme-turn points) / 6</code><p>Directional cross: 3 raw points; near-cross: 2. A recent same-direction extreme with a current turn adds 3. The six-point maximum is normalized to 10; missing support adds zero.</p></div>
+                    <div><h3>Relative volume</h3><code>10 × clamp(relative volume − 1, 0, 1)</code><p>Relative volume = current volume ÷ the average of the previous 20 bars. The candle must agree with the signal. Missing, non-positive, or invalid volumes make this factor unavailable.</p></div>
+                    <div><h3>Estimated OHLCV delta</h3><code>close location = clamp((2C − H − L) / (H − L), −1, 1)</code><code>points = 10 × max(direction × close location, 0)</code><p>C, H, and L are close, high, and low; direction is +1 for LONG or −1 for SHORT. Required prices and volume must be valid, with positive volume and a positive high–low range.</p></div>
+                </div></details>
+            </section>
+
+            <section id="example" class="guide-section" aria-labelledby="example-title">
+                <div class="section-heading"><p class="eyebrow">03 / FOLLOW THE POINTS</p><h2 id="example-title">How a 25/40 score happens.</h2><p>An illustrative LONG setup in a DSS-led model, using one timeframe and one source.</p></div>
+                <div class="example-panel">
+                    <div class="example-context"><span class="pill">ILLUSTRATION</span><span>Open 90 · High 94 · Low 84 · Close 92</span><span>Envelope 90–110</span></div>
+                    <div class="example-layout">
+                        <form id="score-example" class="example-controls" aria-label="Illustrative score components">
+                            <fieldset id="example-inputs" disabled><legend class="sr-only">Adjust hypothetical factor points</legend>
+                                <label class="example-factor nwe" for="example-nwe"><span><strong>NWE</strong><small>Distance 2 ÷ half-width 10 → 8 points</small></span><output id="example-nwe-value" for="example-nwe">8.0</output><input id="example-nwe" name="nwe" type="range" min="0" max="10" step="0.5" value="8" aria-describedby="example-help"></label>
+                                <label class="example-factor dss" for="example-dss"><span><strong>DSS Bressert</strong><small>Gap approaches from −3 to −2 → 6 points</small></span><output id="example-dss-value" for="example-dss">6.0</output><input id="example-dss" name="dss" type="range" min="0" max="10" step="0.5" value="6" aria-describedby="example-help"></label>
+                                <label class="example-factor relative-volume" for="example-volume"><span><strong>Relative volume</strong><small>Volume 150 ÷ baseline 100 = 1.5× → 5 points</small></span><output id="example-volume-value" for="example-volume">5.0</output><input id="example-volume" name="volume" type="range" min="0" max="10" step="0.5" value="5" aria-describedby="example-help"></label>
+                                <label class="example-factor delta" for="example-delta"><span><strong>Delta proxy</strong><small>Close location (184 − 94 − 84) ÷ 10 = 0.6 → 6 points</small></span><output id="example-delta-value" for="example-delta">6.0</output><input id="example-delta" name="delta" type="range" min="0" max="10" step="0.5" value="6" aria-describedby="example-help"></label>
+                            </fieldset>
+                            <div class="example-actions"><button class="secondary-button" type="reset">Reset example</button><span id="example-mode">Worked example values</span></div>
+                            <p id="example-help" class="small-text">Move a slider to explore hypothetical factor points. The candle calculations above describe the original example; changing points does not recalculate a market setup or change your signals.</p>
+                            <noscript><p class="small-text">The worked example is readable without JavaScript. Enable JavaScript to adjust its points.</p></noscript>
+                        </form>
+                        <div class="example-result"><p class="eyebrow">TOTAL SETUP STRENGTH</p><div class="example-total"><output id="example-total" for="example-nwe example-dss example-volume example-delta" aria-label="Illustrative total score out of 40" aria-live="polite">25.0</output><span>/ 40</span></div><div class="total-bar" aria-hidden="true"><span id="example-bar-nwe" class="nwe" style="width:20%"></span><span id="example-bar-dss" class="dss" style="width:15%"></span><span id="example-bar-volume" class="relative-volume" style="width:12.5%"></span><span id="example-bar-delta" class="delta" style="width:15%"></span></div><dl class="group-totals"><div><dt>Price evidence</dt><dd><output id="example-price">14.0</output> / 20</dd></div><div><dt>Volume evidence</dt><dd><output id="example-flow">11.0</output> / 20</dd></div></dl><p>Adding points explains the arithmetic. A signal still needs the model’s qualifying state and fresh, matching data.</p></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="status" class="guide-section" aria-labelledby="status-title">
+                <div class="section-heading"><p class="eyebrow">04 / READ THE LABEL TOO</p><h2 id="status-title">The same number can mean different things.</h2><p>Check the state beside a score before comparing setups. A refresh does not guarantee a qualifying signal.</p></div>
+                <div class="state-grid">
+                    <article class="state-card"><span class="state-label current">CURRENT · CLOSED BAR</span><h3>Fresh and qualifying</h3><p>The model qualifies on a completed bar, with a fresh same-source price. The score belongs to that model and timeframe.</p></article>
+                    <article class="state-card"><span class="state-label provisional">PROVISIONAL</span><h3>The bar is still forming</h3><p>Stockbit retained NWE/DSS scores can use a forming bar. Its score and direction can change before the bar closes. Crypto NWE/DSS signals use completed bars.</p></article>
+                    <article class="state-card"><span class="state-label inactive">NOT QUALIFYING · 0</span><h3>A real zero</h3><p>The latest fresh bar no longer qualifies. A retained Stockbit model row keeps a zero state; the screener’s minimum-score filter can hide it.</p></article>
+                    <article class="state-card"><span class="state-label stale">STALE · HELD VALUE</span><h3>Last recorded score</h3><p>Fresh inputs are missing or the scan is out of date. Keep the recorded number and its scale; it is not a current entry signal. Use Refresh signals on the screener to retry.</p></article>
+                    <article class="state-card"><span class="state-label inactive">FACTOR UNAVAILABLE</span><h3>Missing is not agreement</h3><p>Invalid or missing inputs contribute zero for that factor and remain labeled unavailable. An unavailable total is shown as a dash, rather than an invented zero.</p></article>
+                    <article class="state-card"><span class="state-label legacy">LEGACY MODEL</span><h3>Keep its original scale</h3><p>An older model retains its recorded /10 or /20 basis. It is not multiplied into /40. Match the model version before comparing scores.</p></article>
+                </div>
+                <div class="plain-note"><strong>Two separate clocks.</strong> The score bar is checked against its own signal timeframe. The current price has its own freshness check, usually from 15-minute candles. Neither a new scan nor a weekly score makes an old price fresh.</div>
+            </section>
+
+            <section id="other-models" class="guide-section" aria-labelledby="other-title">
+                <div class="section-heading"><p class="eyebrow">05 / MATCH THE MODEL</p><h2 id="other-title">Not every signal uses /40.</h2><p>The model name and recorded score basis tell you which calculation applies.</p></div>
+                <div class="other-models">
+                    <article class="model-explainer"><span class="pill">STRATEGY + CONFLUENCE · /10</span><h3>A weighted blend</h3><p>Models routed through the shared confirmation scorer combine strategy strength with a normalized confluence score.</p><code>0.70 × strategy + 0.30 × confluence</code><p>Both components are on a 0–10 scale. Confluence starts with up to 11 raw points, then is normalized to 10.</p><details><summary>What contributes to confluence?</summary><ul><li>DSS cross: 3 points; near-cross: 2.</li><li>Recent directional DSS extreme and current turn: 3.</li><li>NWE outer-band body touch: 3; wick touch: 2.</li><li>Near-line close: 1; directional band reclaim: 1.</li></ul><p>A directional NWE touch and DSS extreme are eligibility conditions. The signal candle must close inside the envelope; points alone do not bypass those conditions.</p></details></article>
+                    <article class="model-explainer"><span class="pill">TOKOCRYPTO · VOTE GATE</span><h3>At least 2 of 4 vote LONG</h3><p>The Tokocrypto voting strategy checks EMA 20/50, RSI, range breakout, and relative volume. It requires at least two LONG votes and more LONG than SHORT votes; a 2–2 tie does not qualify.</p><p>Neutral or unavailable indicators do not vote. The strategy emits LONG signals only, then applies the confirmation blend described alongside.</p><p class="muted">This vote count is an eligibility gate, not a /40 subtotal. Separate Tokocrypto NWE/DSS models use their own /40 rules. Crypto spot and tokenized stocks remain distinct categories.</p></article>
+                </div>
+                <div class="plain-note"><strong>Compare like with like.</strong> Use the same model version, app, product/category, timeframe, and data-source basis. Proxy candles remain research data; a higher score does not turn them into venue-native execution evidence.</div>
+            </section>
+
+            <section id="catalog" class="guide-section" aria-labelledby="catalog-title">
+                <div class="section-heading"><p class="eyebrow">06 / YOUR DEPLOYMENT</p><h2 id="catalog-title">Current model reference.</h2><p>Model identities, scales, minimum scores, and history requirements are read from this deployment’s catalog.</p></div>
+                <div class="catalog-panel"><div class="catalog-toolbar"><label for="catalog-app">App<select id="catalog-app" disabled><option value="stockbit">Stockbit</option></select></label><label for="catalog-timeframe">Timeframe<select id="catalog-timeframe" disabled><option value="4h">4h</option></select></label><button id="catalog-retry" class="secondary-button" type="button" disabled>Loading catalog…</button></div><p id="catalog-status" class="catalog-status" role="status" aria-live="polite">Loading the model catalog. The guide and example remain available.</p><div id="catalog-models" class="catalog-models" role="region" aria-label="Registered score models" aria-busy="true"></div><noscript><p class="small-text">Enable JavaScript to load your deployment’s model catalog. You can still read every explanation above.</p></noscript></div>
+            </section>
+            <footer class="guide-footer"><p>Keep the model, timeframe, source, and freshness beside the score.</p><a class="back-link" href="/">Back to screener <span aria-hidden="true">→</span></a></footer>
+        </main>
+    </div>
+</body>
+</html>

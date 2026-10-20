@@ -22,6 +22,7 @@
         </div>
 
         <div class="flex items-center gap-2">
+            <a href="/scoring" aria-label="Open scoring guide" title="Scoring guide" class="inline-flex min-h-[28px] items-center gap-1.5 rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[10px] font-semibold text-cyan-300 hover:border-cyan-600 hover:text-cyan-100 focus:outline focus:outline-2 focus:outline-cyan-400"><span aria-hidden="true">?</span><span class="hidden sm:inline">Scoring guide</span></a>
             <details id="signalAlertsDetails" class="relative">
                 <summary id="signalAlertsToggle" class="list-none cursor-pointer rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-xs font-semibold text-gray-200 hover:border-amber-600 focus:outline focus:outline-2 focus:outline-amber-400" aria-label="Open notifications">
                     Notifications <span id="signalAlertUnreadCount" class="ml-1 rounded-full bg-gray-700 px-1.5 py-0.5 text-[10px] font-mono" role="status" aria-live="polite">0</span>
@@ -510,7 +511,7 @@
                         <button id="openInstrumentRegistry" type="button" class="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-[10px] font-semibold text-gray-300 hover:border-cyan-700 hover:text-cyan-200 focus:outline focus:outline-2 focus:outline-cyan-500" aria-haspopup="dialog" aria-controls="instrumentRegistryDialog">Tickers</button>
                     </div>
                 </div>
-                <p class="text-[10px] leading-relaxed text-gray-400">Market-entry signals appear only when the latest strategy bar qualifies and a fresh same-source 15m price is available. Score measures setup strength, not win probability or execution availability. Price is a candle close, not live bid/ask; this is not an executable order and no order is placed.</p>
+                <p class="text-[10px] leading-relaxed text-gray-400">Market-entry signals appear only when the latest strategy bar qualifies and a fresh same-source 15m price is available. Score measures setup strength, not win probability or execution availability. <a href="/scoring" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2 hover:text-cyan-100 focus:outline focus:outline-2 focus:outline-cyan-400">How scoring works</a>. Price is a candle close, not live bid/ask; this is not an executable order and no order is placed.</p>
 
                 <div id="screener-status" class="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-2 text-[11px] leading-relaxed text-gray-300" role="status" aria-live="polite">
                     <div class="flex items-center justify-between gap-3">
