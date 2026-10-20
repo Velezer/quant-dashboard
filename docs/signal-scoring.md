@@ -1,5 +1,8 @@
 # Signal scoring rules
 
+The in-app Scoring guide (`/scoring`) explains these rules on one page, with an
+illustrative points example and the deployment's current model catalog.
+
 This is a reader reference for the signal scores shown by the dashboard. The
 versioned strategy and catalog definitions in the source code own runtime
 values; update this explanation when those definitions change. A score ranks a
@@ -75,8 +78,9 @@ not interchangeable with the four-factor `/40` score.
 Tokocrypto crypto-spot and tokenized-stock research profiles first apply a
 separate long-only voting gate. The four potential votes are EMA 20/50 trend,
 RSI momentum, range breakout, and relative volume. At least two available
-indicators must vote LONG. Missing or neutral indicators do not vote, and
-SHORT votes are not enabled for these categories. The vote count is an
+indicators must vote LONG, and LONG votes must outnumber SHORT votes; a 2–2
+tie does not qualify. Missing or neutral indicators do not vote. SHORT signal
+emission is disabled for these categories. The vote count is an
 eligibility rule, not a numeric subtotal. A signal that passes it still goes
 through the shared required-confirmation path and receives the `/10`
 strategy/confluence blend described above; it does not receive the four-factor
