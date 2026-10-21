@@ -213,6 +213,7 @@ export function installSignalRefresh() {
         });
         eventSource.addEventListener('scan_completed', event => {
             hideScanBanner();
+            window.dispatchEvent(new CustomEvent('dashboard:signal-inbox-refresh'));
             try {
                 const data = JSON.parse(event.data);
                 nextScanEpoch = Number(data.next_scan_epoch) || nextScanEpoch;

@@ -126,6 +126,41 @@ and no qualifying setups are distinct. No app receives fabricated signals.
 10. **Decision:** Correct existing delivery/presentation paths, verify all four
     app identities and permission states, and retain honest qualification rules.
 
+## Notification history and current signal state
+
+The notification badge counts unread rows in the durable alert inbox, while the
+screener shows the latest current signal snapshot. An alert may remain in the
+inbox after its signal leaves the screener. The inbox keeps at most 1,000 recent
+rows and removes alerts after two hours. Mark all read clears the unread badge;
+same-origin browser requests can update it from the deployed dashboard. Each
+completed scan refreshes inbox history, including scans with no new alerts, but
+only new alert events trigger browser notifications.
+
+1. **Direct effect:** Users can distinguish unread notification history from
+   current screener signals and clear the unread badge on the deployed site.
+2. **Immediate consequence:** A completed scan updates inbox count and removes
+   expired rows even when its current signal snapshot is empty.
+3. **Response:** Browser delivery remains opt-in and runs only for newly emitted
+   alerts; inbox refreshes do not replay historical notifications.
+4. **Interactions:** The API remains backed by the existing SQLite alert table;
+   its mark-read endpoint accepts a matching Origin and rejects cross-site posts.
+5. **Accumulation:** Existing two-hour retention and 1,000-row cap bound inbox
+   history; this change adds no database or browser persistence.
+6. **Failure boundaries:** A failed inbox fetch preserves the last loaded rows,
+   marks the status stale, and exposes Retry. A missed scan event is recovered
+   when the user opens the inbox or retries.
+7. **Recovery:** Mark all read clears unread state; Retry and the next completed
+   scan reload history and apply normal expiry cleanup.
+8. **Governance:** This uses existing browser, SSE, HTTP, and SQLite boundaries;
+   same-origin validation protects the update route without changing app auth.
+9. **Trajectory:** Hypothesis: naming history separately from current signals
+   will reduce confusion when old alerts outlive a screener row; reconsider if
+   users still interpret the unread badge as a current-signal count.
+10. **Decision:** Preserve durable recent history, make the remote same-origin
+    read update work, refresh on every completed scan, and state the distinction
+    in the inbox. Reconsider if production reports show unread count remains
+    unchanged after marking read or after its rows expire.
+
 ## Scoring guide UX contract
 
 The primary task is to understand a signal's displayed score and decide whether
