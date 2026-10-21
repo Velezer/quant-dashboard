@@ -24,6 +24,16 @@ CREATE TABLE IF NOT EXISTS app.plan_reviews (
     invalidation_condition TEXT NOT NULL DEFAULT '', risk_rule TEXT NOT NULL DEFAULT '',
     next_review_date TEXT, updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS app.entry_model_validation_reports (
+    instrument_id TEXT NOT NULL, timeframe TEXT NOT NULL, protocol_id TEXT NOT NULL,
+    computed_at INTEGER NOT NULL, report_json TEXT NOT NULL, summary_json TEXT NOT NULL,
+    backtest_complete INTEGER NOT NULL CHECK(backtest_complete IN (0,1)),
+    has_validated_model INTEGER NOT NULL CHECK(has_validated_model IN (0,1)),
+    PRIMARY KEY(instrument_id,timeframe),
+    FOREIGN KEY(instrument_id) REFERENCES instruments(instrument_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS app.idx_entry_validation_reports_timeframe
+    ON entry_model_validation_reports(timeframe,protocol_id,computed_at);
 CREATE TABLE IF NOT EXISTS app.saved_reward_risk_rule (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     risk_pct REAL NOT NULL, reward_pct REAL NOT NULL, win_rate_pct REAL NOT NULL,

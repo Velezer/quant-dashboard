@@ -41,6 +41,64 @@ and recovery states and the keyboard-accessible path.
 6. **Report evidence.** State what passed, what remains unknown, and the exact
    recovery signal if the behavior regresses.
 
+## Per-ticker entry-model validation
+
+The primary task is to backtest the actual current entry scoring models for
+each registered ticker and inspect whether their held-out evidence supports
+future sizing research. `/entry-validation` is one discoverable page, linked
+from the screener and scoring guide. App, exact product, ticker, timeframe,
+lead model/version, candle source, sample dates, costs, and frozen evaluation
+protocol remain explicit. A completed backtest is distinct from a validated
+entry model. The existing composite NWE/DSS report is not substituted for the
+live NWE-led or DSS-led four-factor models.
+
+The page exposes paginated saved evidence, one-ticker runs, a sequential run of
+all eligible tickers in the selected scope, progress, stop after the current
+ticker, failed-ticker retry, and source/history recovery links. Empty history,
+pending venue verification, unsupported models, provider/proxy data, missing
+costs, insufficient validation/holdout samples, stale protocol snapshots, and
+request failures remain visible. No ticker beyond an arbitrary first page is
+silently omitted. Report details expose fixed score bands, factor outcomes,
+uncertainty, and future sizing prerequisites; no sizing model is built here.
+
+Reuse the live causal lead generators and one shared four-factor mapping.
+Entries occur at the next bar open, with no overlapping trades and no trades
+crossing split boundaries. Use a fixed 60/20/20 chronology; compare the existing
+4/8/12-bar exits on validation data only and report the untouched final holdout.
+Score-band discrimination is a conservative exploratory screen, not independent
+proof: enough observed trades in at least two bands, better top-band mean
+return, and separated Wilson win-rate intervals. Existing sample, native-source,
+fee and full-cost requirements remain separate checks. Omitted slippage,
+funding/borrow, depth and impact prevent execution/sizing promotion.
+
+Only aggregate, versioned evidence snapshots are saved in the existing app
+SQLite database, with exact identity and a fingerprint of the used candles.
+No simulated account, position, equity curve, or trade history is persisted.
+Saved snapshots do not imply current source freshness; rerunning refreshes them.
+History reads and concurrent evaluation remain bounded independently of candle
+retention. Future sizing must recheck the exact model/protocol/data identity.
+
+1. **Direct effect:** One page runs actual entry-model backtests per ticker and
+   exposes the evidence and unresolved validation checks.
+2. **Immediate consequence:** Users can distinguish completing a run from
+   establishing a model suitable for later sizing work.
+3. **Response:** Sequential bounded requests, explicit progress, stop and retry
+   prevent a large registry from becoming one unbounded market-wide computation.
+4. **Interactions:** Preserve app/product/source/timeframe identity, shared
+   scoring semantics, causal data, split isolation, and current evidence gates.
+5. **Accumulation:** Store only the latest aggregate snapshot per ticker/frame
+   in the app database; version and fingerprint it to prevent cross-model reuse.
+6. **Failure boundaries:** Reject malformed history, keep missing data and
+   unknown costs unavailable, and never treat a proxy or gross return as proof.
+7. **Recovery:** Saved reports survive reloads; users can rerun, retry failed
+   tickers, change scope, or use the dashboard's market/listing recovery controls.
+8. **Governance:** Extend existing Rust evidence/research modules, frontend,
+   and SQLite; no service, crate, execution behavior, or sizing allocation.
+9. **Trajectory:** Hypothesis: conditional held-out return/loss evidence can
+   later inform sizing; validation and uncertainty must precede that decision.
+10. **Decision:** Build exact per-ticker evidence and honest blocking states,
+    test causality/identity/boundaries, and defer sizing until its inputs qualify.
+
 ## Candle retention and low total strength
 
 The user must be able to retain history beyond 730 days and identify a

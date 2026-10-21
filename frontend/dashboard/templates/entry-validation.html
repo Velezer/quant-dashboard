@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Backtest each ticker's current entry scoring models and review held-out evidence before building position sizing.">
+    <meta name="color-scheme" content="dark">
+    <title>Entry validation · Signal Screener</title>
+    <link rel="stylesheet" href="/web/styles/entry-validation.css">
+    <script type="module" src="/web/scripts/modules/entry-validation.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to validation workspace</a>
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="Signal Screener dashboard"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>SIGNAL SCREENER<span class="brand-section"> / RESEARCH</span></a>
+        <nav aria-label="Page navigation"><a href="/scoring">Scoring guide</a><a href="/">Back to screener <span aria-hidden="true">↗</span></a></nav>
+    </header>
+    <main id="main" class="page-shell">
+        <section class="hero" aria-labelledby="page-title">
+            <div><p class="eyebrow accent">ENTRY MODEL VALIDATION</p><h1 id="page-title">Evidence before sizing.</h1><p class="lede">Backtest the actual NWE-led and DSS-led entry scores for each registered ticker. Inspect what happened on held-out candles, with the app, product, timeframe, and source kept attached.</p></div>
+            <aside class="sequence" aria-label="Research sequence"><span class="sequence-current"><b>01</b> Validate entries</span><span><b>02</b> Review held-out evidence</span><span><b>03</b> Build sizing later <small>Blocked</small></span></aside>
+        </section>
+        <div class="meaning-note"><span aria-hidden="true">i</span><p><strong>A completed backtest is not a validated entry model.</strong> Sample size, history span, score discrimination, venue-native data, and execution-cost coverage must pass separately. Four indicator scores out of 10, each weighted 25%, are not win probabilities.</p></div>
+        <section class="scope-panel" aria-labelledby="scope-title">
+            <div class="section-heading"><div><p class="eyebrow">01 / CHOOSE THE UNIVERSE</p><h2 id="scope-title">Ticker scope</h2></div><span id="protocol-label" class="protocol-label">Loading protocol…</span></div>
+            <form id="scope-form" class="scope-form">
+                <label>App<select id="validation-app" name="exchange"><option value="stockbit">Stockbit</option><option value="pintu">Pintu</option><option value="pluang">Pluang</option><option value="tokocrypto">Tokocrypto</option></select></label>
+                <label>Product<select id="validation-product" name="product"><option value="all">All products</option></select></label>
+                <label>Signal timeframe<select id="validation-timeframe" name="timeframe"><option value="15m">15m</option><option value="1h">1h</option><option value="2h">2h</option><option value="4h">4h</option><option value="1d">1d</option><option value="1w">1w</option></select></label>
+                <label class="search-field">Ticker search<input id="validation-search" type="search" name="search" placeholder="Symbol or registered ticker" autocomplete="off"></label>
+                <button id="apply-scope" type="submit" class="secondary-button">Apply scope</button>
+            </form>
+            <p class="small-text">Each run uses stored matching candles. Backtesting does not fetch provider data. For missing history or listing problems, use the screener’s <a href="/">Sync Market and app readiness controls</a>, then refresh this page’s list.</p>
+        </section>
+        <section class="summary-grid" aria-label="Selected scope coverage">
+            <div class="summary-card"><span>Registered tickers</span><strong id="summary-registered">—</strong><small>In this filtered scope</small></div>
+            <div class="summary-card"><span>Completed backtests</span><strong id="summary-backtested">—</strong><small>Snapshots, not live data</small></div>
+            <div class="summary-card"><span>Validated evidence</span><strong id="summary-validated">—</strong><small>Tickers passing evidence checks</small></div>
+            <div class="summary-card sizing-summary"><span>Next: sizing model</span><strong>Blocked</strong><small>Entry evidence comes first</small></div>
+        </section>
+        <section class="universe-panel" aria-labelledby="universe-title">
+            <div class="section-heading"><div><p class="eyebrow">02 / RUN &amp; REVIEW</p><h2 id="universe-title">Per-ticker evidence</h2></div><button id="reload-list" class="text-button" type="button">Refresh list</button></div>
+            <div class="run-toolbar"><div class="run-actions"><button id="run-scope" class="primary-button" type="button" disabled>Backtest all tickers in scope</button><button id="stop-run" class="secondary-button danger-button" type="button" hidden>Stop after current ticker</button><button id="retry-failed" class="secondary-button" type="button" hidden>Retry failed tickers</button></div><span class="small-text">Both entry models · one ticker per request</span></div>
+            <div id="run-progress-panel" class="run-progress-panel" hidden><div class="progress-heading"><strong id="run-progress-title">Preparing…</strong><span id="run-progress-count"></span></div><progress id="run-progress" max="1" value="0" aria-label="Ticker backtest progress"></progress><p id="run-progress-detail" class="small-text">Preparing the registered ticker list.</p></div>
+            <p id="list-status" class="status-message" role="status" aria-live="polite">Loading registered tickers and saved evidence…</p>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Per-ticker entry model evidence table"><table class="ticker-table"><caption class="sr-only">Saved entry-model backtests for each registered ticker in the selected scope.</caption><thead><tr><th scope="col">Ticker / product</th><th scope="col">Entry model evidence</th><th scope="col">Holdout sample / win rate</th><th scope="col">Mean return</th><th scope="col">Snapshot / source</th><th scope="col"><span class="sr-only">Review evidence</span></th></tr></thead><tbody id="ticker-rows"><tr><td colspan="6" class="empty-cell">Loading the ticker registry…</td></tr></tbody></table></div>
+            <div class="pagination"><span id="page-label" class="small-text">Loading…</span><div><button id="previous-page" type="button" class="secondary-button" disabled>Previous</button><button id="next-page" type="button" class="secondary-button" disabled>Next</button></div></div>
+            <p id="failed-status" class="small-text error-text" hidden></p>
+        </section>
+        <section id="report-panel" class="report-panel" aria-labelledby="report-title" tabindex="-1">
+            <div class="section-heading"><div><p class="eyebrow">03 / INSPECT THE EVIDENCE</p><h2 id="report-title">Select a ticker</h2><p id="report-identity" class="small-text">Review exact model versions, source, held-out outcomes, and validation blockers.</p></div><button id="run-selected" class="primary-button" type="button" disabled>Backtest selected ticker</button></div>
+            <p id="report-status" class="status-message" role="status" aria-live="polite">Choose Review on a ticker above. A saved report is a snapshot; rerun it to evaluate the latest stored history.</p>
+            <button id="retry-report" class="secondary-button" type="button" hidden>Retry saved report</button>
+            <div id="report-content" hidden>
+                <div id="report-notices" class="report-notices"></div>
+                <div class="model-tabs" role="tablist" aria-label="Entry model"><button id="model-tab-nwe" type="button" role="tab" aria-controls="model-evidence" aria-selected="true" tabindex="0" data-model="nwe">NWE-led entry</button><button id="model-tab-dss" type="button" role="tab" aria-controls="model-evidence" aria-selected="false" tabindex="-1" data-model="dss">DSS-led entry</button></div>
+                <div id="model-evidence" role="tabpanel" aria-labelledby="model-tab-nwe" tabindex="0">
+                    <div class="model-heading"><div><h3 id="model-title">Entry model</h3><p id="model-version" class="model-id"></p></div><span id="model-state" class="state-badge">Not validated</span></div>
+                    <div id="evidence-metrics" class="evidence-metrics"></div>
+                    <div class="evidence-grid"><section class="check-panel" aria-labelledby="checks-title"><h3 id="checks-title">Validation checklist</h3><ul id="model-checks" class="check-list"></ul><div id="model-blockers" class="blockers"></div></section><section class="method-panel" aria-labelledby="sample-title"><h3 id="sample-title">Chronological sample</h3><div class="split-strip" aria-hidden="true"><span>Training</span><span>Selection</span><span>Holdout</span></div><dl id="sample-dates" class="metadata-list"></dl><p id="exit-protocol" class="small-text"></p><p class="small-text">The nominal split is 60% / 20% / 20%. Training includes the required indicator warm-up; short histories may leave no validation or holdout window. Dates above show the actual sample.</p></section></div>
+                    <section class="bands-panel" aria-labelledby="bands-title"><div class="section-heading"><div><h3 id="bands-title">Held-out outcomes by entry score</h3><p class="small-text">Fixed bands group the four indicator contributions. A small sample or overlapping confidence intervals does not establish score discrimination.</p></div></div><div class="table-scroll" tabindex="0" role="region" aria-label="Holdout score calibration table"><table><thead><tr><th scope="col">Combined points</th><th scope="col">Trades</th><th scope="col">Win rate / 95% interval</th><th scope="col">Mean return</th><th scope="col">Average win / loss</th><th scope="col">Profit factor</th></tr></thead><tbody id="score-band-rows"></tbody></table></div><p id="calibration-note" class="small-text"></p><p class="small-text">The below-10 band corresponds to the screener’s amber Low total strength distinction. These groups describe observations; they do not change the live model’s four /10 scores or qualifying rules.</p></section>
+                    <details id="factor-band-details" class="disclosure" hidden><summary>Inspect outcomes by individual indicator</summary><div id="factor-band-content"></div></details>
+                    <details class="disclosure"><summary>Source, fees, costs, and reproducibility</summary><div class="source-cost-grid"><div><h4>History snapshot</h4><dl id="history-metadata" class="metadata-list"></dl></div><div><h4>Cost coverage</h4><dl id="cost-metadata" class="metadata-list"></dl><p id="cost-omissions" class="small-text"></p></div></div></details>
+                </div>
+                <section class="sizing-gate" aria-labelledby="sizing-title"><span class="gate-icon" aria-hidden="true">▣</span><div><p class="eyebrow">NEXT STAGE / SIZING</p><h3 id="sizing-title">Entry evidence is the prerequisite.</h3><p id="sizing-reason">A sizing model is not built on a score alone.</p><p id="sizing-inputs" class="small-text"></p></div><span class="state-badge pending">Blocked</span></section>
+            </div>
+        </section>
+        <details class="protocol-panel disclosure"><summary>Read the backtest protocol and limits</summary><div class="protocol-grid"><div><h3>Match the live entry model</h3><p>The study uses the actual NWE-led or DSS-led signal and its four indicator contributions at the completed signal bar. Entry is at the next bar’s open. A single position is evaluated at a time.</p></div><div><h3>Keep the holdout separate</h3><p>Training, validation, and holdout are chronological. The declared 4, 8, and 12 bar exits are compared on validation data only. The final holdout does not choose the exit or scoring weights.</p></div><div><h3>Respect source and costs</h3><p>Research-proxy history stays labeled. Known transaction fees are separate from missing slippage, impact, funding, borrow, and other execution costs. Gross-only research cannot become validated execution evidence.</p></div><div><h3>Read limits are not retention limits</h3><p>Each evaluation reads a bounded sample. Earlier candles may remain in SQLite even when the read limit is reached. Candle storage has no application maximum age; the evidence minimum is not a storage cap.</p></div></div><p class="small-text">Repeatedly tuning a model after reading its holdout contaminates that holdout. Treat these results as research observations, preserve protocol and source identity, and use genuinely new data for subsequent independent validation.</p></details>
+        <footer class="page-footer"><span>Read-only market research · no order or account state</span><a href="/">Return to signal screener ↗</a></footer>
+        <noscript><p class="status-message error-text">Enable JavaScript to load the registry, run backtests, and inspect saved evidence. The protocol above remains readable.</p></noscript>
+    </main>
+</body>
+</html>

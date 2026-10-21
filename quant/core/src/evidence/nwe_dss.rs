@@ -7,9 +7,13 @@ const TRAINING_FRACTION: f64 = 0.60;
 const VALIDATION_FRACTION: f64 = 0.20;
 
 #[derive(Clone, Copy, Default)]
-struct TradeSummary {
-    trades: usize,
-    wins: usize,
+pub(super) struct TradeSummary {
+    pub(super) trades: usize,
+    pub(super) wins: usize,
+    losses: usize,
+    min_return_pct: Option<f64>,
+    max_return_pct: Option<f64>,
+    negative_squared_returns_pct: f64,
     net_sum_pct: f64,
     gross_sum_pct: f64,
     positive_returns_pct: f64,
@@ -19,7 +23,7 @@ struct TradeSummary {
 }
 
 impl TradeSummary {
-    fn add(
+    pub(super) fn add(
         &mut self,
         bars: &[StrategyBar],
         entry: usize,
@@ -58,7 +62,14 @@ impl TradeSummary {
         } else {
             gross
         };
+        if !net.is_finite() {
+            return;
+        }
         self.trades += 1;
+        self.losses += usize::from(net < 0.0);
+        self.min_return_pct = Some(self.min_return_pct.map_or(net, |value| value.min(net)));
+        self.max_return_pct = Some(self.max_return_pct.map_or(net, |value| value.max(net)));
+        if net < 0.0 { self.negative_squared_returns_pct += net * net; }
         self.wins += usize::from(net > 0.0);
         self.net_sum_pct += net;
         self.gross_sum_pct += gross;
@@ -72,11 +83,11 @@ impl TradeSummary {
         self.last_time = Some(bars[exit].time);
     }
 
-    fn mean_net(self) -> Option<f64> {
+    pub(super) fn mean_net(self) -> Option<f64> {
         (self.trades > 0).then(|| self.net_sum_pct / self.trades as f64)
     }
 
-    fn to_json(self, fees_known: bool) -> Value {
+    pub(super) fn to_json(self, fees_known: bool) -> Value {
         let sample_days = self
             .first_time
             .zip(self.last_time)
@@ -85,7 +96,15 @@ impl TradeSummary {
         let confidence_interval = wilson_interval(self.wins, self.trades);
         let profit_factor_unbounded =
             self.positive_returns_pct > 0.0 && self.negative_returns_pct == 0.0;
+        let average_win = (self.wins > 0).then(|| self.positive_returns_pct / self.wins as f64);
+        let average_loss = (self.losses > 0).then(|| self.negative_returns_pct / self.losses as f64);
         json!({
+            "average_win_pct": average_win,
+            "average_loss_pct": average_loss,
+            "payoff_ratio": average_win.zip(average_loss).map(|(win, loss)| win / loss),
+            "min_return_pct": self.min_return_pct,
+            "max_return_pct": self.max_return_pct,
+            "downside_deviation_pct": (self.trades > 0).then(|| (self.negative_squared_returns_pct / self.trades as f64).sqrt()),
             "trades": self.trades,
             "wins": self.wins,
             "win_rate_pct": (self.trades > 0).then(|| self.wins as f64 / self.trades as f64 * 100.0),
@@ -97,12 +116,14 @@ impl TradeSummary {
             "profit_factor": if self.negative_returns_pct > 0.0 { Some(self.positive_returns_pct / self.negative_returns_pct) } else if profit_factor_unbounded { Some(99.0) } else { None },
             "profit_factor_unbounded": profit_factor_unbounded,
             "trade_span_days": sample_days,
+            "first_entry_ts": self.first_time,
+            "last_exit_ts": self.last_time,
             "fees_applied": fees_known
         })
     }
 }
 
-fn wilson_interval(wins: usize, trades: usize) -> Option<[f64; 2]> {
+pub(super) fn wilson_interval(wins: usize, trades: usize) -> Option<[f64; 2]> {
     if trades == 0 {
         return None;
     }

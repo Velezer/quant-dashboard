@@ -59,34 +59,12 @@ pub(super) fn four_indicator_score_outputs(
     signal: &quant_core::StrategySignal,
     lead_indicator: &str,
 ) -> (Vec<Value>, Option<(f64, f64, f64)>) {
-    let confluence = signal.confluence.as_ref();
-    let (nwe_points, nwe_state, dss_points, dss_state) = if lead_indicator == "DSS Bressert" {
-        (
-            confluence.map(|score| score.score).unwrap_or(0.0),
-            confluence
-                .map(|score| score.nadaraya_state.as_str())
-                .unwrap_or("UNAVAILABLE"),
-            signal.strategy_strength,
-            signal.regime.as_str(),
-        )
+    let kind = if lead_indicator == "DSS Bressert" {
+        quant_core::EntryModelKind::Dss
     } else {
-        (
-            signal.strategy_strength,
-            signal.regime.as_str(),
-            confluence.map(|score| score.score).unwrap_or(0.0),
-            confluence
-                .map(|score| score.dss_state.as_str())
-                .unwrap_or("UNAVAILABLE"),
-        )
+        quant_core::EntryModelKind::Nwe
     };
-    let Some(score) = quant_core::score_four_indicators(
-        bars,
-        &signal.direction,
-        nwe_state,
-        nwe_points,
-        dss_state,
-        dss_points,
-    ) else {
+    let Some(score) = quant_core::score_entry_signal(bars, signal, kind) else {
         return (Vec::new(), None);
     };
     let groups = Some((score.price_score, score.volume_score, score.total_score));

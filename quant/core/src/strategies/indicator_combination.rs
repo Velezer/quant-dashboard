@@ -4,7 +4,8 @@ use super::common::{
     finite, IdxStrategyConfig, IdxTimeSeriesMomentumConfig, StrategyBar, StrategySignal,
 };
 use super::confirmations::{
-    apply_stockbit_nwe_proximity_confluence, NWE_DSS_SIGNAL_MINIMUM_SCORE_OUT_OF_20,
+    apply_stockbit_nwe_proximity_confluence, apply_stockbit_nwe_proximity_confluence_with_dss,
+    NWE_DSS_SIGNAL_MINIMUM_SCORE_OUT_OF_20,
     NWE_DSS_SIGNAL_SCORE_SCALE_MAX, SIGNAL_STRENGTH_SCORE_SCALE_MAX,
 };
 use crate::indicators::nadaraya_watson_envelope::calculate_nadaraya_watson_endpoint_only;
@@ -88,6 +89,18 @@ pub fn stockbit_nwe_4h_minimum_history_bars() -> usize {
 /// Generate causal Stockbit 4h NWE cross and near-band research directions.
 /// A lower-band cross or near-band state is LONG; an upper-band equivalent is SHORT.
 pub fn generate_stockbit_nwe_4h_signals(bars: &[StrategyBar]) -> Vec<StrategySignal> {
+    generate_stockbit_nwe_4h_signals_internal(bars, None)
+}
+
+pub(super) fn generate_stockbit_nwe_4h_signals_with_dss(
+    bars: &[StrategyBar], dss: &crate::DssResult,
+) -> Vec<StrategySignal> {
+    generate_stockbit_nwe_4h_signals_internal(bars, Some(dss))
+}
+
+fn generate_stockbit_nwe_4h_signals_internal(
+    bars: &[StrategyBar], dss: Option<&crate::DssResult>,
+) -> Vec<StrategySignal> {
     let config = NadarayaWatsonEnvelopeConfig::default();
     let signal_config = StockbitNwe4hSignalConfig::default();
     let required_cross_bars = stockbit_nwe_4h_minimum_history_bars();
@@ -150,7 +163,11 @@ pub fn generate_stockbit_nwe_4h_signals(bars: &[StrategyBar]) -> Vec<StrategySig
         signal.strategy_strength = strategy_strength;
         signal.regime = regime.to_string();
     }
-    apply_stockbit_nwe_proximity_confluence(bars, &mut signals);
+    if let Some(dss) = dss {
+        apply_stockbit_nwe_proximity_confluence_with_dss(&mut signals, dss);
+    } else {
+        apply_stockbit_nwe_proximity_confluence(bars, &mut signals);
+    }
     let score_rounding_tolerance = 1e-12;
     for signal in &mut signals {
         if matches!(signal.direction.as_str(), "LONG" | "SHORT")

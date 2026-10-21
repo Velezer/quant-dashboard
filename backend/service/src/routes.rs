@@ -381,6 +381,7 @@ mod calculations;
 mod charts;
 mod control;
 mod market;
+mod entry_validation;
 mod pine;
 mod rule_simulator;
 
@@ -439,6 +440,10 @@ pub(super) fn handle(mut stream: TcpStream, db: &str, state: &Arc<AppState>) {
         Ok(()) => return,
         Err(request) => request,
     };
+    let request = match entry_validation::handle(request) {
+        Ok(()) => return,
+        Err(request) => request,
+    };
     let request = match pine::handle(request) {
         Ok(()) => return,
         Err(request) => request,
@@ -468,3 +473,15 @@ fn read_post_body(request_text: &str) -> String {
 #[cfg(test)]
 #[path = "routes_tests.rs"]
 mod tests;
+
+fn has_json_content_type(request_text: &str) -> bool {
+    request_text
+        .lines()
+        .find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.trim()
+                .eq_ignore_ascii_case("content-type")
+                .then(|| value.trim().to_ascii_lowercase())
+        })
+        .is_some_and(|content_type| content_type.starts_with("application/json"))
+}

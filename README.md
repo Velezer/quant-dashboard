@@ -64,6 +64,7 @@ Hourly candle sync selects active registered tickers across exchanges. Tokocrypt
 
 - The dashboard presents plans and research evidence; it has no paper-trading or live-order workflow.
 - Research-only models remain marked unvalidated. A price inside an entry zone does not make a plan an order instruction.
+- Use the per-ticker [entry validation page](/entry-validation) to backtest the current NWE-led and DSS-led scoring models before sizing research. See the [validation protocol](docs/entry-validation.md) for the held-out evidence and limitations.
 - Historical claims retain their symbol, asset class, strategy, data window, and validation status. Win rate or total P&L is not a substitute for CAGR.
 - Compounding evidence uses a chronological equity curve. The default promotion gate requires at least 10 completed trades over 730 calendar days and a positive compounded curve. Day-trade and multibagger profiles have additional strategy-specific gates.
 - The steady-state memory target is 16 MB; chart and evidence reads are bounded.

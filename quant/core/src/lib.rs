@@ -63,6 +63,7 @@ pub use day_trade::compute_day_trade_profile;
 pub use evidence::{
     day_trade_minimum_win_rate_pct, evaluate_historical_evidence,
     evaluate_historical_evidence_with_fees, evaluate_nwe_dss_exit_selection,
+    evaluate_entry_score_backtest, ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
     historical_evidence_minimum_cagr_pct, historical_evidence_minimum_calendar_month_return_pct,
     historical_evidence_profile, HistoricalEvidenceProfile, MIN_ASYMMETRIC_DAY_TRADE_WIN_RATE_PCT,
     MIN_ASYMMETRIC_REWARD_RISK, MIN_DAY_TRADE_PROFIT_FACTOR, MIN_DAY_TRADE_WIN_RATE_PCT,
@@ -111,7 +112,7 @@ pub use strategies::{
     generate_tokocrypto_confluence_signals, indicator_combination_indicator_ids,
     is_pintu_golden_cross_strategy, is_tokenized_stock_confluence_strategy,
     is_tokocrypto_confluence_strategy, is_tokocrypto_spot_confluence_strategy, round_price_up,
-    score_four_indicators, stockbit_dss_bressert_signal_strategy_id,
+    score_four_indicators, score_entry_signal, EntryModelKind, stockbit_dss_bressert_signal_strategy_id,
     stockbit_nwe_4h_minimum_history_bars, stockbit_nwe_signal_strategy_id,
     tokocrypto_confluence_indicator_ids, DssBressertFrameResult, DssBressertMtfResult,
     DssBressertTimeframe, DssBressertTimeframeInput, FourIndicatorScore, IdxIntradayMomentumConfig,
