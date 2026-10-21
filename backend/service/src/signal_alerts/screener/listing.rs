@@ -75,6 +75,15 @@ pub(crate) fn list_signal_screener_page(
     let page_size = limit.clamp(1, MAX_SIGNAL_SCREENER_PAGE_SIZE);
     let page_offset = offset.min(matching_rows);
     let display_order = signal_screener_display_order_sql();
+    let score_model_by_strategy = crate::master_data::master_data_records("signal_strategies")
+        .iter()
+        .filter_map(|model| {
+            Some((
+                crate::master_data::catalog_string(model, "id")?,
+                crate::master_data::catalog_string(model, "score_model_id")?,
+            ))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
     let query = format!(
         "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,signal_strategy_id,
                 signal_strategy_name,timeframe,direction,score,strategy_strength,confluence_score,
@@ -154,10 +163,7 @@ pub(crate) fn list_signal_screener_page(
             let stored_model_id = signal["score_basis"]["model_id"]
                 .as_str()
                 .unwrap_or_default();
-            let current_model_id = crate::master_data::master_data_records("signal_strategies")
-                .iter()
-                .find(|model| crate::master_data::catalog_string(model, "id") == Some(strategy_id))
-                .and_then(|model| crate::master_data::catalog_string(model, "score_model_id"));
+            let current_model_id = score_model_by_strategy.get(strategy_id).copied();
             if current_model_id.is_some_and(|model_id| model_id != stored_model_id) {
                 signal["score_status"] = json!("stale");
                 if let Some(score_basis) = signal["score_basis"].as_object_mut() {
