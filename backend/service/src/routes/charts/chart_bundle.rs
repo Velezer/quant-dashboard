@@ -114,8 +114,12 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
     let mut markov_regimes = serde_json::Map::new();
     let mut freshness = serde_json::Map::new();
     let mut bundle_degraded = false;
+    let regime_config = quant_core::MarkovRegimeConfig::default();
     for (timeframe, timeframe_limit) in timeframes {
         let requested = timeframe_limit.min(limit);
+        let calculation_limit = requested
+            .saturating_add(regime_config.chart_context_warmup_bars() as i64)
+            .min(MAX_CANDLES);
         let mut metadata = if exchange.is_empty() {
             load_series_metadata(market_connection, &storage_symbol, timeframe, false)
         } else {
@@ -137,13 +141,18 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             })
         });
         let mut candle_result = if exchange.is_empty() {
-            load_series_candles(market_connection, &storage_symbol, timeframe, MAX_CANDLES)
+            load_series_candles(
+                market_connection,
+                &storage_symbol,
+                timeframe,
+                calculation_limit,
+            )
         } else {
             load_series_candles_for_exchange(
                 market_connection,
                 &storage_symbol,
                 timeframe,
-                MAX_CANDLES,
+                calculation_limit,
                 source_exchange,
             )
         };
@@ -155,7 +164,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                 market_connection,
                 &storage_symbol,
                 timeframe,
-                MAX_CANDLES,
+                calculation_limit,
                 "pluang",
             );
             metadata = load_series_metadata_for_exchange(
@@ -177,6 +186,10 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                 };
                 if let Some(object) = metadata.as_object_mut() {
                     object.insert("chart_status".into(), serde_json::json!(chart_status));
+                    object.insert(
+                        "markov_calculation_bars".into(),
+                        serde_json::json!(candles.len()),
+                    );
                     object.insert(
                         "chart_min_bars".into(),
                         serde_json::json!(MIN_CHART_CANDLES),
@@ -204,7 +217,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                     .collect::<Vec<_>>();
                 let regimes = quant_core::classify_regimes(
                     &markov_bars,
-                    &quant_core::MarkovRegimeConfig::default(),
+                    &regime_config,
                 );
                 let regime_start = candles.len().saturating_sub(requested as usize);
                 markov_regimes.insert(

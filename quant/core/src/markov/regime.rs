@@ -16,6 +16,7 @@ use super::dtmc::TRANSITION_DIRICHLET_ALPHA;
 
 const MINIMUM_WALK_FORWARD_TRAINING_TRANSITIONS: usize = 30;
 const MAX_REGIME_TREND_EMA_SPAN_BARS: usize = 500;
+const EMA_CONTEXT_SPANS: usize = 20;
 
 #[derive(Debug, Clone)]
 pub struct MarkovAsset {
@@ -141,6 +142,22 @@ impl MarkovRegimeConfig {
             .nwe
             .minimum_endpoint_envelope_bars()
             .max(config.dss.pds.saturating_mul(2))
+    }
+
+    /// Recent pre-chart bars needed to warm finite windows and recursive EMA
+    /// state before calculating the visible chart regime labels.
+    pub fn chart_context_warmup_bars(self) -> usize {
+        let config = self.validated();
+        let recursive_span = config
+            .trend_ema_span_bars
+            .max(config.dss.ema_len)
+            .max(config.dss.trigger_len);
+        let recursive_context = recursive_span.saturating_mul(EMA_CONTEXT_SPANS);
+        let envelope_context = config.nwe.window_bars.saturating_mul(2);
+        let stochastic_context = config.dss.pds.saturating_mul(2);
+        recursive_context
+            .max(envelope_context)
+            .saturating_add(stochastic_context)
     }
 }
 
