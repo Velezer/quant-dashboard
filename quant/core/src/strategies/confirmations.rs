@@ -145,6 +145,14 @@ pub(super) fn apply_stockbit_nwe_proximity_confluence(
     let dss_config = DssConfig::default();
     let dss = calculate_dss(&highs, &lows, &closes, &dss_config);
 
+    apply_stockbit_nwe_proximity_confluence_with_dss(signals, &dss);
+}
+
+pub(super) fn apply_stockbit_nwe_proximity_confluence_with_dss(
+    signals: &mut [StrategySignal],
+    dss: &crate::DssResult,
+) {
+    let dss_config = DssConfig::default();
     for (index, signal) in signals.iter_mut().enumerate() {
         let direction = match signal.direction.as_str() {
             "LONG" => 1,

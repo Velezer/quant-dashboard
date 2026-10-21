@@ -421,15 +421,3 @@ use analytics::{
 #[cfg(test)]
 use analytics::{summarize_monthly_marked_returns, utc_month_key, wilson_interval_95_pct};
 use backtest::run_registered_pine_strategy;
-
-fn has_json_content_type(request_text: &str) -> bool {
-    request_text
-        .lines()
-        .find_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            key.trim()
-                .eq_ignore_ascii_case("content-type")
-                .then(|| value.trim().to_ascii_lowercase())
-        })
-        .is_some_and(|content_type| content_type.starts_with("application/json"))
-}

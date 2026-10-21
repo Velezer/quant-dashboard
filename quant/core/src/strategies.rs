@@ -8,6 +8,7 @@ mod confirmations;
 mod dss_bressert;
 mod dss_bressert_4h;
 mod four_indicator_score;
+mod entry_score;
 mod idx;
 mod indicator_combination;
 mod pintu;
@@ -48,6 +49,8 @@ pub use dss_bressert_4h::{
     STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID_LEGACY,
     STOCKBIT_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID,
 };
+pub use entry_score::{score_entry_signal, EntryModelKind};
+pub(crate) use entry_score::visit_entry_signals;
 pub use four_indicator_score::{
     score_four_indicators, FourIndicatorScore, ScoreComponent,
     FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX, FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX,

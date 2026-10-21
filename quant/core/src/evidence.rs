@@ -8,6 +8,7 @@
 
 mod calendar;
 mod nwe_dss;
+mod entry_score;
 mod performance;
 mod profile;
 
@@ -24,6 +25,7 @@ use performance::{calculate_performance, EvaluatedTrade};
 use profile::{resolve_evidence_strategy, EvidenceStrategy};
 use serde_json::{json, Value};
 
+pub use entry_score::{evaluate_entry_score_backtest, ENTRY_SCORE_VALIDATION_PROTOCOL_ID};
 pub use nwe_dss::{evaluate_nwe_dss_exit_selection, NWE_DSS_EXIT_CANDIDATES_BARS};
 pub use profile::{
     historical_evidence_profile, HistoricalEvidenceProfile,
