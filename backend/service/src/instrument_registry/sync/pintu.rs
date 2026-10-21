@@ -102,9 +102,10 @@ pub(crate) fn reconcile_pintu(
                      source_url,source_snapshot_at,price_source_policy,
                      contract_metadata_json,registered_at,updated_at,is_active)
                    VALUES(?1,'pintu',?2,?3,?4,?5,?6,?7,?8,?9,?10,0,?11,?12,?13,
-                          'binance_then_yfinance_research_proxy',?14,unixepoch(),unixepoch(),1)
+                          'pintu_native_then_research_proxy',?14,unixepoch(),unixepoch(),1)
                    ON CONFLICT(instrument_id) DO UPDATE SET
                      venue_symbol=excluded.venue_symbol,
+                     price_source_policy=excluded.price_source_policy,
                      listing_status=excluded.listing_status,
                      venue_verified=excluded.venue_verified,
                      registration_source=excluded.registration_source,
