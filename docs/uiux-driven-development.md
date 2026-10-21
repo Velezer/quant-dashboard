@@ -186,38 +186,49 @@ and no qualifying setups are distinct. No app receives fabricated signals.
 
 ## Notification history and current signal state
 
-The notification badge counts unread rows in the durable alert inbox, while the
-screener shows the latest current signal snapshot. An alert may remain in the
-inbox after its signal leaves the screener. The inbox keeps at most 1,000 recent
-rows and removes alerts after two hours. Mark all read clears the unread badge;
-same-origin browser requests can update it from the deployed dashboard. Each
-completed scan refreshes inbox history, including scans with no new alerts, but
-only new alert events trigger browser notifications.
+The notification badge reports the exact count of current screener signals
+across apps, using the screener's current visibility and freshness rules. An
+amber badge means the counted snapshot may be stale; an unavailable count is
+shown as unknown rather than zero. The inbox separately retains unread alert
+history, so an alert may remain after its signal leaves the screener. It keeps
+at most 1,000 recent rows and removes alerts after two hours. Mark all read
+clears unread history, not the current-signal count. Each completed scan
+refreshes both counts, including scans with no new alerts, but only new alert
+events trigger browser notifications. Every inbox alert offers a View current
+signal action that applies its app, product, timeframe, and symbol filters,
+selects the exact current row, and scrolls it into view. If the alert's row has
+left the current snapshot, the inbox reports that instead of selecting an
+unrelated signal.
 
-1. **Direct effect:** Users can distinguish unread notification history from
-   current screener signals and clear the unread badge on the deployed site.
-2. **Immediate consequence:** A completed scan updates inbox count and removes
-   expired rows even when its current signal snapshot is empty.
+1. **Direct effect:** The badge equals the current signal count across apps;
+   users can separately inspect unread history, clear it, and navigate from an
+   alert to its matching current screener row.
+2. **Immediate consequence:** The count endpoint uses the same screener listing
+   rules and bounds as the current snapshot. Completed scans update the count
+   and remove expired inbox rows even when the signal count is zero.
 3. **Response:** Browser delivery remains opt-in and runs only for newly emitted
-   alerts; inbox refreshes do not replay historical notifications.
-4. **Interactions:** The API remains backed by the existing SQLite alert table;
-   its mark-read endpoint accepts a matching Origin and rejects cross-site posts.
+   alerts; inbox refreshes do not replay historical notifications. If no matching
+   row remains current, show that state in the inbox and keep its history visible.
+4. **Interactions:** Current signals come from the existing screener database;
+   unread history remains in the SQLite alert table. The mark-read endpoint
+   accepts a matching Origin and rejects cross-site posts.
 5. **Accumulation:** Existing two-hour retention and 1,000-row cap bound inbox
    history; this change adds no database or browser persistence.
-6. **Failure boundaries:** A failed inbox fetch preserves the last loaded rows,
-   marks the status stale, and exposes Retry. A missed scan event is recovered
-   when the user opens the inbox or retries.
-7. **Recovery:** Mark all read clears unread state; Retry and the next completed
-   scan reload history and apply normal expiry cleanup.
+6. **Failure boundaries:** A failed count request shows an unknown count instead
+   of a false zero. A stale snapshot is visibly marked. Inbox fetch failures
+   preserve loaded rows, mark the status stale, and expose Retry.
+7. **Recovery:** The next screener refresh or completed scan recomputes the
+   count. Mark all read clears unread history; Retry reloads history and applies
+   normal expiry cleanup.
 8. **Governance:** This uses existing browser, SSE, HTTP, and SQLite boundaries;
    same-origin validation protects the update route without changing app auth.
-9. **Trajectory:** Hypothesis: naming history separately from current signals
-   will reduce confusion when old alerts outlive a screener row; reconsider if
-   users still interpret the unread badge as a current-signal count.
-10. **Decision:** Preserve durable recent history, make the remote same-origin
-    read update work, refresh on every completed scan, and state the distinction
-    in the inbox. Reconsider if production reports show unread count remains
-    unchanged after marking read or after its rows expire.
+9. **Trajectory:** Hypothesis: separating the signal count from unread history
+   will prevent old alerts from looking like current signals; reconsider if the
+   badge differs from the screener's unfiltered current row count.
+10. **Decision:** Preserve durable recent history, count signals through the
+    existing screener visibility rules, keep same-origin read updates, and
+    refresh both counts on scans. Reconsider if the badge differs from an
+    unfiltered screener count after the same snapshot loads.
 
 ## Scoring guide UX contract
 

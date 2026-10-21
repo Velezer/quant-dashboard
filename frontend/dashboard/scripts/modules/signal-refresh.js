@@ -1,6 +1,8 @@
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
 import { readApiResponse } from './api.js';
 
+const SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS = 30_000;
+
 /** Coordinates the 15-minute scan view, refresh action, and reconnect recovery. */
 export function installSignalRefresh() {
     let lastRequestAt = 0;
@@ -8,6 +10,40 @@ export function installSignalRefresh() {
     let nextScanEpoch = 0;
     let countdownPoll = null;
     let eventSource = null;
+    let signalCountRequestInFlight = false;
+    let signalCountRefreshPending = false;
+    let lastSignalCountRequestAt = 0;
+
+    async function fetchCurrentSignalCount(force = false) {
+        if (!force && Date.now() - lastSignalCountRequestAt < SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS) return;
+        if (signalCountRequestInFlight) {
+            if (force) signalCountRefreshPending = true;
+            return;
+        }
+        signalCountRequestInFlight = true;
+        lastSignalCountRequestAt = Date.now();
+        try {
+            const response = await fetch('/api/signals/count', { cache: 'no-store' });
+            const payload = await readApiResponse(response);
+            const count = payload?.signal_count;
+            if (!response.ok || !Number.isSafeInteger(count) || count < 0) {
+                throw new Error(payload?.error || `HTTP ${response.status}`);
+            }
+            window.dispatchEvent(new CustomEvent('dashboard:current-signal-count', {
+                detail: { count, stale: payload.stale === true, generated_at: payload.generated_at },
+            }));
+        } catch (error) {
+            window.dispatchEvent(new CustomEvent('dashboard:current-signal-count', {
+                detail: { count: null, stale: true, error: String(error?.message || 'count unavailable').slice(0, 160) },
+            }));
+        } finally {
+            signalCountRequestInFlight = false;
+            if (signalCountRefreshPending) {
+                signalCountRefreshPending = false;
+                void fetchCurrentSignalCount(true);
+            }
+        }
+    }
 
     async function fetchFreshSignals({ quiet = false, append = false, offset = 0 } = {}) {
         const currentRequest = ++requestSerial;
@@ -48,6 +84,7 @@ export function installSignalRefresh() {
             }
             getDashboardBinding('applySignalSnapshot')?.(payload, { append });
             void getDashboardBinding('refreshAppSignalReadiness')?.(String(query.exchange || 'stockbit'), payload.summary);
+            if (!append) void fetchCurrentSignalCount();
             lastRequestAt = Date.now();
         } catch (error) {
             if (currentRequest === requestSerial) {
@@ -185,7 +222,10 @@ export function installSignalRefresh() {
     function initEventSource() {
         if (eventSource) eventSource.close();
         eventSource = new EventSource('/api/events');
-        eventSource.addEventListener('open', () => updateSseBadge(true));
+        eventSource.addEventListener('open', () => {
+            updateSseBadge(true);
+            void fetchCurrentSignalCount(true);
+        });
         eventSource.addEventListener('connected', event => {
             updateSseBadge(true);
             try {
@@ -214,6 +254,7 @@ export function installSignalRefresh() {
         eventSource.addEventListener('scan_completed', event => {
             hideScanBanner();
             window.dispatchEvent(new CustomEvent('dashboard:signal-inbox-refresh'));
+            void fetchCurrentSignalCount(true);
             try {
                 const data = JSON.parse(event.data);
                 nextScanEpoch = Number(data.next_scan_epoch) || nextScanEpoch;
@@ -227,6 +268,7 @@ export function installSignalRefresh() {
         });
         eventSource.addEventListener('scan_failed', () => {
             hideScanBanner();
+            void fetchCurrentSignalCount(true);
             lastRequestAt = 0;
             void fetchFreshSignals({ quiet: true });
         });
@@ -242,4 +284,5 @@ export function installSignalRefresh() {
         updateSseBadge: { get: () => updateSseBadge },
         showToast: { get: () => showToast },
     });
+    void fetchCurrentSignalCount();
 }
