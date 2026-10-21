@@ -1,6 +1,69 @@
 use super::*;
 
 pub(super) struct TokocryptoNativeAdapter;
+pub(super) struct PintuNativeAdapter;
+
+static PINTU_NATIVE_CAPABILITIES: CandleProviderCapabilities = CandleProviderCapabilities {
+    exchange_ids: &["pintu"],
+    product_ids: &["pintu_pro_futures"],
+    asset_categories: &["crypto_perpetual"],
+    intervals: &["15m", "1h", "1d"],
+};
+
+impl CandleSyncAdapter for PintuNativeAdapter {
+    fn provider_id(&self) -> &'static str {
+        "pintu"
+    }
+
+    fn source_class(&self) -> CandleSourceClass {
+        CandleSourceClass::VenueNative
+    }
+
+    fn capabilities(&self) -> &'static CandleProviderCapabilities {
+        &PINTU_NATIVE_CAPABILITIES
+    }
+
+    fn supports_symbol(&self, instrument: RegisteredCandleInstrument<'_>) -> bool {
+        instrument.underlying_symbol.ends_with("USDT")
+            && instrument.underlying_symbol.len() > "USDT".len()
+    }
+
+    fn sync(
+        &self,
+        connection: &Connection,
+        request: &CandleSyncRequest<'_>,
+    ) -> CandleProviderReport {
+        let instrument = request.instrument;
+        let outcomes = match request.window {
+            CandleSyncWindow::Intraday => {
+                match crate::pintu_storage::sync_intraday_asset(
+                    connection,
+                    instrument.storage_symbol,
+                    instrument.product_id,
+                    instrument.asset_category_id,
+                ) {
+                    Ok((rows_15m, rows_1h)) => vec![
+                        CandleProviderReport::interval("15m", Ok(rows_15m)),
+                        CandleProviderReport::interval("1h", Ok(rows_1h)),
+                    ],
+                    Err(error) => {
+                        vec![CandleProviderReport::interval("intraday", Err(error))]
+                    }
+                }
+            }
+            CandleSyncWindow::Daily => vec![CandleProviderReport::interval(
+                "1d",
+                crate::pintu_storage::sync_daily_asset(
+                    connection,
+                    instrument.storage_symbol,
+                    instrument.product_id,
+                    instrument.asset_category_id,
+                ),
+            )],
+        };
+        CandleProviderReport { outcomes }
+    }
+}
 
 static TOKOCRYPTO_NATIVE_CAPABILITIES: CandleProviderCapabilities = CandleProviderCapabilities {
     exchange_ids: &["tokocrypto"],
@@ -177,4 +240,5 @@ impl CandleSyncAdapter for ResearchProxyAdapter {
 }
 
 pub(super) static TOKOCRYPTO_NATIVE_ADAPTER: TokocryptoNativeAdapter = TokocryptoNativeAdapter;
+pub(super) static PINTU_NATIVE_ADAPTER: PintuNativeAdapter = PintuNativeAdapter;
 pub(super) static RESEARCH_PROXY_ADAPTER: ResearchProxyAdapter = ResearchProxyAdapter;

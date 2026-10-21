@@ -2,7 +2,8 @@
 
 The dashboard is app-first at the classification layer. It chooses the app
 exchange first, then the instrument category, and finally the data provider.
-Tokocrypto's public adapter is approved for bounded selected-asset candle sync.
+Tokocrypto's and Pintu Futures' public adapters are approved for bounded
+selected-asset candle sync.
 It decodes the official response in memory, validates completed OHLCV rows, and
 persists only typed records in SQLite. Hourly and daily sync select active
 registered tickers across exchanges. When the native-to-proxy policy allows
@@ -14,20 +15,27 @@ equities and tokenized-stock underlyings use Yahoo Finance. Each attempted or
 successful provider retains its own series and diagnostics; the app exchange
 and data provider stay distinct. Proxy bars remain labeled as research proxies.
 
+Pintu Pro Futures uses its public `get-candles` endpoint for verified
+perpetual listings. The adapter stores completed native one-hour candles,
+builds 15-minute candles from three completed 5-minute venue bars, and
+refreshes up to 1,000 daily bars when the contract has at least 731 completed
+days. A failed or short native response falls back to the labeled research
+providers; stale prices remain ineligible for signals.
+
 ## Feasibility decision
 
 | App | Official access found | What can be used | Decision |
 | --- | --- | --- | --- |
 | Tokocrypto | Public REST and WebSocket documentation | Symbols, klines, trades, order book, live streams; private account/order data needs an API key | Native public candle adapter enabled |
-| Pintu | First-party public Retail and Pro listing endpoints; separate partner market-data access | Daily Retail Spot, Pro Spot, and Pro Futures discovery; no Pintu-native candles yet | App listing adapter enabled; candle proxies remain research-only |
+| Pintu | First-party public Retail and Pro listing endpoints, including the public Pro Futures `get-candles` endpoint | Pro Futures supplies 5m, 1h, and 1d OHLCV; 15m is aggregated from three complete native 5m bars | Native Pro Futures candles are enabled; Spot remains research-only |
 | Stockbit | No public complete Stockbit ticker feed or candle API was found; the official IDX listed-company directory is publicly readable | The approved IDX directory snapshot supplies the ticker universe for the Stockbit app choice; Yahoo `.JK` candles stay research-only | Registry provenance identifies IDX, and proxy prices do not establish Stockbit execution availability |
 | Pluang | Official pages document live IDX price, bid/ask, volume, a 5-minute chart, and order book in the app, but no public developer API was found | Requires a partner/data agreement or an approved export | Scraping is not enabled; terms prohibit automated extraction without written permission |
 | Research reference APIs | Binance, Coinbase, Bybit, and OKX publish public candle endpoints | Used only for external crypto reference series; ticker coverage varies by provider | These series do not confirm app availability, venue liquidity, or execution eligibility |
 
 “No public API was found” is a feasibility result, not proof that a private
-commercial integration cannot exist. The Tokocrypto adapter remains limited to
-public symbol discovery and completed candles; account, order, and execution
-endpoints are out of scope.
+commercial integration cannot exist. The Tokocrypto and Pintu adapters remain
+limited to public market data; account, order, and execution endpoints are out
+of scope.
 
 ## Stockbit 15-minute free-source decision — 2026-10-02
 

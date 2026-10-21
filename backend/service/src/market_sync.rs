@@ -1,7 +1,7 @@
 use super::*;
 mod adapters;
 mod contract;
-use adapters::{RESEARCH_PROXY_ADAPTER, TOKOCRYPTO_NATIVE_ADAPTER};
+use adapters::{PINTU_NATIVE_ADAPTER, RESEARCH_PROXY_ADAPTER, TOKOCRYPTO_NATIVE_ADAPTER};
 use contract::{
     should_continue_candle_provider_chain, CandleProviderCapabilities, CandleProviderFailure,
     CandleProviderReport, CandleSourceClass, CandleSyncAdapter, CandleSyncRequest,
@@ -11,8 +11,11 @@ use contract::{
 
 // This is the explicit source policy: native data is attempted first, then a
 // separately labeled research proxy where the registered instrument permits it.
-static CANDLE_SYNC_ADAPTERS: [&dyn CandleSyncAdapter; 2] =
-    [&TOKOCRYPTO_NATIVE_ADAPTER, &RESEARCH_PROXY_ADAPTER];
+static CANDLE_SYNC_ADAPTERS: [&dyn CandleSyncAdapter; 3] = [
+    &TOKOCRYPTO_NATIVE_ADAPTER,
+    &PINTU_NATIVE_ADAPTER,
+    &RESEARCH_PROXY_ADAPTER,
+];
 
 #[path = "market_sync_targets.rs"]
 mod targets;

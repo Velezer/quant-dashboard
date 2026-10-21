@@ -75,10 +75,10 @@ pub(super) fn candle_source_for_exchange(
         return (None, None);
     };
     let normalized = normalize_exchange_id(exchange);
-    let native = if normalized == "tokocrypto" {
-        "tokocrypto_native".to_string()
-    } else {
-        format!("{normalized}_native")
+    let native = match normalized.as_str() {
+        "tokocrypto" => "tokocrypto_native".to_string(),
+        "pintu" | "pintu_futures" => "pintu_futures_native".to_string(),
+        _ => format!("{normalized}_native"),
     };
     (
         Some(native),

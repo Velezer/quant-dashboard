@@ -4,6 +4,7 @@ mod foreign_flow;
 mod instrument_registry;
 mod master_data;
 mod pintu_listing;
+mod pintu_storage;
 mod public_http;
 mod request_admission;
 mod research_proxy;

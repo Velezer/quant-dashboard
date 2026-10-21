@@ -209,8 +209,8 @@ pub(super) fn initialize_market_storage(
     Ok(())
 }
 /// Provider access is an ingestion concern, never a chart read concern.
-/// Tokocrypto is the native venue feed; bounded Binance, Coinbase, Bybit, OKX,
-/// and Yahoo research proxies are available where their market mappings fit.
+/// Tokocrypto and Pintu Futures have native public market-data feeds; bounded
+/// Binance, Coinbase, Bybit, OKX, and Yahoo proxies fill only unsupported data.
 pub(super) fn provider_sync_enabled() -> bool {
     true
 }
@@ -220,7 +220,8 @@ pub(super) fn provider_sync_by_exchange() -> Value {
         "tokocrypto": true,
         "stockbit": false,
         "idx": false,
-        "pintu": false,
+        "pintu": true,
+        "pintu_futures": true,
         "pluang": false
     })
 }
