@@ -57,6 +57,7 @@ export function installSignalScreener() {
     let visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
     let nextSignalOffset = 0;
     let hasMoreSignalRows = false;
+    let pendingAlertNavigation = null;
     let searchRefreshTimer = null;
     const renderScoreBasis = createSignalScoreBasisMarkup({ escape, scoreModelFor });
     const renderSignalCard = createSignalScreenerCard({
@@ -113,6 +114,81 @@ export function installSignalScreener() {
             append,
             offset: append ? nextSignalOffset : 0,
         });
+    }
+
+    function alertSignalIdentity(signal) {
+        return signalIdentity({
+            exchange_id: String(signal.exchange_id || '').toLowerCase(),
+            product_id: String(signal.product_id || '').toLowerCase(),
+            asset_category_id: String(signal.asset_category_id || '').toLowerCase(),
+            symbol: String(signal.symbol || '').trim().toUpperCase(),
+            signal_strategy_id: String(signal.signal_strategy_id || ''),
+            timeframe: String(signal.timeframe || '').toLowerCase(),
+        });
+    }
+
+    function finishAlertNavigation(result, signal = null) {
+        const pending = pendingAlertNavigation;
+        if (!pending) return;
+        pendingAlertNavigation = null;
+        if (signal) focusSignal(signal);
+        pending.resolve(result);
+    }
+
+    function focusSignal(signal) {
+        const visibleIndex = filteredSignals().findIndex(row => row.signal_id === signal.signal_id);
+        if (visibleIndex >= 0) visibleSignalLimit = Math.max(visibleSignalLimit, visibleIndex + 1);
+        selectSignal(signal);
+        window.requestAnimationFrame(() => {
+            document.getElementById('workspaceGrid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const row = [...(document.querySelectorAll('#signalsList [data-signal-id]') || [])]
+                .find(button => button.dataset.signalId === signal.signal_id);
+            row?.focus({ preventScroll: true });
+            row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+    }
+
+    function openSignalFromAlert(alert) {
+        const identity = alertSignalIdentity(alert || {});
+        const symbol = String(alert?.symbol || '').trim();
+        const exchange = String(alert?.exchange_id || '').toLowerCase();
+        const product = String(alert?.product_id || '').toLowerCase();
+        const timeframe = String(alert?.timeframe || '').toLowerCase();
+        const strategy = String(alert?.signal_strategy_id || '');
+        if (!symbol || !exchange || !product || !timeframe || !strategy) return Promise.resolve('not_current');
+
+        globalThis.activeExchangeFilter = exchange;
+        globalThis.activeProductFilter = product;
+        timeframeFilter = availableTimeframes.includes(timeframe) ? timeframe : 'all';
+        updateAppButtons();
+        updateProductFilters();
+        updateSignalTimeframeButtons();
+        const search = document.getElementById('searchInput');
+        if (search) search.value = symbol;
+        setSearchQuery(symbol, { refresh: false });
+
+        const currentSignal = filteredSignals().find(row => alertSignalIdentity(row) === identity);
+        if (currentSignal) {
+            focusSignal(currentSignal);
+            return Promise.resolve('opened');
+        }
+        if (typeof getDashboardBinding('fetchFreshSignals') !== 'function') {
+            return Promise.resolve('unavailable');
+        }
+
+        if (pendingAlertNavigation) finishAlertNavigation('replaced');
+        return new Promise(resolve => {
+            pendingAlertNavigation = { identity, resolve };
+            refreshSignalRows();
+        });
+    }
+
+    function setSearchQuery(value, { refresh = true } = {}) {
+        searchQuery = String(value || '');
+        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        renderSignalsList();
+        clearTimeout(searchRefreshTimer);
+        if (refresh) searchRefreshTimer = setTimeout(() => refreshSignalRows(), 250);
     }
 
     function escape(value) {
@@ -418,6 +494,12 @@ export function installSignalScreener() {
         requestError = '';
         renderSignalsList();
         if (globalThis.selectedSignal) renderSelectedSignalSummary(globalThis.selectedSignal);
+        if (pendingAlertNavigation) {
+            const signal = filteredSignals().find(row => alertSignalIdentity(row) === pendingAlertNavigation.identity);
+            if (signal) finishAlertNavigation('opened', signal);
+            else if (hasMoreSignalRows) refreshSignalRows({ append: true });
+            else finishAlertNavigation('not_current');
+        }
     }
 
     function setLoading() {
@@ -430,6 +512,7 @@ export function installSignalScreener() {
         requestState = 'error';
         requestError = String(error || 'Signal request failed').slice(0, 220);
         renderSignalsList();
+        finishAlertNavigation('unavailable');
     }
 
     document.getElementById('signalsList')?.addEventListener('click', event => {
@@ -461,11 +544,7 @@ export function installSignalScreener() {
         refreshSignalRows();
     });
     document.getElementById('searchInput')?.addEventListener('input', event => {
-        searchQuery = event.currentTarget.value;
-        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
-        renderSignalsList();
-        clearTimeout(searchRefreshTimer);
-        searchRefreshTimer = setTimeout(() => refreshSignalRows(), 250);
+        setSearchQuery(event.currentTarget.value);
     });
     document.getElementById('clearSearchBtn')?.addEventListener('click', () => {
         searchQuery = '';
@@ -504,6 +583,7 @@ export function installSignalScreener() {
         renderKPIs: { get: () => renderKpis },
         getFilteredSignals: { get: () => filteredSignals },
         selectSignal: { get: () => selectSignal },
+        openSignalFromAlert: { get: () => openSignalFromAlert },
         prepareChartForSignal: { get: () => prepareChartForSignal },
         clearSelectedSignalChart: { get: () => clearSelectedSignalChart },
         updateChartTimeframeContext: { get: () => updateChartTimeframeContext },

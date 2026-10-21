@@ -134,14 +134,21 @@ inbox after its signal leaves the screener. The inbox keeps at most 1,000 recent
 rows and removes alerts after two hours. Mark all read clears the unread badge;
 same-origin browser requests can update it from the deployed dashboard. Each
 completed scan refreshes inbox history, including scans with no new alerts, but
-only new alert events trigger browser notifications.
+only new alert events trigger browser notifications. Every inbox alert offers a
+View current signal action that applies its app, product, timeframe, and symbol
+filters, selects the exact current row, and scrolls it into view. If the alert's
+row has left the current snapshot, the inbox reports that instead of selecting
+an unrelated signal.
 
 1. **Direct effect:** Users can distinguish unread notification history from
-   current screener signals and clear the unread badge on the deployed site.
+   current screener signals, clear the unread badge on the deployed site, and
+   navigate from an alert to its matching current screener row.
 2. **Immediate consequence:** A completed scan updates inbox count and removes
-   expired rows even when its current signal snapshot is empty.
+   expired rows even when its current signal snapshot is empty. Opening an alert
+   switches the screener filters to its identity before selecting the row.
 3. **Response:** Browser delivery remains opt-in and runs only for newly emitted
-   alerts; inbox refreshes do not replay historical notifications.
+   alerts; inbox refreshes do not replay historical notifications. If no matching
+   row remains current, show that state in the inbox and keep its history visible.
 4. **Interactions:** The API remains backed by the existing SQLite alert table;
    its mark-read endpoint accepts a matching Origin and rejects cross-site posts.
 5. **Accumulation:** Existing two-hour retention and 1,000-row cap bound inbox

@@ -15,6 +15,7 @@ export function installSignalAlerts() {
     let hasLoaded = false;
     let requestInFlight = false;
     let refreshQueued = false;
+    let navigationInProgress = false;
     let statusError = '';
     const browserToggle = document.getElementById('browserAlertsToggle');
     const browserTest = document.getElementById('browserAlertsTest');
@@ -114,6 +115,11 @@ export function installSignalAlerts() {
                 ? `Signal price ${priceNumber.toLocaleString(undefined, { maximumSignificantDigits: 8 })} · `
                 : '';
             appendText(item, 'div', `${signalPrice}candle ${formatTimestamp(alert.signal_bar_time, true)} · detected ${formatTimestamp(alert.created_at)} · ${evidence}`, 'mt-1 text-[9px] leading-relaxed text-gray-500');
+            const openSignalButton = appendText(item, 'button', 'View current signal', 'mt-2 rounded border border-cyan-800 px-2 py-1 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-950 focus:outline focus:outline-2 focus:outline-cyan-400 disabled:cursor-wait disabled:opacity-50');
+            openSignalButton.type = 'button';
+            openSignalButton.dataset.openSignalAlert = String(alert.alert_id);
+            openSignalButton.disabled = navigationInProgress;
+            openSignalButton.setAttribute('aria-label', `Open current ${alert.symbol} ${alert.timeframe} signal in the screener`);
             const source = [alert.data_source, alert.data_provider]
                 .filter(value => value && value !== 'unknown')
                 .join(' · ');
@@ -177,6 +183,31 @@ export function installSignalAlerts() {
     if (retryButton) retryButton.addEventListener('click', () => void loadAlerts());
     window.addEventListener('dashboard:signal-inbox-refresh', () => void loadAlerts());
     if (markReadButton) markReadButton.addEventListener('click', () => void markAllRead());
+    if (list) list.addEventListener('click', async event => {
+        const button = event.target.closest('[data-open-signal-alert]');
+        if (!button || navigationInProgress) return;
+        const alert = alerts.find(item => String(item.alert_id) === button.dataset.openSignalAlert);
+        if (!alert) return;
+        const openSignal = getDashboardBinding('openSignalFromAlert');
+        navigationInProgress = true;
+        renderAlerts();
+        setStatus(`Finding the current ${alert.symbol} ${alert.timeframe} signal…`, 'loading');
+        let result = 'unavailable';
+        try {
+            if (typeof openSignal === 'function') result = await openSignal(alert);
+        } catch (_) {
+            result = 'unavailable';
+        }
+        navigationInProgress = false;
+        renderAlerts();
+        if (result === 'opened') {
+            if (details) details.open = false;
+        } else if (result === 'not_current') {
+            setStatus(`This notification is history; ${alert.symbol} ${alert.timeframe} is no longer in the current screener.`, 'stale');
+        } else if (result === 'unavailable') {
+            setStatus(`Could not check the current ${alert.symbol} signal. Use Refresh signals, then try again.`, 'error');
+        }
+    });
     if (details) details.addEventListener('toggle', () => {
         if (details.open) void loadAlerts();
     });
