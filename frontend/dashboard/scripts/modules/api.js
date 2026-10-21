@@ -28,6 +28,18 @@ export async function requestJson(url, options = {}) {
     return payload;
 }
 
+let pineCapabilitiesRequest;
+
+export function requestPineCapabilities() {
+    if (!pineCapabilitiesRequest) {
+        pineCapabilitiesRequest = requestJson('/api/pine/capabilities').catch(error => {
+            pineCapabilitiesRequest = null;
+            throw error;
+        });
+    }
+    return pineCapabilitiesRequest;
+}
+
 const INSTRUMENTS_API_PAGE_SIZE_ROWS = 500;
 
 export async function requestAllInstruments({ signal, onPage } = {}) {

@@ -1,5 +1,5 @@
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
-import { requestAllInstruments, requestJson } from './api.js';
+import { requestAllInstruments, requestJson, requestPineCapabilities } from './api.js';
 import { MAX_ACTIVE_PINE_INDICATORS } from './pine-chart-output.js';
 import { CHART_INDICATOR_IDS } from './chart-data.js';
 import { installNweDssBacktestReport } from './nwe-dss-backtest.js';
@@ -120,7 +120,7 @@ export function installPineIndicators() {
     }
 
     async function loadCapabilities() {
-        const payload = await requestJson('/api/pine/capabilities');
+        const payload = await requestPineCapabilities();
         const limit = Number(payload?.max_source_bytes);
         if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error('Runtime returned an invalid source limit.');
         maxSourceBytes = limit;
@@ -561,7 +561,13 @@ export function installPineIndicators() {
 
     document.getElementById('openPineIndicators')?.addEventListener('click', async () => {
         if (!dialog?.open) dialog?.showModal();
-        await Promise.all([ensureWorker(), loadSavedIndicators()]);
+        await Promise.all([
+            ensureWorker(),
+            loadSavedIndicators(),
+            loadCapabilities().catch(error => {
+                setStatus(`Runtime capabilities unavailable: ${error.message}. Source can still be recovered after the service restarts.`, 'error');
+            }),
+        ]);
     });
     document.getElementById('closePineIndicators')?.addEventListener('click', () => dialog?.close());
     dialog?.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
@@ -617,7 +623,6 @@ export function installPineIndicators() {
         catch (error) { setStatus(`Could not read Pine file: ${error.message}`, 'error'); }
     });
     window.addEventListener('quant:pine-chart-data-changed', () => { if (activeRecords.length) void runRecords(activeRecords); });
-    void Promise.all([ensureWorker(), loadSavedIndicators(), loadCapabilities().catch(error => setStatus(`Runtime capabilities unavailable: ${error.message}. Source can still be recovered after the service restarts.`, 'error'))]);
 
     publishDashboardBindings('pine-indicators', {
         runPineIndicator: { get: () => record => runRecords(Array.isArray(record) ? record : [record]) },

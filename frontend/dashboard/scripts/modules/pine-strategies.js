@@ -1,5 +1,5 @@
 import { getDashboardBinding } from './runtime-context.js';
-import { requestJson } from './api.js';
+import { requestJson, requestPineCapabilities } from './api.js';
 import { renderPineBacktestDiagnostics } from './pine-backtest-diagnostics.js';
 import { pineBacktestCommissionLabel } from './pine-backtest-commission.js';
 import { createPineBacktestJobClient, createPineBacktestJobUi, displayCandleTimeUtc, parseBacktestDateRange, setPineBacktestStatus } from './pine-backtest-jobs.js';
@@ -58,6 +58,8 @@ export function installPineStrategies() {
     let strategies = [];
     let historyLimits = null;
     let strategyController;
+    let strategyListsAttempted = false;
+    let strategyListsPromise = null;
     let contextRevision = 0;
     const jobClient = createPineBacktestJobClient(requestJson);
 
@@ -199,7 +201,7 @@ export function installPineStrategies() {
         historySelect.disabled = true;
         historySelect.replaceChildren(new Option('Loading limits…', ''));
         try {
-            const capabilities = await requestJson('/api/pine/capabilities');
+            const capabilities = await requestPineCapabilities();
             const recent = Number(capabilities?.max_candles);
             const deep = Number(capabilities?.max_strategy_candles);
             if (!Number.isSafeInteger(recent) || recent < 1 || !Number.isSafeInteger(deep) || deep < recent) {
@@ -219,6 +221,15 @@ export function installPineStrategies() {
             setStatus(`Backtest history limits unavailable: ${error.message}. Reload the strategy list after the local service recovers.`, 'error');
             updateButton();
         }
+    }
+
+    function ensureStrategyListsLoaded(force = false) {
+        if (strategyListsPromise) return strategyListsPromise;
+        if (strategyListsAttempted && !force) return Promise.resolve();
+        strategyListsAttempted = true;
+        strategyListsPromise = Promise.all([loadStrategies(), loadHistoryLimits()])
+            .finally(() => { strategyListsPromise = null; });
+        return strategyListsPromise;
     }
 
     async function runBacktest() {
@@ -335,10 +346,21 @@ export function installPineStrategies() {
     toDateInput?.addEventListener('change', () => invalidateResult('Backtest end date changed. Run the strategy again to refresh these results.'));
     splitSelect?.addEventListener('change', () => invalidateResult('Training share changed. Run the strategy again to refresh these results.'));
     inputControls?.addEventListener('change', () => invalidateResult('Strategy input changed. Run the strategy again to refresh these results.'));
+    const backtestPanel = document.getElementById('pineStrategyBacktest');
+    if (backtestPanel) {
+        select.disabled = true;
+        select.replaceChildren(new Option('Focus a control to load strategies', ''));
+        if (historySelect) {
+            historySelect.disabled = true;
+            historySelect.replaceChildren(new Option('Focus a control to load limits', ''));
+        }
+        setStatus('Focus a backtest control to load registered strategies and history limits.', 'waiting');
+        if (registryState) registryState.textContent = 'Registered strategies load when the backtest controls are first used.';
+        backtestPanel.addEventListener('focusin', () => { void ensureStrategyListsLoaded(); }, { once: true });
+    }
     retryButton?.addEventListener('click', () => {
         invalidateResult('Reloading registered strategies and backtest history limits.');
-        void loadStrategies();
-        void loadHistoryLimits();
+        void ensureStrategyListsLoaded(true);
     });
     document.getElementById('openPineStrategyEditor')?.addEventListener('click', () => {
         const editorButton = document.getElementById('openPineIndicators');
@@ -361,6 +383,4 @@ export function installPineStrategies() {
             : 'Select a chart signal before running a Pine strategy.');
     });
     window.addEventListener('quant:pine-strategy-registered', () => { invalidateResult('Registered strategy source changed. Run the selected strategy again to refresh these results.'); void loadStrategies(); });
-    void loadStrategies();
-    void loadHistoryLimits();
 }

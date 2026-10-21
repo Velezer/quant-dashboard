@@ -75,15 +75,17 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         ) {
             Ok(mut payload) => {
                 if let Some(object) = payload.as_object_mut() {
-                    let master_data = match signal_screener_master_data_for_connection(&connection)
-                    {
-                        Ok(master_data) => master_data,
-                        Err(error) => {
-                            api_error(stream, "500 Internal Server Error", error);
-                            return Ok(());
-                        }
-                    };
-                    object.insert("master_data".into(), master_data);
+                    if offset == 0 {
+                        let master_data =
+                            match signal_screener_master_data_for_connection(&connection) {
+                                Ok(master_data) => master_data,
+                                Err(error) => {
+                                    api_error(stream, "500 Internal Server Error", error);
+                                    return Ok(());
+                                }
+                            };
+                        object.insert("master_data".into(), master_data);
+                    }
                     object.insert(
                         "available_timeframes".into(),
                         serde_json::json!(DSS_BRESSERT_MTF_TIMEFRAMES
