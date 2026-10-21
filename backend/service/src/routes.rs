@@ -470,6 +470,32 @@ fn read_post_body(request_text: &str) -> String {
     }
 }
 
+fn request_header<'a>(request: &'a str, name: &str) -> Option<&'a str> {
+    request
+        .lines()
+        .take_while(|line| !line.is_empty())
+        .find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.trim().eq_ignore_ascii_case(name).then_some(value.trim())
+        })
+}
+
+pub(super) fn same_origin_request(request: &str) -> bool {
+    if request_header(request, "sec-fetch-site") == Some("cross-site") {
+        return false;
+    }
+    let Some(origin) = request_header(request, "origin") else {
+        return false;
+    };
+    let Some(host) = request_header(request, "host") else {
+        return false;
+    };
+    let authority = origin
+        .strip_prefix("https://")
+        .or_else(|| origin.strip_prefix("http://"));
+    authority.is_some_and(|value| value.trim_end_matches('/').eq_ignore_ascii_case(host))
+}
+
 #[cfg(test)]
 #[path = "routes_tests.rs"]
 mod tests;

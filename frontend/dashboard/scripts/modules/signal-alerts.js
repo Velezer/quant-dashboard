@@ -14,6 +14,7 @@ export function installSignalAlerts() {
     let unreadCount = 0;
     let hasLoaded = false;
     let requestInFlight = false;
+    let refreshQueued = false;
     let statusError = '';
     const browserToggle = document.getElementById('browserAlertsToggle');
     const browserTest = document.getElementById('browserAlertsTest');
@@ -126,13 +127,17 @@ export function installSignalAlerts() {
             ? `Alert history may be stale. ${statusError}`
             : `Signal alert history is unavailable. ${statusError} Retry to recover.`, hasLoaded ? 'stale' : 'error');
         else if (alerts.length === 0) setStatus('No signal notifications yet. New alerts appear after a completed scan.', 'empty');
-        else setStatus(`${alerts.length} recent signal ${alerts.length === 1 ? 'notification' : 'notifications'} in the inbox · ${unreadCount} unread.`, 'ready');
+        else setStatus(`Showing ${alerts.length} latest signal ${alerts.length === 1 ? 'notification' : 'notifications'} · ${unreadCount} unread across retained history.`, 'ready');
         if (retryButton) retryButton.classList.toggle('hidden', !statusError);
     }
 
     async function loadAlerts() {
-        if (requestInFlight) return;
+        if (requestInFlight) {
+            refreshQueued = true;
+            return;
+        }
         requestInFlight = true;
+        refreshQueued = false;
         statusError = '';
         renderAlerts();
         try {
@@ -148,6 +153,7 @@ export function installSignalAlerts() {
         } finally {
             requestInFlight = false;
             renderAlerts();
+            if (refreshQueued) void loadAlerts();
         }
     }
 
@@ -169,6 +175,7 @@ export function installSignalAlerts() {
     }
 
     if (retryButton) retryButton.addEventListener('click', () => void loadAlerts());
+    window.addEventListener('dashboard:signal-inbox-refresh', () => void loadAlerts());
     if (markReadButton) markReadButton.addEventListener('click', () => void markAllRead());
     if (details) details.addEventListener('toggle', () => {
         if (details.open) void loadAlerts();

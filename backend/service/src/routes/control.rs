@@ -1,6 +1,6 @@
 use super::{
     api_error, query_values, read_post_body, redirect, respond, respond_html, respond_status,
-    serve_static, RequestContext,
+    same_origin_request, serve_static, RequestContext,
 };
 use crate::*;
 
@@ -112,11 +112,11 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
     }
 
     if route == "/api/signal-alerts/ack" && method == "POST" {
-        if !remote_is_loopback {
+        if !same_origin_request(request_text) {
             api_error(
                 stream,
                 "403 Forbidden",
-                "signal alert updates are restricted to the local dashboard",
+                "signal alert updates require a same-origin dashboard request",
             );
             return Ok(());
         }
