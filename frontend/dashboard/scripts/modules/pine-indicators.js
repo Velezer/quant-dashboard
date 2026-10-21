@@ -46,6 +46,12 @@ export function installPineIndicators() {
     installNweDssBacktestReport();
     installNweExcursionReport({ status: reportStatus, ensureWorker, callWorker, requestJson, requestAllInstruments, finiteNumber, displayedHistorySource });
 
+    window.addEventListener('quant:signal-selection-changing', event => {
+        evaluationSerial += 1;
+        const signal = event.detail?.signal;
+        if (signal) signal.pine_indicator_outputs = [];
+    });
+
 
     function updateSelectionControls() {
         const checkboxes = registeredList?.querySelectorAll('input[type=\"checkbox\"]') || [];

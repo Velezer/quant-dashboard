@@ -153,6 +153,13 @@ export function createSignalScreenerChartContext({
             : signalOrId;
         if (!signal) return;
         const changed = QuantChart.key(signal) !== QuantChart.key(globalThis.selectedSignal);
+        const previousSignal = globalThis.selectedSignal;
+        if (changed && previousSignal) {
+            window.dispatchEvent(new CustomEvent('quant:signal-selection-changing', {
+                detail: { signal: previousSignal, nextSignal: signal },
+            }));
+            getDashboardBinding('releaseChartDataForSignal')?.(previousSignal);
+        }
         globalThis.selectedSignal = signal;
         if (changed) window.dispatchEvent(new Event('quant:pine-backtest-context-changed'));
         renderSignalsList();
@@ -161,6 +168,13 @@ export function createSignalScreenerChartContext({
     }
 
     function clearSelectedSignalChart(message = 'No matching signal is selected.') {
+        const previousSignal = globalThis.selectedSignal;
+        if (previousSignal) {
+            window.dispatchEvent(new CustomEvent('quant:signal-selection-changing', {
+                detail: { signal: previousSignal, nextSignal: null },
+            }));
+            getDashboardBinding('releaseChartDataForSignal')?.(previousSignal);
+        }
         globalThis.selectedSignal = null;
         window.dispatchEvent(new Event('quant:pine-backtest-context-changed'));
         globalThis.chartPendingSignal = null;

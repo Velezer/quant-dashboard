@@ -296,6 +296,7 @@ export function installChartData() {
             async function ensureChartData(signal = selectedSignal, force = false) {
                 if (!signal) return false;
                 if (force) {
+                    signal._chartBundleAbortController?.abort();
                     signal.candles_by_tf = {};
                     signal.candles = [];
                     signal.chart_freshness = {};
@@ -314,6 +315,8 @@ export function installChartData() {
                 const requestId = ++chartBundleRequestSerial;
                 const requestToken = (signal._chartBundleRequestToken || 0) + 1;
                 signal._chartBundleRequestToken = requestToken;
+                const controller = new AbortController();
+                signal._chartBundleAbortController = controller;
                 const symbol = marketSymbolForSignal(signal);
                 const exchange = String(signal.exchange || signal.Exchange || signal.venue || signal.Venue || '').trim().toLowerCase();
                 const assetClass = String(signal.class || signal.asset_class || signal.Class || '').trim().toLowerCase();
@@ -326,7 +329,6 @@ export function installChartData() {
                     if (markovStatus) markovStatus.textContent = `Markov ${String(activeTimeframe || '--').toUpperCase()}: loading chart history`;
                 }
                 signal._chartBundlePromise = (async () => {
-                    const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), 15_000);
                     try {
                         const product = String(signal.product_id || signal.Product_ID || '');
@@ -386,6 +388,7 @@ export function installChartData() {
                         }
                         return true;
                     } catch (error) {
+                        if (requestId !== chartBundleRequestSerial) return false;
                         signal.chart_data_loaded = false;
                         if (currentChartMatches()) {
                             const reason = error?.name === 'AbortError' ? 'local chart request timed out after 15s' : String(error?.message || error || 'Chart service unavailable');
@@ -400,10 +403,30 @@ export function installChartData() {
                         return false;
                     } finally {
                         clearTimeout(timeoutId);
+                        if (signal._chartBundleAbortController === controller) signal._chartBundleAbortController = null;
                         if (signal._chartBundleRequestToken === requestToken) signal._chartBundlePromise = null;
                     }
                 })();
                 return await signal._chartBundlePromise;
+            }
+
+            function releaseChartDataForSignal(signal) {
+                if (!signal) return;
+                signal._chartBundleAbortController?.abort();
+                signal._rustIndicatorAbortController?.abort();
+                chartBundleRequestSerial += 1;
+                indicatorRequestSerial += 1;
+                signal._chartBundleRequestToken = (signal._chartBundleRequestToken || 0) + 1;
+                signal._chartBundleAbortController = null;
+                signal._rustIndicatorAbortController = null;
+                signal._chartBundlePromise = null;
+                signal.candles = [];
+                signal.candles_by_tf = null;
+                signal.chart_freshness = null;
+                signal.chart_data_loaded = false;
+                signal.chart_indicator_config = null;
+                signal.markov_regimes_by_tf = null;
+                signal._rustIndicatorCache = null;
             }
 
             async function refreshChartData(signal = selectedSignal) {
@@ -495,6 +518,9 @@ export function installChartData() {
                     return true;
                 }
                 const requestId = ++indicatorRequestSerial;
+                signal._rustIndicatorAbortController?.abort();
+                const controller = new AbortController();
+                signal._rustIndicatorAbortController = controller;
                 setIndicatorComputeStatus('loading', activeTimeframe);
                 const symbol = marketSymbolForSignal(signal);
                 const query = new URLSearchParams({
@@ -508,7 +534,7 @@ export function installChartData() {
                     trigger_len: '5'
                 });
                 try {
-                    const response = await fetch(`/api/compute/indicators?${query.toString()}`);
+                    const response = await fetch(`/api/compute/indicators?${query.toString()}`, { signal: controller.signal });
                     const payload = await readApiResponse(response);
                     if (requestId !== indicatorRequestSerial) return false;
                     if (!response.ok || !Array.isArray(payload.points)) throw new Error(payload.error || `HTTP ${response.status}`);
@@ -533,6 +559,8 @@ export function installChartData() {
                     if (requestId !== indicatorRequestSerial) return false;
                     setIndicatorComputeStatus('error', String(error?.message || error).slice(0, 120));
                     return false;
+                } finally {
+                    if (signal._rustIndicatorAbortController === controller) signal._rustIndicatorAbortController = null;
                 }
             }
 
@@ -719,6 +747,7 @@ export function installChartData() {
         chartRetryButton: { get: () => chartRetryButton },
         chartBundleRequestSerial: { get: () => chartBundleRequestSerial, set: value => { chartBundleRequestSerial = value; } },
         ensureChartData: { get: () => ensureChartData },
+        releaseChartDataForSignal: { get: () => releaseChartDataForSignal },
         refreshChartData: { get: () => refreshChartData },
         refreshSelectedChartAfterAssetUpdate: { get: () => refreshSelectedChartAfterAssetUpdate },
         indicatorRequestSerial: { get: () => indicatorRequestSerial, set: value => { indicatorRequestSerial = value; } },
