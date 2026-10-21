@@ -254,3 +254,101 @@ pub(crate) fn list_signal_screener_page(
         }
     }))
 }
+
+pub(crate) fn count_current_signal_screener_rows(
+    connection: &mut Connection,
+    scan_interval_seconds: i64,
+) -> Result<Value, rusqlite::Error> {
+    let transaction = connection.transaction()?;
+    let mut offset = 0usize;
+    let mut signal_count = 0usize;
+    let master_data = crate::master_data::signal_screener_master_data_for_connection(&transaction)?;
+
+    let (stale, generated_at) = loop {
+        let payload = list_signal_screener_page(
+            &transaction,
+            scan_interval_seconds,
+            None,
+            None,
+            None,
+            None,
+            offset,
+            MAX_SIGNAL_SCREENER_PAGE_SIZE,
+        )?;
+        if let Some(signals) = payload["signals"].as_array() {
+            signal_count = signal_count.saturating_add(
+                signals
+                    .iter()
+                    .filter(|signal| {
+                        signal_meets_render_minimum(signal, &master_data["signal_score_models"])
+                    })
+                    .count(),
+            );
+        }
+
+        let summary = &payload["summary"];
+        let stale = summary["stale"].as_bool().unwrap_or(true);
+        let generated_at = summary["generated_at"].clone();
+        let next_offset = summary["next_offset"]
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(offset);
+        if summary["has_more"].as_bool() != Some(true) || next_offset <= offset {
+            break (stale, generated_at);
+        }
+        offset = next_offset;
+    };
+
+    transaction.commit()?;
+
+    Ok(json!({
+        "signal_count": signal_count,
+        "stale": stale,
+        "generated_at": generated_at,
+    }))
+}
+
+fn signal_meets_render_minimum(signal: &Value, models: &Value) -> bool {
+    let basis = &signal["score_basis"];
+    let score = signal["score"].as_f64();
+    let model = models
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|model| model["id"] == signal["signal_strategy_id"]);
+    let scale = basis["score_scale_max"]
+        .as_f64()
+        .or_else(|| signal["score_scale_max"].as_f64())
+        .or_else(|| model.and_then(|model| model["score_scale_max"].as_f64()));
+    let minimum_key = match scale {
+        Some(40.0) => "minimum_score_out_of_40",
+        Some(20.0) => "minimum_score_out_of_20",
+        _ => "minimum_score_out_of_10",
+    };
+    let stored_model_id = basis["model_id"].as_str();
+    let current_model_id = model.and_then(|model| model["score_model_id"].as_str());
+    let basis_is_current = basis["score_model_status"].as_str() != Some("legacy")
+        && match (stored_model_id, current_model_id) {
+            (Some(stored), Some(current)) => stored == current,
+            _ => true,
+        };
+    let minimum_candidate = if scale.is_some_and(|scale| scale >= 20.0) {
+        if basis_is_current {
+            model
+                .and_then(|model| model[minimum_key].as_f64())
+                .or_else(|| basis[minimum_key].as_f64())
+        } else {
+            basis[minimum_key].as_f64()
+        }
+    } else {
+        basis["minimum_score_out_of_10"]
+            .as_f64()
+            .or_else(|| model.and_then(|model| model["minimum_score_out_of_10"].as_f64()))
+    };
+    let minimum = minimum_candidate.or_else(|| basis["minimum_score"].as_f64());
+    match (score, minimum) {
+        (Some(score), Some(minimum)) => score >= minimum,
+        (Some(_), None) => true,
+        (None, _) => false,
+    }
+}
