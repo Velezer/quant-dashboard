@@ -32,7 +32,7 @@ tooling/                      Canonical launcher and harness scripts
 
 The Rust workspace contains `backend/service` and `quant/core`. The backend serves dashboard files from `frontend/dashboard` while retaining the existing `/web/...` asset URLs. Retired backtest URLs redirect to the live dashboard; plan cards read any historical evidence from SQLite.
 
-## Railway deployment preparation
+## Railway deployment (current)
 
 The repository includes a Docker build and `railway.toml`. Create a Railway service from this repository root and attach a persistent volume mounted at `/data`. The image listens on Railway's `PORT` and serves `/api/health` for the configured health check. The volume must retain all three SQLite stores; the container filesystem is disposable. The startup command initializes empty databases, while market history and registry data must be gathered or restored separately.
 
@@ -45,6 +45,16 @@ QUANT_SIGNAL_DB=/data/signals/signals.sqlite3
 ```
 
 The dashboard does not currently provide user authentication. Keep the Railway service private or put an authenticated access layer in front of it before assigning a public domain. The first deployment needs an empty persistent volume or a validated copy of the local SQLite stores; do not point the app database and signal database at the same file.
+
+## Free managed hosting with SQLite
+
+The root `Dockerfile` can also deploy to [blitz.cloud](https://blitz.cloud/) without changing the storage engine or running a VPS. In the Blitz dashboard, create an app from this GitHub repository, build from the repository root, and keep the image's `/data` folder. The image declares `/data` as a volume and listens on the platform-provided `PORT` (the image exposes port 8080). Keep the existing `QUANT_MARKET_DIR`, `QUANT_APP_DB`, and `QUANT_SIGNAL_DB` paths pointed inside `/data`.
+
+The free plan has a 512 MB memory pool and 10 GB of account storage; a Docker app with kept folders reserves 1 GB. A small app reserves 128 MB and can use more, so this host does not enforce the dashboard's 32 MB memory ceiling. Apps sleep after 30 minutes without browser visitors. Scans pause while the app sleeps; a browser visit wakes it, while scripted requests do not. SQLite files under `/data` survive app restarts, but Blitz does not back up app files on the free plan; download a copy of the kept `/data` folder regularly if the history must be recoverable. The [free-plan limits](https://blitz.cloud/docs/limits/) and [persistent-file rules](https://blitz.cloud/docs/settings-and-files/) are documented by Blitz.
+
+The free Blitz address is public, while this dashboard does not have authentication, so keep access private with a supported private network or add an authenticated access layer before using the public address.
+
+To carry over Railway history, stop the Railway service, export and validate the three SQLite stores and all ticker databases, then upload them into the new app's `/data` folder before its first start. Do not point the app database and signal database at the same file. If the Railway volume cannot be exported and validated, start with empty stores and explicitly regather market history; the workspace does not contain a copy of the production databases.
 
 ## Volume Delta study
 
