@@ -27,6 +27,41 @@ persistence system, file-backed catalogs, manifests, caches, exports, or runtime
 state. Browser storage holds only disposable presentation preferences. The
 dashboard remains read-only with respect to execution.
 
+## SQLite journal configuration
+
+`QUANT_SQLITE_JOURNAL_MODE` controls journals for the app, signal, and ticker
+stores and the explicit signal-snapshot migration. Native runs default to `WAL`
+with `synchronous=NORMAL`. The Docker image defaults to `DELETE` rollback
+journals with `synchronous=FULL`, avoiding WAL shared-memory operations on
+managed volumes. Only these two durable modes are accepted. Database paths,
+schema validation, transactions, busy timeouts, normal locking, and bounded
+page caches still apply. Rollback journals can block writers while readers
+hold transactions; they may reduce throughput compared with WAL.
+
+SQLite error `4874` (`SQLITE_IOERR_SHMSIZE`) means WAL failed enlarging its
+shared-memory file. It can indicate an incompatible filesystem operation or
+insufficient storage. For Blitz, keep `QUANT_SQLITE_JOURNAL_MODE=DELETE` in the
+Environment tab and rebuild with the current image. If the error persists,
+check the volume's free space, quota, and write permissions.
+
+Stop other processes using these databases before changing journal mode. For
+`DELETE`, existing files are prepared once per process before attachment using
+a temporary exclusive SQLite connection. This lets SQLite recover WAL through
+a private in-memory index and convert the journal without accessing a shared
+memory file. The connection closes before normal runtime connections open;
+runtime locking remains normal. SQLite performs the mode change and preserves
+committed data; startup does not copy, delete, or rebuild databases.
+Prepared paths are tracked for the process lifetime, so this small bookkeeping
+allocation grows with distinct database files opened, independently of the
+simultaneous-connection limit.
+If preparation still fails, stop the service and preserve the complete SQLite files and
+their WAL/journal sidecars. On compatible local storage, use SQLite to open and
+checkpoint each database, set `PRAGMA journal_mode=DELETE`, run
+`PRAGMA integrity_check`, and close it cleanly before restoring the validated
+files to the stopped service's volume. Never delete a WAL file to bypass an I/O
+error; it can contain committed data not yet in the database file. The storage
+must still support SQLite file locking and durable writes.
+
 ## Candle retention
 
 Canonical candle history has no application-imposed maximum age or total-row

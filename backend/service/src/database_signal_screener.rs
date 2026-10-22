@@ -29,6 +29,10 @@ pub(crate) fn migrate_signal_screener_snapshot(
     if !signals_existed {
         drop(Connection::open(signals_database).map_err(|error| error.to_string())?);
     }
+    super::connections::journal::prepare_database(Path::new(app_database), false)
+        .map_err(|error| error.to_string())?;
+    super::connections::journal::prepare_database(Path::new(signals_database), false)
+        .map_err(|error| error.to_string())?;
     let connection =
         Connection::open_with_flags(app_database, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
             .map_err(|error| error.to_string())?;
@@ -36,13 +40,9 @@ pub(crate) fn migrate_signal_screener_snapshot(
         .execute("ATTACH DATABASE ?1 AS signals", [signals_database])
         .map_err(|error| error.to_string())?;
     connection
-        .execute_batch(
-            "PRAGMA busy_timeout=5000;
-             PRAGMA main.synchronous=NORMAL;
-             PRAGMA main.journal_mode=WAL;
-             PRAGMA signals.synchronous=NORMAL;
-             PRAGMA signals.journal_mode=WAL;",
-        )
+        .execute_batch("PRAGMA busy_timeout=5000;")
+        .map_err(|error| error.to_string())?;
+    super::connections::journal::configure(&connection, &["main", "signals"])
         .map_err(|error| error.to_string())?;
     super::connections::validate_signal_layout(&connection, signals_existed)
         .map_err(|error| error.to_string())?;

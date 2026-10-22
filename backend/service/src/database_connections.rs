@@ -9,6 +9,8 @@ use std::{
 };
 
 const SQLITE_PAGE_CACHE_KIB: i64 = 256;
+#[path = "database_connections/journal.rs"]
+pub(super) mod journal;
 pub(super) const MAX_OPEN_REGULAR_MARKET_DATABASES: usize = 10;
 pub(super) const SIGNAL_SCAN_DATABASE_RESERVE: usize = 1;
 const MAX_OPEN_MARKET_DATABASES_TOTAL: usize =
@@ -272,6 +274,8 @@ pub(crate) fn open_app_database(paths: &StoragePaths) -> Result<Connection, rusq
     create_parent(&paths.signals_db)?;
     let app_existed = paths.app_db.exists();
     let signals_existed = paths.signals_db.exists();
+    journal::prepare_database(&paths.app_db, true)?;
+    journal::prepare_database(&paths.signals_db, true)?;
     let connection = Connection::open_in_memory()?;
     create_ticker_schema(&connection, "main")?;
     connection.execute(
@@ -395,6 +399,7 @@ fn open_ticker_database(
     if create {
         create_parent(ticker_path)?;
     }
+    journal::prepare_database(ticker_path, create)?;
     let connection = if create {
         Connection::open(ticker_path)?
     } else {
@@ -494,12 +499,9 @@ fn configure_connection(connection: &Connection) -> Result<(), rusqlite::Error> 
          PRAGMA temp_store=FILE;
          PRAGMA main.mmap_size=0;
          PRAGMA app.mmap_size=0;
-         PRAGMA main.synchronous=NORMAL;
-         PRAGMA app.synchronous=NORMAL;
-         PRAGMA foreign_keys=ON;
-         PRAGMA main.journal_mode=WAL;
-         PRAGMA app.journal_mode=WAL;"
-    ))
+         PRAGMA foreign_keys=ON;"
+    ))?;
+    journal::configure(connection, &["main", "app"])
 }
 
 #[path = "database_connections/signal_database.rs"]
