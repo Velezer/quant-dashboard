@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 FROM rust:1-bookworm AS build
 WORKDIR /build
 RUN rustup target add wasm32-unknown-unknown
