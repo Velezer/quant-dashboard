@@ -20,5 +20,6 @@ ENV QUANT_MARKET_DIR=/data/market/tickers \
     MALLOC_ARENA_MAX=2 \
     MALLOC_MMAP_THRESHOLD_=131072 \
     MALLOC_TRIM_THRESHOLD_=131072
+VOLUME ["/data"]
 EXPOSE 8080
 CMD ["/app/rust_chart_api"]
