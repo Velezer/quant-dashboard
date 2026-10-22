@@ -5,10 +5,9 @@ pub(in crate::database) fn configure_signal_database(
 ) -> Result<(), rusqlite::Error> {
     connection.execute_batch(&format!(
         "PRAGMA signals.cache_size=-{SQLITE_PAGE_CACHE_KIB};
-         PRAGMA signals.mmap_size=0;
-         PRAGMA signals.synchronous=NORMAL;
-         PRAGMA signals.journal_mode=WAL;"
-    ))
+         PRAGMA signals.mmap_size=0;"
+    ))?;
+    super::journal::configure(connection, &["signals"])
 }
 
 pub(in crate::database) fn validate_signal_database_path(

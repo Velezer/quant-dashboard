@@ -16,6 +16,7 @@ COPY frontend/dashboard /app/frontend/dashboard
 ENV QUANT_MARKET_DIR=/data/market/tickers \
     QUANT_APP_DB=/data/app/app.sqlite3 \
     QUANT_SIGNAL_DB=/data/signals/signals.sqlite3 \
+    QUANT_SQLITE_JOURNAL_MODE=DELETE \
     MALLOC_ARENA_MAX=2 \
     MALLOC_MMAP_THRESHOLD_=131072 \
     MALLOC_TRIM_THRESHOLD_=131072
