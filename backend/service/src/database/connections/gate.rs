@@ -1,5 +1,8 @@
 use super::*;
-use std::sync::{Condvar, Mutex};
+use std::{
+    collections::HashSet,
+    sync::{Condvar, Mutex},
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MarketConnectionKind {
@@ -11,6 +14,7 @@ pub enum MarketConnectionKind {
 struct MarketConnectionCounts {
     regular: usize,
     signal_scan: usize,
+    active_symbols: HashSet<String>,
 }
 
 pub struct MarketConnectionGate {
@@ -36,15 +40,28 @@ impl MarketConnectionGate {
     }
 
     pub fn acquire(&self, kind: MarketConnectionKind) {
+        self.acquire_inner(kind, None);
+    }
+
+    pub fn acquire_ticker(&self, kind: MarketConnectionKind, storage_symbol: &str) {
+        self.acquire_inner(kind, Some(storage_symbol));
+    }
+
+    fn acquire_inner(&self, kind: MarketConnectionKind, storage_symbol: Option<&str>) {
         let mut active = self
             .active
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        while !self.has_capacity(&active, kind) {
+        while storage_symbol.is_some_and(|symbol| active.active_symbols.contains(symbol))
+            || !self.has_capacity(&active, kind)
+        {
             active = self
                 .ready
                 .wait(active)
                 .unwrap_or_else(|error| error.into_inner());
+        }
+        if let Some(symbol) = storage_symbol {
+            active.active_symbols.insert(symbol.to_string());
         }
         match kind {
             MarketConnectionKind::Regular => active.regular += 1,
@@ -67,10 +84,21 @@ impl MarketConnectionGate {
     }
 
     pub fn release(&self, kind: MarketConnectionKind) {
+        self.release_inner(kind, None);
+    }
+
+    pub fn release_ticker(&self, kind: MarketConnectionKind, storage_symbol: &str) {
+        self.release_inner(kind, Some(storage_symbol));
+    }
+
+    fn release_inner(&self, kind: MarketConnectionKind, storage_symbol: Option<&str>) {
         let mut active = self
             .active
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+        if let Some(symbol) = storage_symbol {
+            active.active_symbols.remove(symbol);
+        }
         match kind {
             MarketConnectionKind::Regular => active.regular = active.regular.saturating_sub(1),
             MarketConnectionKind::SignalScan => {

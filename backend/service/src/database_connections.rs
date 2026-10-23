@@ -83,13 +83,15 @@ pub(crate) fn decode_storage_symbol_filename(path: &Path) -> Option<String> {
 pub(crate) struct TickerConnection {
     connection: Option<Connection>,
     kind: MarketConnectionKind,
+    storage_symbol: String,
 }
 
 impl TickerConnection {
-    fn new(connection: Connection, kind: MarketConnectionKind) -> Self {
+    fn new(connection: Connection, kind: MarketConnectionKind, storage_symbol: &str) -> Self {
         Self {
             connection: Some(connection),
             kind,
+            storage_symbol: storage_symbol.to_string(),
         }
     }
 }
@@ -115,7 +117,7 @@ impl std::ops::DerefMut for TickerConnection {
 impl Drop for TickerConnection {
     fn drop(&mut self) {
         drop(self.connection.take());
-        market_connection_gate().release(self.kind);
+        market_connection_gate().release_ticker(self.kind, &self.storage_symbol);
     }
 }
 
@@ -378,11 +380,18 @@ fn open_market_history_for_symbol_with_kind(
     if !create && new_database {
         return Ok(None);
     }
-    market_connection_gate().acquire(kind);
+    // Rollback-journal readers can block a provider's writer. Keep each
+    // ticker's scan, chart, and sync connection exclusive while retaining
+    // bounded parallel access across different ticker databases.
+    market_connection_gate().acquire_ticker(kind, storage_symbol);
     match open_ticker_database(paths, &ticker_path, storage_symbol, create, new_database) {
-        Ok(connection) => Ok(Some(TickerConnection::new(connection, kind))),
+        Ok(connection) => Ok(Some(TickerConnection::new(
+            connection,
+            kind,
+            storage_symbol,
+        ))),
         Err(error) => {
-            market_connection_gate().release(kind);
+            market_connection_gate().release_ticker(kind, storage_symbol);
             Err(error)
         }
     }
