@@ -3,6 +3,7 @@ import { createSignalScoreBasisMarkup } from './signal-score-basis.js';
 import { createSignalScreenerChartContext } from './signal-screener-chart-context.js';
 import { createSignalScreenerSummary } from './signal-screener-summary.js';
 import { createSignalScreenerCard } from './signal-screener-card.js';
+import { appSignalReadiness } from './signal-readiness-model.js';
 
 import {
     APP_LABELS,
@@ -238,8 +239,7 @@ export function installSignalScreener() {
 
     function cryptoSignalEmptyText() {
         if (summary.stale) return 'The snapshot is stale. Retry or wait for a fresh scan.';
-        const timeframeLabel = timeframeFilter === 'all' ? 'Fresh bars' : `Fresh ${timeframeFilter} bars`;
-        return `No market-entry signal now. Latest ${timeframeLabel.toLowerCase()} must qualify at the model’s minimum, with four /10 indicators and a fresh same-source 15m price.`;
+        return 'No current signal rows were returned. Detailed scan checks are not available yet. Recheck status or run a signal scan to identify missing inputs or model conditions.';
     }
 
     function filteredSignals() {
@@ -361,6 +361,11 @@ export function installSignalScreener() {
         updateProductFilters();
         updateSignalTimeframeButtons();
         const signals = filteredSignals();
+        const selectedApp = getDashboardBinding('activeExchangeFilter') || 'stockbit';
+        const readinessScope = { product: getDashboardBinding('activeProductFilter') || 'all',
+            timeframe: timeframeFilter, search: searchQuery, visibleCount: signals.length };
+        const appReadiness = appSignalReadiness(selectedApp, null, summary, readinessScope);
+        getDashboardBinding('showAppSignalReadiness')?.(selectedApp, summary, readinessScope);
         const selectedId = globalThis.selectedSignal?.signal_id || '';
         const stalePriceSignalCount = Number(summary.stale_price_signal_count || 0);
         const priceDataStatus = String(summary.status?.price_data_status || 'ready');
@@ -395,7 +400,9 @@ export function installSignalScreener() {
         if (signals.length === 0) {
             const emptyText = requestState === 'error' && rows.length === 0
                 ? 'Signal data could not be loaded. Retry after checking the service connection.'
-                : summary.stale && summary.status?.last_attempt_status === 'waiting'
+                : appReadiness.hasScanDetails
+                    ? 'The app data checks and recovery actions are shown in Signal availability above.'
+                : summary.status?.last_attempt_status === 'waiting'
                     ? 'The first scan has not completed yet. Signals will appear after the scheduled scan or a manual refresh.'
                 : summary.stale && rows.length === 0
                         ? 'The saved snapshot is stale and has no current signals. Retry the scan or wait for the running scan to complete.'
@@ -407,13 +414,16 @@ export function installSignalScreener() {
                         ? 'No signals match the selected app, product, timeframe, and search. Clear a filter to see more.'
                         : stalePriceSignalCount > 0 && !stockbitSignalSelected
                             ? 'Saved signals with stale price bars are hidden. They can return when a fresh provider bar passes the price check.'
-                        : 'No qualifying signals in the latest scan. The screener will refresh again on the next 15-minute cycle.';
-            const priceCoverageMessage = signalPriceCoverageMessage(priceDataStatus, priceDataUnavailableCount);
+                        : 'No current signal rows were returned. Detailed scan checks are not available yet; see Signal availability for the known listing and data status.';
+            const priceCoverageMessage = appReadiness.hasScanDetails ? ''
+                : signalPriceCoverageMessage(priceDataStatus, priceDataUnavailableCount);
             const emptyStateText = [emptyText, priceCoverageMessage]
                 .filter(Boolean)
                 .join(' ');
             const emptyHeading = requestState === 'error'
                 ? 'Signal data unavailable'
+                : appReadiness.hasScanDetails
+                    ? `${appLabel(selectedApp)}: ${appReadiness.title}`
                 : searchQuery.trim()
                     ? 'No matching signals'
                 : cryptoSignalView

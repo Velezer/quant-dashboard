@@ -73,6 +73,7 @@ pub(crate) struct ProductCandleScanState {
     pub(crate) source: String,
     pub(crate) data_provider: String,
     pub(crate) is_stale: bool,
+    pub(crate) latest_bar_time: Option<i64>,
 }
 
 pub(crate) fn product_candle_scan_state_at(
@@ -103,6 +104,7 @@ pub(crate) fn product_candle_scan_state_at(
         source,
         data_provider,
         is_stale,
+        latest_bar_time,
     }))
 }
 

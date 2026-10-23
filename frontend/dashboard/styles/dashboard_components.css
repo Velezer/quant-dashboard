@@ -688,6 +688,32 @@
 .signal-empty-state { display: flex; min-height: 9rem; flex-direction: column; align-items: flex-start; justify-content: center; gap: .5rem; border: 1px dashed #374151; border-radius: .65rem; background: #0d1117; padding: 1rem; color: #9ca3af; font-size: 11px; line-height: 1.5; }
 .signal-empty-state strong { color: #e5e7eb; font-size: 12px; }
 .signal-empty-state button { margin-top: .25rem; border: 1px solid #155e75; border-radius: .375rem; background: #083344; padding: .35rem .6rem; color: #cffafe; font-size: 10px; font-weight: 700; }
+.signal-readiness { min-width:0; border:1px solid #475569; border-left:3px solid #64748b; border-radius:.55rem; padding:.8rem; background:#111827; color:#cbd5e1; font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.signal-readiness[data-tone="warning"] { border-left-color:#fbbf24; background:#221d13; }
+.signal-readiness[data-tone="error"] { border-left-color:#fb7185; background:#26171d; }
+.signal-readiness[data-tone="ready"] { border-left-color:#34d399; }
+.signal-readiness [hidden] { display:none !important; }
+.signal-readiness-eyebrow { color:#94a3b8; font-size:9px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+.signal-readiness-scope { margin:.15rem 0 .45rem; color:#94a3b8; font-size:10px; }
+.signal-readiness h3 { margin:0 0 .4rem; color:#f8fafc; font-size:13px; font-weight:700; }
+.signal-readiness-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.55rem; margin:.65rem 0; }
+.signal-readiness-metrics div { min-width:0; border-top:1px solid #475569; padding-top:.35rem; }
+.signal-readiness-metrics dt { color:#94a3b8; font-size:9px; }
+.signal-readiness-metrics dd { margin:0; color:#f1f5f9; font:600 15px/1.5 ui-monospace,monospace; }
+.signal-readiness-next { margin-top:.6rem; color:#cbd5e1; font-size:10px; }
+.signal-readiness details { margin-top:.6rem; color:#94a3b8; font-size:10px; }
+.signal-readiness summary { cursor:pointer; color:#7dd3fc; padding:.25rem 0; }
+.signal-readiness details ul { margin:.5rem 0 0; padding:0; list-style:none; }
+.signal-readiness details li { border-top:1px solid #475569; padding:.45rem 0; }
+.signal-readiness details strong { color:#e2e8f0; }
+.signal-readiness-error { color:#fda4af; }
+.signal-readiness-actions { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.65rem; }
+.signal-readiness-actions button { min-height:32px; border:1px solid #475569; border-radius:.35rem; padding:.35rem .55rem; background:#1e293b; color:#e2e8f0; font-size:10px; font-weight:600; }
+.signal-readiness button:focus-visible,.signal-readiness summary:focus-visible { outline:2px solid #7dd3fc; outline-offset:3px; }
+.signal-readiness button:disabled { opacity:.5; cursor:wait; }
+#signalResultsScroll { display:flex; flex:1 1 0%; flex-direction:column; gap:.5rem; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#596273 #131722; }
+.signal-readiness { flex:0 0 auto; }
+.tv-terminal.signals-workspace-active #signalResultsScroll #signalsList { flex:0 0 auto; height:auto !important; min-height:0 !important; overflow:visible !important; }
 .screener-status-stale { border-color: #92400e !important; background: #1c1917 !important; color: #fde68a !important; }
 .screener-status-ready { border-color: #065f46 !important; }
 .signal-kpi { display: flex; min-width: 0; flex-direction: column; gap: .2rem; border: 1px solid #30343f; border-radius: .6rem; background: #131722; padding: .7rem .8rem; }

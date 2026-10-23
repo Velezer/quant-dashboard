@@ -24,12 +24,31 @@ pub(crate) fn replace_signal_screener_snapshot_with_status(
     )
 }
 
-pub(crate) fn replace_signal_screener_snapshot_with_compact_score_updates(
+#[cfg(test)]
+fn replace_signal_screener_snapshot_with_compact_score_updates(
     connection: &Connection,
     signals: &[Value],
     score_updates: &[StockbitSignalScoreUpdate],
     price_data_unavailable_count: usize,
     registered_count: usize,
+) -> Result<(), rusqlite::Error> {
+    replace_signal_screener_snapshot_with_readiness(
+        connection,
+        signals,
+        score_updates,
+        price_data_unavailable_count,
+        registered_count,
+        None,
+    )
+}
+
+pub(crate) fn replace_signal_screener_snapshot_with_readiness(
+    connection: &Connection,
+    signals: &[Value],
+    score_updates: &[StockbitSignalScoreUpdate],
+    price_data_unavailable_count: usize,
+    registered_count: usize,
+    readiness: Option<&Value>,
 ) -> Result<(), rusqlite::Error> {
     let now = now_secs() as i64;
     let price_data_status = if price_data_unavailable_count == 0 {
@@ -151,6 +170,7 @@ pub(crate) fn replace_signal_screener_snapshot_with_compact_score_updates(
                 price_data_unavailable_count as i64,
             ],
         )?;
+        save_scan_readiness(connection, readiness)?;
         Ok::<(), rusqlite::Error>(())
     })();
     match result {
