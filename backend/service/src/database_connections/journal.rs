@@ -14,8 +14,8 @@ enum JournalMode {
 impl JournalMode {
     fn parse(value: Option<&str>) -> Result<Self, rusqlite::Error> {
         match value.map(str::trim).map(str::to_ascii_uppercase).as_deref() {
-            None | Some("WAL") => Ok(Self::Wal),
-            Some("DELETE") => Ok(Self::Delete),
+            Some("WAL") => Ok(Self::Wal),
+            None | Some("DELETE") => Ok(Self::Delete),
             _ => Err(super::storage_error(
                 "QUANT_SQLITE_JOURNAL_MODE must be WAL or DELETE",
             )),
