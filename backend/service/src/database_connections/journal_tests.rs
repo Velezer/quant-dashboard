@@ -53,7 +53,7 @@ fn assert_settings(connection: &Connection, journal: &str, synchronous: i64) {
 
 #[test]
 fn journal_configuration_accepts_only_durable_modes() {
-    assert_eq!(JournalMode::parse(None).unwrap(), JournalMode::Wal);
+    assert_eq!(JournalMode::parse(None).unwrap(), JournalMode::Delete);
     assert_eq!(JournalMode::parse(Some(" wal ")).unwrap(), JournalMode::Wal);
     assert_eq!(
         JournalMode::parse(Some("delete")).unwrap(),

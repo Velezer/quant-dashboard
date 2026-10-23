@@ -30,10 +30,11 @@ dashboard remains read-only with respect to execution.
 ## SQLite journal configuration
 
 `QUANT_SQLITE_JOURNAL_MODE` controls journals for the app, signal, and ticker
-stores and the explicit signal-snapshot migration. Native runs default to `WAL`
-with `synchronous=NORMAL`. The Docker image defaults to `DELETE` rollback
-journals with `synchronous=FULL`, avoiding WAL shared-memory operations on
-managed volumes. Only these two durable modes are accepted. Database paths,
+stores and the explicit signal-snapshot migration. All runs default to `DELETE`
+rollback journals with `synchronous=FULL` when the variable is unset, avoiding
+WAL shared-memory operations on managed volumes without manual configuration.
+Explicit `WAL` uses `synchronous=NORMAL`. Only these two durable modes are
+accepted. Database paths,
 schema validation, transactions, busy timeouts, normal locking, and bounded
 page caches still apply. Rollback journals can block writers while readers
 hold transactions; they may reduce throughput compared with WAL.
