@@ -32,6 +32,7 @@ pub(super) fn run_rust_scan_inner(
     let mut running_signal_rows = Vec::new();
     let mut potential_signal_rows = Vec::new();
     let mut standalone_signal_rows = Vec::new();
+    let mut readiness = signal_alerts::SignalReadiness::new();
     let mut score_updates = Vec::new();
     let mut generated_plan_count = 0usize;
     let registered_count = registered.len();
@@ -48,11 +49,45 @@ pub(super) fn run_rust_scan_inner(
                 Ok(Some(connection)) => connection,
                 Ok(None) => {
                     price_data_unavailable_count += 1;
+                    let mut diagnosis = signal_alerts::InstrumentReadiness::default();
+                    diagnosis.issue(signal_alerts::ReadinessIssue {
+                        symbol: asset.clone(),
+                        reason: "missing_history".into(),
+                        timeframe: "15m".into(),
+                        ..signal_alerts::ReadinessIssue::default()
+                    });
+                    readiness.record(
+                        &exchange_id,
+                        &product_id,
+                        &sym,
+                        diagnosis,
+                        &Default::default(),
+                        None,
+                    );
                     continue;
                 }
                 Err(error) => {
                     eprintln!("scan skipped unavailable market history for {sym}: {error}");
                     price_data_unavailable_count += 1;
+                    let mut diagnosis = signal_alerts::InstrumentReadiness {
+                        price_status: "error",
+                        ..signal_alerts::InstrumentReadiness::default()
+                    };
+                    diagnosis.issue(signal_alerts::ReadinessIssue {
+                        symbol: asset.clone(),
+                        reason: "data_error".into(),
+                        timeframe: "15m".into(),
+                        error: Some(error.to_string()),
+                        ..signal_alerts::ReadinessIssue::default()
+                    });
+                    readiness.record(
+                        &exchange_id,
+                        &product_id,
+                        &sym,
+                        diagnosis,
+                        &Default::default(),
+                        None,
+                    );
                     continue;
                 }
             };
@@ -96,7 +131,8 @@ pub(super) fn run_rust_scan_inner(
         let mut symbol_score_updates = Vec::new();
         let running_start = running_plans.len();
         let potential_start = potential_plans.len();
-        let has_fresh_price = scan_timeframes::append_timeframe_signal_plans(
+        let mut instrument_readiness = signal_alerts::InstrumentReadiness::default();
+        let has_fresh_price = scan_timeframes::append_timeframe_signal_plans_with_readiness(
             scan_timeframes::TimeframeScanInput {
                 app_connection,
                 market_connection: connection,
@@ -122,6 +158,7 @@ pub(super) fn run_rust_scan_inner(
             &mut symbol_indicator_alerts,
             &mut standalone_screener_signals,
             &mut symbol_score_updates,
+            &mut instrument_readiness,
         )?;
         if !has_fresh_price {
             price_data_unavailable_count += 1;
@@ -143,21 +180,39 @@ pub(super) fn run_rust_scan_inner(
             );
         }
         generated_plan_count += running_plans.len() + potential_plans.len();
-        running_signal_rows.extend(
-            running_plans
-                .iter()
-                .filter_map(signal_alerts::signal_screener_row),
+        let running_rows = running_plans
+            .iter()
+            .filter_map(signal_alerts::signal_screener_row)
+            .collect::<Vec<_>>();
+        let potential_rows = potential_plans
+            .iter()
+            .filter_map(signal_alerts::signal_screener_row)
+            .collect::<Vec<_>>();
+        let standalone_rows = standalone_screener_signals
+            .iter()
+            .filter_map(signal_alerts::signal_screener_row)
+            .collect::<Vec<_>>();
+        let mut accepted_by_timeframe = std::collections::BTreeMap::<String, usize>::new();
+        for row in running_rows
+            .iter()
+            .chain(potential_rows.iter())
+            .chain(standalone_rows.iter())
+        {
+            if let Some(timeframe) = row["timeframe"].as_str() {
+                *accepted_by_timeframe.entry(timeframe.into()).or_default() += 1;
+            }
+        }
+        readiness.record(
+            &exchange_id,
+            &product_id,
+            &sym,
+            instrument_readiness,
+            &accepted_by_timeframe,
+            Some(connection),
         );
-        potential_signal_rows.extend(
-            potential_plans
-                .iter()
-                .filter_map(signal_alerts::signal_screener_row),
-        );
-        standalone_signal_rows.extend(
-            standalone_screener_signals
-                .iter()
-                .filter_map(signal_alerts::signal_screener_row),
-        );
+        running_signal_rows.extend(running_rows);
+        potential_signal_rows.extend(potential_rows);
+        standalone_signal_rows.extend(standalone_rows);
         score_updates.extend(
             symbol_score_updates
                 .iter()
@@ -173,6 +228,7 @@ pub(super) fn run_rust_scan_inner(
     running_signal_rows.extend(potential_signal_rows);
     running_signal_rows.extend(standalone_signal_rows);
     let signals = running_signal_rows;
+    let readiness = readiness.into_value();
     eprintln!(
         "Signal scan completed: {registered_count} registered instruments, {} with fresh 15m prices, {} directional plans generated, {} screener rows accepted, {} Stockbit timeframe score updates prepared",
         registered_count.saturating_sub(price_data_unavailable_count),
@@ -180,12 +236,13 @@ pub(super) fn run_rust_scan_inner(
         signals.len(),
         score_updates.len()
     );
-    signal_alerts::replace_signal_screener_snapshot_with_compact_score_updates(
+    signal_alerts::replace_signal_screener_snapshot_with_readiness(
         app_connection,
         &signals,
         &score_updates,
         price_data_unavailable_count,
         registered_count,
+        Some(&readiness),
     )?;
     let total_signals = signals.len();
     let signal_master_data = signal_screener_master_data_for_connection(app_connection)?;
@@ -196,7 +253,8 @@ pub(super) fn run_rust_scan_inner(
             "interval_minutes": interval_min,
             "interval_seconds": interval_min * 60,
             "score_interpretation": "ranking_only_not_probability",
-            "engine": "rust_native_zero_allocation"
+            "engine": "rust_native_zero_allocation",
+            "readiness": readiness
         },
         "signals": signals,
         "master_data": signal_master_data

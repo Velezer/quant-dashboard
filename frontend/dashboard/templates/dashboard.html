@@ -537,13 +537,6 @@
                     <button type="button" class="exchange-btn px-2.5 py-1 rounded bg-gray-900 text-gray-400 font-medium border border-purple-800/70" data-exchange="pluang" aria-pressed="false">◈ Pluang</button>
                     <button type="button" class="exchange-btn px-2.5 py-1 rounded bg-gray-900 text-cyan-300 hover:text-white font-medium border border-cyan-800/70" data-exchange="tokocrypto" aria-pressed="false">🪙 Tokocrypto</button>
                 </div>
-                <section class="rounded border border-gray-700 bg-gray-950/60 p-2" aria-label="Selected app signal readiness">
-                    <p id="appSignalReadinessStatus" class="text-[10px] leading-relaxed text-gray-300" role="status" aria-live="polite">Checking this app’s listing and data readiness…</p>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                        <button id="appSignalReadinessRetry" type="button" class="rounded border border-gray-600 px-2 py-1 text-[10px] text-gray-300">Recheck app data</button>
-                        <button id="appSignalListingRetry" type="button" hidden class="rounded border border-cyan-700 px-2 py-1 text-[10px] text-cyan-200">Retry listings and scan</button>
-                    </div>
-                </section>
                 <div id="screener-product-filters" class="flex items-center gap-1.5 text-xs flex-wrap" role="group" aria-label="Filter by app product or asset category">
                     <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Category / product</span>
                     <button type="button" class="product-btn" data-product="all" aria-pressed="true">All</button>
@@ -569,9 +562,29 @@
             </section>
 
             <section class="bg-gray-900 border border-gray-800 rounded-xl p-2 flex-1 flex flex-col min-h-[500px]" aria-label="Signal results">
+              <div id="signalResultsScroll" tabindex="0" aria-label="Signal availability and results">
+                <section id="appSignalReadinessPanel" class="signal-readiness" data-tone="unknown" aria-labelledby="appSignalReadinessTitle" tabindex="-1">
+                    <p class="signal-readiness-eyebrow">Signal availability</p>
+                    <p id="appSignalReadinessScope" class="signal-readiness-scope">Selected app · product · timeframe</p>
+                    <h3 id="appSignalReadinessTitle">Checking why signals are unavailable…</h3>
+                    <p id="appSignalReadinessStatus" role="status" aria-live="polite">Loading app data checks…</p>
+                    <dl id="appSignalReadinessMetrics" class="signal-readiness-metrics" hidden></dl>
+                    <p id="appSignalReadinessNextStep" class="signal-readiness-next"></p>
+                    <details id="appSignalReadinessDetails" hidden>
+                        <summary>View data checks and observed errors</summary>
+                        <p id="appSignalReadinessCheckedAt"></p>
+                        <ul id="appSignalReadinessExamples"></ul>
+                    </details>
+                    <div class="signal-readiness-actions">
+                        <button id="appSignalReadinessRetry" type="button">Recheck status</button>
+                        <button id="appSignalScanRetry" type="button">Refresh signals</button>
+                        <button id="appSignalListingRetry" type="button" hidden>Retry listings and scan</button>
+                    </div>
+                </section>
                 <div id="signalsList" class="flex-1 overflow-y-auto custom-scroll space-y-2 p-1 max-h-[680px]" role="list" aria-label="Signal records matching the selected app, product, timeframe, and search filters" tabindex="0">
                     <p class="rounded-lg border border-gray-800 bg-gray-950/70 p-4 text-xs text-gray-400">Loading screener signals…</p>
                 </div>
+              </div>
             </section>
         </aside>
     </div>

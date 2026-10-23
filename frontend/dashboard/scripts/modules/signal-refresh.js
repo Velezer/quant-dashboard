@@ -83,12 +83,14 @@ export function installSignalRefresh() {
                 getDashboardBinding('applyMasterData')?.(payload.master_data);
             }
             getDashboardBinding('applySignalSnapshot')?.(payload, { append });
-            void getDashboardBinding('refreshAppSignalReadiness')?.(String(query.exchange || 'stockbit'), payload.summary);
+            void getDashboardBinding('refreshAppSignalReadiness')?.(String(query.exchange || 'stockbit'), payload.summary,
+                { ...query, visibleCount: getDashboardBinding('getFilteredSignals')?.().length ?? payload.signals.length });
             if (!append) void fetchCurrentSignalCount();
             lastRequestAt = Date.now();
         } catch (error) {
             if (currentRequest === requestSerial) {
                 getDashboardBinding('setScreenerFetchError')?.(error?.message || error);
+                getDashboardBinding('setAppSignalReadinessError')?.(error?.message || error);
             }
         } finally {
         }

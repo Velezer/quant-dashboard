@@ -1,4 +1,5 @@
 use super::*;
+use crate::signal_alerts::{InstrumentReadiness, ReadinessIssue, TimeframeReadiness};
 
 #[path = "scan_timeframes/market_inputs.rs"]
 mod market_inputs;
@@ -31,6 +32,7 @@ pub(super) struct TimeframeScanInput<'a> {
     pub(super) retained_stockbit_signal_rows: &'a std::collections::BTreeSet<(String, String)>,
 }
 
+#[cfg(test)]
 pub(super) fn append_timeframe_signal_plans(
     input: TimeframeScanInput<'_>,
     running_plans: &mut Vec<Value>,
@@ -40,25 +42,71 @@ pub(super) fn append_timeframe_signal_plans(
     standalone_indicator_signals: &mut Vec<Value>,
     standalone_score_updates: &mut Vec<Value>,
 ) -> Result<bool, rusqlite::Error> {
+    append_timeframe_signal_plans_with_readiness(
+        input,
+        running_plans,
+        potential_plans,
+        cagr_stats,
+        user_indicator_alerts,
+        standalone_indicator_signals,
+        standalone_score_updates,
+        &mut InstrumentReadiness::default(),
+    )
+}
+
+pub(super) fn append_timeframe_signal_plans_with_readiness(
+    input: TimeframeScanInput<'_>,
+    running_plans: &mut Vec<Value>,
+    potential_plans: &mut Vec<Value>,
+    cagr_stats: &mut HashMap<String, Value>,
+    user_indicator_alerts: &mut Vec<Value>,
+    standalone_indicator_signals: &mut Vec<Value>,
+    standalone_score_updates: &mut Vec<Value>,
+    readiness: &mut InstrumentReadiness,
+) -> Result<bool, rusqlite::Error> {
     let now_ns = current_time_ns();
     let is_stockbit_signal_scope = input.exchange_id == quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID
         && input.product_id == quant_core::STOCKBIT_NWE_4H_PRODUCT_ID
         && input.category_id == quant_core::STOCKBIT_NWE_4H_ASSET_CATEGORY_ID;
-    let stockbit_intraday_state = if is_stockbit_signal_scope {
-        product_candle_scan_state_at(
-            input.market_connection,
-            input.symbol,
-            input.exchange_id,
-            input.product_id,
-            "15m",
-            now_ns.div_euclid(NANOS_PER_SECOND),
-        )
-        .ok()
-        .flatten()
+    let intraday_result = product_candle_scan_state_at(
+        input.market_connection,
+        input.symbol,
+        input.exchange_id,
+        input.product_id,
+        "15m",
+        now_ns.div_euclid(NANOS_PER_SECOND),
+    );
+    let intraday_state = intraday_result.as_ref().ok().and_then(Option::as_ref);
+    let stockbit_intraday_state = intraday_state.filter(|_| is_stockbit_signal_scope);
+    let current_price =
+        intraday_state.and_then(|state| fresh_current_price(&input, Some(state), now_ns));
+    readiness.price_status = if current_price.is_some() {
+        "fresh"
+    } else if intraday_result.is_err() {
+        "error"
+    } else if intraday_state.is_some_and(|state| state.latest_bar_time.is_some() && state.is_stale)
+    {
+        "stale"
     } else {
-        None
+        "missing"
     };
-    let current_price = fresh_current_price(&input, stockbit_intraday_state.as_ref(), now_ns);
+    if current_price.is_none() {
+        readiness.issue(ReadinessIssue {
+            symbol: input.asset.into(),
+            reason: match readiness.price_status {
+                "error" => "data_error",
+                "stale" => "stale_price",
+                _ => "missing_completed_price",
+            }
+            .into(),
+            timeframe: "15m".into(),
+            source: intraday_state.map(|state| state.source.clone()),
+            data_provider: intraday_state.map(|state| state.data_provider.clone()),
+            last_bar_time: intraday_state.and_then(|state| state.latest_bar_time),
+            error: intraday_result.as_ref().err().map(ToString::to_string),
+            ..ReadinessIssue::default()
+        });
+    }
     if current_price.is_none() {
         if let Some(state) = input.sync_state {
             state.prioritize_stale_signal_sync(
@@ -73,11 +121,15 @@ pub(super) fn append_timeframe_signal_plans(
     let required_history_bars =
         quant_core::NadarayaWatsonEnvelopeConfig::default().minimum_endpoint_envelope_bars();
     let history_limit = required_history_bars.max(720).min(MAX_CANDLES as usize) as i64;
-    let stockbit_intraday_is_fresh = stockbit_intraday_state
-        .as_ref()
-        .is_some_and(|metadata| !metadata.is_stale);
+    let stockbit_intraday_is_fresh =
+        stockbit_intraday_state.is_some_and(|metadata| !metadata.is_stale);
     for (frame_index, definition) in DSS_BRESSERT_MTF_TIMEFRAMES.iter().enumerate() {
         let timeframe = definition.timeframe;
+        let diagnosis_index = readiness.timeframes.len();
+        readiness.timeframes.push(TimeframeReadiness {
+            timeframe: timeframe.into(),
+            ..TimeframeReadiness::default()
+        });
         let is_crypto_signal_scope = input.category_id.starts_with("crypto_");
         let is_nwe_dss_signal_scope = is_stockbit_signal_scope || is_crypto_signal_scope;
         let timeframe_required_history_bars = if is_nwe_dss_signal_scope {
@@ -92,16 +144,28 @@ pub(super) fn append_timeframe_signal_plans(
         if current_price.is_none() && timeframe != "1d" && !is_nwe_dss_signal_scope {
             continue;
         }
-        let timeframe_state = product_candle_scan_state_at(
+        let timeframe_result = product_candle_scan_state_at(
             input.market_connection,
             input.symbol,
             input.exchange_id,
             input.product_id,
             timeframe,
             now_ns.div_euclid(NANOS_PER_SECOND),
-        )
-        .ok()
-        .flatten();
+        );
+        let timeframe_state = match timeframe_result {
+            Ok(state) => state,
+            Err(error) => {
+                readiness.timeframes[diagnosis_index].data_error_count += 1;
+                readiness.issue(ReadinessIssue {
+                    symbol: input.asset.into(),
+                    reason: "data_error".into(),
+                    timeframe: timeframe.into(),
+                    error: Some(error.to_string()),
+                    ..ReadinessIssue::default()
+                });
+                continue;
+            }
+        };
         let stale = timeframe_state
             .as_ref()
             .map(|metadata| metadata.is_stale)
@@ -122,12 +186,38 @@ pub(super) fn append_timeframe_signal_plans(
         let duration_ns = timeframe_duration_ns(timeframe).unwrap_or_default();
         let use_stockbit_timeframe_history = is_stockbit_signal_scope && !stale;
         if (stale && !stockbit_intraday_is_fresh) || duration_ns <= 0 {
+            let missing = timeframe_state
+                .as_ref()
+                .is_none_or(|state| state.latest_bar_time.is_none());
+            if missing {
+                readiness.timeframes[diagnosis_index].missing_history_count += 1;
+            } else {
+                readiness.timeframes[diagnosis_index].stale_history_count += 1;
+            }
+            readiness.issue(ReadinessIssue {
+                symbol: input.asset.into(),
+                reason: if missing {
+                    "missing_history"
+                } else {
+                    "stale_history"
+                }
+                .into(),
+                timeframe: timeframe.into(),
+                source: timeframe_state.as_ref().map(|state| state.source.clone()),
+                data_provider: timeframe_state
+                    .as_ref()
+                    .map(|state| state.data_provider.clone()),
+                last_bar_time: timeframe_state
+                    .as_ref()
+                    .and_then(|state| state.latest_bar_time),
+                ..ReadinessIssue::default()
+            });
             continue;
         }
         let source_metadata = if is_stockbit_signal_scope {
             match (
                 timeframe_state.as_ref(),
-                stockbit_intraday_state.as_ref(),
+                stockbit_intraday_state,
                 current_price.as_ref(),
             ) {
                 (Some(timeframe_source), Some(intraday), Some(_))
@@ -166,19 +256,31 @@ pub(super) fn append_timeframe_signal_plans(
                 _ => Vec::new(),
             }
         } else {
-            source_metadata
-                .as_ref()
-                .map(|(source, _)| {
-                    load_series_candles_from_source(
-                        input.market_connection,
-                        input.symbol,
-                        timeframe,
-                        history_limit,
-                        source,
-                    )
-                    .unwrap_or_default()
-                })
-                .unwrap_or_default()
+            if let Some((source, _)) = source_metadata.as_ref() {
+                match load_series_candles_from_source(
+                    input.market_connection,
+                    input.symbol,
+                    timeframe,
+                    history_limit,
+                    source,
+                ) {
+                    Ok(candles) => candles,
+                    Err(error) => {
+                        readiness.timeframes[diagnosis_index].data_error_count += 1;
+                        readiness.issue(ReadinessIssue {
+                            symbol: input.asset.into(),
+                            reason: "data_error".into(),
+                            timeframe: timeframe.into(),
+                            source: Some(source.clone()),
+                            error: Some(error.to_string()),
+                            ..ReadinessIssue::default()
+                        });
+                        continue;
+                    }
+                }
+            } else {
+                Vec::new()
+            }
         };
         let completed_strategy_bars = completed_bars(&candles, duration_ns, now_ns);
         let bars = if is_stockbit_signal_scope {
@@ -201,8 +303,53 @@ pub(super) fn append_timeframe_signal_plans(
         } else {
             timeframe_required_history_bars
         };
+        if is_nwe_dss_signal_scope
+            && bars.len() < quant_core::stockbit_nwe_4h_minimum_history_bars()
+        {
+            readiness.timeframes[diagnosis_index].nwe_insufficient_history_count += 1;
+        }
         if bars.len() < minimum_available_history_bars {
+            readiness.timeframes[diagnosis_index].insufficient_history_count += 1;
+            readiness.issue(ReadinessIssue {
+                symbol: input.asset.into(),
+                reason: "insufficient_history".into(),
+                timeframe: timeframe.into(),
+                source: source_metadata.as_ref().map(|metadata| metadata.0.clone()),
+                data_provider: source_metadata.as_ref().map(|metadata| metadata.1.clone()),
+                available_bars: Some(bars.len()),
+                required_bars: Some(minimum_available_history_bars),
+                last_bar_time: bars.last().map(|bar| bar.time),
+                ..ReadinessIssue::default()
+            });
             continue;
+        }
+
+        let same_price_source = current_price
+            .as_ref()
+            .zip(source_metadata.as_ref())
+            .is_some_and(|(price, (source, _))| price.source == *source);
+        if is_nwe_dss_signal_scope && current_price.is_some() && !same_price_source {
+            readiness.timeframes[diagnosis_index].source_mismatch_count += 1;
+            readiness.issue(ReadinessIssue {
+                symbol: input.asset.into(),
+                reason: "source_mismatch".into(),
+                timeframe: timeframe.into(),
+                source: source_metadata.as_ref().map(|metadata| metadata.0.clone()),
+                data_provider: source_metadata.as_ref().map(|metadata| metadata.1.clone()),
+                last_bar_time: bars.last().map(|bar| bar.time),
+                ..ReadinessIssue::default()
+            });
+        }
+        if is_nwe_dss_signal_scope && same_price_source {
+            readiness.timeframes[diagnosis_index].evaluated_count += 1;
+            readiness.timeframes[diagnosis_index].evaluated_model_count +=
+                1 + usize::from(bars.len() >= quant_core::stockbit_nwe_4h_minimum_history_bars());
+        } else if !is_nwe_dss_signal_scope
+            && current_price.is_some()
+            && completed_strategy_bars.len() >= timeframe_required_history_bars
+        {
+            readiness.timeframes[diagnosis_index].evaluated_count += 1;
+            readiness.timeframes[diagnosis_index].evaluated_model_count += 1;
         }
 
         if is_nwe_dss_signal_scope {
@@ -443,3 +590,7 @@ mod dss_bressert_tests;
 #[cfg(test)]
 #[path = "scan_timeframe_crypto_4h_tests.rs"]
 mod crypto_4h_tests;
+
+#[cfg(test)]
+#[path = "scan_readiness_tests.rs"]
+mod readiness_tests;

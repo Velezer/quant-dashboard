@@ -41,6 +41,31 @@ and recovery states and the keyboard-accessible path.
 6. **Report evidence.** State what passed, what remains unknown, and the exact
    recovery signal if the behavior regresses.
 
+## Explaining empty app signals
+
+The primary task is to understand why the selected app, product, and timeframe
+has no current signals and choose the next useful action. Signal availability
+shows a plain-language reason beside the filters, backed by bounded counters
+and examples from the last completed scan. Stored history alone never proves
+fresh prices or a qualifying setup. Missing diagnostics remain unknown until a
+scan completes. Source, last candle, last successful refresh, and observed
+provider/storage errors are available under Data checks. Show the check time in
+WIB and label older snapshots. Search filters signal rows, not the scan checks.
+Recheck status reads diagnostics; Refresh signals rescans stored candles while
+candle ingestion continues in the background. Listing recovery remains separate.
+
+1. Direct effect: each empty app view states its observed data or model blocker.
+2. Immediate consequence: users can tell missing inputs from no qualifying setup.
+3. Response: recheck and scan actions show progress and prevent repeated clicks.
+4. Interactions: retain exact app/product/timeframe/source identity and freshness rules.
+5. Accumulation: save only bounded aggregate checks in existing SQLite metadata.
+6. Failure boundaries: old, absent, partial, or failed checks never imply a healthy scan.
+7. Recovery: expose status recheck, signal scan, and applicable listing retry in the UI.
+8. Governance: extend current scan, screener, and frontend modules without execution changes.
+9. Trajectory: hypothesis: specific reasons reduce repeated scans while providers recover.
+10. Decision: capture facts during scans, avoid new ticker sweeps on each UI refresh,
+    and check fresh-browser app switching, filtering, errors, and keyboard access.
+
 ## Per-ticker entry-model validation
 
 The primary task is to backtest the actual current entry scoring models for
