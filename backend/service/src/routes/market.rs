@@ -105,7 +105,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             },
             None => None,
         };
-        match open_db_minimal(db).and_then(|connection| {
+        match open_app_db_without_signal_store_for_market_directory(db).and_then(|connection| {
             instrument_registry::listing_status_for_exchange(
                 &connection,
                 db,

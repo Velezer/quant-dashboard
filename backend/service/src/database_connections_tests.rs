@@ -2,6 +2,7 @@ use super::{
     decode_storage_symbol_filename, ticker_database_path, MarketConnectionGate,
     MarketConnectionKind, MAX_OPEN_REGULAR_MARKET_DATABASES,
 };
+use crate::main_test_support::{remove_temporary_database, temporary_database_path};
 use std::{
     path::Path,
     sync::{mpsc, Arc},
@@ -33,6 +34,38 @@ fn ticker_filenames_reversibly_encode_windows_unsafe_symbols() {
             Some(symbol)
         );
     }
+}
+
+#[test]
+fn ticker_market_connections_do_not_open_the_signal_database() {
+    let app_path = temporary_database_path("ticker-market-app-only");
+    let market_directory = format!("{app_path}.tickers");
+    let signal_path = format!("{app_path}.signals.sqlite3");
+    let paths = super::connections::StoragePaths::new(
+        market_directory.as_str(),
+        app_path.as_str(),
+        signal_path.as_str(),
+    );
+    let connection = super::connections::open_market_history_for_symbol(
+        &paths,
+        "LOCK-TEST-USD",
+        true,
+    )
+    .expect("open market history without the signal store")
+    .expect("create the market history database");
+    let signal_schema_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_database_list WHERE name='signals'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("inspect attached database schemas");
+
+    assert_eq!(signal_schema_count, 0);
+    assert!(!std::path::Path::new(&signal_path).exists());
+    drop(connection);
+    std::fs::remove_dir_all(&market_directory).expect("remove temporary ticker databases");
+    remove_temporary_database(&app_path);
 }
 
 #[test]

@@ -36,7 +36,7 @@ pub(crate) fn listing_status(
     conn: &Connection,
     _market_directory: &str,
 ) -> Result<Value, rusqlite::Error> {
-    listing_status_for_exchange(conn, _market_directory, None)
+    listing_status_for_exchange_inner(conn, _market_directory, None, true)
 }
 
 pub(crate) fn listing_status_for_exchange(
@@ -44,19 +44,32 @@ pub(crate) fn listing_status_for_exchange(
     _market_directory: &str,
     exchange_filter: Option<&str>,
 ) -> Result<Value, rusqlite::Error> {
+    listing_status_for_exchange_inner(conn, _market_directory, exchange_filter, false)
+}
+
+fn listing_status_for_exchange_inner(
+    conn: &Connection,
+    _market_directory: &str,
+    exchange_filter: Option<&str>,
+    include_signal_counts: bool,
+) -> Result<Value, rusqlite::Error> {
     let exchange_clause = if exchange_filter.is_some() {
         " AND i.exchange_id=?1"
     } else {
         ""
+    };
+    let signal_count_column = if include_signal_counts {
+        "(SELECT COUNT(*) FROM signals.signal_screener_rows sr WHERE sr.exchange_id=i.exchange_id
+                    AND sr.product_id=i.product_id)"
+    } else {
+        "NULL"
     };
     let query = format!(
         "SELECT i.exchange_id,i.product_id,COUNT(*),
                 SUM(CASE WHEN i.venue_verified=1 AND
                     i.listing_status IN ('venue_active','public_listed_snapshot') THEN 1 ELSE 0 END),
                 MAX(i.source_snapshot_at),
-                0,0,
-                (SELECT COUNT(*) FROM signals.signal_screener_rows sr WHERE sr.exchange_id=i.exchange_id
-                    AND sr.product_id=i.product_id)
+                0,0,{signal_count_column}
            FROM instruments i
           WHERE i.exchange_id IN ('stockbit','tokocrypto','pintu','pluang')
              AND i.is_active=1{exchange_clause}
@@ -72,7 +85,7 @@ pub(crate) fn listing_status_for_exchange(
             "snapshot_date": row.get::<_, Option<String>>(4)?,
             "with_15m_candles": row.get::<_, i64>(5)?,
             "with_daily_candles": row.get::<_, i64>(6)?,
-            "signals": row.get::<_, i64>(7)?,
+            "signals": row.get::<_, Option<i64>>(7)?,
         }))
     };
     let rows = match exchange_filter {
