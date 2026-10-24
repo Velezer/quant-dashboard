@@ -199,9 +199,7 @@ pub(crate) fn create_ticker_schema(
 pub(crate) fn initialize_ticker_storage(
     connection: &Connection,
     storage_symbol: &str,
-    create: bool,
-    new_database: bool,
-) -> Result<(), rusqlite::Error> {
+) -> Result<bool, rusqlite::Error> {
     let has_layout_table: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM main.sqlite_schema
                        WHERE type='table' AND name='storage_layout_meta')",
@@ -227,15 +225,10 @@ pub(crate) fn initialize_ticker_storage(
             && stored_symbol.as_deref() == Some(storage_symbol)
             && has_ticker_tables(connection)?
         {
-            return Ok(());
+            return Ok(false);
         }
         return Err(storage_error(
             "ticker database has an incomplete or mismatched layout",
-        ));
-    }
-    if !create {
-        return Err(storage_error(
-            "ticker database has no completed layout marker",
         ));
     }
     let has_user_tables: bool = connection.query_row(
@@ -244,18 +237,34 @@ pub(crate) fn initialize_ticker_storage(
         [],
         |row| row.get(0),
     )?;
-    if !new_database || has_user_tables {
+    if has_user_tables {
         return Err(storage_error(
-            "existing ticker database has no completed layout marker",
+            "ticker database has user tables but no completed layout marker",
         ));
     }
-    create_ticker_schema(connection, "main")?;
-    connection.execute(
-        "INSERT INTO main.storage_layout_meta(key,value)
-         VALUES('storage_layout_version',?1),('storage_symbol',?2)",
-        rusqlite::params![super::LAYOUT_VERSION, storage_symbol],
-    )?;
-    Ok(())
+    connection.execute_batch("BEGIN")?;
+    let result = (|| {
+        create_ticker_schema(connection, "main")?;
+        connection.execute(
+            "INSERT INTO main.storage_layout_meta(key,value)
+             VALUES('storage_layout_version',?1),('storage_symbol',?2)",
+            rusqlite::params![super::LAYOUT_VERSION, storage_symbol],
+        )?;
+        Ok::<(), rusqlite::Error>(())
+    })();
+    match result {
+        Ok(()) => match connection.execute_batch("COMMIT") {
+            Ok(()) => Ok(true),
+            Err(error) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        },
+        Err(error) => {
+            let _ = connection.execute_batch("ROLLBACK");
+            Err(error)
+        }
+    }
 }
 
 fn has_ticker_tables(connection: &Connection) -> Result<bool, rusqlite::Error> {
@@ -472,8 +481,8 @@ fn open_ticker_database(
     )?;
     configure_connection(&connection)?;
     validate_app_layout(&connection, true)?;
-    initialize_ticker_storage(&connection, storage_symbol, create, new_database)?;
-    if new_database {
+    let initialized_empty_database = initialize_ticker_storage(&connection, storage_symbol)?;
+    if new_database || initialized_empty_database {
         let file_name = ticker_path
             .file_name()
             .and_then(|value| value.to_str())

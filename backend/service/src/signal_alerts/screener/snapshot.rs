@@ -50,6 +50,26 @@ pub(crate) fn replace_signal_screener_snapshot_with_readiness(
     registered_count: usize,
     readiness: Option<&Value>,
 ) -> Result<(), rusqlite::Error> {
+    crate::database::retry_sqlite_busy(|| {
+        replace_signal_screener_snapshot_attempt(
+            connection,
+            signals,
+            score_updates,
+            price_data_unavailable_count,
+            registered_count,
+            readiness,
+        )
+    })
+}
+
+fn replace_signal_screener_snapshot_attempt(
+    connection: &Connection,
+    signals: &[Value],
+    score_updates: &[StockbitSignalScoreUpdate],
+    price_data_unavailable_count: usize,
+    registered_count: usize,
+    readiness: Option<&Value>,
+) -> Result<(), rusqlite::Error> {
     let now = now_secs() as i64;
     let price_data_status = if price_data_unavailable_count == 0 {
         "ready"
@@ -174,7 +194,13 @@ pub(crate) fn replace_signal_screener_snapshot_with_readiness(
         Ok::<(), rusqlite::Error>(())
     })();
     match result {
-        Ok(()) => connection.execute_batch("COMMIT"),
+        Ok(()) => match connection.execute_batch("COMMIT") {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        },
         Err(error) => {
             let _ = connection.execute_batch("ROLLBACK");
             Err(error)
@@ -266,6 +292,13 @@ pub(crate) fn record_signal_screener_failure(
     connection: &Connection,
     error: &str,
 ) -> Result<(), rusqlite::Error> {
+    crate::database::retry_sqlite_busy(|| record_signal_screener_failure_attempt(connection, error))
+}
+
+fn record_signal_screener_failure_attempt(
+    connection: &Connection,
+    error: &str,
+) -> Result<(), rusqlite::Error> {
     connection.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| {
         mark_stockbit_score_rows_stale(connection)?;
@@ -279,7 +312,13 @@ pub(crate) fn record_signal_screener_failure(
         Ok::<(), rusqlite::Error>(())
     })();
     match result {
-        Ok(()) => connection.execute_batch("COMMIT"),
+        Ok(()) => match connection.execute_batch("COMMIT") {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        },
         Err(error) => {
             let _ = connection.execute_batch("ROLLBACK");
             Err(error)
