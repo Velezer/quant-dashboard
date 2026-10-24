@@ -80,6 +80,7 @@ pub(crate) fn listing_status_for_exchange(
         None => stmt.query_map([], map_row)?,
     };
     let mut products = rows.collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
     let mut coverage_by_symbol =
         std::collections::HashMap::<(String, String, String), (bool, bool)>::new();
     for product in &mut products {
@@ -92,10 +93,13 @@ pub(crate) fn listing_status_for_exchange(
         let rows = instruments.query_map(params![exchange, product_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
         })?;
+        // Opening a ticker also opens the app database. Finish this read before
+        // that connection performs its initialization writes under DELETE journals.
+        let registered = rows.collect::<Result<Vec<_>, _>>()?;
+        drop(instruments);
         let mut with_15m = 0_i64;
         let mut with_daily = 0_i64;
-        for row in rows {
-            let (symbol, venue_verified) = row?;
+        for (symbol, venue_verified) in registered {
             if !venue_verified {
                 continue;
             }
