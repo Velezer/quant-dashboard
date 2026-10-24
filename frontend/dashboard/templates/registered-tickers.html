@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Browse registered tickers by app and inspect listing provenance, source links, snapshot dates, and data policies.">
+    <meta name="color-scheme" content="dark">
+    <title>Registered tickers · Signal Screener</title>
+    <link rel="stylesheet" href="/web/styles/entry-validation.css">
+    <link rel="stylesheet" href="/web/styles/registered-tickers.css">
+    <script type="module" src="/web/scripts/modules/registered-tickers-page.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to ticker registry</a>
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="Signal Screener dashboard"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>SIGNAL SCREENER<span class="brand-section"> / REGISTRY</span></a>
+        <nav aria-label="Page navigation"><a href="/entry-validation">Entry validation</a><a href="/scoring">Scoring guide</a><a href="/">Back to screener</a></nav>
+    </header>
+    <main id="main" class="page-shell registry-page">
+        <section class="hero" aria-labelledby="page-title">
+            <div>
+                <p class="eyebrow accent">APP INSTRUMENT REGISTRY</p>
+                <h1 id="page-title">Registered tickers, with their sources.</h1>
+                <p class="lede">Browse one registry for Stockbit, Pintu, Tokocrypto, and Pluang. Each row shows why the ticker is present, the source record and snapshot date, and where its price history comes from.</p>
+            </div>
+            <aside class="registry-principle"><strong>Three separate facts</strong><span>Registered in this app</span><span>Confirmed in a venue listing</span><span>Source used for price history</span></aside>
+        </section>
+
+        <div class="meaning-note"><span aria-hidden="true">i</span><p><strong>Registration is not the same as a current listing.</strong> A manual entry can be unverified, a saved snapshot can be old, and candle history can come from a research proxy. The source shown on a row describes the registry entry; the price policy describes stored market data.</p></div>
+
+        <section class="source-panel" aria-labelledby="source-title">
+            <div class="section-heading"><div><p class="eyebrow">PROVENANCE GUIDE</p><h2 id="source-title">Where registry entries come from</h2></div></div>
+            <div class="registry-source-grid">
+                <article><h3>Stockbit</h3><p>Synced from the public IDX listed-company directory. A successful directory refresh records the source URL and snapshot date.</p></article>
+                <article><h3>Pintu</h3><p>Refreshed from Pintu Retail, Pro Spot, and Pro Futures listings. Some futures entries also retain their earlier regulator-approved code-list provenance.</p></article>
+                <article><h3>Tokocrypto</h3><p>Synced from Tokocrypto’s public symbols API. The API source link and refresh date are saved with each active listing.</p></article>
+                <article><h3>Pluang</h3><p>Seeded from a saved public spot and futures listing snapshot. It is not a live listing refresh; each row shows the snapshot date.</p></article>
+                <article><h3>Manual entries</h3><p>Added from this registry page. They remain unverified until a supported app-listing refresh confirms them; no source URL is implied.</p></article>
+            </div>
+            <p class="small-text source-separation">This provenance documents how the app registered an instrument. It does not certify venue availability, execution support, or candle-source quality.</p>
+        </section>
+
+        <section class="scope-panel" aria-labelledby="register-title">
+            <div class="section-heading"><div><p class="eyebrow">ADD AN INSTRUMENT</p><h2 id="register-title">Register a ticker</h2></div></div>
+            <form id="instrumentRegisterForm" class="scope-form register-form">
+                <label>App<select id="instrumentExchangeSelect" name="exchange_id" required><option value="stockbit">Stockbit</option><option value="pintu">Pintu</option><option value="tokocrypto">Tokocrypto</option><option value="pluang">Pluang</option></select></label>
+                <label>Product<select id="instrumentProductSelect" name="product_id"></select></label>
+                <label>Asset type<select id="instrumentCategorySelect" name="asset_category_id" required></select></label>
+                <label>Ticker<input id="instrumentTickerInput" name="symbol" type="text" maxlength="24" autocomplete="off" placeholder="e.g. BBCA or BTC" required></label>
+                <button class="primary-button" type="submit">Register</button>
+            </form>
+            <p id="instrumentRegistryFormNote" class="small-text form-note" role="status" aria-live="polite">Manual registrations are marked unverified. Use the stored source link below to review existing provenance.</p>
+        </section>
+
+        <section class="universe-panel" aria-labelledby="registry-table-title">
+            <div class="section-heading"><div><p class="eyebrow">ACTIVE REGISTRY</p><h2 id="registry-table-title">Tickers by app</h2><p class="small-text">Choose an app or product, then search. Listing and price-source states remain separate.</p></div><button id="instrumentRegistryRefresh" class="text-button" type="button">Refresh registry</button></div>
+            <form id="instrumentRegistryFilters" class="scope-form registry-filters">
+                <label>App<select id="instrumentVenueFilter"><option value="all">All apps</option><option value="stockbit">Stockbit</option><option value="pintu">Pintu</option><option value="tokocrypto">Tokocrypto</option><option value="pluang">Pluang</option></select></label>
+                <label>Product<select id="instrumentProductFilter"><option value="all">All products</option></select></label>
+                <label class="search-field">Ticker search<input id="instrumentSearchInput" type="search" autocomplete="off" placeholder="Ticker, app, or product"></label>
+                <button class="secondary-button" type="submit">Apply filters</button>
+            </form>
+            <p id="instrumentRegistryStatus" class="status-message" role="status" aria-live="polite">Loading the active ticker registry…</p>
+            <button id="instrumentRegistryRetry" type="button" class="secondary-button hidden">Retry loading</button>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Registered ticker provenance table">
+                <table class="ticker-table registry-table"><caption class="sr-only">Active registered tickers, their registration sources, listing states, and market history policies.</caption>
+                    <thead><tr><th scope="col">App / product</th><th scope="col">Ticker / venue symbol</th><th scope="col">Registered from</th><th scope="col">Source evidence</th><th scope="col">Listing status</th><th scope="col">Price history</th><th scope="col">Registered at</th></tr></thead>
+                    <tbody id="instrumentRegistryRows"><tr><td colspan="7" class="empty-cell">Loading registered tickers…</td></tr></tbody>
+                </table>
+            </div>
+            <div class="pagination"><span id="instrumentRegistryPageLabel" class="small-text">Loading…</span><div><button id="instrumentRegistryMore" class="secondary-button hidden" type="button">Show more</button></div></div>
+            <p class="small-text registry-limit-note">This list shows active registry records. A delisted or pending record can still be visible while active; inactive historical records are not returned by the current registry API.</p>
+        </section>
+        <footer class="page-footer"><p>Source timestamps are preserved from the registry snapshot. A missing link or timestamp is shown as unavailable instead of inferred.</p><a href="/">Return to the signal screener</a></footer>
+    </main>
+</body>
+</html>
