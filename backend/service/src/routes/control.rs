@@ -299,6 +299,11 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         return Ok(());
     }
 
+    if route == "/registry" && method == "GET" {
+        serve_static(stream, "frontend/dashboard/templates/registered-tickers.html");
+        return Ok(());
+    }
+
     if route == "/scoring" && method == "GET" {
         serve_static(stream, "frontend/dashboard/templates/scoring.html");
         return Ok(());
