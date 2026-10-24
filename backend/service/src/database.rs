@@ -61,6 +61,34 @@ pub(super) fn initialize_empty_market_schema(
     connection.execute_batch(MARKET_SCHEMA)
 }
 
+pub(crate) fn retry_sqlite_busy<T>(
+    mut operation: impl FnMut() -> Result<T, rusqlite::Error>,
+) -> Result<T, rusqlite::Error> {
+    const RETRY_DELAYS_MS: [u64; 2] = [100, 300];
+    for attempt in 0..=RETRY_DELAYS_MS.len() {
+        match operation() {
+            Err(error)
+                if attempt < RETRY_DELAYS_MS.len() && is_sqlite_busy_or_locked(&error) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAYS_MS[attempt]));
+            }
+            result => return result,
+        }
+    }
+    unreachable!("the final SQLite retry returns without another retry")
+}
+
+fn is_sqlite_busy_or_locked(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(code, _)
+            if matches!(
+                code.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            )
+    )
+}
+
 #[cfg(not(test))]
 pub(super) fn open_db_minimal(market_directory: &str) -> Result<Connection, rusqlite::Error> {
     open_app_db_for_market_directory(market_directory)
