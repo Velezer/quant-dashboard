@@ -38,6 +38,13 @@ use schema::{APP_RUNTIME_SCHEMA, MARKET_SCHEMA};
 pub(super) fn initialize_app_storage_schema(
     connection: &Connection,
 ) -> Result<(), rusqlite::Error> {
+    initialize_app_runtime_storage_schema(connection)?;
+    signal_alerts::initialize_screener_schema(connection)
+}
+
+pub(super) fn initialize_app_runtime_storage_schema(
+    connection: &Connection,
+) -> Result<(), rusqlite::Error> {
     signal_alerts::reject_legacy_screener_tables(connection)?;
     connection.execute_batch(APP_RUNTIME_SCHEMA)?;
     connections::initialize_market_app_schema(connection)?;
@@ -45,7 +52,6 @@ pub(super) fn initialize_app_storage_schema(
     instrument_registry::initialize_schema(connection)?;
     foreign_flow::initialize_schema(connection)?;
     signal_alerts::initialize_schema(connection)?;
-    signal_alerts::initialize_screener_schema(connection)?;
     pine_registry::initialize_schema(connection)
 }
 
@@ -99,6 +105,14 @@ pub(super) fn open_app_db_for_market_directory(
     market_directory: &str,
 ) -> Result<Connection, rusqlite::Error> {
     connections::open_app_database(&paths_for_market_directory(market_directory))
+}
+
+pub(super) fn open_app_db_without_signal_store_for_market_directory(
+    market_directory: &str,
+) -> Result<Connection, rusqlite::Error> {
+    connections::open_app_database_without_signal_store(&paths_for_market_directory(
+        market_directory,
+    ))
 }
 
 pub(super) fn validate_runtime_market_directory(market_directory: &str) -> Result<(), String> {

@@ -26,6 +26,26 @@ fn status_database() -> Connection {
     connection
 }
 
+fn status_database_without_signal_store() -> Connection {
+    let connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch(REGISTRY_SCHEMA).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE series(
+                symbol TEXT,interval TEXT,source TEXT,exchange_id TEXT,product_id TEXT,
+                instrument_id TEXT,data_provider TEXT,timezone TEXT,price_basis TEXT,
+                instrument_kind TEXT,last_success TEXT,last_attempt TEXT,last_error TEXT,
+                PRIMARY KEY(symbol,interval,source));
+             CREATE TABLE bars(
+                symbol TEXT,interval TEXT,source TEXT,ts INTEGER,
+                open REAL,high REAL,low REAL,close REAL,volume REAL,
+                PRIMARY KEY(symbol,interval,source,ts));
+             CREATE INDEX idx_bars_series_ts ON bars(symbol,interval,source,ts);",
+        )
+        .unwrap();
+    connection
+}
+
 fn insert_instrument(connection: &Connection, product: &str, instrument_id: &str) {
     connection
         .execute(
@@ -82,4 +102,35 @@ fn listing_status_counts_bars_and_screener_rows_per_exact_app_product() {
     assert_eq!(product("pintu_pro_spot")["with_15m_candles"], 0);
     assert_eq!(product("pintu_pro_spot")["with_daily_candles"], 1);
     assert_eq!(product("pintu_pro_spot")["signals"], 1);
+}
+
+#[test]
+fn listing_status_without_signal_database_still_reports_app_and_candle_readiness() {
+    let connection = status_database_without_signal_store();
+    insert_instrument(
+        &connection,
+        "pintu_pro_futures",
+        "pintu.pintu_pro_futures.btc",
+    );
+    connection
+        .execute_batch(
+            "INSERT INTO series(symbol,interval,source,exchange_id,product_id,instrument_id,
+                                data_provider,timezone,price_basis,instrument_kind)
+             VALUES('BTC-USD','15m','proxy','pintu','pintu_pro_futures',
+                    'pintu.pintu_pro_futures.btc','yfinance','UTC','research_proxy','crypto_spot');
+             INSERT INTO bars VALUES('BTC-USD','15m','proxy',1,10,11,9,10,100);",
+        )
+        .unwrap();
+
+    let status = super::listing_status_for_exchange(&connection, ":memory:", Some("pintu"))
+        .expect("listing status must not require the signal database");
+    let product = status["products"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["product_id"] == "pintu_pro_futures")
+        .unwrap();
+
+    assert_eq!(product["with_15m_candles"], 1);
+    assert_eq!(product["signals"], Value::Null);
 }

@@ -268,16 +268,35 @@ fn has_ticker_tables(connection: &Connection) -> Result<bool, rusqlite::Error> {
 }
 
 pub(crate) fn open_app_database(paths: &StoragePaths) -> Result<Connection, rusqlite::Error> {
+    open_app_database_with_signal_store(paths, true)
+}
+
+pub(crate) fn open_app_database_without_signal_store(
+    paths: &StoragePaths,
+) -> Result<Connection, rusqlite::Error> {
+    open_app_database_with_signal_store(paths, false)
+}
+
+fn open_app_database_with_signal_store(
+    paths: &StoragePaths,
+    include_signal_store: bool,
+) -> Result<Connection, rusqlite::Error> {
     #[cfg(not(test))]
     super::validate_runtime_market_directory(&paths.market_db.to_string_lossy())
         .map_err(|error| storage_error(&error))?;
-    validate_signal_database_path(&paths.app_db, &paths.signals_db)?;
+    if include_signal_store {
+        validate_signal_database_path(&paths.app_db, &paths.signals_db)?;
+    }
     create_parent(&paths.app_db)?;
-    create_parent(&paths.signals_db)?;
+    if include_signal_store {
+        create_parent(&paths.signals_db)?;
+    }
     let app_existed = paths.app_db.exists();
-    let signals_existed = paths.signals_db.exists();
+    let signals_existed = include_signal_store && paths.signals_db.exists();
     journal::prepare_database(&paths.app_db, true)?;
-    journal::prepare_database(&paths.signals_db, true)?;
+    if include_signal_store {
+        journal::prepare_database(&paths.signals_db, true)?;
+    }
     let connection = Connection::open_in_memory()?;
     create_ticker_schema(&connection, "main")?;
     connection.execute(
@@ -289,26 +308,33 @@ pub(crate) fn open_app_database(paths: &StoragePaths) -> Result<Connection, rusq
         "ATTACH DATABASE ?1 AS app",
         [paths.app_db.to_string_lossy().as_ref()],
     )?;
-    connection.execute(
-        "ATTACH DATABASE ?1 AS signals",
-        [paths.signals_db.to_string_lossy().as_ref()],
-    )?;
+    if include_signal_store {
+        connection.execute(
+            "ATTACH DATABASE ?1 AS signals",
+            [paths.signals_db.to_string_lossy().as_ref()],
+        )?;
+    }
     configure_connection(&connection)?;
-    configure_signal_database(&connection)?;
     validate_app_layout(&connection, app_existed)?;
-    validate_signal_layout(&connection, signals_existed)?;
-    initialize_application_storage_once(&connection, &paths.app_db, &paths.signals_db)?;
+    initialize_application_storage_once(&connection, &paths.app_db)?;
+    if include_signal_store {
+        configure_signal_database(&connection)?;
+        initialize_signal_screener_schema_once(
+            &connection,
+            &paths.signals_db,
+            signals_existed,
+        )?;
+    }
     Ok(connection)
 }
 
 fn initialize_application_storage_once(
     connection: &Connection,
     _app_database: &Path,
-    _signals_database: &Path,
 ) -> Result<(), rusqlite::Error> {
     #[cfg(test)]
     {
-        super::initialize_app_storage_schema(connection)?;
+        super::initialize_app_runtime_storage_schema(connection)?;
         crate::master_data::initialize(connection)?;
         crate::instrument_registry::initialize(connection)?;
         crate::foreign_flow::initialize(connection)?;
@@ -316,27 +342,53 @@ fn initialize_application_storage_once(
     }
     #[cfg(not(test))]
     {
-        static INITIALIZED_DATABASES: OnceLock<Mutex<HashSet<(PathBuf, PathBuf)>>> =
-            OnceLock::new();
+        static INITIALIZED_DATABASES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
         let initialized = INITIALIZED_DATABASES.get_or_init(|| Mutex::new(HashSet::new()));
         let app_database_key = _app_database
             .canonicalize()
             .unwrap_or_else(|_| _app_database.to_path_buf());
-        let signals_database_key = _signals_database
-            .canonicalize()
-            .unwrap_or_else(|_| _signals_database.to_path_buf());
-        let database_key = (app_database_key, signals_database_key);
         let mut initialized = initialized
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if initialized.contains(&database_key) {
+        if initialized.contains(&app_database_key) {
             return Ok(());
         }
-        super::initialize_app_storage_schema(connection)?;
+        super::initialize_app_runtime_storage_schema(connection)?;
         crate::master_data::initialize(connection)?;
         crate::instrument_registry::initialize(connection)?;
         crate::foreign_flow::initialize(connection)?;
         ensure_app_layout_marker(connection)?;
+        initialized.insert(app_database_key);
+        Ok(())
+    }
+}
+
+fn initialize_signal_screener_schema_once(
+    connection: &Connection,
+    signal_database: &Path,
+    signal_database_existed: bool,
+) -> Result<(), rusqlite::Error> {
+    #[cfg(test)]
+    {
+        let _ = signal_database;
+        validate_signal_layout(connection, signal_database_existed)?;
+        crate::signal_alerts::initialize_screener_schema(connection)
+    }
+    #[cfg(not(test))]
+    {
+        static INITIALIZED_SIGNAL_DATABASES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+        let initialized = INITIALIZED_SIGNAL_DATABASES.get_or_init(|| Mutex::new(HashSet::new()));
+        let database_key = signal_database
+            .canonicalize()
+            .unwrap_or_else(|_| signal_database.to_path_buf());
+        let mut initialized = initialized
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        validate_signal_layout(connection, signal_database_existed)?;
+        if initialized.contains(&database_key) {
+            return Ok(());
+        }
+        crate::signal_alerts::initialize_screener_schema(connection)?;
         initialized.insert(database_key);
         Ok(())
     }
@@ -404,7 +456,7 @@ fn open_ticker_database(
     create: bool,
     new_database: bool,
 ) -> Result<Connection, rusqlite::Error> {
-    drop(open_app_database(paths)?);
+    drop(open_app_database_without_signal_store(paths)?);
     if create {
         create_parent(ticker_path)?;
     }
