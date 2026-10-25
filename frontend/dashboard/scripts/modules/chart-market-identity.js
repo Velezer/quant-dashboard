@@ -26,6 +26,16 @@ export function marketSymbolForSignal(signal) {
         return symbol.endsWith('-USD') ? symbol : `${symbol}-USD`;
     }
     if (venue === 'tokocrypto') {
+        const storageSymbol = String(
+            signal?.storage_symbol || signal?.data_symbol || signal?.Data_Symbol || '',
+        ).trim().toUpperCase();
+        if (storageSymbol.startsWith('TOKOCRYPTO:')) {
+            const venueSymbol = storageSymbol.split(':').at(-1)?.replaceAll('_', '');
+            const quote = ['USDT', 'IDR'].find(currency => venueSymbol?.endsWith(currency));
+            if (quote && venueSymbol.length > quote.length) {
+                return `${venueSymbol.slice(0, -quote.length)}-${quote}`;
+            }
+        }
         const assetClass = String(signal?.class || signal?.Class || '').toLowerCase();
         return assetClass === 'tokenized_stock'
             ? symbol.replace(/-USD$/i, '')

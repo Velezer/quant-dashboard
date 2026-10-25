@@ -3,6 +3,8 @@ use super::*;
 #[derive(Debug)]
 pub(super) struct RequestQuery {
     pub(super) symbol: String,
+    pub(super) storage_symbol: String,
+    pub(super) product_id: String,
     pub(super) timeframe: String,
     pub(super) limit: i64,
     pub(super) strategy: String,
@@ -192,6 +194,11 @@ pub(super) fn parse_query(path: &str) -> RequestQuery {
         .clamp(1, MAX_CANDLES);
     RequestQuery {
         symbol,
+        storage_symbol: values
+            .get("storage_symbol")
+            .cloned()
+            .unwrap_or_default(),
+        product_id: values.get("product_id").cloned().unwrap_or_default(),
         timeframe: values
             .get("timeframe")
             .filter(|value| !value.is_empty())

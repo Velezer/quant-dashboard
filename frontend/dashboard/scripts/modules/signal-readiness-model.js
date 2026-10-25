@@ -20,6 +20,12 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
     const snapshot = summary.readiness;
     const products = (Array.isArray(snapshot?.products) ? snapshot.products : [])
         .filter(row => row.exchange_id === app && (product === 'all' || row.product_id === product));
+    const worker = (Array.isArray(snapshot?.workers) ? snapshot.workers : [])
+        .find(row => row.exchange_id === app);
+    const workerMetric = worker ? {
+        label: 'Last completed app worker',
+        value: `${String(worker.status || 'unknown').replaceAll('_', ' ')} · ${count(worker.registered_instruments)} tickers`,
+    } : null;
     const result = { scopeLabel, title: 'Checking signal availability', tone: 'unknown', message: '', metrics: [],
         examples: [], checkedAt: '', nextStep: '', retryListings: false, hasScanDetails: false };
     if (snapshot?.version !== 1 || !(snapshot.checked_at > 0) || !products.length) {
@@ -41,6 +47,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
             : !confirmed && listings.length ? 'Listings pending verification cannot generate signals yet.'
             : !history && confirmed ? 'Market history is being gathered; fresh matching candles are required.'
             : 'Stored candles alone do not confirm fresh prices or a qualifying setup. The next completed scan will provide detailed checks.';
+        if (workerMetric) result.metrics = [workerMetric];
         if (count(summary.stale_price_signal_count)) {
             result.title = 'Saved signals are hidden by stale prices';
             result.message += ` ${count(summary.stale_price_signal_count)} saved signals in this response were withheld because their price bars are stale.`;
@@ -86,6 +93,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         + (lastChecked - firstChecked > 60 ? ` Selected data was checked from ${readinessTime(firstChecked)} to ${readinessTime(lastChecked)}.` : '')
         + (nweInsufficient && snapshot.nwe_required_bars > 0 ? ` NWE needs ${snapshot.nwe_required_bars} chronological bars for its warm-up.` : '');
     result.metrics = [
+        ...(workerMetric ? [workerMetric] : []),
         { label: 'Verified tickers checked', value: String(instruments) },
         { label: 'Fresh 15m prices at scan', value: `${fresh} / ${instruments}` },
         { label: 'Ticker / timeframe checks evaluated', value: String(evaluated) },

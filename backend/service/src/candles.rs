@@ -199,6 +199,29 @@ pub(super) fn resolve_candle_storage_symbol(
     Ok(resolved.unwrap_or(requested))
 }
 
+pub(super) fn resolve_registered_candle_storage_symbol(
+    connection: &Connection,
+    exchange: &str,
+    product_id: &str,
+    request_storage_symbol: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    connection
+        .query_row(
+            "SELECT storage_symbol FROM instruments
+              WHERE exchange_id=?1 AND is_active=1 AND venue_verified=1
+                AND upper(storage_symbol)=upper(?2)
+                AND (?3='' OR product_id=?3)
+              LIMIT 1",
+            params![
+                exchange.trim().to_ascii_lowercase(),
+                request_storage_symbol.trim(),
+                product_id.trim()
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+}
+
 pub(super) fn resolve_candle_storage_symbol_any_exchange(
     connection: &Connection,
     request_symbol: &str,

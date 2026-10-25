@@ -251,7 +251,7 @@ export function installChartData() {
                     error: 'w-2 h-2 rounded-full bg-rose-400 animate-pulse',
                     no_selection: 'w-2 h-2 rounded-full bg-gray-400'
                 };
-                const symbol = signal?.asset || signal?.symbol || 'selected asset';
+                const symbol = signal ? marketSymbolForSignal(signal) : 'selected asset';
                 const timeframe = String(activeTimeframe || '--').toUpperCase();
                 overlay.dataset.state = state;
                 overlay.classList.remove('hidden');
@@ -267,7 +267,7 @@ export function installChartData() {
             async function retryChartData() {
                 const signal = selectedSignal;
                 if (!signal) return;
-                setChartStatus('loading', `Retrying ${signal.asset || signal.symbol || 'selected asset'} · ${String(activeTimeframe || '--').toUpperCase()} from durable local history.`, { signal });
+                setChartStatus('loading', `Retrying ${marketSymbolForSignal(signal)} · ${String(activeTimeframe || '--').toUpperCase()} from durable local history.`, { signal });
                 const loaded = await refreshChartData(signal);
                 if (!isSelectedSignal(signal)) return;
                 if (!loaded) {
@@ -333,7 +333,16 @@ export function installChartData() {
                     const timeoutId = setTimeout(() => controller.abort(), 15_000);
                     try {
                         const product = String(signal.product_id || signal.Product_ID || '');
-                        const response = await fetch(`/api/compute/chart-bundle?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&product_id=${encodeURIComponent(product)}&asset_class=${encodeURIComponent(assetClass)}&limit=${CHART_BUNDLE_HISTORY_BARS}`, {
+                        const storageSymbol = String(signal.storage_symbol || signal.data_symbol || signal.Data_Symbol || '');
+                        const query = new URLSearchParams({
+                            symbol,
+                            exchange,
+                            product_id: product,
+                            storage_symbol: storageSymbol,
+                            asset_class: assetClass,
+                            limit: String(CHART_BUNDLE_HISTORY_BARS),
+                        });
+                        const response = await fetch(`/api/compute/chart-bundle?${query.toString()}`, {
                             cache: 'no-store',
                             signal: controller.signal
                         });
@@ -534,6 +543,10 @@ export function installChartData() {
                     ema_len: '9',
                     trigger_len: '5'
                 });
+                const product = String(signal.product_id || signal.Product_ID || '');
+                const storageSymbol = String(signal.storage_symbol || signal.data_symbol || signal.Data_Symbol || '');
+                if (product) query.set('product_id', product);
+                if (storageSymbol) query.set('storage_symbol', storageSymbol);
                 try {
                     const response = await fetch(`/api/compute/indicators?${query.toString()}`, { signal: controller.signal });
                     const payload = await readApiResponse(response);
