@@ -73,6 +73,7 @@ export function installChartData() {
                 });
                 status.textContent = description.text;
                 status.setAttribute('aria-label', description.ariaLabel);
+                status.title = description.ariaLabel;
             }
 
             function toggleMarkovRegimeIndicator() {

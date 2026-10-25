@@ -64,9 +64,13 @@ export function describeMarkovRegimeStatus({ enabled, signal, timeframe = '--' }
     }
     const latest = history[history.length - 1]?.state;
     const stale = signal.chart_freshness?.[timeframe]?.is_stale === true;
+    const calculationBars = Number(signal.chart_freshness?.[timeframe]?.markov_calculation_bars);
+    const contextText = Number.isSafeInteger(calculationBars) && calculationBars > 0
+        ? ` Uses ${calculationBars.toLocaleString()} recent bars to calculate the visible chart states.`
+        : '';
     const label = latest ? latest.replaceAll('_', ' ') : 'no classified state · warm-up/data unavailable';
     return {
         text: `Markov ${normalizedTimeframe}: ${label}${stale ? ' · stale bars' : ''}`,
-        ariaLabel: `Causal Markov regime on ${normalizedTimeframe}: ${label}${stale ? ', using stale chart data' : ''}. Historical state context, not a forecast.`,
+        ariaLabel: `Causal Markov regime on ${normalizedTimeframe}: ${label}${stale ? ', using stale chart data' : ''}.${contextText} Historical state context, not a forecast.`,
     };
 }

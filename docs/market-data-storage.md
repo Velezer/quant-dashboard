@@ -78,6 +78,13 @@ bounded provider response, including rows beyond the current strategy's warm-up
 requirement. Physical capacity depends on the persistent volume's available
 disk space. Signal/alert expiry is separate from candle retention.
 
+The selected chart returns at most 120 bars per timeframe. Its causal Markov
+ribbon calculates those visible states from the visible bars plus a bounded
+warm-up derived from the regime model's NWE windows, EMA spans, and DSS period.
+The chart's Markov status tooltip reports the actual calculation-row count.
+This read bound does not limit saved candle history or the separate full-history
+Markov modal.
+
 ## Decision record: dedicated active signal snapshot database
 
 The user approved `data/signals/signals.sqlite3` for current screener rows and
