@@ -35,21 +35,9 @@
                 <article><h3>Pintu</h3><p>Refreshed from Pintu Retail, Pro Spot, and Pro Futures listings. Some futures entries also retain their earlier regulator-approved code-list provenance.</p></article>
                 <article><h3>Tokocrypto</h3><p>Synced from Tokocrypto’s public symbols API. The API source link and refresh date are saved with each active listing.</p></article>
                 <article><h3>Pluang</h3><p>Seeded from a saved public spot and futures listing snapshot. It is not a live listing refresh; each row shows the snapshot date.</p></article>
-                <article><h3>Manual entries</h3><p>Added from this registry page. They remain unverified until a supported app-listing refresh confirms them; no source URL is implied.</p></article>
+                <article><h3>Manual entries</h3><p>Some existing records were entered manually in the dashboard. They remain unverified unless a supported app-listing refresh confirms them; no source URL is implied.</p></article>
             </div>
             <p class="small-text source-separation">This provenance documents how the app registered an instrument. It does not certify venue availability, execution support, or candle-source quality.</p>
-        </section>
-
-        <section class="scope-panel" aria-labelledby="register-title">
-            <div class="section-heading"><div><p class="eyebrow">ADD AN INSTRUMENT</p><h2 id="register-title">Register a ticker</h2></div></div>
-            <form id="instrumentRegisterForm" class="scope-form register-form">
-                <label>App<select id="instrumentExchangeSelect" name="exchange_id" required><option value="stockbit">Stockbit</option><option value="pintu">Pintu</option><option value="tokocrypto">Tokocrypto</option><option value="pluang">Pluang</option></select></label>
-                <label>Product<select id="instrumentProductSelect" name="product_id"></select></label>
-                <label>Asset type<select id="instrumentCategorySelect" name="asset_category_id" required></select></label>
-                <label>Ticker<input id="instrumentTickerInput" name="symbol" type="text" maxlength="24" autocomplete="off" placeholder="e.g. BBCA or BTC" required></label>
-                <button class="primary-button" type="submit">Register</button>
-            </form>
-            <p id="instrumentRegistryFormNote" class="small-text form-note" role="status" aria-live="polite">Manual registrations are marked unverified. Use the stored source link below to review existing provenance.</p>
         </section>
 
         <section class="universe-panel" aria-labelledby="registry-table-title">

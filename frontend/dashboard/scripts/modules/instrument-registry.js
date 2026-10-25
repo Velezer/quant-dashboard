@@ -1,5 +1,5 @@
 import { publishDashboardBindings } from './runtime-context.js';
-import { readApiResponse, encodeWireValue } from './api.js';
+import { readApiResponse } from './api.js';
 
 /** Initializes the instrument registry dashboard feature. */
 export function installInstrumentRegistry() {
@@ -17,12 +17,6 @@ export function installInstrumentRegistry() {
                 controller: null,
                 searchTimer: null,
                 error: '',
-            };
-            const instrumentRegistryCategories = {
-                stockbit: ['idx_stock'],
-                pintu: ['crypto_spot', 'crypto_perpetual'],
-                tokocrypto: ['crypto_spot', 'tokenized_stock'],
-                pluang: ['crypto_spot', 'crypto_perpetual'],
             };
             const instrumentRegistryExchangeLabels = {
                 stockbit: 'Stockbit',
@@ -62,7 +56,7 @@ export function installInstrumentRegistry() {
                 tokocrypto_live_symbols_api: ['Tokocrypto public symbols API', 'Imported from Tokocrypto’s public symbols API.'],
                 pluang_public_spot_market_snapshot: ['Pluang public Spot snapshot', 'Imported from the saved public Pluang Spot listing snapshot.'],
                 pluang_public_futures_market_snapshot: ['Pluang public Perpetual snapshot', 'Imported from the saved public Pluang futures listing snapshot.'],
-                dashboard_manual_registration: ['Manual dashboard entry', 'Entered manually here. No venue listing source was supplied; venue verification is pending.'],
+                dashboard_manual_registration: ['Manual dashboard entry', 'Entered manually in the dashboard. No venue listing source was supplied; venue verification is pending.'],
                 local_market_history: ['Legacy local-history import', 'Imported from local market history; the original venue-listing source was not retained.'],
             };
 
@@ -115,56 +109,6 @@ export function installInstrumentRegistry() {
                     '<option value="' + instrumentRegistryEscape(id) + '">' + instrumentRegistryEscape(label) + '</option>').join('');
                 select.value = options.some(([id]) => id === previous) ? previous : 'all';
                 select.disabled = exchange === 'all' || options.length === 0;
-            }
-
-            function updateInstrumentRegistryCategories() {
-                const exchange = document.getElementById('instrumentExchangeSelect')?.value || 'stockbit';
-                const categorySelect = document.getElementById('instrumentCategorySelect');
-                const productSelect = document.getElementById('instrumentProductSelect');
-                const note = document.getElementById('instrumentRegistryFormNote');
-                if (!categorySelect) return;
-                const options = instrumentRegistryCategories[exchange] || [];
-                const masterCategories = globalThis.MASTER_ASSET_CATEGORIES || [];
-                categorySelect.innerHTML = options.map(id => {
-                    const label = masterCategories.find(category => category.id === id)?.label
-                        || instrumentRegistryCategoryLabels[id] || id;
-                    return '<option value="' + instrumentRegistryEscape(id) + '">' + instrumentRegistryEscape(label) + '</option>';
-                }).join('');
-                if (productSelect) {
-                    const productOptions = exchange === 'stockbit'
-                        ? [['stockbit_regular', 'IDX Listed Stocks']]
-                        : exchange === 'tokocrypto'
-                            ? (categorySelect.value === 'tokenized_stock'
-                                ? [['tokocrypto_tokenized_stock', 'Tokenized Stock']]
-                                : [['tokocrypto_spot', 'Spot']])
-                            : exchange === 'pintu'
-                                ? [['pintu_retail_spot', 'Retail Spot'], ['pintu_pro_spot', 'Pro Spot'], ['pintu_pro_futures', 'Pro Futures']]
-                                : exchange === 'pluang'
-                                    ? [['pluang_spot', 'Spot'], ['pluang_perpetual', 'Perpetual']]
-                                    : [['', 'App']];
-                    productSelect.innerHTML = productOptions.map(([id, label]) =>
-                        `<option value="${id}">${label}</option>`).join('');
-                    productSelect.disabled = productOptions.length === 1;
-                    productSelect.value = categorySelect.value === 'crypto_perpetual'
-                        ? (exchange === 'pintu' ? 'pintu_pro_futures' : exchange === 'pluang' ? 'pluang_perpetual' : '')
-                        : productOptions[0][0];
-                }
-                const notes = {
-                    stockbit: 'Saved as a Stockbit IDX ticker with a .JK storage symbol. Registration does not verify a current listing.',
-                    pintu: 'Manual additions stay pending until the matching Pintu app product confirms them.',
-                    tokocrypto: categorySelect.value === 'tokenized_stock'
-                        ? 'Tokenized-stock identity stays with Tokocrypto. Underlying stock history is a research proxy.'
-                        : 'Spot is labeled IDR; any stored -USD price history is a research proxy, not a Tokocrypto quote.',
-                    pluang: 'Pluang registry entries come from the saved public snapshot shown in the source column. Manual additions stay pending.',
-                };
-                if (note) note.textContent = notes[exchange] || '';
-                const ticker = document.getElementById('instrumentTickerInput');
-                if (ticker) {
-                    ticker.placeholder = exchange === 'stockbit' ? 'e.g. BBCA or BBCA.JK'
-                        : (categorySelect.value === 'crypto_perpetual')
-                            ? 'e.g. BTC or BTCUSDT-PERP'
-                            : 'e.g. BTC or BTC/IDR';
-                }
             }
 
             function renderInstrumentRegistry() {
@@ -318,27 +262,7 @@ export function installInstrumentRegistry() {
             }
 
             function initializeInstrumentRegistry() {
-                const dialog = document.getElementById('instrumentRegistryDialog');
-                const opener = document.getElementById('openInstrumentRegistry');
-                const form = document.getElementById('instrumentRegisterForm');
-                if (!form) return;
-                if (dialog && opener) opener.addEventListener('click', () => {
-                    if (!dialog.open) dialog.showModal();
-                    updateInstrumentRegistryCategories();
-                    updateInstrumentRegistryProductFilter();
-                    loadInstrumentRegistry();
-                });
-                document.getElementById('closeInstrumentRegistry')?.addEventListener('click', () => dialog?.close());
-                dialog?.addEventListener('click', event => {
-                    if (event.target === dialog) dialog.close();
-                });
-                document.getElementById('instrumentExchangeSelect')?.addEventListener('change', updateInstrumentRegistryCategories);
-                document.getElementById('instrumentCategorySelect')?.addEventListener('change', updateInstrumentRegistryCategories);
-                document.getElementById('instrumentProductSelect')?.addEventListener('change', event => {
-                    const category = document.getElementById('instrumentCategorySelect');
-                    if (category) category.value = String(event.target.value).includes('futures')
-                        || String(event.target.value).includes('perpetual') ? 'crypto_perpetual' : 'crypto_spot';
-                });
+                if (!document.getElementById('instrumentRegistryRows')) return;
                 document.getElementById('instrumentSearchInput')?.addEventListener('input', () => {
                     clearTimeout(instrumentRegistryState.searchTimer);
                     instrumentRegistryState.controller?.abort();
@@ -373,48 +297,8 @@ export function installInstrumentRegistry() {
                 document.getElementById('instrumentRegistryRetry')?.addEventListener('click', () => {
                     void loadInstrumentRegistry({ append: instrumentRegistryState.hasMore });
                 });
-                updateInstrumentRegistryCategories();
                 updateInstrumentRegistryProductFilter();
-                if (!dialog) void loadInstrumentRegistry();
-                form.addEventListener('submit', async event => {
-                    event.preventDefault();
-                    const submit = form.querySelector('button[type="submit"]');
-                    const note = document.getElementById('instrumentRegistryFormNote');
-                    const body = {
-                        exchange_id: document.getElementById('instrumentExchangeSelect')?.value || '',
-                        asset_category_id: document.getElementById('instrumentCategorySelect')?.value || '',
-                        product_id: document.getElementById('instrumentProductSelect')?.value || '',
-                        symbol: document.getElementById('instrumentTickerInput')?.value || '',
-                    };
-                    if (submit) submit.disabled = true;
-                    if (note) note.textContent = 'Registering ticker…';
-                    try {
-                        const response = await fetch('/api/instruments', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json; charset=utf-8' },
-                            body: encodeWireValue(body),
-                        });
-                        const payload = await readApiResponse(response);
-                        if (!response.ok) throw new Error(payload.error || 'HTTP ' + response.status);
-                        if (note) note.textContent = payload.created
-                            ? payload.symbol + ' registered as unverified. It is not enabled for execution.'
-                            : payload.symbol + ' is already registered for ' +
-                                (instrumentRegistryExchangeLabels[payload.exchange_id] || payload.exchange_id) + '.';
-                        document.getElementById('instrumentVenueFilter').value = payload.exchange_id;
-                        updateInstrumentRegistryProductFilter();
-                        const productFilter = document.getElementById('instrumentProductFilter');
-                        if (productFilter && [...productFilter.options].some(option => option.value === payload.product_id)) {
-                            productFilter.value = payload.product_id;
-                        }
-                        document.getElementById('instrumentSearchInput').value = payload.symbol;
-                        document.getElementById('instrumentTickerInput').value = '';
-                        await loadInstrumentRegistry();
-                    } catch (error) {
-                        if (note) note.textContent = 'Ticker was not registered: ' + error.message;
-                    } finally {
-                        if (submit) submit.disabled = false;
-                    }
-                });
+                void loadInstrumentRegistry();
             }
 
             function parseStockbitFlowJson(text) {
@@ -478,12 +362,10 @@ export function installInstrumentRegistry() {
 
     publishDashboardBindings('instrument-registry', {
         instrumentRegistryState: { get: () => instrumentRegistryState },
-        instrumentRegistryCategories: { get: () => instrumentRegistryCategories },
         instrumentRegistryExchangeLabels: { get: () => instrumentRegistryExchangeLabels },
         instrumentRegistryCategoryLabels: { get: () => instrumentRegistryCategoryLabels },
         instrumentRegistryStatusLabels: { get: () => instrumentRegistryStatusLabels },
         instrumentRegistryEscape: { get: () => instrumentRegistryEscape },
-        updateInstrumentRegistryCategories: { get: () => updateInstrumentRegistryCategories },
         renderInstrumentRegistry: { get: () => renderInstrumentRegistry },
         loadInstrumentRegistry: { get: () => loadInstrumentRegistry },
         initializeInstrumentRegistry: { get: () => initializeInstrumentRegistry },
