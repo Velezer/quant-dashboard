@@ -363,6 +363,67 @@ pub(super) fn selected_candle_source_metadata_for_product(
     product_id: &str,
     timeframe: &str,
 ) -> Result<Option<(String, String)>, rusqlite::Error> {
+    selected_candle_source_metadata_for_product_with_preferred_source(
+        connection,
+        symbol,
+        exchange,
+        product_id,
+        timeframe,
+        None,
+    )
+}
+
+pub(super) fn selected_candle_source_metadata_for_product_with_preferred_source(
+    connection: &Connection,
+    symbol: &str,
+    exchange: &str,
+    product_id: &str,
+    timeframe: &str,
+    preferred_source: Option<&str>,
+) -> Result<Option<(String, String)>, rusqlite::Error> {
+    if let Some(preferred_source) = preferred_source {
+        let lower_intervals = lower_timeframe_candidates(timeframe);
+        let first_lower_interval = lower_intervals.first().copied().unwrap_or("");
+        let second_lower_interval = lower_intervals.get(1).copied().unwrap_or("");
+        let metadata = connection
+            .query_row(
+                "SELECT candidate.source,candidate.data_provider
+                   FROM series AS candidate
+                  WHERE candidate.symbol=?1 AND candidate.exchange_id=?2
+                    AND candidate.product_id=?3
+                    AND candidate.interval IN (?4,?5,?6)
+                    AND candidate.source=?7
+                    AND EXISTS (
+                        SELECT 1 FROM bars
+                         WHERE symbol=candidate.symbol AND interval=candidate.interval
+                           AND source=candidate.source
+                    )
+                  ORDER BY CASE candidate.interval
+                    WHEN ?4 THEN 0 WHEN ?5 THEN 1 WHEN ?6 THEN 2 ELSE 3 END
+                  LIMIT 1",
+                params![
+                    symbol,
+                    exchange,
+                    product_id,
+                    timeframe,
+                    first_lower_interval,
+                    second_lower_interval,
+                    preferred_source,
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?
+                            .unwrap_or_else(|| "unknown".to_string()),
+                    ))
+                },
+            )
+            .optional()?;
+        if metadata.is_some() {
+            return Ok(metadata);
+        }
+    }
+
     for interval in
         std::iter::once(timeframe).chain(lower_timeframe_candidates(timeframe).iter().copied())
     {

@@ -126,12 +126,12 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
     for (frame_index, definition) in DSS_BRESSERT_MTF_TIMEFRAMES.iter().enumerate() {
         let timeframe = definition.timeframe;
         let diagnosis_index = readiness.timeframes.len();
+        let is_crypto_signal_scope = input.category_id.starts_with("crypto_");
+        let is_nwe_dss_signal_scope = is_stockbit_signal_scope || is_crypto_signal_scope;
         readiness.timeframes.push(TimeframeReadiness {
             timeframe: timeframe.into(),
             ..TimeframeReadiness::default()
         });
-        let is_crypto_signal_scope = input.category_id.starts_with("crypto_");
-        let is_nwe_dss_signal_scope = is_stockbit_signal_scope || is_crypto_signal_scope;
         let timeframe_required_history_bars = if is_nwe_dss_signal_scope {
             quant_core::stockbit_nwe_4h_minimum_history_bars()
         } else {
@@ -144,13 +144,19 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
         if current_price.is_none() && timeframe != "1d" && !is_nwe_dss_signal_scope {
             continue;
         }
-        let timeframe_result = product_candle_scan_state_at(
+        let preferred_source = if is_crypto_signal_scope {
+            current_price.as_ref().map(|price| price.source.as_str())
+        } else {
+            None
+        };
+        let timeframe_result = product_candle_scan_state_at_with_preferred_source(
             input.market_connection,
             input.symbol,
             input.exchange_id,
             input.product_id,
             timeframe,
             now_ns.div_euclid(NANOS_PER_SECOND),
+            preferred_source,
         );
         let timeframe_state = match timeframe_result {
             Ok(state) => state,
