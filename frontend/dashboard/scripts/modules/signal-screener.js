@@ -19,6 +19,7 @@ import {
     signalMeetsRenderMinimum,
     signalPriceBarAgeLabel,
     signalPriceCoverageMessage,
+    signalPriceIsFresh,
     signalRowsForDisplay,
     signalScoreState,
     signalScoreComponentWeights,
@@ -27,6 +28,8 @@ import {
     signalStrategyLabel,
     scoreWeightLabel,
 } from './signal-screener-model.js';
+
+const MAX_BROWSER_TIMER_DELAY_MS = 2_147_483_647;
 
 export {
     SIGNAL_LIST_PAGE_SIZE,
@@ -60,6 +63,7 @@ export function installSignalScreener() {
     let hasMoreSignalRows = false;
     let pendingAlertNavigation = null;
     let searchRefreshTimer = null;
+    let priceExpiryTimer = null;
     const renderScoreBasis = createSignalScoreBasisMarkup({ escape, scoreModelFor });
     const renderSignalCard = createSignalScreenerCard({
         escape,
@@ -81,7 +85,6 @@ export function installSignalScreener() {
         getRows: () => rows,
         getVisibleSignals: filteredSignals,
         stockbitSignalModelsForView,
-        cryptoSignalModelsForView,
         signalPriceCoverageMessage,
         ageLabel,
         formatTime,
@@ -115,6 +118,53 @@ export function installSignalScreener() {
             append,
             offset: append ? nextSignalOffset : 0,
         });
+    }
+
+    function schedulePriceExpiry() {
+        if (priceExpiryTimer !== null) clearTimeout(priceExpiryTimer);
+        priceExpiryTimer = null;
+        const earliestExpiry = rows
+            .filter(signal => signal.persistent_score !== true)
+            .map(signal => Number(signal.price_fresh_until_ms))
+            .filter(expiry => Number.isFinite(expiry) && expiry > 0)
+            .reduce((earliest, expiry) => Math.min(earliest, expiry), Number.POSITIVE_INFINITY);
+        if (!Number.isFinite(earliestExpiry)) return;
+        const delay = Math.max(0, Math.min(
+            earliestExpiry - Date.now() + 1,
+            MAX_BROWSER_TIMER_DELAY_MS,
+        ));
+        priceExpiryTimer = setTimeout(expireStalePrices, delay);
+    }
+
+    function expireStalePrices() {
+        const nowEpochMs = Date.now();
+        const expiredIds = new Set(rows
+            .filter(signal => !signalPriceIsFresh(signal, nowEpochMs))
+            .map(signal => signal.signal_id));
+        if (expiredIds.size === 0) {
+            schedulePriceExpiry();
+            return;
+        }
+        rows = rows.filter(signal => !expiredIds.has(signal.signal_id));
+        if (Array.isArray(globalThis.DATA?.signals)) {
+            globalThis.DATA.signals = globalThis.DATA.signals.filter(signal =>
+                !expiredIds.has(signalIdentity(signal)));
+        }
+        summary.stale_price_signal_count =
+            (Number(summary.stale_price_signal_count) || 0) + expiredIds.size;
+        for (const countKey of ['matching_rows', 'total_signals']) {
+            const count = Number(summary[countKey]);
+            if (Number.isFinite(count)) summary[countKey] = Math.max(0, count - expiredIds.size);
+        }
+        if (globalThis.DATA?.summary) {
+            globalThis.DATA.summary.stale_price_signal_count = summary.stale_price_signal_count;
+        }
+        if (globalThis.selectedSignal
+            && expiredIds.has(globalThis.selectedSignal.signal_id)) {
+            clearSelectedSignalChart('The selected signal price expired. Its entry row was removed.');
+        }
+        renderSignalsList();
+        schedulePriceExpiry();
     }
 
     function alertSignalIdentity(signal) {
@@ -494,17 +544,22 @@ export function installSignalScreener() {
             }
         }
         if (append) {
-            const merged = new Map(rows.map(row => [row.signal_id, row]));
-            for (const row of nextRows) merged.set(row.signal_id, row);
+            const merged = new Map(rows
+                .filter(row => signalPriceIsFresh(row))
+                .map(row => [row.signal_id, row]));
+            for (const row of nextRows) {
+                if (signalPriceIsFresh(row)) merged.set(row.signal_id, row);
+            }
             rows = [...merged.values()];
         } else {
-            rows = nextRows;
+            rows = nextRows.filter(row => signalPriceIsFresh(row));
         }
         summary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : { stale: true, status: {} };
         nextSignalOffset = Number(summary.next_offset) || 0;
         hasMoreSignalRows = summary.has_more === true;
         requestState = 'ready';
         requestError = '';
+        schedulePriceExpiry();
         renderSignalsList();
         if (globalThis.selectedSignal) renderSelectedSignalSummary(globalThis.selectedSignal);
         if (pendingAlertNavigation) {

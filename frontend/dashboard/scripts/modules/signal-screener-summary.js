@@ -6,7 +6,6 @@ export function createSignalScreenerSummary({
     getRows,
     getVisibleSignals,
     stockbitSignalModelsForView,
-    cryptoSignalModelsForView,
     signalPriceCoverageMessage,
     ageLabel,
     formatTime,
@@ -31,8 +30,6 @@ export function createSignalScreenerSummary({
         const priceCoverageMessage = signalPriceCoverageMessage(priceDataStatus, priceDataUnavailableCount);
         const attemptError = String(summaryStatus.last_error || getRequestError() || '').trim();
         const stockbitSignalSelected = stockbitSignalModelsForView().length > 0;
-        const cryptoSignalSelected = cryptoSignalModelsForView().length > 0;
-        const independentSignalPrice = stockbitSignalSelected || cryptoSignalSelected;
         if (requestState === 'loading' && rows.length === 0) {
             status.textContent = summary.generated_at || summaryStatus.last_success_at
                 ? 'Loading the latest signal snapshot…'
@@ -58,7 +55,7 @@ export function createSignalScreenerSummary({
                 : 'The selected filters have no current rows. Retry after market data recovers.';
             status.textContent = `${priceCoverageMessage} ${currentViewMessage}`;
             retry.classList.remove('hidden');
-        } else if (stalePriceSignalCount > 0 && visibleCount === 0 && !independentSignalPrice) {
+        } else if (stalePriceSignalCount > 0 && visibleCount === 0) {
             status.textContent = `${stalePriceSignalCount} saved signal${stalePriceSignalCount === 1 ? ' was' : 's were'} withheld because the price bar is stale. Waiting for fresh price data.`;
             retry.classList.add('hidden');
         } else {

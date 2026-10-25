@@ -94,6 +94,16 @@ pub(crate) fn list_signal_screener_page(
     );
     let mut statement = connection.prepare(&query)?;
     let row_mapper = |row: &rusqlite::Row<'_>| {
+        let storage_symbol = row.get::<_, String>(4)?;
+        let price_timeframe = row.get::<_, String>(14)?;
+        let price_bar_time = row.get::<_, i64>(15)?;
+        let price_fresh_until_ms = price_bar_time
+            .div_euclid(quant_core::NANOS_PER_MILLISECOND)
+            .saturating_add(
+                crate::freshness_threshold_seconds(&storage_symbol, &price_timeframe)
+                    .max(0)
+                    .saturating_mul(quant_core::MILLISECONDS_PER_SECOND),
+            );
         let score_basis_json = row.get::<_, String>(12)?;
         let score_basis = serde_json::from_str::<Value>(&score_basis_json).unwrap_or(Value::Null);
         let score_status = score_basis["status"].as_str().unwrap_or("stale");
@@ -108,7 +118,7 @@ pub(crate) fn list_signal_screener_page(
             "product_id": row.get::<_, String>(1)?,
             "asset_category_id": row.get::<_, String>(2)?,
             "symbol": row.get::<_, String>(3)?,
-            "storage_symbol": row.get::<_, String>(4)?,
+            "storage_symbol": storage_symbol,
             "signal_strategy_id": row.get::<_, String>(5)?,
             "signal_strategy_name": row.get::<_, String>(6)?,
             "timeframe": row.get::<_, String>(7)?,
@@ -118,8 +128,9 @@ pub(crate) fn list_signal_screener_page(
             "confluence_score": row.get::<_, Option<f64>>(11)?,
             "score_basis": score_basis,
             "current_price": row.get::<_, f64>(13)?,
-            "price_timeframe": row.get::<_, String>(14)?,
-            "price_bar_time": row.get::<_, i64>(15)?,
+            "price_timeframe": price_timeframe,
+            "price_bar_time": price_bar_time,
+            "price_fresh_until_ms": price_fresh_until_ms,
             "signal_bar_time": row.get::<_, i64>(16)?,
             "data_source": row.get::<_, String>(17)?,
             "data_provider": row.get::<_, String>(18)?,
