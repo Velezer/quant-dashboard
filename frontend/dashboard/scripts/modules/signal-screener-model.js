@@ -94,6 +94,13 @@ export function signalPriceBarAgeLabel(priceBarTimeNs, nowEpochMs = Date.now()) 
     return ageLabelFromSeconds(Math.max(0, nowEpochSeconds - priceBarEpochSeconds));
 }
 
+export function signalPriceIsFresh(signal, nowEpochMs = Date.now()) {
+    if (signal?.persistent_score === true) return true;
+    const freshUntilMs = Number(signal?.price_fresh_until_ms);
+    if (!Number.isFinite(freshUntilMs) || freshUntilMs <= 0) return true;
+    return Number.isFinite(nowEpochMs) && nowEpochMs <= freshUntilMs;
+}
+
 export const SIGNAL_LIST_PAGE_SIZE = 50;
 
 export function signalRowsForDisplay(signals, limit = SIGNAL_LIST_PAGE_SIZE) {
