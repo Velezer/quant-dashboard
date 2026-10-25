@@ -73,16 +73,39 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             return Ok(());
         }
     };
-    let storage_symbol = match resolve_candle_storage_symbol(
-        &connection,
-        &query.venue,
-        &query.symbol,
-        Some(&query.asset_class),
-    ) {
-        Ok(symbol) => symbol,
-        Err(error) => {
-            api_error(stream, "500 Internal Server Error", error);
-            return Ok(());
+    let storage_symbol = if query.storage_symbol.trim().is_empty() {
+        match resolve_candle_storage_symbol(
+            &connection,
+            &query.venue,
+            &query.symbol,
+            Some(&query.asset_class),
+        ) {
+            Ok(symbol) => symbol,
+            Err(error) => {
+                api_error(stream, "500 Internal Server Error", error);
+                return Ok(());
+            }
+        }
+    } else {
+        match resolve_registered_candle_storage_symbol(
+            &connection,
+            &query.venue,
+            &query.product_id,
+            &query.storage_symbol,
+        ) {
+            Ok(Some(symbol)) => symbol,
+            Ok(None) => {
+                api_error(
+                    stream,
+                    "400 Bad Request",
+                    "storage_symbol is not an active registered ticker for this app",
+                );
+                return Ok(());
+            }
+            Err(error) => {
+                api_error(stream, "500 Internal Server Error", error);
+                return Ok(());
+            }
         }
     };
     let market_connection = match open_market_history_for_symbol(db, &storage_symbol, false) {

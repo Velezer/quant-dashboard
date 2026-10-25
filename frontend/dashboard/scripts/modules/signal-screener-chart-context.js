@@ -1,5 +1,6 @@
 import { getDashboardBinding } from './runtime-context.js';
 import { QuantChart } from './chart-math.js';
+import { marketSymbolForSignal } from './chart-market-identity.js';
 import {
     APP_LABELS,
     signalPriceBarAgeLabel,
@@ -34,6 +35,7 @@ export function createSignalScreenerChartContext({
             return;
         }
         const venue = executionVenueMeta(signal);
+        const marketSymbol = marketSymbolForSignal(signal);
         const product = String(signal.product_id || '').replaceAll('_', ' ').toUpperCase();
         const category = String(signal.asset_category_id || 'asset').replaceAll('_', ' ').toUpperCase();
         chip.textContent = `${venue.label}${product ? ` · ${product}` : ''} · ${category}`;
@@ -102,9 +104,9 @@ export function createSignalScreenerChartContext({
         const category = String(signal.asset_category_id || 'asset').replaceAll('_', ' ');
         const scoreState = signalScoreState(signal);
         const directionLabel = scoreState && !scoreState.current ? `last ${signal.direction}` : signal.direction;
-        if (summaryNode) summaryNode.textContent = `${venue.title} · ${product || category} · ${signal.symbol} · ${signal.timeframe.toUpperCase()} · ${directionLabel}`;
+        if (summaryNode) summaryNode.textContent = `${venue.title} · ${product || category} · ${marketSymbol} · ${signal.timeframe.toUpperCase()} · ${directionLabel}`;
         if (updatedNode) updatedNode.textContent = `Price ${formatPrice(signal.current_price)} · ${signalPriceBarAgeLabel(signal.price_bar_time)}${scoreState ? ` · score bar ${signalPriceBarAgeLabel(signal.score_bar_time)}` : ''}`;
-        if (symbolBadge) symbolBadge.textContent = signal.symbol;
+        if (symbolBadge) symbolBadge.textContent = marketSymbol;
         if (timeframeBadge) timeframeBadge.textContent = `${signal.timeframe.toUpperCase()} SIGNAL`;
         if (directionBadge) directionBadge.textContent = directionLabel.toUpperCase();
         if (evidenceBadge) evidenceBadge.textContent = String(signal.evidence_status || 'VALIDATION_PENDING').replaceAll('_', ' ');

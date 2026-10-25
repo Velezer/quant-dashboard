@@ -69,7 +69,31 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             }
         }
     };
-    let storage_symbol = if exchange.is_empty() {
+    let storage_symbol = if let Some(requested_storage_symbol) = values
+        .get("storage_symbol")
+        .filter(|value| !value.trim().is_empty())
+    {
+        match resolve_registered_candle_storage_symbol(
+            &connection,
+            &exchange,
+            product_id,
+            requested_storage_symbol,
+        ) {
+            Ok(Some(resolved)) => resolved,
+            Ok(None) => {
+                api_error(
+                    stream,
+                    "400 Bad Request",
+                    "storage_symbol is not an active registered ticker for this app",
+                );
+                return Ok(());
+            }
+            Err(error) => {
+                api_error(stream, "500 Internal Server Error", error);
+                return Ok(());
+            }
+        }
+    } else if exchange.is_empty() {
         match resolve_candle_storage_symbol_any_exchange(&connection, &symbol, Some(&asset_class)) {
             Ok(resolved) => resolved,
             Err(error) => {

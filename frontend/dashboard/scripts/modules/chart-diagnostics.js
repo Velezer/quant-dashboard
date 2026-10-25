@@ -15,6 +15,8 @@ export function installChartDiagnostics() {
                 query.set('symbol', marketSymbolForSignal(signal));
                 query.set('exchange', marketVenueForSignal(signal));
                 query.set('asset_class', signal.class || signal.asset_class || signal.Class || '');
+                query.set('product_id', signal.product_id || signal.Product_ID || '');
+                query.set('storage_symbol', signal.storage_symbol || signal.data_symbol || signal.Data_Symbol || '');
                 const endpoint = `/api/chart/storage/stats?${query.toString()}`;
                 const runList = document.getElementById('chart-diagnostics-run-list');
                 if (runList) runList.textContent = 'Loading recent sync details…';

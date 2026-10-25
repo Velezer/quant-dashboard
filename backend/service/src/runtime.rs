@@ -628,7 +628,9 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
         let scan_started_epoch = now_secs();
         next_scan_epoch = scan_started_epoch.saturating_add(interval_sec);
         publish_next_scan_time(&state, next_scan_epoch);
-        eprintln!("\n[Daemon] Scan event received ({trigger_mode}). Running native Rust scan...");
+        eprintln!(
+            "\n[Daemon] Scan event received ({trigger_mode}). Running exchange-specific Rust scan workers..."
+        );
 
         state.is_scanning.store(true, Ordering::Relaxed);
         state.reset_scan_progress();

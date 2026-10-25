@@ -1,5 +1,35 @@
 use super::*;
 
+type RegisteredInstrument = (String, String, String, String, String);
+
+struct ScanCycleOutput {
+    user_indicator_alerts: Vec<Value>,
+    running_signal_rows: Vec<Value>,
+    potential_signal_rows: Vec<Value>,
+    standalone_signal_rows: Vec<Value>,
+    readiness: signal_alerts::SignalReadiness,
+    score_updates: Vec<signal_alerts::StockbitSignalScoreUpdate>,
+    generated_plan_count: usize,
+    price_data_unavailable_count: usize,
+    app_workers: Vec<Value>,
+}
+
+impl ScanCycleOutput {
+    fn new() -> Self {
+        Self {
+            user_indicator_alerts: Vec::new(),
+            running_signal_rows: Vec::new(),
+            potential_signal_rows: Vec::new(),
+            standalone_signal_rows: Vec::new(),
+            readiness: signal_alerts::SignalReadiness::new(),
+            score_updates: Vec::new(),
+            generated_plan_count: 0,
+            price_data_unavailable_count: 0,
+            app_workers: Vec::new(),
+        }
+    }
+}
+
 pub(super) fn run_rust_scan_inner(
     app_connection: &Connection,
     market_database: &str,
@@ -28,27 +58,176 @@ pub(super) fn run_rust_scan_inner(
         rows.collect::<Result<Vec<_>, _>>()?
     };
 
-    let mut user_indicator_alerts = Vec::new();
-    let mut running_signal_rows = Vec::new();
-    let mut potential_signal_rows = Vec::new();
-    let mut standalone_signal_rows = Vec::new();
-    let mut readiness = signal_alerts::SignalReadiness::new();
-    let mut score_updates = Vec::new();
-    let mut generated_plan_count = 0usize;
     let registered_count = registered.len();
-    let mut price_data_unavailable_count = 0;
-    for (index, (exchange_id, product_id, category_id, sym, asset)) in
-        registered.into_iter().enumerate()
-    {
+    let mut app_registrations =
+        std::collections::BTreeMap::<String, Vec<RegisteredInstrument>>::new();
+    for exchange_id in ["stockbit", "pintu", "pluang", "tokocrypto"] {
+        app_registrations.insert(exchange_id.to_string(), Vec::new());
+    }
+    for instrument in registered {
+        app_registrations
+            .entry(instrument.0.clone())
+            .or_default()
+            .push(instrument);
+    }
+
+    let mut output = ScanCycleOutput::new();
+    let mut completed_count = 0usize;
+    for (exchange_id, instruments) in app_registrations {
+        let app_instrument_count = instruments.len();
+        eprintln!("[ScanWorker] Starting {exchange_id} scan worker for {app_instrument_count} registered instruments.");
+        let app_result = scan_registered_app(
+            app_connection,
+            market_database,
+            sync_state,
+            &exchange_id,
+            instruments,
+            completed_count,
+            registered_count,
+            &mut output,
+        )?;
+        completed_count = completed_count.saturating_add(app_instrument_count);
         if let Some(state) = sync_state {
-            state.update_scan_progress(&sym, index, registered_count);
+            state.update_scan_progress(
+                &format!("{exchange_id} complete"),
+                completed_count,
+                registered_count,
+            );
+        }
+        output.app_workers.push(serde_json::json!({
+            "exchange_id": exchange_id.clone(),
+            "status": "complete",
+            "registered_instruments": app_instrument_count,
+            "fresh_price_instruments": app_result.fresh_price_count,
+            "unavailable_price_instruments": app_result.unavailable_price_count,
+            "generated_plans": app_result.generated_plan_count,
+            "signal_rows": app_result.signal_row_count,
+        }));
+        eprintln!(
+            "[ScanWorker] Finished {exchange_id}: {} fresh prices, {} signal rows.",
+            app_result.fresh_price_count,
+            app_result.signal_row_count
+        );
+    }
+
+    if let Some(state) = sync_state {
+        state.update_scan_progress("", registered_count, registered_count);
+    }
+
+    let now_str = chrono_or_simple_timestamp();
+    output
+        .running_signal_rows
+        .extend(output.potential_signal_rows);
+    output
+        .running_signal_rows
+        .extend(output.standalone_signal_rows);
+    let signals = output.running_signal_rows;
+    let mut readiness = output.readiness.into_value();
+    readiness["workers"] = serde_json::json!(output.app_workers.clone());
+    eprintln!(
+        "Signal scan completed: {registered_count} registered instruments, {} with fresh 15m prices, {} directional plans generated, {} screener rows accepted, {} Stockbit timeframe score updates prepared",
+        registered_count.saturating_sub(output.price_data_unavailable_count),
+        output.generated_plan_count,
+        signals.len(),
+        output.score_updates.len()
+    );
+    signal_alerts::replace_signal_screener_snapshot_with_readiness(
+        app_connection,
+        &signals,
+        &output.score_updates,
+        output.price_data_unavailable_count,
+        registered_count,
+        Some(&readiness),
+    )?;
+    let total_signals = signals.len();
+    let signal_master_data = signal_screener_master_data_for_connection(app_connection)?;
+    let mut payload = serde_json::json!({
+        "summary": {
+            "total_signals": total_signals,
+            "generated_at": now_str,
+            "interval_minutes": interval_min,
+            "interval_seconds": interval_min * 60,
+            "score_interpretation": "ranking_only_not_probability",
+            "engine": "rust_native_zero_allocation",
+            "workers": readiness["workers"].clone(),
+            "readiness": readiness
+        },
+        "signals": signals,
+        "master_data": signal_master_data
+    });
+
+    let mut newly_detected_alerts = Vec::new();
+    let mut alert_storage_available = true;
+    match signal_alerts::record_scan_signal_alerts(app_connection, signals.iter().cloned()) {
+        Ok(alerts) => newly_detected_alerts.extend(alerts),
+        Err(error) => {
+            eprintln!("[Alerts] Could not persist new signal alerts: {error}");
+            alert_storage_available = false;
+        }
+    }
+    match signal_alerts::record_indicator_combo_alerts(app_connection, output.user_indicator_alerts) {
+        Ok(alerts) => newly_detected_alerts.extend(alerts),
+        Err(error) => {
+            eprintln!("[Alerts] Could not persist user indicator signals: {error}");
+            alert_storage_available = false;
+        }
+    }
+    if let Err(error) = signal_alerts::refresh_lifecycles(app_connection) {
+        eprintln!("[Alerts] Could not refresh signal lifecycles: {error}");
+        alert_storage_available = false;
+    }
+    payload["new_signal_alerts"] = serde_json::json!(newly_detected_alerts);
+    if !alert_storage_available {
+        payload["signal_alert_status"] = serde_json::json!("unavailable");
+    }
+
+    Ok(payload)
+}
+
+struct AppScanResult {
+    fresh_price_count: usize,
+    unavailable_price_count: usize,
+    generated_plan_count: usize,
+    signal_row_count: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn scan_registered_app(
+    app_connection: &Connection,
+    market_database: &str,
+    sync_state: Option<&AppState>,
+    exchange_id: &str,
+    instruments: Vec<RegisteredInstrument>,
+    progress_offset: usize,
+    total_instruments: usize,
+    output: &mut ScanCycleOutput,
+) -> Result<AppScanResult, rusqlite::Error> {
+    let mut app_result = AppScanResult {
+        fresh_price_count: 0,
+        unavailable_price_count: 0,
+        generated_plan_count: 0,
+        signal_row_count: 0,
+    };
+    for (index, (instrument_exchange, product_id, category_id, sym, asset)) in
+        instruments.into_iter().enumerate()
+    {
+        if instrument_exchange != exchange_id {
+            continue;
+        }
+        if let Some(state) = sync_state {
+            state.update_scan_progress(
+                &format!("{exchange_id} · {sym}"),
+                progress_offset.saturating_add(index),
+                total_instruments,
+            );
         }
         let mut cagr_stats = HashMap::new();
         let market_connection =
             match open_market_history_for_signal_scan(market_database, &sym, false) {
                 Ok(Some(connection)) => connection,
                 Ok(None) => {
-                    price_data_unavailable_count += 1;
+                    app_result.unavailable_price_count += 1;
+                    output.price_data_unavailable_count += 1;
                     let mut diagnosis = signal_alerts::InstrumentReadiness::default();
                     diagnosis.issue(signal_alerts::ReadinessIssue {
                         symbol: asset.clone(),
@@ -56,8 +235,8 @@ pub(super) fn run_rust_scan_inner(
                         timeframe: "15m".into(),
                         ..signal_alerts::ReadinessIssue::default()
                     });
-                    readiness.record(
-                        &exchange_id,
+                    output.readiness.record(
+                        &instrument_exchange,
                         &product_id,
                         &sym,
                         diagnosis,
@@ -68,7 +247,8 @@ pub(super) fn run_rust_scan_inner(
                 }
                 Err(error) => {
                     eprintln!("scan skipped unavailable market history for {sym}: {error}");
-                    price_data_unavailable_count += 1;
+                    app_result.unavailable_price_count += 1;
+                    output.price_data_unavailable_count += 1;
                     let mut diagnosis = signal_alerts::InstrumentReadiness {
                         price_status: "error",
                         ..signal_alerts::InstrumentReadiness::default()
@@ -80,8 +260,8 @@ pub(super) fn run_rust_scan_inner(
                         error: Some(error.to_string()),
                         ..signal_alerts::ReadinessIssue::default()
                     });
-                    readiness.record(
-                        &exchange_id,
+                    output.readiness.record(
+                        &instrument_exchange,
                         &product_id,
                         &sym,
                         diagnosis,
@@ -92,8 +272,8 @@ pub(super) fn run_rust_scan_inner(
                 }
             };
         let connection = &market_connection;
-        let is_idx = exchange_id == "stockbit" && category_id == "idx_stock";
-        let is_tokenized = exchange_id == "tokocrypto" && category_id == "tokenized_stock";
+        let is_idx = instrument_exchange == "stockbit" && category_id == "idx_stock";
+        let is_tokenized = instrument_exchange == "tokocrypto" && category_id == "tokenized_stock";
         let retained_stockbit_signal_rows = if is_idx {
             signal_alerts::stockbit_signal_score_rows_for_symbol(app_connection, &asset)?
         } else {
@@ -101,7 +281,7 @@ pub(super) fn run_rust_scan_inner(
         };
         let is_multibagger = is_idx && is_multibagger_symbol(&sym);
         let profile_id = match (
-            exchange_id.as_str(),
+            instrument_exchange.as_str(),
             product_id.as_str(),
             category_id.as_str(),
         ) {
@@ -137,7 +317,7 @@ pub(super) fn run_rust_scan_inner(
                 app_connection,
                 market_connection: connection,
                 sync_state,
-                exchange_id: &exchange_id,
+                exchange_id: &instrument_exchange,
                 product_id: &product_id,
                 category_id: &category_id,
                 symbol: &sym,
@@ -160,16 +340,23 @@ pub(super) fn run_rust_scan_inner(
             &mut symbol_score_updates,
             &mut instrument_readiness,
         )?;
-        if !has_fresh_price {
-            price_data_unavailable_count += 1;
+        if has_fresh_price {
+            app_result.fresh_price_count += 1;
+        } else {
+            app_result.unavailable_price_count += 1;
+            output.price_data_unavailable_count += 1;
         }
         let new_directional_signal = running_plans[running_start..]
             .iter()
             .chain(potential_plans[potential_start..].iter())
             .any(|plan| signal_alerts::signal_screener_row(plan).is_some());
         if new_directional_signal {
-            let diagnostic =
-                build_dss_bressert_mtf_annotation(connection, &sym, &exchange_id, &product_id);
+            let diagnostic = build_dss_bressert_mtf_annotation(
+                connection,
+                &sym,
+                &instrument_exchange,
+                &product_id,
+            );
             scan_timeframes::annotate_new_dss_screener_rows(
                 &mut running_plans,
                 &mut potential_plans,
@@ -179,7 +366,9 @@ pub(super) fn run_rust_scan_inner(
                 &diagnostic,
             );
         }
-        generated_plan_count += running_plans.len() + potential_plans.len();
+        let generated_count = running_plans.len() + potential_plans.len();
+        output.generated_plan_count += generated_count;
+        app_result.generated_plan_count += generated_count;
         let running_rows = running_plans
             .iter()
             .filter_map(signal_alerts::signal_screener_row)
@@ -202,88 +391,25 @@ pub(super) fn run_rust_scan_inner(
                 *accepted_by_timeframe.entry(timeframe.into()).or_default() += 1;
             }
         }
-        readiness.record(
-            &exchange_id,
+        app_result.signal_row_count +=
+            running_rows.len() + potential_rows.len() + standalone_rows.len();
+        output.readiness.record(
+            &instrument_exchange,
             &product_id,
             &sym,
             instrument_readiness,
             &accepted_by_timeframe,
             Some(connection),
         );
-        running_signal_rows.extend(running_rows);
-        potential_signal_rows.extend(potential_rows);
-        standalone_signal_rows.extend(standalone_rows);
-        score_updates.extend(
+        output.running_signal_rows.extend(running_rows);
+        output.potential_signal_rows.extend(potential_rows);
+        output.standalone_signal_rows.extend(standalone_rows);
+        output.score_updates.extend(
             symbol_score_updates
                 .iter()
                 .filter_map(signal_alerts::compact_stockbit_signal_score_update),
         );
-        user_indicator_alerts.append(&mut symbol_indicator_alerts);
+        output.user_indicator_alerts.append(&mut symbol_indicator_alerts);
     }
-    if let Some(state) = sync_state {
-        state.update_scan_progress("", registered_count, registered_count);
-    }
-
-    let now_str = chrono_or_simple_timestamp();
-    running_signal_rows.extend(potential_signal_rows);
-    running_signal_rows.extend(standalone_signal_rows);
-    let signals = running_signal_rows;
-    let readiness = readiness.into_value();
-    eprintln!(
-        "Signal scan completed: {registered_count} registered instruments, {} with fresh 15m prices, {} directional plans generated, {} screener rows accepted, {} Stockbit timeframe score updates prepared",
-        registered_count.saturating_sub(price_data_unavailable_count),
-        generated_plan_count,
-        signals.len(),
-        score_updates.len()
-    );
-    signal_alerts::replace_signal_screener_snapshot_with_readiness(
-        app_connection,
-        &signals,
-        &score_updates,
-        price_data_unavailable_count,
-        registered_count,
-        Some(&readiness),
-    )?;
-    let total_signals = signals.len();
-    let signal_master_data = signal_screener_master_data_for_connection(app_connection)?;
-    let mut payload = serde_json::json!({
-        "summary": {
-            "total_signals": total_signals,
-            "generated_at": now_str,
-            "interval_minutes": interval_min,
-            "interval_seconds": interval_min * 60,
-            "score_interpretation": "ranking_only_not_probability",
-            "engine": "rust_native_zero_allocation",
-            "readiness": readiness
-        },
-        "signals": signals,
-        "master_data": signal_master_data
-    });
-
-    let mut newly_detected_alerts = Vec::new();
-    let mut alert_storage_available = true;
-    match signal_alerts::record_scan_signal_alerts(app_connection, signals.iter().cloned()) {
-        Ok(alerts) => newly_detected_alerts.extend(alerts),
-        Err(error) => {
-            eprintln!("[Alerts] Could not persist new signal alerts: {error}");
-            alert_storage_available = false;
-        }
-    }
-    match signal_alerts::record_indicator_combo_alerts(app_connection, user_indicator_alerts) {
-        Ok(alerts) => newly_detected_alerts.extend(alerts),
-        Err(error) => {
-            eprintln!("[Alerts] Could not persist user indicator signals: {error}");
-            alert_storage_available = false;
-        }
-    }
-    if let Err(error) = signal_alerts::refresh_lifecycles(app_connection) {
-        eprintln!("[Alerts] Could not refresh signal lifecycles: {error}");
-        alert_storage_available = false;
-    }
-    payload["new_signal_alerts"] = serde_json::json!(newly_detected_alerts);
-    if !alert_storage_available {
-        payload["signal_alert_status"] = serde_json::json!("unavailable");
-    }
-
-    Ok(payload)
+    Ok(app_result)
 }
