@@ -134,12 +134,22 @@ pub(crate) fn register_manual(conn: &Connection, body: &Value) -> Result<Value, 
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
-    let product_id = body
+    let requested_product_id = body
         .get("product_id")
         .and_then(Value::as_str)
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
+    let product_id = if requested_product_id.is_empty() {
+        match (exchange_id.as_str(), category_id.as_str()) {
+            ("stockbit", "idx_stock") => "stockbit_regular".to_string(),
+            ("tokocrypto", "crypto_spot") => "tokocrypto_spot".to_string(),
+            ("tokocrypto", "tokenized_stock") => "tokocrypto_tokenized_stock".to_string(),
+            _ => requested_product_id,
+        }
+    } else {
+        requested_product_id
+    };
     let input_symbol = body
         .get("symbol")
         .and_then(Value::as_str)
@@ -151,13 +161,17 @@ pub(crate) fn register_manual(conn: &Connection, body: &Value) -> Result<Value, 
     }
 
     let allowed_category = match exchange_id.as_str() {
-        "stockbit" => category_id == "idx_stock",
+        "stockbit" => product_id == "stockbit_regular" && category_id == "idx_stock",
         "pintu" => matches!(
             (product_id.as_str(), category_id.as_str()),
             ("pintu_retail_spot" | "pintu_pro_spot", "crypto_spot")
                 | ("pintu_pro_futures", "crypto_perpetual")
         ),
-        "tokocrypto" => matches!(category_id.as_str(), "crypto_spot" | "tokenized_stock"),
+        "tokocrypto" => matches!(
+            (product_id.as_str(), category_id.as_str()),
+            ("tokocrypto_spot", "crypto_spot")
+                | ("tokocrypto_tokenized_stock", "tokenized_stock")
+        ),
         "pluang" => matches!(
             (product_id.as_str(), category_id.as_str()),
             ("pluang_spot", "crypto_spot") | ("pluang_perpetual", "crypto_perpetual")
@@ -230,14 +244,17 @@ pub(crate) fn register_manual(conn: &Connection, body: &Value) -> Result<Value, 
             ),
             _ => return Err("venue and asset category do not match".to_string()),
         };
-    let instrument_id = if product_id.is_empty() {
-        format!(
-            "{exchange_id}.{category_id}.{}",
-            symbol.to_ascii_lowercase()
-        )
+    let instrument_scope = if exchange_id == "tokocrypto" {
+        category_id.as_str()
     } else {
-        format!("{exchange_id}.{product_id}.{}", symbol.to_ascii_lowercase())
+        product_id.as_str()
     };
+    // Tokocrypto sync IDs are category-scoped. Keep manual IDs aligned with
+    // that existing identity so a later listing refresh updates this row.
+    let instrument_id = format!(
+        "{exchange_id}.{instrument_scope}.{}",
+        symbol.to_ascii_lowercase()
+    );
     let metadata = crate::wire::encode(&json!({
         "registered_manually": true,
         "verification_required": true

@@ -131,11 +131,17 @@ export function installInstrumentRegistry() {
                     return '<option value="' + instrumentRegistryEscape(id) + '">' + instrumentRegistryEscape(label) + '</option>';
                 }).join('');
                 if (productSelect) {
-                    const productOptions = exchange === 'pintu'
-                        ? [['pintu_retail_spot', 'Retail Spot'], ['pintu_pro_spot', 'Pro Spot'], ['pintu_pro_futures', 'Pro Futures']]
-                        : exchange === 'pluang'
-                            ? [['pluang_spot', 'Spot'], ['pluang_perpetual', 'Perpetual']]
-                            : [['', 'App']];
+                    const productOptions = exchange === 'stockbit'
+                        ? [['stockbit_regular', 'IDX Listed Stocks']]
+                        : exchange === 'tokocrypto'
+                            ? (categorySelect.value === 'tokenized_stock'
+                                ? [['tokocrypto_tokenized_stock', 'Tokenized Stock']]
+                                : [['tokocrypto_spot', 'Spot']])
+                            : exchange === 'pintu'
+                                ? [['pintu_retail_spot', 'Retail Spot'], ['pintu_pro_spot', 'Pro Spot'], ['pintu_pro_futures', 'Pro Futures']]
+                                : exchange === 'pluang'
+                                    ? [['pluang_spot', 'Spot'], ['pluang_perpetual', 'Perpetual']]
+                                    : [['', 'App']];
                     productSelect.innerHTML = productOptions.map(([id, label]) =>
                         `<option value="${id}">${label}</option>`).join('');
                     productSelect.disabled = productOptions.length === 1;
