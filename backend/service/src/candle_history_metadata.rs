@@ -84,9 +84,35 @@ pub(crate) fn product_candle_scan_state_at(
     timeframe: &str,
     now_seconds: i64,
 ) -> Result<Option<ProductCandleScanState>, rusqlite::Error> {
-    let Some((source, data_provider)) = selected_candle_source_metadata_for_product(
-        connection, symbol, exchange, product_id, timeframe,
-    )?
+    product_candle_scan_state_at_with_preferred_source(
+        connection,
+        symbol,
+        exchange,
+        product_id,
+        timeframe,
+        now_seconds,
+        None,
+    )
+}
+
+pub(crate) fn product_candle_scan_state_at_with_preferred_source(
+    connection: &Connection,
+    symbol: &str,
+    exchange: &str,
+    product_id: &str,
+    timeframe: &str,
+    now_seconds: i64,
+    preferred_source: Option<&str>,
+) -> Result<Option<ProductCandleScanState>, rusqlite::Error> {
+    let Some((source, data_provider)) =
+        selected_candle_source_metadata_for_product_with_preferred_source(
+            connection,
+            symbol,
+            exchange,
+            product_id,
+            timeframe,
+            preferred_source,
+        )?
     else {
         return Ok(None);
     };
