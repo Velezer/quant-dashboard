@@ -565,6 +565,6 @@ pub(super) fn daily_series_span_from_source(
 mod metadata;
 pub(super) use metadata::{
     load_product_candle_metadata, load_series_metadata, load_series_metadata_for_exchange,
-    load_series_metadata_from_source, product_candle_scan_state_at, trim_candles,
-    ProductCandleScanState,
+    load_series_metadata_from_source, product_candle_scan_state_at,
+    product_candle_scan_state_at_with_preferred_source, trim_candles, ProductCandleScanState,
 };
