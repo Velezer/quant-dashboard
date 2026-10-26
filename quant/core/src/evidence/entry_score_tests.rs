@@ -26,7 +26,8 @@ fn signal() -> StrategySignal {
 }
 
 fn policy(horizon: usize, fees_known: bool) -> EvaluationPolicy {
-    EvaluationPolicy { horizon, buy_fee_pct: 0.1, sell_fee_pct: 0.2, fees_known, allow_short: true }
+    EvaluationPolicy { horizon, exit_on_reverse_signal: false, buy_fee_pct: 0.1,
+        sell_fee_pct: 0.2, fees_known, allow_short: true }
 }
 
 #[test]

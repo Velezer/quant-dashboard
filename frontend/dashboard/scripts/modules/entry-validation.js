@@ -278,6 +278,32 @@ export function initializeEntryValidation(doc = document) {
             const list = element('ul'); reasons.forEach(reason => list.append(element('li', reason))); $('model-blockers').append(list);
         }
     }
+    function renderExitCandidates(backtest) {
+        const body = $('exit-candidate-rows');
+        if (!body) return;
+        body.replaceChildren();
+        const candidates = Array.isArray(backtest.validation_exit_candidates) ? backtest.validation_exit_candidates : [];
+        if (!candidates.length) {
+            const row = element('tr');
+            const cell = element('td', 'No validation exit candidates are available in this snapshot.', 'empty-cell');
+            cell.colSpan = 4; row.append(cell); body.append(row); return;
+        }
+        for (const candidate of candidates) {
+            const row = element('tr');
+            const selected = candidate.exit_rule === backtest.selected_exit_rule
+                && numeric(candidate.exit_bars) === numeric(backtest.selected_exit_bars);
+            if (selected) row.className = 'selected-exit';
+            const rule = candidate.exit_rule === 'opposite_entry_signal_or_timeout'
+                ? 'Opposite entry signal, with timeout' : 'Fixed timeout';
+            row.append(
+                element('td', `${selected ? 'Selected · ' : ''}${rule}`),
+                element('td', metric(candidate.exit_bars, '', 0)),
+                element('td', metric(candidate.trades, '', 0)),
+                element('td', metric(candidate.mean_return_pct, '%')),
+            );
+            body.append(row);
+        }
+    }
     function renderModel() {
         if (!report) return;
         const models = Array.isArray(report.models) ? report.models : [];
@@ -310,7 +336,14 @@ export function initializeEntryValidation(doc = document) {
             const segment = backtest.splits?.[key] || {};
             return [key === 'validation' ? 'Exit selection' : key[0].toUpperCase() + key.slice(1), `${dateText(segment.start_ts)} – ${dateText(segment.end_ts)} · ${metric(segment.bars, ' bars', 0)}`];
         }));
-        text('exit-protocol', backtest.selected_exit_bars == null ? 'No exit could be selected from the validation sample. The holdout is not used to choose one.' : `Enter at next bar open; exit at the close after ${backtest.selected_exit_bars} bars. Selected from ${(backtest.exit_candidates_bars || []).join(', ')} bars using validation only. No overlapping positions or trades crossing the split boundaries.`);
+        if (backtest.selected_exit_bars == null) {
+            text('exit-protocol', 'No exit could be selected from the validation sample. The holdout is not used to choose one.');
+        } else if (backtest.selected_exit_rule === 'opposite_entry_signal_or_timeout') {
+            text('exit-protocol', `Enter at the next bar open. Close at the close of the first qualifying opposite-direction entry signal, or after ${backtest.selected_exit_bars} bars if none appears. The opposite signal closes the position; it does not open a reverse position. Selected using validation only.`);
+        } else {
+            text('exit-protocol', `Enter at next bar open; exit at the close after ${backtest.selected_exit_bars} bars. Selected using validation only. No overlapping positions or trades crossing the split boundaries.`);
+        }
+        renderExitCandidates(backtest);
         renderBands($('score-band-rows'), backtest.holdout_score_bands);
         text('calibration-note', backtest.discrimination_note || 'Score discrimination has not been established without adequate held-out samples and uncertainty separation.');
         const factors = Array.isArray(backtest.holdout_factor_bands) ? backtest.holdout_factor_bands : [];

@@ -11,7 +11,7 @@ const FACTOR_NAMES: [&str; 4] = [
     "Nadaraya-Watson Envelope", "DSS Bressert", "Relative Volume",
     "Estimated Volume Delta (OHLCV proxy)",
 ];
-pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str = "entry_four_factor_holdout_v1";
+pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str = "entry_four_factor_holdout_v2";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {
@@ -32,6 +32,7 @@ struct WindowSummary {
 #[derive(Clone, Copy)]
 struct EvaluationPolicy {
     horizon: usize,
+    exit_on_reverse_signal: bool,
     buy_fee_pct: f64,
     sell_fee_pct: f64,
     fees_known: bool,
@@ -52,8 +53,22 @@ fn evaluate_window(
         let Some(observation) = observations[index] else { index += 1; continue; };
         if !observation.long && !policy.allow_short { index += 1; continue; }
         let entry = index + 1;
-        let Some(exit) = entry.checked_add(policy.horizon.saturating_sub(1)) else { break; };
-        if entry >= end || exit >= end { index += 1; continue; }
+        let Some(timeout_exit) = entry.checked_add(policy.horizon.saturating_sub(1)) else { break; };
+        if entry >= end { index += 1; continue; }
+        let exit = if policy.exit_on_reverse_signal {
+            let scan_end = timeout_exit.min(end - 1);
+            let reverse_exit = (entry..=scan_end).find(|candidate| {
+                observations[*candidate].is_some_and(|next| next.long != observation.long)
+            });
+            match reverse_exit {
+                Some(candidate) => candidate,
+                None if timeout_exit < end => timeout_exit,
+                None => { index += 1; continue; }
+            }
+        } else {
+            if timeout_exit >= end { index += 1; continue; }
+            timeout_exit
+        };
         let direction = if observation.long { "LONG" } else { "SHORT" };
         let add = |summary: &mut TradeSummary| summary.add(
             bars, entry, exit, direction, policy.buy_fee_pct, policy.sell_fee_pct, policy.fees_known,
@@ -118,8 +133,9 @@ fn split_json(bars: &[StrategyBar], start: usize, end: usize) -> Value {
         "end_ts": end.checked_sub(1).and_then(|index| bars.get(index)).filter(|_| start < end).map(|bar| bar.time) })
 }
 
-/// Evaluate the actual live entry score at signal time with a fixed validation
-/// protocol. This produces research evidence; it never grants sizing readiness.
+/// Evaluate the actual live entry score at signal time and compare fixed-time
+/// exits with exits on the first qualifying opposite entry signal. This is
+/// research evidence and never grants sizing readiness.
 pub fn evaluate_entry_score_backtest(
     bars: &[StrategyBar], kind: EntryModelKind,
     buy_fee_pct: f64, sell_fee_pct: f64, fees_known: bool, allow_short: bool,
@@ -147,43 +163,56 @@ pub fn evaluate_entry_score_backtest(
             }
         });
     }
-    let policy = EvaluationPolicy { horizon: 0, buy_fee_pct, sell_fee_pct, fees_known, allow_short };
-    let mut selected_horizon = None;
+    let policy = EvaluationPolicy { horizon: 0, exit_on_reverse_signal: false,
+        buy_fee_pct, sell_fee_pct, fees_known, allow_short };
+    let mut selected_policy = None;
     let mut validation = WindowSummary::default();
     let mut validation_candidates = Vec::new();
     if !invalid {
         for horizon in super::NWE_DSS_EXIT_CANDIDATES_BARS {
-            let candidate = evaluate_window(bars, &observations, train_end, validation_end,
-                EvaluationPolicy { horizon: *horizon, ..policy });
-            let mut candidate_json = summary_json(candidate.overall, fees_known);
-            candidate_json["exit_bars"] = Value::from(*horizon);
-            validation_candidates.push(candidate_json);
-            if candidate.overall.trades >= crate::MIN_EVIDENCE_SAMPLE_TRADES
-                && candidate.overall.mean_net().is_some_and(|score|
-                    validation.overall.mean_net().is_none_or(|best| score > best))
-            {
-                selected_horizon = Some(*horizon);
-                validation = candidate;
+            for exit_on_reverse_signal in [false, true] {
+                let candidate_policy = EvaluationPolicy { horizon: *horizon,
+                    exit_on_reverse_signal, ..policy };
+                let candidate = evaluate_window(bars, &observations, train_end, validation_end,
+                    candidate_policy);
+                let mut candidate_json = summary_json(candidate.overall, fees_known);
+                candidate_json["exit_bars"] = Value::from(*horizon);
+                candidate_json["exit_rule"] = Value::from(if exit_on_reverse_signal {
+                    "opposite_entry_signal_or_timeout"
+                } else { "fixed_timeout" });
+                validation_candidates.push(candidate_json);
+                if candidate.overall.trades >= crate::MIN_EVIDENCE_SAMPLE_TRADES
+                    && candidate.overall.mean_net().is_some_and(|score|
+                        validation.overall.mean_net().is_none_or(|best| score > best))
+                {
+                    selected_policy = Some(candidate_policy);
+                    validation = candidate;
+                }
             }
         }
     }
-    let training = selected_horizon.map(|horizon| evaluate_window(bars, &observations,
+    let training = selected_policy.map(|selected| evaluate_window(bars, &observations,
         minimum_history.saturating_sub(1).min(train_end), train_end,
-        EvaluationPolicy { horizon, ..policy })).unwrap_or_default();
-    let holdout = selected_horizon.map(|horizon| evaluate_window(bars, &observations,
-        validation_end, bars.len(), EvaluationPolicy { horizon, ..policy })).unwrap_or_default();
+        selected)).unwrap_or_default();
+    let holdout = selected_policy.map(|selected| evaluate_window(bars, &observations,
+        validation_end, bars.len(), selected)).unwrap_or_default();
     let profitable = holdout.overall.mean_net().is_some_and(|mean| mean > 0.0)
         && { let value = summary_json(holdout.overall, fees_known);
             value["profit_factor_unbounded"] == true || value["profit_factor"].as_f64().is_some_and(|factor| factor > 1.0) };
     json!({
         "status": if invalid { "INVALID_HISTORY" } else if bars.len() < minimum_history { "INSUFFICIENT_HISTORY" }
-            else if selected_horizon.is_none() { "NO_VALIDATION_TRADES" } else { "HOLDOUT_RESEARCH_COMPLETE" },
+            else if selected_policy.is_none() { "NO_VALIDATION_TRADES" } else { "HOLDOUT_RESEARCH_COMPLETE" },
         "protocol_id": ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
         "entry_model_kind": match kind { EntryModelKind::Nwe => "nwe", EntryModelKind::Dss => "dss" },
         "score_model_id": kind.score_model_id(),
         "history_bars": bars.len(), "minimum_history_bars": minimum_history,
         "history_days": history_days, "holdout_window_days": holdout_window_days,
-        "selected_exit_bars": selected_horizon, "exit_candidates_bars": super::NWE_DSS_EXIT_CANDIDATES_BARS,
+        "selected_exit_bars": selected_policy.map(|selected| selected.horizon),
+        "selected_exit_rule": selected_policy.map(|selected| if selected.exit_on_reverse_signal {
+            "opposite_entry_signal_or_timeout"
+        } else { "fixed_timeout" }),
+        "exit_candidates_bars": super::NWE_DSS_EXIT_CANDIDATES_BARS,
+        "exit_candidates": ["fixed_timeout", "opposite_entry_signal_or_timeout"],
         "splits": { "training": split_json(bars, 0, train_end),
             "validation": split_json(bars, train_end, validation_end),
             "holdout": split_json(bars, validation_end, bars.len()) },
@@ -204,10 +233,11 @@ pub fn evaluate_entry_score_backtest(
         "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
         "minimum_holdout_days": crate::MIN_EVIDENCE_SAMPLE_DAYS,
         "fees_known": fees_known,
-        "selection_metric": "Highest validation mean return; ties favor the shorter declared exit. Fee-unknown results are gross only.",
-        "entry_rule": "Completed-bar live lead model; enter next bar open; fixed bar-close timeout; no overlapping trades or trades crossing split boundaries.",
+        "selection_metric": "Highest validation mean return; ties favor the shorter maximum hold, then fixed timeout. Fee-unknown results are gross only.",
+        "entry_rule": "Completed-bar live lead model; enter next bar open; no overlapping trades or trades crossing split boundaries.",
+        "exit_rule": "Validation compares fixed bar-close timeouts with a close on the first qualifying opposite-direction entry signal, capped by the same maximum hold. The selected rule is evaluated once on the untouched holdout.",
         "discrimination_note": "Exploratory conservative screen: at least two ordered score bands each meet the minimum trade count; the highest eligible band's lower Wilson 95% win bound exceeds the lowest eligible band's upper bound and its mean return is higher. This is not independent statistical proof.",
-        "validation_note": "Historical research only. Validation selects the timeout; the final chronological tail does not select it. Reusing the tail for model or threshold tuning contaminates it. No slippage, spread, depth, market impact, funding, or borrow is modeled."
+        "validation_note": "Historical research only. Validation selects the exit rule and maximum hold; the final chronological tail does not select them. Reusing the tail for model or threshold tuning contaminates it. No slippage, spread, depth, market impact, funding, or borrow is modeled."
     })
 }
 
