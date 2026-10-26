@@ -165,22 +165,19 @@ fn sync_with_binance(
     duration_seconds: i64,
     maximum_rows: usize,
 ) -> Result<usize, String> {
-    let result = fetch_binance_interval(pair, market, interval, duration_seconds, maximum_rows)
-        .and_then(|candles| {
-            persist(
-                connection,
-                storage_symbol,
-                kind,
-                exchange,
-                "binance",
-                source,
-                pair,
-                interval,
-                "binance_usdt_reference",
-                &candles,
-            )?;
-            Ok(candles.len())
-        });
+    // Candle timestamps are the durable cursor, scoped to the exact source series.
+    // Replay the last closed candle so provider corrections remain idempotent.
+    let resume_ts: Option<i64> = connection.query_row(
+        "SELECT MAX(ts) FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3",
+        params![storage_symbol, interval, source],
+        |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    let resume_ts = resume_ts.map(|ts| ts.div_euclid(NANOS_PER_SECOND));
+    let result = fetch_binance_interval(
+        pair, market, interval, duration_seconds, maximum_rows, resume_ts,
+        |candles| persist(connection, storage_symbol, kind, exchange, "binance", source,
+            pair, interval, "binance_usdt_reference", candles),
+    );
     if let Err(error) = &result {
         let now = super::format_timestamp(super::now_secs());
         record_proxy_failure(

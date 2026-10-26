@@ -1,5 +1,8 @@
 use super::*;
 
+const BINANCE_INGESTION_PAGE_ROWS: usize = 200;
+const BINANCE_PAGE_PAUSE_MILLISECONDS: u64 = 250;
+
 #[derive(Clone, Copy)]
 pub(super) enum BinanceMarket {
     Spot,
@@ -107,7 +110,9 @@ pub(super) fn fetch_binance_interval(
     interval: &str,
     duration_seconds: i64,
     maximum_rows: usize,
-) -> Result<Vec<Bar>, String> {
+    resume_ts: Option<i64>,
+    mut save_page: impl FnMut(&[Bar]) -> Result<(), String>,
+) -> Result<usize, String> {
     if pair.is_empty()
         || pair.len() > 24
         || !pair
@@ -126,14 +131,16 @@ pub(super) fn fetch_binance_interval(
         .checked_mul(quant_core::MILLISECONDS_PER_SECOND)
         .ok_or("Binance interval overflow")?;
     let start_ms = now_ms.saturating_sub(duration_ms.saturating_mul(maximum_rows as i64));
-    let mut cursor_ms = start_ms;
-    let mut bars = Vec::with_capacity(maximum_rows.min(4_000));
+    let mut cursor_ms = resume_ts.map(|ts| ts.saturating_mul(quant_core::MILLISECONDS_PER_SECOND))
+        .unwrap_or(start_ms);
+    let mut saved_rows = 0usize;
+    let mut last_saved_ts = None;
 
     for _ in 0..MAX_BINANCE_PAGES {
-        if cursor_ms >= now_ms || bars.len() >= maximum_rows {
+        if cursor_ms >= now_ms || saved_rows >= maximum_rows {
             break;
         }
-        let limit = (maximum_rows - bars.len()).min(market.max_page_size());
+        let limit = (maximum_rows - saved_rows).min(market.max_page_size()).min(BINANCE_INGESTION_PAGE_ROWS);
         let url = format!(
             "{}?symbol={pair}&interval={interval}&startTime={cursor_ms}&endTime={now_ms}&limit={limit}",
             market.endpoint()
@@ -156,32 +163,32 @@ pub(super) fn fetch_binance_interval(
             .and_then(|row| row.first())
             .and_then(Value::as_i64)
             .ok_or("Binance candle timestamp missing")?;
-        let parsed = parse_binance_candles(&body, now_ms, duration_seconds, limit)?;
-        for bar in parsed {
-            if bars
-                .last()
-                .is_some_and(|previous: &Bar| previous.ts >= bar.ts)
-            {
-                if bars.last().is_some_and(|previous| previous.ts == bar.ts) {
-                    continue;
-                }
-                return Err("Binance timestamps are not chronological".into());
-            }
-            bars.push(bar);
-        }
         let next_cursor = last_open_ms.saturating_add(duration_ms);
         if next_cursor <= cursor_ms {
             return Err("Binance pagination did not advance".into());
+        }
+        let parsed = parse_binance_candles(&body, now_ms, duration_seconds, limit)?;
+        if parsed.windows(2).any(|pair| pair[0].ts >= pair[1].ts)
+            || parsed.first().zip(last_saved_ts).is_some_and(|(first, previous)| first.ts <= previous)
+        {
+            return Err("Binance timestamps are not chronological".into());
+        }
+        if !parsed.is_empty() {
+            // Commit before advancing. A later request failure cannot discard this page.
+            save_page(&parsed)?;
+            saved_rows += parsed.len();
+            last_saved_ts = parsed.last().map(|bar| bar.ts);
         }
         cursor_ms = next_cursor;
         if rows.len() < limit {
             break;
         }
+        std::thread::sleep(std::time::Duration::from_millis(BINANCE_PAGE_PAUSE_MILLISECONDS));
     }
-    if bars.is_empty() {
+    if saved_rows == 0 {
         return Err("Binance returned no completed candles".into());
     }
-    Ok(bars)
+    Ok(saved_rows)
 }
 
 pub(super) fn yahoo_base_asset(symbol: &str) -> Result<String, String> {
