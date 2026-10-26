@@ -22,11 +22,12 @@ mod targets;
 use targets::{candle_sync_target_limit, registered_hourly_target_count};
 pub(super) use targets::{registered_daily_targets, registered_hourly_targets};
 
-const MAX_REGISTERED_CANDLE_TARGETS_PER_TICK: usize = 512;
+const MAX_REGISTERED_CANDLE_TARGETS_PER_TICK: usize = 8;
 const MAX_DAILY_REGISTERED_CANDLE_TARGETS_PER_TICK: i64 = 12;
-const MAX_PARALLEL_CANDLE_SYNC_WORKERS: usize = 10;
+const MAX_PARALLEL_CANDLE_SYNC_WORKERS: usize = 2;
 const DAILY_CANDLE_SYNC_MINIMUM_INTERVAL_SECONDS: u64 = 5 * 60;
 const CANDLE_SYNC_WORKER_SQLITE_PAGE_CACHE_KIB: i64 = 64;
+const CANDLE_SYNC_WAVE_PAUSE_MILLISECONDS: u64 = 250;
 const REGATHER_BATCH_PAUSE_SECONDS: u64 = 1;
 const STALE_DAILY_REFRESH_COOLDOWN_SECONDS: i64 = quant_core::SECONDS_PER_HOUR;
 
@@ -199,6 +200,9 @@ fn sync_hourly_chart_targets(
         refreshed += wave_refreshed;
         worker_count = worker_count.max(wave_workers);
         remaining_targets = remaining_targets.saturating_sub(wave_size);
+        if remaining_targets > 0 {
+            thread::sleep(Duration::from_millis(CANDLE_SYNC_WAVE_PAUSE_MILLISECONDS));
+        }
     }
     eprintln!(
         "[Daemon] 15m history batch attempted {attempted_targets} registered products with up to {worker_count} workers; {refreshed} interval syncs succeeded in {}ms.",
