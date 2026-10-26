@@ -277,7 +277,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
                             symbol: input.asset.into(),
                             reason: "data_error".into(),
                             timeframe: timeframe.into(),
-                            source: Some(source.clone()),
+                            source: Some(source.to_string()),
                             error: Some(error.to_string()),
                             ..ReadinessIssue::default()
                         });
