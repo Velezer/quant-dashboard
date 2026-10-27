@@ -24,6 +24,31 @@ quotes remain separate. Worker attempts, signals, and evidence still identify
 the selected app/product. See the explicit history-consolidation command in
 [market-data storage](market-data-storage.md#consolidating-existing-crypto-references).
 
+Tokocrypto native intraday refreshes request the full initial window until the
+stored series has its model warm-up. Thereafter, they request the elapsed gap
+plus a small replay margin, bounded by the original provider window. The 15m
+series is committed before the separate hourly request, so an hourly failure
+does not discard successfully fetched 15m prices. Each source and app remains
+distinct, and fresh completed prices are still required for signals.
+An empty native response is recorded as a provider failure and allows the
+existing research-provider fallback instead of being marked as a successful sync.
+
+Decision effects for incremental Tokocrypto refresh:
+
+1. Fewer repeated candles are downloaded and written after warm-up.
+2. Successfully fetched 15m bars survive a later hourly failure.
+3. Repeated refreshes replay recent bars for provider corrections.
+4. Existing provider provenance and signal freshness rules remain in force.
+5. Stored history is retained without a total-row or age cap.
+6. Missing warm-up or gaps beyond the window trigger the original full request;
+   provider failures remain visible and do not fabricate prices.
+7. Ingestion runs and the existing data checks expose success or failure.
+8. Only the approved public native adapter and registered products are used.
+9. Faster refreshes may improve coverage, subject to live scheduling and memory
+   measurements; separate storage symbols still prevent cross-app reuse.
+10. If stale Tokocrypto prices persist after deployment, inspect scheduler
+    duration and target coverage before changing freshness or model rules.
+
 Pintu Pro Futures uses its public `get-candles` endpoint for verified
 perpetual listings. The adapter stores completed native one-hour candles,
 builds 15-minute candles from three completed 5-minute venue bars, and

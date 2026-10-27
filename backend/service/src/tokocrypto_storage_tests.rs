@@ -138,3 +138,43 @@ fn persists_native_bar_rows_without_a_file_payload() {
     assert_eq!(row.2, 10.5);
     assert_eq!(row.3, "tokocrypto");
 }
+
+#[test]
+fn hourly_failure_preserves_successfully_fetched_fifteen_minute_candles() {
+    let connection = storage_fixture();
+    let symbol = "TOKOCRYPTO:SPOT:BTC_USDT";
+    connection.execute(
+        "INSERT INTO instruments(instrument_id,exchange_id,product_id,asset_category_id,storage_symbol,listing_status,venue_verified,is_active)
+         VALUES('btc','tokocrypto','tokocrypto_spot','crypto_spot',?1,'venue_active',1,1)", [symbol],
+    ).unwrap();
+    let venue = VenueSymbol {
+        symbol: "BTC_USDT".into(),
+        symbol_type: 1,
+        base_asset: "BTC".into(),
+        quote_asset: "USDT".into(),
+        spot_trading_enabled: true,
+    };
+    let result =
+        sync_intraday_market_with_fetch(&connection, &venue, false, symbol, |_, interval, _| {
+            if interval == "1h" {
+                return Err("hourly request failed".into());
+            }
+            Ok(vec![MarketBar {
+                open_time_ms: 1_700_000_000_000,
+                open: 10.0,
+                high: 11.0,
+                low: 9.0,
+                close: 10.5,
+                volume: 3.0,
+            }])
+        });
+    assert_eq!(result.unwrap_err(), "hourly request failed");
+    let rows: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM bars WHERE symbol=?1 AND interval='15m'",
+            [symbol],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(rows, 1);
+}

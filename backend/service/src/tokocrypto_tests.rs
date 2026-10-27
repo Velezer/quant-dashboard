@@ -88,3 +88,9 @@ fn rejects_provider_errors_and_accepts_success_status() {
     );
     assert_eq!(public_provider_status_error(200, None), None);
 }
+
+#[test]
+fn empty_completed_candle_response_is_an_error_not_a_successful_sync() {
+    let error = require_completed_candles(Vec::new()).unwrap_err();
+    assert_eq!(error, "Tokocrypto returned no completed candles");
+}

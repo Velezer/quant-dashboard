@@ -49,7 +49,15 @@ pub fn fetch_klines(
     let url = kline_url(symbol, interval, limit)?;
     let body = get_public_json(&url, 12)?;
     let now_ms = now_millis()?;
-    parse_klines(&body, limit, now_ms)
+    require_completed_candles(parse_klines(&body, limit, now_ms)?)
+}
+
+fn require_completed_candles(bars: Vec<MarketBar>) -> Result<Vec<MarketBar>, String> {
+    if bars.is_empty() {
+        Err("Tokocrypto returned no completed candles".into())
+    } else {
+        Ok(bars)
+    }
 }
 
 fn kline_url(symbol: &VenueSymbol, interval: &str, limit: usize) -> Result<String, String> {

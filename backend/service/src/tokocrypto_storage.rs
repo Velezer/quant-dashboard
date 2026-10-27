@@ -52,26 +52,54 @@ fn sync_intraday_market(
     tokenized: bool,
     registered_storage_symbol: &str,
 ) -> Result<SyncResult, String> {
+    sync_intraday_market_with_fetch(
+        connection,
+        venue,
+        tokenized,
+        registered_storage_symbol,
+        fetch_klines,
+    )
+}
+
+fn sync_intraday_market_with_fetch(
+    connection: &Connection,
+    venue: &VenueSymbol,
+    tokenized: bool,
+    registered_storage_symbol: &str,
+    fetch: impl Fn(&VenueSymbol, &str, usize) -> Result<Vec<MarketBar>, String>,
+) -> Result<SyncResult, String> {
     let storage_symbol = resolve_storage_symbol(venue, tokenized, registered_storage_symbol)?;
-    let bars_15m = fetch_klines(&venue, "15m", 720).map_err(|error| {
+    let bars_15m = fetch(
+        &venue,
+        "15m",
+        recent_candle_limit(connection, &storage_symbol, "15m", 720, 501, 900)?,
+    )
+    .map_err(|error| {
         record_failure(connection, &storage_symbol, "15m", &error);
         error
     })?;
-    let bars_1h = fetch_klines(&venue, "1h", 500).map_err(|error| {
+    let category = if tokenized {
+        "tokenized_stock"
+    } else {
+        "crypto_spot"
+    };
+    // Commit fresh 15m prices before requesting the independent hourly series.
+    persist_sync(connection, &storage_symbol, category, &[("15m", &bars_15m)]).map_err(
+        |error| {
+            record_failure(connection, &storage_symbol, "15m", &error);
+            error
+        },
+    )?;
+    let bars_1h = fetch(
+        &venue,
+        "1h",
+        recent_candle_limit(connection, &storage_symbol, "1h", 500, 499, 3600)?,
+    )
+    .map_err(|error| {
         record_failure(connection, &storage_symbol, "1h", &error);
         error
     })?;
-    persist_sync(
-        connection,
-        &storage_symbol,
-        if tokenized {
-            "tokenized_stock"
-        } else {
-            "crypto_spot"
-        },
-        &[("15m", &bars_15m), ("1h", &bars_1h)],
-    )
-    .map_err(|error| {
+    persist_sync(connection, &storage_symbol, category, &[("1h", &bars_1h)]).map_err(|error| {
         record_failure(connection, &storage_symbol, "1h", &error);
         error
     })?;
@@ -90,6 +118,45 @@ fn sync_intraday_market(
         rows_1h: bars_1h.len(),
         rows_1d: 0,
     })
+}
+
+fn recent_candle_limit(
+    connection: &Connection,
+    symbol: &str,
+    interval: &str,
+    bootstrap_limit: usize,
+    warmup_bars: usize,
+    interval_seconds: i64,
+) -> Result<usize, String> {
+    let (count, oldest, newest): (i64, Option<i64>, Option<i64>) = connection.query_row(
+        "SELECT COUNT(*),MIN(ts),MAX(ts) FROM (SELECT ts FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3 ORDER BY ts DESC LIMIT ?4)",
+        params![symbol, interval, SOURCE, warmup_bars as i64],
+        |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
+    ).map_err(|error| error.to_string())?;
+    if count < warmup_bars as i64 {
+        return Ok(bootstrap_limit);
+    }
+    let (Some(oldest), Some(newest)) = (oldest, newest) else {
+        return Ok(bootstrap_limit);
+    };
+    let now = i64::try_from(crate::now_secs()).map_err(|error| error.to_string())?;
+    let expected_span = (count - 1)
+        .saturating_mul(interval_seconds)
+        .saturating_mul(crate::NANOS_PER_SECOND);
+    // A short incremental request cannot repair holes or future timestamps.
+    if newest.saturating_sub(oldest) != expected_span
+        || newest.div_euclid(crate::NANOS_PER_SECOND) > now
+    {
+        return Ok(bootstrap_limit);
+    }
+    let elapsed = now
+        .saturating_sub(newest.div_euclid(crate::NANOS_PER_SECOND))
+        .max(0);
+    // Replay the last completed bar and allow for the currently forming bar.
+    let needed = elapsed.div_euclid(interval_seconds).saturating_add(3);
+    Ok(usize::try_from(needed)
+        .unwrap_or(bootstrap_limit)
+        .clamp(3, bootstrap_limit))
 }
 
 /// Refresh one registered daily candle window without downloading the venue
@@ -446,3 +513,7 @@ mod tests;
 #[cfg(test)]
 #[path = "tokocrypto_storage_registry_tests.rs"]
 mod registry_tests;
+
+#[cfg(test)]
+#[path = "tokocrypto_storage_incremental_tests.rs"]
+mod incremental_tests;
