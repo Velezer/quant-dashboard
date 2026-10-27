@@ -71,6 +71,30 @@ app/product/ticker identities. The next market batch services queued stale
 signals before the normal rotating targets, so one stale ticker cannot block
 the others from recovery.
 
+The signal scanner rotates one registered ticker each from Stockbit, Pintu,
+Pluang and Tokocrypto, in that order. Empty or exhausted app queues are skipped;
+every remaining registered ticker is still scanned. Progress shows the current
+app and ticker. The combined snapshot and readiness checks remain transactional
+and are published after the full sweep, so an overdue scan still appears stale.
+
+Decision effects for the balanced app rotation:
+
+1. One Stockbit ticker is followed by one ticker from each available crypto app.
+2. Each app makes progress throughout a sweep rather than waiting for an app's
+   entire queue to finish.
+3. Repeated scans use the same bounded rotation and process every registration.
+4. App/product attribution, signal source checks, and independent readiness
+   counts remain intact.
+5. The change adds no retained market data or additional fetches.
+6. Empty queues are skipped; an error still fails the scan and retains the last
+   successful snapshot.
+7. Current app/ticker and per-app elapsed time remain available in status/logs.
+8. Signal rows remain read-only research and are replaced transactionally.
+9. Earlier crypto processing may improve balance, but scan duration and data
+   freshness must be observed in production.
+10. If the sweep still exceeds its cadence, address the measured bottleneck or
+    implement separately reviewed incremental publication; do not hide staleness.
+
 ## Shared crypto research candles
 
 The user's task is to see signals and charts for each registered app using the
