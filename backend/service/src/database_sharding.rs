@@ -383,7 +383,7 @@ fn symbols(db: &Connection) -> Result<Vec<String>, String> {
     }
     Ok(set.into_iter().collect())
 }
-fn counts(
+pub(super) fn counts(
     db: &Connection,
     schema: &str,
     symbol: Option<&str>,
@@ -410,7 +410,7 @@ fn count_symbol(db: &Connection, schema: &str, table: &str, symbol: &str) -> Res
     )
     .map_err(|e| e.to_string())
 }
-fn hash_tables(
+pub(super) fn hash_tables(
     db: &Connection,
     schema: &str,
     tables: &[&str],

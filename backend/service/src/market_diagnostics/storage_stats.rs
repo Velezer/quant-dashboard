@@ -517,6 +517,7 @@ fn load_market_storage_details(
                 "source": source,
                 "source_label": candle_source_label(&source),
                 "source_is_proxy": is_research_proxy_source(&source),
+                "shared_reference": research_proxy::shared::is_shared_source(&source),
                 "exchange_id": exchange_id,
                 "data_provider": data_provider,
                 "timezone": timezone,

@@ -47,6 +47,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         ("pintu", "pintu_pro_futures") => "pintu_futures",
         ("pintu", "pintu_retail_spot" | "pintu_pro_spot") => product_id,
         ("pluang", "pluang_spot" | "pluang_perpetual") => product_id,
+        ("tokocrypto", "tokocrypto_spot" | "tokocrypto_tokenized_stock") => product_id,
         (_, "") => exchange.as_str(),
         _ => {
             let product_is_enabled = match connection.query_row(
@@ -164,7 +165,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                 "warning": format!("Unable to read local history metadata: {error}"),
             })
         });
-        let mut candle_result = if exchange.is_empty() {
+        let candle_result = if exchange.is_empty() {
             load_series_candles(
                 market_connection,
                 &storage_symbol,
@@ -180,26 +181,6 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                 source_exchange,
             )
         };
-        if source_exchange.starts_with("pluang_") && candle_result.as_ref().is_ok_and(Vec::is_empty)
-        {
-            // Saved Pluang snapshot predates product-specific source keys.
-            // Shared historical candles remain explicitly labeled proxy.
-            candle_result = load_series_candles_for_exchange(
-                market_connection,
-                &storage_symbol,
-                timeframe,
-                calculation_limit,
-                "pluang",
-            );
-            metadata = load_series_metadata_for_exchange(
-                market_connection,
-                &storage_symbol,
-                timeframe,
-                false,
-                "pluang",
-            )
-            .unwrap_or(metadata);
-        }
         match candle_result {
             Ok(mut candles) => {
                 let chart_status = if candles.len() < MIN_CHART_CANDLES {
@@ -239,10 +220,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                         volume: candle.volume,
                     })
                     .collect::<Vec<_>>();
-                let regimes = quant_core::classify_regimes(
-                    &markov_bars,
-                    &regime_config,
-                );
+                let regimes = quant_core::classify_regimes(&markov_bars, &regime_config);
                 let regime_start = candles.len().saturating_sub(requested as usize);
                 markov_regimes.insert(
                     timeframe.to_string(),

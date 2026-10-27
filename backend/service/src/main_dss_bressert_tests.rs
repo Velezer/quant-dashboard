@@ -6,7 +6,7 @@ fn dss_market_connection() -> Connection {
         .execute_batch(
             "CREATE TABLE series (
                 symbol TEXT NOT NULL, interval TEXT NOT NULL, source TEXT NOT NULL,
-                exchange_id TEXT NOT NULL, product_id TEXT NOT NULL,
+                exchange_id TEXT NOT NULL, product_id TEXT NOT NULL, instrument_id TEXT,
                 data_provider TEXT NOT NULL, timezone TEXT NOT NULL,
                 price_basis TEXT NOT NULL, instrument_kind TEXT NOT NULL,
                 last_success TEXT, last_attempt TEXT, last_error TEXT,
@@ -26,33 +26,82 @@ fn dss_market_connection() -> Connection {
 #[test]
 fn every_app_prefers_fresh_same_product_history_before_stale_provider_priority() {
     let now = (now_secs() as i64) * NANOS_PER_SECOND;
-    for (app, product) in [("stockbit", "stockbit_regular"), ("pintu", "pintu_pro_futures"),
-        ("pluang", "pluang_perpetual"), ("tokocrypto", "tokocrypto_spot")] {
+    for (app, product) in [
+        ("stockbit", "stockbit_regular"),
+        ("pintu", "pintu_pro_futures"),
+        ("pluang", "pluang_perpetual"),
+        ("tokocrypto", "tokocrypto_spot"),
+    ] {
         let connection = dss_market_connection();
         for (source, exchange, product_id, provider, timestamp) in [
-            ("native", app, product, app, now - 4 * 3600 * NANOS_PER_SECOND),
-            ("fallback", app, product, "yfinance", now - 16 * 60 * NANOS_PER_SECOND),
-            ("other_product", app, "different_product", app, now - 15 * 60 * NANOS_PER_SECOND),
+            (
+                "native",
+                app,
+                product,
+                app,
+                now - 4 * 3600 * NANOS_PER_SECOND,
+            ),
+            (
+                "fallback",
+                app,
+                product,
+                "yfinance",
+                now - 16 * 60 * NANOS_PER_SECOND,
+            ),
+            (
+                "other_product",
+                app,
+                "different_product",
+                app,
+                now - 15 * 60 * NANOS_PER_SECOND,
+            ),
         ] {
             connection.execute(
                 "INSERT INTO series(symbol,interval,source,exchange_id,product_id,data_provider,
                     timezone,price_basis,instrument_kind) VALUES('TEST','15m',?1,?2,?3,?4,'UTC','research_proxy','spot')",
                 params![source, exchange, product_id, provider],
             ).unwrap();
-            connection.execute(
-                "INSERT INTO bars VALUES('TEST','15m',?1,?2,100,102,99,101,100)",
-                params![source, timestamp],
-            ).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO bars VALUES('TEST','15m',?1,?2,100,102,99,101,100)",
+                    params![source, timestamp],
+                )
+                .unwrap();
         }
-        let selected = selected_candle_source_for_product(&connection, "TEST", app, product, "15m").unwrap();
-        assert_eq!(selected.as_deref(), Some("fallback"), "{app} must use its fresh fallback");
-        let state = product_candle_scan_state_at(&connection, "TEST", app, product, "15m", now / NANOS_PER_SECOND)
-            .unwrap().unwrap();
-        assert!(!state.is_stale, "{app} should have a fresh same-product input");
-        connection.execute("INSERT INTO bars VALUES('TEST','15m','native',?1,100,102,99,101,100)",
-            [now - 17 * 60 * NANOS_PER_SECOND]).unwrap();
-        assert_eq!(selected_candle_source_for_product(&connection, "TEST", app, product, "15m")
-            .unwrap().as_deref(), Some("native"), "{app} keeps native priority when it is fresh");
+        let selected =
+            selected_candle_source_for_product(&connection, "TEST", app, product, "15m").unwrap();
+        assert_eq!(
+            selected.as_deref(),
+            Some("fallback"),
+            "{app} must use its fresh fallback"
+        );
+        let state = product_candle_scan_state_at(
+            &connection,
+            "TEST",
+            app,
+            product,
+            "15m",
+            now / NANOS_PER_SECOND,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(
+            !state.is_stale,
+            "{app} should have a fresh same-product input"
+        );
+        connection
+            .execute(
+                "INSERT INTO bars VALUES('TEST','15m','native',?1,100,102,99,101,100)",
+                [now - 17 * 60 * NANOS_PER_SECOND],
+            )
+            .unwrap();
+        assert_eq!(
+            selected_candle_source_for_product(&connection, "TEST", app, product, "15m")
+                .unwrap()
+                .as_deref(),
+            Some("native"),
+            "{app} keeps native priority when it is fresh"
+        );
     }
 }
 
@@ -116,7 +165,7 @@ fn two_hour_product_history_rolls_up_the_same_products_hourly_bars() {
         .execute_batch(
             "CREATE TABLE series (
                 symbol TEXT NOT NULL, interval TEXT NOT NULL, source TEXT NOT NULL,
-                exchange_id TEXT NOT NULL, product_id TEXT NOT NULL,
+                exchange_id TEXT NOT NULL, product_id TEXT NOT NULL, instrument_id TEXT,
                 data_provider TEXT NOT NULL, timezone TEXT NOT NULL,
                 price_basis TEXT NOT NULL, instrument_kind TEXT NOT NULL,
                 last_success TEXT, last_attempt TEXT, last_error TEXT,

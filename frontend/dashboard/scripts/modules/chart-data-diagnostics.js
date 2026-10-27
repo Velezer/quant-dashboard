@@ -176,7 +176,10 @@ export function installChartDataDiagnostics() {
                 })[providerId] || providerId.replaceAll('_', ' ');
                 const instrumentKind = String(meta.instrument_kind || storedSeries.instrument_kind || '').replaceAll('_', ' ');
                 const providerText = providerName ? ` · Data provider: ${providerName}` : '';
-                const sourceText = `App exchange: ${exchange}${providerText} · ${sourceName}${instrumentKind ? ` · ${instrumentKind}` : ''}`;
+                const sharingText = (meta.shared_reference ?? storedSeries.shared_reference) === true
+                    ? ' Apps with the same asset and category share these provider candles. Spot and perpetual candles stay separate. Research candles do not validate app execution.'
+                    : '';
+                const sourceText = `App exchange: ${exchange}${providerText} · ${sourceName}${instrumentKind ? ` · ${instrumentKind}` : ''}.${sharingText}`;
                 const attemptText = formatDiagnosticTimestamp(meta.last_attempt || meta.sync_attempt_at || storedSeries.last_attempt);
                 const successText = formatDiagnosticTimestamp(meta.last_success || meta.sync_success_at || storedSeries.last_success);
 
@@ -269,7 +272,7 @@ export function installChartDataDiagnostics() {
                 const targetLabel = String(activeTimeframe || '--').toUpperCase();
                 badge.className = 'inline-flex text-[10px] px-1.5 py-0.2 rounded bg-purple-900/60 text-purple-300 font-bold border border-purple-800';
                 badge.textContent = `ROLLUP · ${sourceLabel}`;
-                badge.title = `${targetLabel} candles are aggregated from stored ${sourceLabel} candles. Exchange, timezone, and OHLC values remain bound to the selected app history.`;
+                badge.title = `${targetLabel} candles are aggregated from stored ${sourceLabel} candles. Candle source, asset category, timezone, and OHLC values follow the selected series.`;
             }
 
             function updateChartDataWarning(signal = selectedSignal) {

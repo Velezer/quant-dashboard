@@ -32,6 +32,9 @@ mod signal_score_scale_tests;
 
 #[path = "database/market_identity.rs"]
 mod market_identity;
+#[path = "database/shared_crypto.rs"]
+mod shared_crypto;
+pub(crate) use shared_crypto::share_crypto_candles;
 #[path = "database/schema.rs"]
 mod schema;
 use schema::{APP_RUNTIME_SCHEMA, MARKET_SCHEMA};

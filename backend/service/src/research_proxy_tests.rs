@@ -12,13 +12,241 @@ fn proxy_fixture() -> Connection {
                 data_provider TEXT,timezone TEXT,price_basis TEXT,instrument_kind TEXT,
                 last_success TEXT,last_attempt TEXT,last_error TEXT,
                 PRIMARY KEY(symbol,interval,source));
-             CREATE TABLE bars(symbol TEXT,interval TEXT,source TEXT,ts INTEGER);
+             CREATE TABLE bars(symbol TEXT,interval TEXT,source TEXT,ts INTEGER,close REAL DEFAULT 100);
              CREATE TABLE ingestion_runs(symbol TEXT,interval TEXT,source TEXT,exchange_id TEXT,
                 product_id TEXT,data_provider TEXT,attempted_at TEXT,status TEXT,
                 rows_received INTEGER,error TEXT);",
         )
         .unwrap();
     connection
+}
+
+fn last_completed_open(duration_seconds: i64) -> i64 {
+    (super::super::now_secs() as i64 / duration_seconds - 1) * duration_seconds
+}
+
+fn insert_completed_bars(
+    connection: &Connection,
+    symbol: &str,
+    source: &str,
+    interval: &str,
+    duration_seconds: i64,
+    rows: i64,
+) {
+    let latest = last_completed_open(duration_seconds);
+    for index in 0..rows {
+        connection
+            .execute(
+                "INSERT INTO bars(symbol,interval,source,ts) VALUES(?1,?2,?3,?4)",
+                rusqlite::params![
+                    symbol,
+                    interval,
+                    source,
+                    (latest - index * duration_seconds) * crate::NANOS_PER_SECOND
+                ],
+            )
+            .unwrap();
+    }
+}
+
+fn shared_proxy_fixture(interval: &str, latest_open: i64) -> Connection {
+    let connection = super::super::open_db_minimal(":memory:").unwrap();
+    super::persist(
+        &connection,
+        "BTC-USD",
+        "crypto_spot",
+        "pintu",
+        "binance",
+        "shared_crypto_spot_binance_spot_proxy",
+        "BTCUSDT",
+        interval,
+        "binance_usdt_reference",
+        &[super::Bar {
+            ts: latest_open,
+            open: 100.0,
+            high: 102.0,
+            low: 99.0,
+            close: 101.0,
+            volume: 10.0,
+        }],
+    )
+    .unwrap();
+    connection
+}
+
+#[test]
+fn shared_15m_history_satisfies_other_app_syncs_without_new_ingestion() {
+    let connection = shared_proxy_fixture("15m", last_completed_open(900));
+    for (app, product) in [
+        ("pintu", "pintu_retail_spot"),
+        ("pintu", "pintu_pro_spot"),
+        ("pluang", "pluang_spot"),
+        ("tokocrypto", "tokocrypto_spot"),
+    ] {
+        assert_eq!(
+            super::sync_15m_for_exchange(
+                &connection,
+                "BTC-USD",
+                "crypto_spot",
+                app,
+                product,
+                "BTC-USD"
+            ),
+            Ok(1)
+        );
+    }
+    let runs: i64 = connection
+        .query_row("SELECT COUNT(*) FROM ingestion_runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(runs,1,"app requests must reuse the persisted reference instead of requesting another provider page");
+}
+
+#[test]
+fn shared_provider_failure_cooldown_is_reused_across_app_callers() {
+    let connection = super::super::open_db_minimal(":memory:").unwrap();
+    let now = super::super::format_timestamp(super::super::now_secs());
+    super::record_proxy_failure(
+        &connection,
+        "BTC-USD",
+        "crypto_spot",
+        "pintu",
+        "binance",
+        "shared_crypto_spot_binance_spot_proxy",
+        "15m",
+        &now,
+        "reference provider throttled",
+    );
+    for (app, product) in [
+        ("pintu", "pintu_pro_spot"),
+        ("pluang", "pluang_spot"),
+        ("tokocrypto", "tokocrypto_spot"),
+    ] {
+        let result = recent_proxy_result(
+            &connection,
+            "BTC-USD",
+            app,
+            product,
+            "shared_crypto_spot_binance_spot_proxy",
+            "15m",
+            900,
+        );
+        assert!(
+            matches!(result,Some(Err(ref error)) if error.contains("reference provider throttled")),
+            "{app}: {result:?}"
+        );
+    }
+    let metadata: (String, String) = connection
+        .query_row("SELECT exchange_id,product_id FROM series", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(metadata, ("research_reference".into(), "".into()));
+}
+
+#[test]
+fn recently_saved_stale_shared_prices_are_not_success_cache_hits() {
+    let connection =
+        shared_proxy_fixture("15m", last_completed_open(900) - 3 * crate::SECONDS_PER_DAY);
+    assert_eq!(
+        recent_proxy_result(
+            &connection,
+            "BTC-USD",
+            "pluang",
+            "pluang_spot",
+            "shared_crypto_spot_binance_spot_proxy",
+            "15m",
+            900
+        ),
+        None
+    );
+}
+
+#[test]
+fn shared_failed_refresh_is_not_hidden_by_a_recent_success_timestamp() {
+    let connection = shared_proxy_fixture("15m", last_completed_open(900));
+    let now = super::super::format_timestamp(super::super::now_secs());
+    super::record_proxy_failure(
+        &connection,
+        "BTC-USD",
+        "crypto_spot",
+        "pintu",
+        "binance",
+        "shared_crypto_spot_binance_spot_proxy",
+        "15m",
+        &now,
+        "newer request failed",
+    );
+    let result = recent_proxy_result(
+        &connection,
+        "BTC-USD",
+        "pluang",
+        "pluang_spot",
+        "shared_crypto_spot_binance_spot_proxy",
+        "15m",
+        900,
+    );
+    assert!(
+        matches!(result,Some(Err(ref error)) if error.contains("newer request failed")),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn shared_success_cache_requires_a_positive_completed_candle() {
+    let connection = shared_proxy_fixture("15m", last_completed_open(900));
+    connection.execute("UPDATE bars SET close=0", []).unwrap();
+    assert_eq!(
+        recent_proxy_result(
+            &connection,
+            "BTC-USD",
+            "pluang",
+            "pluang_spot",
+            "shared_crypto_spot_binance_spot_proxy",
+            "15m",
+            900
+        ),
+        None
+    );
+    connection
+        .execute(
+            "UPDATE bars SET close=101,ts=?1",
+            [(super::super::now_secs() as i64) * crate::NANOS_PER_SECOND],
+        )
+        .unwrap();
+    assert_eq!(
+        recent_proxy_result(
+            &connection,
+            "BTC-USD",
+            "pluang",
+            "pluang_spot",
+            "shared_crypto_spot_binance_spot_proxy",
+            "15m",
+            900
+        ),
+        None
+    );
+}
+
+#[test]
+fn shared_daily_reference_is_reused_across_app_syncs() {
+    let connection = shared_proxy_fixture("1d", last_completed_open(crate::SECONDS_PER_DAY));
+    for (app, product) in [("pluang", "pluang_spot"), ("pintu", "pintu_retail_spot")] {
+        assert_eq!(
+            super::sync_daily_for_exchange(
+                &connection,
+                "BTC-USD",
+                "crypto_spot",
+                app,
+                product,
+                "BTC-USD"
+            ),
+            Ok(1)
+        );
+    }
+    let runs: i64 = connection
+        .query_row("SELECT COUNT(*) FROM ingestion_runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(runs, 1);
 }
 
 #[test]
@@ -34,15 +262,14 @@ fn fresh_15m_proxy_history_is_reused_without_another_provider_request() {
             [&now],
         )
         .unwrap();
-    for index in 0..30 {
-        connection
-            .execute(
-                "INSERT INTO bars(symbol,interval,source,ts) VALUES('BBCA.JK','15m',
-                    'stockbit_regular_yfinance_fallback',?1)",
-                [index],
-            )
-            .unwrap();
-    }
+    insert_completed_bars(
+        &connection,
+        "BBCA.JK",
+        "stockbit_regular_yfinance_fallback",
+        "15m",
+        900,
+        30,
+    );
     assert_eq!(
         recent_proxy_result(
             &connection,
@@ -100,15 +327,14 @@ fn one_hour_proxy_history_keeps_its_one_hour_refresh_interval() {
             [&fourteen_minutes_ago],
         )
         .unwrap();
-    for index in 0..30 {
-        connection
-            .execute(
-                "INSERT INTO bars(symbol,interval,source,ts) VALUES('BTC-USD','1h',
-                    'pintu_futures_bybit_linear_proxy',?1)",
-                [index],
-            )
-            .unwrap();
-    }
+    insert_completed_bars(
+        &connection,
+        "BTC-USD",
+        "pintu_futures_bybit_linear_proxy",
+        "1h",
+        3_600,
+        30,
+    );
 
     assert_eq!(
         recent_proxy_result(

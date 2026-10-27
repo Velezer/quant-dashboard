@@ -105,7 +105,7 @@ pub(super) fn is_native_candle_source_for_exchange(source: &str, exchange: Optio
 }
 
 pub(super) fn candle_source_label(source: &str) -> String {
-    match source {
+    let label = match source {
         "tokocrypto_native" => "Tokocrypto native candles".to_string(),
         "stockbit_native" => "Stockbit native candles".to_string(),
         "pluang_native" => "Pluang native candles".to_string(),
@@ -133,6 +133,11 @@ pub(super) fn candle_source_label(source: &str) -> String {
             "Yahoo Finance research proxy".to_string()
         }
         value => value.replace('_', " "),
+    };
+    if research_proxy::shared::is_shared_source(source) {
+        format!("{label} · shared reference")
+    } else {
+        label
     }
 }
 
@@ -270,6 +275,9 @@ pub(super) fn selected_candle_source(
     symbol: &str,
     exchange: Option<&str>,
 ) -> Result<Option<String>, rusqlite::Error> {
+    if let Some((app, product)) = exchange.and_then(candle_product_scope) {
+        return selected_candle_source_for_product(connection, symbol, app, product, "15m");
+    }
     let (native, proxy) = candle_source_for_exchange(exchange);
     let exchange_scope = exchange.map(normalize_exchange_id);
     connection
@@ -346,6 +354,37 @@ pub(super) fn selected_candle_source_for_timeframe(
     exchange: Option<&str>,
     timeframe: &str,
 ) -> Result<Option<String>, rusqlite::Error> {
+    if let Some((app, product)) = exchange.and_then(candle_product_scope) {
+        return selected_candle_source_for_product(connection, symbol, app, product, timeframe);
+    }
+    if let Some(app) = exchange {
+        // An app-only request may share references only when its registered
+        // ticker has one unambiguous category. Product requests never use a
+        // global fallback that could substitute Spot for a Perpetual.
+        let product: Option<String> = connection
+            .query_row(
+                "SELECT MIN(product_id) FROM app.instruments WHERE exchange_id=?1
+                AND storage_symbol=?2 AND is_active=1 HAVING COUNT(DISTINCT asset_category_id)=1",
+                params![app, symbol],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        if let Some(product) = product {
+            return selected_candle_source_for_product(
+                connection, symbol, app, &product, timeframe,
+            );
+        }
+        let app_source = selected_candle_source(connection, symbol, exchange)?;
+        return Ok(match app_source {
+            Some(source)
+                if source_has_timeframe_history(connection, symbol, timeframe, &source)? =>
+            {
+                Some(source)
+            }
+            _ => None,
+        });
+    }
     let app_source = selected_candle_source(connection, symbol, exchange)?;
     if let Some(source) = app_source.as_deref() {
         if source_has_timeframe_history(connection, symbol, timeframe, source)? {
@@ -362,10 +401,23 @@ pub(super) fn selected_candle_source_for_timeframe(
     Ok(app_source.or(shared_source))
 }
 
+pub(super) fn candle_product_scope(scope: &str) -> Option<(&'static str, &'static str)> {
+    match scope {
+        "stockbit_regular" => Some(("stockbit", "stockbit_regular")),
+        "pintu_retail_spot" => Some(("pintu", "pintu_retail_spot")),
+        "pintu_pro_spot" => Some(("pintu", "pintu_pro_spot")),
+        "pintu_futures" | "pintu_pro_futures" => Some(("pintu", "pintu_pro_futures")),
+        "pluang_spot" => Some(("pluang", "pluang_spot")),
+        "pluang_perpetual" => Some(("pluang", "pluang_perpetual")),
+        "tokocrypto_spot" => Some(("tokocrypto", "tokocrypto_spot")),
+        "tokocrypto_tokenized_stock" => Some(("tokocrypto", "tokocrypto_tokenized_stock")),
+        _ => None,
+    }
+}
+
 /// Select history for one registered product, not merely an app or ticker.
-/// A symbol may be registered in multiple products (for example Pluang Spot
-/// and Perpetual); falling through to a shared source would mix those plan
-/// identities and their provenance.
+/// Registered crypto products may reuse canonical research references in their
+/// exact category. Native series retain their app/product ownership.
 pub(super) fn selected_candle_source_for_product(
     connection: &Connection,
     symbol: &str,
@@ -387,12 +439,7 @@ pub(super) fn selected_candle_source_metadata_for_product(
     timeframe: &str,
 ) -> Result<Option<(String, String)>, rusqlite::Error> {
     selected_candle_source_metadata_for_product_with_preferred_source(
-        connection,
-        symbol,
-        exchange,
-        product_id,
-        timeframe,
-        None,
+        connection, symbol, exchange, product_id, timeframe, None,
     )
 }
 
@@ -404,6 +451,9 @@ pub(super) fn selected_candle_source_metadata_for_product_with_preferred_source(
     timeframe: &str,
     preferred_source: Option<&str>,
 ) -> Result<Option<(String, String)>, rusqlite::Error> {
+    let category = research_proxy::shared::category_for_product(exchange, product_id).unwrap_or("");
+    let shared_identities = research_proxy::shared::source_identities_json(category);
+    let shared_exchange = research_proxy::shared::SOURCE_EXCHANGE_ID;
     if let Some(preferred_source) = preferred_source {
         let lower_intervals = lower_timeframe_candidates(timeframe);
         let first_lower_interval = lower_intervals.first().copied().unwrap_or("");
@@ -412,8 +462,14 @@ pub(super) fn selected_candle_source_metadata_for_product_with_preferred_source(
             .query_row(
                 "SELECT candidate.source,candidate.data_provider
                    FROM series AS candidate
-                  WHERE candidate.symbol=?1 AND candidate.exchange_id=?2
-                    AND candidate.product_id=?3
+                  WHERE candidate.symbol=?1 AND (
+                    (candidate.exchange_id=?2 AND candidate.product_id=?3)
+                    OR (candidate.exchange_id=?8 AND candidate.product_id=''
+                        AND candidate.instrument_id IS NULL AND candidate.instrument_kind=?9
+                        AND EXISTS(SELECT 1 FROM json_each(?10) AS identity
+                            WHERE json_extract(identity.value,'$.source')=candidate.source
+                              AND json_extract(identity.value,'$.provider')=candidate.data_provider
+                              AND json_extract(identity.value,'$.price_basis')=candidate.price_basis)))
                     AND candidate.interval IN (?4,?5,?6)
                     AND candidate.source=?7
                     AND EXISTS (
@@ -432,6 +488,9 @@ pub(super) fn selected_candle_source_metadata_for_product_with_preferred_source(
                     first_lower_interval,
                     second_lower_interval,
                     preferred_source,
+                    shared_exchange,
+                    category,
+                    shared_identities,
                 ],
                 |row| {
                     Ok((
@@ -450,19 +509,56 @@ pub(super) fn selected_candle_source_metadata_for_product_with_preferred_source(
     for interval in
         std::iter::once(timeframe).chain(lower_timeframe_candidates(timeframe).iter().copied())
     {
-        let now_ns = (now_secs() as i64).saturating_mul(NANOS_PER_SECOND);
-        let oldest_fresh_ns = now_ns.saturating_sub(
-            freshness_threshold_seconds(symbol, timeframe).saturating_mul(NANOS_PER_SECOND),
-        );
-        let latest_completed_ns = now_ns.saturating_sub(
-            timeframe_duration_ns(interval).unwrap_or_default(),
-        );
-        let metadata = connection
+        let metadata = candle_source_metadata_at_interval(
+            connection, symbol, exchange, product_id, timeframe, interval,
+        )?;
+        if metadata.is_some() {
+            return Ok(metadata);
+        }
+    }
+    Ok(None)
+}
+
+/// Direct stored coverage uses the same source/ownership policy without rollups.
+pub(super) fn selected_candle_source_metadata_for_product_at_interval(
+    connection: &Connection,
+    symbol: &str,
+    exchange: &str,
+    product_id: &str,
+    interval: &str,
+) -> Result<Option<(String, String)>, rusqlite::Error> {
+    candle_source_metadata_at_interval(connection, symbol, exchange, product_id, interval, interval)
+}
+
+fn candle_source_metadata_at_interval(
+    connection: &Connection,
+    symbol: &str,
+    exchange: &str,
+    product_id: &str,
+    timeframe: &str,
+    interval: &str,
+) -> Result<Option<(String, String)>, rusqlite::Error> {
+    let category = research_proxy::shared::category_for_product(exchange, product_id).unwrap_or("");
+    let shared_identities = research_proxy::shared::source_identities_json(category);
+    let shared_exchange = research_proxy::shared::SOURCE_EXCHANGE_ID;
+    let now_ns = (now_secs() as i64).saturating_mul(NANOS_PER_SECOND);
+    let oldest_fresh_ns = now_ns.saturating_sub(
+        freshness_threshold_seconds(symbol, timeframe).saturating_mul(NANOS_PER_SECOND),
+    );
+    let latest_completed_ns =
+        now_ns.saturating_sub(timeframe_duration_ns(interval).unwrap_or_default());
+    connection
             .query_row(
                 "SELECT candidate.source,candidate.data_provider
                    FROM series AS candidate
-                  WHERE candidate.symbol=?1 AND candidate.exchange_id=?2
-                    AND candidate.product_id=?3 AND candidate.interval=?4
+                  WHERE candidate.symbol=?1 AND (
+                    (candidate.exchange_id=?2 AND candidate.product_id=?3)
+                    OR (candidate.exchange_id=?7 AND candidate.product_id=''
+                        AND candidate.instrument_id IS NULL AND candidate.instrument_kind=?8
+                        AND EXISTS(SELECT 1 FROM json_each(?9) AS identity
+                            WHERE json_extract(identity.value,'$.source')=candidate.source
+                              AND json_extract(identity.value,'$.provider')=candidate.data_provider
+                              AND json_extract(identity.value,'$.price_basis')=candidate.price_basis))) AND candidate.interval=?4
                     AND EXISTS (
                         SELECT 1 FROM bars
                          WHERE symbol=candidate.symbol AND interval=candidate.interval
@@ -485,7 +581,8 @@ pub(super) fn selected_candle_source_metadata_for_product_with_preferred_source(
                            COALESCE(candidate.last_success,'') DESC,
                            candidate.source ASC
                   LIMIT 1",
-                params![symbol, exchange, product_id, interval, oldest_fresh_ns, latest_completed_ns],
+                params![symbol, exchange, product_id, interval, oldest_fresh_ns, latest_completed_ns,
+                    shared_exchange, category, shared_identities],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -494,12 +591,7 @@ pub(super) fn selected_candle_source_metadata_for_product_with_preferred_source(
                     ))
                 },
             )
-            .optional()?;
-        if metadata.is_some() {
-            return Ok(metadata);
-        }
-    }
-    Ok(None)
+            .optional()
 }
 
 pub(super) fn load_candles(
