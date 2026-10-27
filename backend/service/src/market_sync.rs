@@ -161,43 +161,55 @@ fn sync_hourly_chart_targets(
         );
         let targets = target_rows
             .into_iter()
-            .map(
-                |(exchange_id, storage_symbol, product_id, underlying_symbol, asset_category_id)| {
-                    let tokocrypto_market = if exchange_id == "tokocrypto" {
-                        match instrument_registry::lookup_tokocrypto_market(
-                            connection,
-                            &product_id,
-                            &storage_symbol,
-                        ) {
-                            Ok(Some((venue_symbol, quote_currency, contract_metadata_json))) => {
-                                Some(PreparedTokocryptoMarket {
-                                    venue_symbol,
-                                    quote_currency,
-                                    contract_metadata_json,
-                                })
-                            }
-                            Ok(None) => None,
-                            Err(error) => {
-                                eprintln!(
-                                    "[Daemon] Tokocrypto registration unavailable for {storage_symbol}: {error}"
-                                );
-                                None
-                            }
+            .map(|(
+                exchange_id,
+                storage_symbol,
+                product_id,
+                underlying_symbol,
+                asset_category_id,
+            )| -> Result<PreparedCandleSyncTarget, rusqlite::Error> {
+                let shared_reference_symbols = targets::shared_reference_storage_symbols(
+                    connection,
+                    &exchange_id,
+                    &storage_symbol,
+                    &underlying_symbol,
+                    &asset_category_id,
+                )?;
+                let tokocrypto_market = if exchange_id == "tokocrypto" {
+                    match instrument_registry::lookup_tokocrypto_market(
+                        connection,
+                        &product_id,
+                        &storage_symbol,
+                    ) {
+                        Ok(Some((venue_symbol, quote_currency, contract_metadata_json))) => {
+                            Some(PreparedTokocryptoMarket {
+                                venue_symbol,
+                                quote_currency,
+                                contract_metadata_json,
+                            })
                         }
-                    } else {
-                        None
-                    };
-                    PreparedCandleSyncTarget {
-                        exchange_id,
-                        storage_symbol,
-                        product_id,
-                        underlying_symbol,
-                        asset_category_id,
-                        tokocrypto_market,
+                        Ok(None) => None,
+                        Err(error) => {
+                            eprintln!(
+                                "[Daemon] Tokocrypto registration unavailable for {storage_symbol}: {error}"
+                            );
+                            None
+                        }
                     }
-                },
-            )
-            .collect::<Vec<_>>();
+                } else {
+                    None
+                };
+                Ok(PreparedCandleSyncTarget {
+                    exchange_id,
+                    storage_symbol,
+                    product_id,
+                    underlying_symbol,
+                    asset_category_id,
+                    shared_reference_symbols,
+                    tokocrypto_market,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let wave_size = targets.len();
         let (wave_refreshed, wave_workers) = targets::sync_prepared_candle_targets(
             connection,
@@ -258,6 +270,31 @@ fn sync_daily_chart_targets(
             "attempted",
             "",
         );
+        let instrument = candle_instrument(
+            &exchange_id,
+            &storage_symbol,
+            &product_id,
+            &underlying_symbol,
+            &asset_category_id,
+            tokocrypto_market,
+        );
+        let request = CandleSyncRequest {
+            instrument,
+            window: CandleSyncWindow::Daily,
+        };
+        let shared_reference_symbols = targets::shared_reference_storage_symbols(
+            connection,
+            &exchange_id,
+            &storage_symbol,
+            &underlying_symbol,
+            &asset_category_id,
+        )?;
+        let reusable_shared_intervals = targets::fresh_shared_reference_intervals(
+            market_database,
+            instrument,
+            &shared_reference_symbols,
+            request.window.intervals(),
+        );
         let market_connection =
             match open_market_history_for_symbol(market_database, &storage_symbol, true) {
                 Ok(Some(connection)) => connection,
@@ -280,18 +317,6 @@ fn sync_daily_chart_targets(
                 }
             };
         let market_connection = &market_connection;
-        let instrument = candle_instrument(
-            &exchange_id,
-            &storage_symbol,
-            &product_id,
-            &underlying_symbol,
-            &asset_category_id,
-            tokocrypto_market,
-        );
-        let request = CandleSyncRequest {
-            instrument,
-            window: CandleSyncWindow::Daily,
-        };
         record_daily_instrument_attempt(
             market_connection,
             &storage_symbol,
@@ -310,6 +335,15 @@ fn sync_daily_chart_targets(
         for adapter in &CANDLE_SYNC_ADAPTERS {
             if !adapter.supports(&request) {
                 continue;
+            }
+            if adapter.source_class() == CandleSourceClass::ResearchProxy
+                && reusable_shared_intervals.contains("1d")
+            {
+                any_provider_succeeded = true;
+                eprintln!(
+                    "[Daemon] Daily research sync reused a fresh shared reference for {storage_symbol}"
+                );
+                break;
             }
             let report = adapter.sync(market_connection, &request);
             let (interval, result) = report

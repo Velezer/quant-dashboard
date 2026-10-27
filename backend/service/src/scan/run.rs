@@ -1,6 +1,10 @@
 use super::*;
 
-type RegisteredInstrument = (String, String, String, String, String);
+#[cfg(test)]
+#[path = "run/shared_market_history_tests.rs"]
+mod shared_market_history_tests;
+
+type RegisteredInstrument = (String, String, String, String, String, String);
 
 struct ScanCycleOutput {
     user_indicator_alerts: Vec<Value>,
@@ -40,7 +44,8 @@ pub(super) fn run_rust_scan_inner(
     // prices; they cannot create a ticker or choose an app.
     let registered = {
         let mut statement = app_connection.prepare(
-            "SELECT exchange_id, product_id, asset_category_id, storage_symbol, symbol
+            "SELECT exchange_id, product_id, asset_category_id, storage_symbol, symbol,
+                    underlying_symbol
                FROM instruments
               WHERE is_active=1 AND venue_verified=1
                 AND listing_status IN ('venue_active','public_listed_snapshot')
@@ -53,6 +58,7 @@ pub(super) fn run_rust_scan_inner(
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
             ))
         })?;
         rows.collect::<Result<Vec<_>, _>>()?
@@ -254,6 +260,138 @@ pub(super) fn next_scan_worker(remaining: &[usize], cursor: &mut usize) -> Optio
     None
 }
 
+/// Resolve an app ticker to its own fresh series first. If that history is
+/// stale, a verified peer in the same crypto asset category may supply a
+/// canonical shared research reference without copying candle rows.
+fn open_scan_market_history(
+    app_connection: &Connection,
+    market_database: &str,
+    exchange: &str,
+    product: &str,
+    category: &str,
+    storage_symbol: &str,
+    underlying_symbol: &str,
+) -> Result<Option<(SignalScanConnection, String)>, rusqlite::Error> {
+    let now_seconds = now_secs().min(i64::MAX as u64) as i64;
+    let now_ns = now_seconds.saturating_mul(NANOS_PER_SECOND);
+    let mut own_database_exists = false;
+    let mut own_open_error = None;
+    match open_market_history_for_signal_scan(market_database, storage_symbol, false) {
+        Ok(Some(connection)) => {
+            own_database_exists = true;
+            let state = product_candle_scan_state_at(
+                &connection,
+                storage_symbol,
+                exchange,
+                product,
+                "15m",
+                now_seconds,
+            );
+            match state {
+                Ok(state)
+                    if scan_state_has_fresh_price(
+                        &state,
+                        storage_symbol,
+                        category,
+                        now_ns,
+                        false,
+                    ) =>
+                {
+                    return Ok(Some((connection, storage_symbol.to_string())));
+                }
+                Ok(_) => {}
+                Err(error) => own_open_error = Some(error),
+            }
+        }
+        Ok(None) => {}
+        Err(error) => own_open_error = Some(error),
+    }
+
+    if matches!(category, "crypto_spot" | "crypto_perpetual" | "crypto_futures")
+        && !underlying_symbol.trim().is_empty()
+    {
+        let candidates = {
+            let mut statement = app_connection.prepare(
+                "SELECT DISTINCT candidate.storage_symbol
+                   FROM instruments AS candidate
+                   JOIN market_store_inventory AS inventory
+                     ON inventory.storage_symbol=candidate.storage_symbol
+                  WHERE candidate.is_active=1 AND candidate.venue_verified=1
+                    AND candidate.listing_status IN ('venue_active','public_listed_snapshot')
+                    AND candidate.asset_category_id=?1
+                    AND upper(trim(candidate.underlying_symbol))=upper(trim(?2))
+                    AND candidate.exchange_id<>?3
+                    AND candidate.storage_symbol<>?4
+                  ORDER BY candidate.storage_symbol",
+            )?;
+            let rows = statement
+                .query_map(
+                    params![category, underlying_symbol, exchange, storage_symbol],
+                    |row| row.get::<_, String>(0),
+                )?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+        for candidate_symbol in candidates {
+            let Ok(Some(connection)) = open_market_history_for_signal_scan(
+                market_database,
+                &candidate_symbol,
+                false,
+            ) else {
+                continue;
+            };
+            if let Ok(state) = product_candle_scan_state_at(
+                &connection,
+                &candidate_symbol,
+                exchange,
+                product,
+                "15m",
+                now_seconds,
+            ) {
+                if scan_state_has_fresh_price(
+                    &state,
+                    &candidate_symbol,
+                    category,
+                    now_ns,
+                    true,
+                ) {
+                    return Ok(Some((connection, candidate_symbol)));
+                }
+            }
+        }
+    }
+
+    if own_database_exists {
+        if let Some(error) = own_open_error {
+            return Err(error);
+        }
+        return open_market_history_for_signal_scan(market_database, storage_symbol, false)
+            .map(|connection| connection.map(|connection| (connection, storage_symbol.to_string())));
+    }
+    if let Some(error) = own_open_error {
+        return Err(error);
+    }
+    Ok(None)
+}
+
+fn scan_state_has_fresh_price(
+    state: &Option<ProductCandleScanState>,
+    symbol: &str,
+    category: &str,
+    now_ns: i64,
+    require_shared_reference: bool,
+) -> bool {
+    let Some(state) = state.as_ref() else {
+        return false;
+    };
+    !state.is_stale
+        && (!require_shared_reference
+            || research_proxy::shared::is_shared_source_for_category(&state.source, category))
+        && state.latest_bar_time.is_some_and(|bar_time| {
+            completed_bar_is_fresh_at(symbol, "15m", bar_time, now_ns)
+        })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn scan_registered_app(
     app_connection: &Connection,
@@ -271,7 +409,7 @@ fn scan_registered_app(
         generated_plan_count: 0,
         signal_row_count: 0,
     };
-    for (index, (instrument_exchange, product_id, category_id, sym, asset)) in
+    for (index, (instrument_exchange, product_id, category_id, sym, asset, underlying)) in
         instruments.into_iter().enumerate()
     {
         if instrument_exchange != exchange_id {
@@ -286,55 +424,63 @@ fn scan_registered_app(
             );
         }
         let mut cagr_stats = HashMap::new();
-        let market_connection =
-            match open_market_history_for_signal_scan(market_database, &sym, false) {
-                Ok(Some(connection)) => connection,
-                Ok(None) => {
-                    app_result.unavailable_price_count += 1;
-                    output.price_data_unavailable_count += 1;
-                    let mut diagnosis = signal_alerts::InstrumentReadiness::default();
-                    diagnosis.issue(signal_alerts::ReadinessIssue {
-                        symbol: asset.clone(),
-                        reason: "missing_history".into(),
-                        timeframe: "15m".into(),
-                        ..signal_alerts::ReadinessIssue::default()
-                    });
-                    output.readiness.record(
-                        &instrument_exchange,
-                        &product_id,
-                        &sym,
-                        diagnosis,
-                        &Default::default(),
-                        None,
-                    );
-                    continue;
-                }
-                Err(error) => {
-                    eprintln!("scan skipped unavailable market history for {sym}: {error}");
-                    app_result.unavailable_price_count += 1;
-                    output.price_data_unavailable_count += 1;
-                    let mut diagnosis = signal_alerts::InstrumentReadiness {
-                        price_status: "error",
-                        ..signal_alerts::InstrumentReadiness::default()
-                    };
-                    diagnosis.issue(signal_alerts::ReadinessIssue {
-                        symbol: asset.clone(),
-                        reason: "data_error".into(),
-                        timeframe: "15m".into(),
-                        error: Some(error.to_string()),
-                        ..signal_alerts::ReadinessIssue::default()
-                    });
-                    output.readiness.record(
-                        &instrument_exchange,
-                        &product_id,
-                        &sym,
-                        diagnosis,
-                        &Default::default(),
-                        None,
-                    );
-                    continue;
-                }
-            };
+        let market_selection = match open_scan_market_history(
+            app_connection,
+            market_database,
+            &instrument_exchange,
+            &product_id,
+            &category_id,
+            &sym,
+            &underlying,
+        ) {
+            Ok(Some(selection)) => selection,
+            Ok(None) => {
+                app_result.unavailable_price_count += 1;
+                output.price_data_unavailable_count += 1;
+                let mut diagnosis = signal_alerts::InstrumentReadiness::default();
+                diagnosis.issue(signal_alerts::ReadinessIssue {
+                    symbol: asset.clone(),
+                    reason: "missing_history".into(),
+                    timeframe: "15m".into(),
+                    ..signal_alerts::ReadinessIssue::default()
+                });
+                output.readiness.record(
+                    &instrument_exchange,
+                    &product_id,
+                    &sym,
+                    diagnosis,
+                    &Default::default(),
+                    None,
+                );
+                continue;
+            }
+            Err(error) => {
+                eprintln!("scan skipped unavailable market history for {sym}: {error}");
+                app_result.unavailable_price_count += 1;
+                output.price_data_unavailable_count += 1;
+                let mut diagnosis = signal_alerts::InstrumentReadiness {
+                    price_status: "error",
+                    ..signal_alerts::InstrumentReadiness::default()
+                };
+                diagnosis.issue(signal_alerts::ReadinessIssue {
+                    symbol: asset.clone(),
+                    reason: "data_error".into(),
+                    timeframe: "15m".into(),
+                    error: Some(error.to_string()),
+                    ..signal_alerts::ReadinessIssue::default()
+                });
+                output.readiness.record(
+                    &instrument_exchange,
+                    &product_id,
+                    &sym,
+                    diagnosis,
+                    &Default::default(),
+                    None,
+                );
+                continue;
+            }
+        };
+        let (market_connection, market_symbol) = market_selection;
         let connection = &market_connection;
         let is_idx = instrument_exchange == "stockbit" && category_id == "idx_stock";
         let is_tokenized = instrument_exchange == "tokocrypto" && category_id == "tokenized_stock";
@@ -384,7 +530,7 @@ fn scan_registered_app(
                 exchange_id: &instrument_exchange,
                 product_id: &product_id,
                 category_id: &category_id,
-                symbol: &sym,
+                symbol: &market_symbol,
                 asset: &asset,
                 strategy,
                 evidence_class,
@@ -417,7 +563,7 @@ fn scan_registered_app(
         if new_directional_signal {
             let diagnostic = build_dss_bressert_mtf_annotation(
                 connection,
-                &sym,
+                &market_symbol,
                 &instrument_exchange,
                 &product_id,
             );
@@ -460,7 +606,7 @@ fn scan_registered_app(
         output.readiness.record(
             &instrument_exchange,
             &product_id,
-            &sym,
+            &market_symbol,
             instrument_readiness,
             &accepted_by_timeframe,
             Some(connection),

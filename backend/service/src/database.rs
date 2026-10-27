@@ -15,6 +15,26 @@ pub(super) use connections::TickerConnection;
 #[cfg(test)]
 use connections::{MarketConnectionGate, MarketConnectionKind, MAX_OPEN_REGULAR_MARKET_DATABASES};
 pub(super) const LAYOUT_VERSION: &str = "3";
+
+#[cfg(not(test))]
+pub(super) struct SignalScanConnection(TickerConnection);
+#[cfg(test)]
+pub(super) struct SignalScanConnection(Connection);
+
+impl std::ops::Deref for SignalScanConnection {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        #[cfg(not(test))]
+        {
+            &self.0
+        }
+        #[cfg(test)]
+        {
+            &self.0
+        }
+    }
+}
 #[path = "database_sharding.rs"]
 mod sharding;
 pub(super) use sharding::shard_market_database;
@@ -176,12 +196,13 @@ pub(super) fn open_market_history_for_signal_scan(
     market_directory: &str,
     storage_symbol: &str,
     create: bool,
-) -> Result<Option<TickerConnection>, rusqlite::Error> {
+) -> Result<Option<SignalScanConnection>, rusqlite::Error> {
     connections::open_market_history_for_signal_scan(
         &paths_for_market_directory(market_directory),
         storage_symbol,
         create,
     )
+    .map(|connection| connection.map(SignalScanConnection))
 }
 
 #[cfg(test)]
@@ -206,7 +227,7 @@ pub(super) fn open_market_history_for_signal_scan(
     market_database: &str,
     storage_symbol: &str,
     create: bool,
-) -> Result<Option<Connection>, rusqlite::Error> {
+) -> Result<Option<SignalScanConnection>, rusqlite::Error> {
     split::open_market_history_for_symbol(
         &split::shared_storage_paths(
             market_database,
@@ -216,6 +237,7 @@ pub(super) fn open_market_history_for_signal_scan(
         storage_symbol,
         create,
     )
+    .map(|connection| connection.map(SignalScanConnection))
 }
 
 #[cfg(test)]
