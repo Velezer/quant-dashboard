@@ -12,6 +12,9 @@ export async function readApiResponse(response) {
     try {
         return JSON.parse(body);
     } catch (error) {
+        if (!response.ok && /text\/html/i.test(response.headers?.get('content-type') || '')) {
+            throw new Error(`The service is temporarily unavailable (HTTP ${response.status}). Wait a moment and retry.`);
+        }
         throw new Error(`The server returned invalid JSON: ${error.message}`);
     }
 }
