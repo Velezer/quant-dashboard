@@ -179,7 +179,8 @@ export function installChartDataDiagnostics() {
                 const sharingText = (meta.shared_reference ?? storedSeries.shared_reference) === true
                     ? ' Apps with the same asset and category share these provider candles. Spot and perpetual candles stay separate. Research candles do not validate app execution.'
                     : '';
-                const sourceText = `App exchange: ${exchange}${providerText} · ${sourceName}${instrumentKind ? ` · ${instrumentKind}` : ''}.${sharingText}`;
+                const referenceNotice = String(meta.chart_reference_notice || '').trim();
+                const sourceText = `App exchange: ${exchange}${providerText} · ${sourceName}${instrumentKind ? ` · ${instrumentKind}` : ''}.${sharingText}${referenceNotice ? ` ${referenceNotice}` : ''}`;
                 const attemptText = formatDiagnosticTimestamp(meta.last_attempt || meta.sync_attempt_at || storedSeries.last_attempt);
                 const successText = formatDiagnosticTimestamp(meta.last_success || meta.sync_success_at || storedSeries.last_success);
 

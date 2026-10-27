@@ -75,6 +75,7 @@ pub(super) fn run_rust_scan_inner(
     let mut completed_count = 0usize;
     for (exchange_id, instruments) in app_registrations {
         let app_instrument_count = instruments.len();
+        let app_started = std::time::Instant::now();
         eprintln!("[ScanWorker] Starting {exchange_id} scan worker for {app_instrument_count} registered instruments.");
         let app_result = scan_registered_app(
             app_connection,
@@ -104,9 +105,10 @@ pub(super) fn run_rust_scan_inner(
             "signal_rows": app_result.signal_row_count,
         }));
         eprintln!(
-            "[ScanWorker] Finished {exchange_id}: {} fresh prices, {} signal rows.",
+            "[ScanWorker] Finished {exchange_id}: {} fresh prices, {} signal rows, elapsed {}ms.",
             app_result.fresh_price_count,
-            app_result.signal_row_count
+            app_result.signal_row_count,
+            app_started.elapsed().as_millis()
         );
     }
 
@@ -214,6 +216,7 @@ fn scan_registered_app(
         if instrument_exchange != exchange_id {
             continue;
         }
+        let instrument_started = std::time::Instant::now();
         if let Some(state) = sync_state {
             state.update_scan_progress(
                 &format!("{exchange_id} · {sym}"),
@@ -410,6 +413,10 @@ fn scan_registered_app(
                 .filter_map(signal_alerts::compact_stockbit_signal_score_update),
         );
         output.user_indicator_alerts.append(&mut symbol_indicator_alerts);
+        let elapsed = instrument_started.elapsed();
+        if elapsed >= std::time::Duration::from_secs(2) {
+            eprintln!("[ScanWorker] Slow instrument {exchange_id}/{product_id}/{sym}: {}ms", elapsed.as_millis());
+        }
     }
     Ok(app_result)
 }

@@ -145,7 +145,18 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         let calculation_limit = requested
             .saturating_add(regime_config.chart_context_warmup_bars() as i64)
             .min(MAX_CANDLES);
-        let mut metadata = if exchange.is_empty() {
+        // The chart uses the common Spot reference when available. Signal
+        // scoring retains its own source and freshness checks.
+        let crypto_product = matches!(product_id, "pintu_retail_spot" | "pintu_pro_spot"
+            | "pintu_pro_futures" | "pluang_spot" | "pluang_perpetual" | "tokocrypto_spot");
+        let shared_chart_source = if crypto_product {
+            selected_candle_source_for_product(market_connection, &storage_symbol,
+                "pintu", "pintu_retail_spot", timeframe).ok().flatten()
+                .filter(|source| research_proxy::shared::is_shared_source_for_category(source, "crypto_spot"))
+        } else { None };
+        let mut metadata = if let Some(source) = shared_chart_source.as_deref() {
+            load_series_metadata_from_source(market_connection, &storage_symbol, timeframe, false, source)
+        } else if exchange.is_empty() {
             load_series_metadata(market_connection, &storage_symbol, timeframe, false)
         } else {
             load_series_metadata_for_exchange(
@@ -165,7 +176,14 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                 "warning": format!("Unable to read local history metadata: {error}"),
             })
         });
-        let candle_result = if exchange.is_empty() {
+        if shared_chart_source.is_some() {
+            metadata["chart_reference_notice"] = serde_json::json!(
+                "Chart uses shared Spot reference candles for Spot and Futures; signal scores may use a different source."
+            );
+        }
+        let candle_result = if let Some(source) = shared_chart_source.as_deref() {
+            load_series_candles_from_source(market_connection, &storage_symbol, timeframe, calculation_limit, source)
+        } else if exchange.is_empty() {
             load_series_candles(
                 market_connection,
                 &storage_symbol,
