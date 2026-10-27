@@ -66,6 +66,11 @@ candle ingestion continues in the background. Listing recovery remains separate.
 10. Decision: capture facts during scans, avoid new ticker sweeps on each UI refresh,
     and check fresh-browser app switching, filtering, errors, and keyboard access.
 
+Stale 15m signal prices enter a bounded, deduplicated queue of exact
+app/product/ticker identities. The next market batch services queued stale
+signals before the normal rotating targets, so one stale ticker cannot block
+the others from recovery.
+
 ## Per-ticker entry-model validation
 
 The primary task is to backtest the actual current entry scoring models for

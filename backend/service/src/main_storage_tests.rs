@@ -277,7 +277,7 @@ fn scan_does_not_fetch_providers_and_registered_selection_is_exchange_agnostic()
 
     run_rust_scan(&connection, &path, DEFAULT_SCAN_INTERVAL_MINUTES)
         .expect("scan should use stored history");
-    let targets = registered_hourly_targets(&connection, Some("BTC-USD"), None, 512)
+    let targets = registered_hourly_targets(&connection, Some("BTC-USD"), &[], 512)
         .expect("registered hourly targets should be selectable without provider calls");
     assert_eq!(
         targets.first().map(|target| target.1.as_str()),

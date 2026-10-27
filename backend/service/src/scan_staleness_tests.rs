@@ -189,8 +189,18 @@ fn sync_priority_selects_the_exact_product_when_storage_symbol_is_shared() {
         exchange_id: "pluang".to_string(),
         product_id: "pluang_perpetual".to_string(),
     };
-    let hourly = registered_hourly_targets(&connection, None, Some(&priority), 512)
-        .expect("hourly targets should honor exact product priority");
+    let spot_priority = StaleSignalSyncPriority {
+        symbol: "SAME-USD".to_string(),
+        exchange_id: "pluang".to_string(),
+        product_id: "pluang_spot".to_string(),
+    };
+    let hourly = registered_hourly_targets(
+        &connection,
+        None,
+        &[priority.clone(), spot_priority],
+        2,
+    )
+    .expect("hourly targets should honor multiple exact product priorities");
     let daily = registered_daily_targets(&connection, &path, Some(&priority))
         .expect("daily targets should honor exact product priority");
 
@@ -198,6 +208,7 @@ fn sync_priority_selects_the_exact_product_when_storage_symbol_is_shared() {
         hourly.first().map(|target| target.2.as_str()),
         Some("pluang_perpetual")
     );
+    assert_eq!(hourly.get(1).map(|target| target.2.as_str()), Some("pluang_spot"));
     assert_eq!(
         daily.first().map(|target| target.1.as_str()),
         Some("pluang_perpetual")
@@ -208,17 +219,21 @@ fn sync_priority_selects_the_exact_product_when_storage_symbol_is_shared() {
 }
 
 #[test]
-fn stale_refresh_status_stays_queued_for_an_already_pending_product() {
+fn stale_refresh_status_deduplicates_products_and_drains_in_bounded_batches() {
     let state = AppState::new(":memory:".to_string(), 3_600);
 
     assert!(state.prioritize_stale_signal_sync("same-usd", "pluang", "pluang_spot", "15m"));
     assert!(state.prioritize_stale_signal_sync("SAME-USD", "pluang", "pluang_spot", "15m"));
-    assert!(!state.prioritize_stale_signal_sync("SAME-USD", "pluang", "pluang_perpetual", "15m"));
+    assert!(state.prioritize_stale_signal_sync("SAME-USD", "pluang", "pluang_perpetual", "15m"));
 
-    let queued = state
-        .take_stale_signal_sync_priority("15m")
-        .expect("pending refresh should remain available to the worker");
-    assert_eq!(queued.product_id, "pluang_spot");
+    let first_batch = state.take_stale_signal_sync_priorities("15m", 1);
+    assert_eq!(first_batch.len(), 1);
+    assert_eq!(first_batch[0].product_id, "pluang_spot");
+
+    let next_batch = state.take_stale_signal_sync_priorities("15m", 1);
+    assert_eq!(next_batch.len(), 1);
+    assert_eq!(next_batch[0].product_id, "pluang_perpetual");
+    assert!(state.take_stale_signal_sync_priority("15m").is_none());
 }
 
 #[test]
