@@ -3,6 +3,9 @@ use super::*;
 mod dss_bressert_mtf;
 mod run;
 use run::run_rust_scan_inner;
+#[cfg(test)]
+#[path = "scan_rotation_tests.rs"]
+mod scan_rotation_tests;
 #[path = "scan_timeframes.rs"]
 mod scan_timeframes;
 

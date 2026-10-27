@@ -71,45 +71,65 @@ pub(super) fn run_rust_scan_inner(
             .push(instrument);
     }
 
+    let mut workers = Vec::new();
+    for exchange_id in ["stockbit", "pintu", "pluang", "tokocrypto"] {
+        if let Some(instruments) = app_registrations.remove(exchange_id) {
+            workers.push(ScanWorker::new(exchange_id.to_string(), instruments));
+        }
+    }
+    // Preserve any additional registered apps without displacing the four
+    // app rotation. Unsupported products still follow the existing scan rules.
+    for (exchange_id, instruments) in app_registrations {
+        workers.push(ScanWorker::new(exchange_id, instruments));
+    }
+    let mut remaining: Vec<usize> = workers.iter().map(|worker| worker.total).collect();
+    let mut cursor = 0usize;
     let mut output = ScanCycleOutput::new();
     let mut completed_count = 0usize;
-    for (exchange_id, instruments) in app_registrations {
-        let app_instrument_count = instruments.len();
-        let app_started = std::time::Instant::now();
-        eprintln!("[ScanWorker] Starting {exchange_id} scan worker for {app_instrument_count} registered instruments.");
-        let app_result = scan_registered_app(
+    while let Some(index) = next_scan_worker(&remaining, &mut cursor) {
+        let worker = &mut workers[index];
+        let instrument = worker
+            .instruments
+            .next()
+            .expect("remaining count matches scan queue");
+        let started = std::time::Instant::now();
+        let result = scan_registered_app(
             app_connection,
             market_database,
             sync_state,
-            &exchange_id,
-            instruments,
+            &worker.exchange_id,
+            std::iter::once(instrument),
             completed_count,
             registered_count,
             &mut output,
         )?;
-        completed_count = completed_count.saturating_add(app_instrument_count);
-        if let Some(state) = sync_state {
-            state.update_scan_progress(
-                &format!("{exchange_id} complete"),
-                completed_count,
-                registered_count,
+        worker.elapsed += started.elapsed();
+        worker.result.fresh_price_count += result.fresh_price_count;
+        worker.result.unavailable_price_count += result.unavailable_price_count;
+        worker.result.generated_plan_count += result.generated_plan_count;
+        worker.result.signal_row_count += result.signal_row_count;
+        remaining[index] -= 1;
+        completed_count += 1;
+        if remaining[index] == 0 {
+            eprintln!(
+                "[ScanWorker] Finished {}: {} fresh prices, {} signal rows, elapsed {}ms.",
+                worker.exchange_id,
+                worker.result.fresh_price_count,
+                worker.result.signal_row_count,
+                worker.elapsed.as_millis()
             );
         }
+    }
+    for worker in workers {
         output.app_workers.push(serde_json::json!({
-            "exchange_id": exchange_id.clone(),
+            "exchange_id": worker.exchange_id,
             "status": "complete",
-            "registered_instruments": app_instrument_count,
-            "fresh_price_instruments": app_result.fresh_price_count,
-            "unavailable_price_instruments": app_result.unavailable_price_count,
-            "generated_plans": app_result.generated_plan_count,
-            "signal_rows": app_result.signal_row_count,
+            "registered_instruments": worker.total,
+            "fresh_price_instruments": worker.result.fresh_price_count,
+            "unavailable_price_instruments": worker.result.unavailable_price_count,
+            "generated_plans": worker.result.generated_plan_count,
+            "signal_rows": worker.result.signal_row_count,
         }));
-        eprintln!(
-            "[ScanWorker] Finished {exchange_id}: {} fresh prices, {} signal rows, elapsed {}ms.",
-            app_result.fresh_price_count,
-            app_result.signal_row_count,
-            app_started.elapsed().as_millis()
-        );
     }
 
     if let Some(state) = sync_state {
@@ -167,7 +187,8 @@ pub(super) fn run_rust_scan_inner(
             alert_storage_available = false;
         }
     }
-    match signal_alerts::record_indicator_combo_alerts(app_connection, output.user_indicator_alerts) {
+    match signal_alerts::record_indicator_combo_alerts(app_connection, output.user_indicator_alerts)
+    {
         Ok(alerts) => newly_detected_alerts.extend(alerts),
         Err(error) => {
             eprintln!("[Alerts] Could not persist user indicator signals: {error}");
@@ -186,11 +207,51 @@ pub(super) fn run_rust_scan_inner(
     Ok(payload)
 }
 
+#[derive(Default)]
 struct AppScanResult {
     fresh_price_count: usize,
     unavailable_price_count: usize,
     generated_plan_count: usize,
     signal_row_count: usize,
+}
+
+struct ScanWorker {
+    exchange_id: String,
+    total: usize,
+    instruments: std::vec::IntoIter<RegisteredInstrument>,
+    result: AppScanResult,
+    elapsed: std::time::Duration,
+}
+
+impl ScanWorker {
+    fn new(exchange_id: String, instruments: Vec<RegisteredInstrument>) -> Self {
+        let total = instruments.len();
+        eprintln!(
+            "[ScanWorker] Starting {exchange_id} scan worker for {total} registered instruments."
+        );
+        Self {
+            exchange_id,
+            total,
+            instruments: instruments.into_iter(),
+            result: AppScanResult::default(),
+            elapsed: std::time::Duration::ZERO,
+        }
+    }
+}
+
+/// Cycle across nonempty app queues; exhausted apps do not block other apps.
+pub(super) fn next_scan_worker(remaining: &[usize], cursor: &mut usize) -> Option<usize> {
+    if remaining.is_empty() {
+        return None;
+    }
+    for offset in 0..remaining.len() {
+        let index = (*cursor + offset) % remaining.len();
+        if remaining[index] > 0 {
+            *cursor = (index + 1) % remaining.len();
+            return Some(index);
+        }
+    }
+    None
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -199,7 +260,7 @@ fn scan_registered_app(
     market_database: &str,
     sync_state: Option<&AppState>,
     exchange_id: &str,
-    instruments: Vec<RegisteredInstrument>,
+    instruments: impl IntoIterator<Item = RegisteredInstrument>,
     progress_offset: usize,
     total_instruments: usize,
     output: &mut ScanCycleOutput,
@@ -412,10 +473,15 @@ fn scan_registered_app(
                 .iter()
                 .filter_map(signal_alerts::compact_stockbit_signal_score_update),
         );
-        output.user_indicator_alerts.append(&mut symbol_indicator_alerts);
+        output
+            .user_indicator_alerts
+            .append(&mut symbol_indicator_alerts);
         let elapsed = instrument_started.elapsed();
         if elapsed >= std::time::Duration::from_secs(2) {
-            eprintln!("[ScanWorker] Slow instrument {exchange_id}/{product_id}/{sym}: {}ms", elapsed.as_millis());
+            eprintln!(
+                "[ScanWorker] Slow instrument {exchange_id}/{product_id}/{sym}: {}ms",
+                elapsed.as_millis()
+            );
         }
     }
     Ok(app_result)
