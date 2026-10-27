@@ -1,13 +1,45 @@
 use super::*;
+use std::collections::{HashSet, VecDeque};
 
 const PINE_BACKTEST_RESULT_TTL_SECONDS: u64 = 30 * 60;
 const MAX_PINE_BACKTEST_RESULT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_STALE_INTRADAY_SYNC_PRIORITIES: usize = 4_096;
 
-#[derive(Clone)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub(super) struct StaleSignalSyncPriority {
     pub(super) symbol: String,
     pub(super) exchange_id: String,
     pub(super) product_id: String,
+}
+
+#[derive(Default)]
+pub(super) struct StaleSignalSyncPriorityQueue {
+    pending: VecDeque<StaleSignalSyncPriority>,
+    queued: HashSet<StaleSignalSyncPriority>,
+}
+
+impl StaleSignalSyncPriorityQueue {
+    fn push(&mut self, priority: StaleSignalSyncPriority) -> bool {
+        if self.queued.contains(&priority) {
+            return true;
+        }
+        if self.pending.len() >= MAX_STALE_INTRADAY_SYNC_PRIORITIES {
+            return false;
+        }
+        self.queued.insert(priority.clone());
+        self.pending.push_back(priority);
+        true
+    }
+
+    fn pop(&mut self) -> Option<StaleSignalSyncPriority> {
+        let priority = self.pending.pop_front()?;
+        self.queued.remove(&priority);
+        Some(priority)
+    }
+
+    fn take(&mut self, limit: usize) -> Vec<StaleSignalSyncPriority> {
+        (0..limit).filter_map(|_| self.pop()).collect()
+    }
 }
 
 pub(super) struct PineBacktestJobs {
@@ -249,9 +281,9 @@ pub(super) struct AppState {
     /// Most recently viewed chart symbol gets first place in the next bounded
     /// hourly history-sync batch.
     pub(super) chart_sync_priority: Mutex<Option<String>>,
-    /// A signal scan can promote one stale symbol and request a scan after its
-    /// next successful refresh. Chart navigation remains an independent hint.
-    pub(super) stale_intraday_sync_priority: Mutex<Option<StaleSignalSyncPriority>>,
+    /// A signal scan queues stale 15m identities for the next bounded market
+    /// sync batch. The queue is deduplicated and capped to keep memory bounded.
+    pub(super) stale_intraday_sync_priority: Mutex<StaleSignalSyncPriorityQueue>,
     pub(super) stale_daily_sync_priority: Mutex<Option<StaleSignalSyncPriority>>,
     /// Unix-second epoch of the last daily registry sync. Zero means never run.
     pub(super) last_registry_sync_epoch: AtomicU64,
@@ -273,7 +305,7 @@ impl AppState {
             current_scan_symbol: Mutex::new(String::new()),
             scan_progress_pct: Mutex::new(0.0),
             chart_sync_priority: Mutex::new(None),
-            stale_intraday_sync_priority: Mutex::new(None),
+            stale_intraday_sync_priority: Mutex::new(StaleSignalSyncPriorityQueue::default()),
             stale_daily_sync_priority: Mutex::new(None),
             last_registry_sync_epoch: AtomicU64::new(0),
         })
@@ -318,38 +350,69 @@ impl AppState {
         if normalized.is_empty() || exchange_id.is_empty() || product_id.is_empty() {
             return false;
         }
-        let priority = match timeframe {
-            "15m" => &self.stale_intraday_sync_priority,
-            "1d" => &self.stale_daily_sync_priority,
-            _ => return false,
-        };
-        let mut priority = priority.lock().unwrap_or_else(|error| error.into_inner());
-        if let Some(queued) = priority.as_ref() {
-            return queued.symbol == normalized
-                && queued.exchange_id == exchange_id
-                && queued.product_id == product_id;
-        }
-        *priority = Some(StaleSignalSyncPriority {
+        let priority = StaleSignalSyncPriority {
             symbol: normalized,
             exchange_id: exchange_id.to_string(),
             product_id: product_id.to_string(),
-        });
-        true
+        };
+        match timeframe {
+            "15m" => self
+                .stale_intraday_sync_priority
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push(priority),
+            "1d" => {
+                let mut queued = self
+                    .stale_daily_sync_priority
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                if let Some(existing) = queued.as_ref() {
+                    return existing == &priority;
+                }
+                *queued = Some(priority);
+                true
+            }
+            _ => false,
+        }
     }
 
     pub(super) fn take_stale_signal_sync_priority(
         &self,
         timeframe: &str,
     ) -> Option<StaleSignalSyncPriority> {
-        let priority = match timeframe {
-            "15m" => &self.stale_intraday_sync_priority,
-            "1d" => &self.stale_daily_sync_priority,
-            _ => return None,
-        };
-        priority
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .take()
+        match timeframe {
+            "15m" => self
+                .stale_intraday_sync_priority
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .pop(),
+            "1d" => self
+                .stale_daily_sync_priority
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .take(),
+            _ => None,
+        }
+    }
+
+    pub(super) fn take_stale_signal_sync_priorities(
+        &self,
+        timeframe: &str,
+        limit: usize,
+    ) -> Vec<StaleSignalSyncPriority> {
+        match timeframe {
+            "15m" => self
+                .stale_intraday_sync_priority
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .take(limit),
+            "1d" if limit > 0 => self
+                .take_stale_signal_sync_priority(timeframe)
+                .into_iter()
+                .collect(),
+            "1d" => Vec::new(),
+            _ => Vec::new(),
+        }
     }
 
     pub(super) fn update_scan_progress(&self, symbol: &str, completed: usize, total: usize) {

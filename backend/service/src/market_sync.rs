@@ -116,7 +116,7 @@ fn sync_hourly_chart_targets(
     connection: &Connection,
     market_database: &str,
     priority_symbol: Option<&str>,
-    stale_priority: Option<&StaleSignalSyncPriority>,
+    sync_state: Option<&AppState>,
     storage_symbol_gate: &targets::StorageSymbolSyncGate,
 ) -> Result<usize, rusqlite::Error> {
     let batch_started = std::time::Instant::now();
@@ -128,26 +128,35 @@ fn sync_hourly_chart_targets(
     if target_limit == 0 {
         return Ok(0);
     }
-    let mut remaining_targets = target_limit;
+    let stale_priorities = sync_state
+        .map(|state| state.take_stale_signal_sync_priorities("15m", target_limit))
+        .unwrap_or_default();
+    if !stale_priorities.is_empty() {
+        eprintln!(
+            "[Daemon] Prioritizing {} stale 15m signal prices in the next market batch.",
+            stale_priorities.len()
+        );
+    }
+    let selected_targets = registered_hourly_targets(
+        connection,
+        priority_symbol,
+        &stale_priorities,
+        target_limit as i64,
+    )?;
+    let mut pending_targets = selected_targets
+        .into_iter()
+        .collect::<std::collections::VecDeque<_>>();
     let mut attempted_targets = 0usize;
     let mut refreshed = 0usize;
     let mut worker_count = 0usize;
-    while remaining_targets > 0 {
-        let wave_limit = remaining_targets.min(MAX_REGISTERED_CANDLE_TARGETS_PER_TICK);
-        let target_rows = registered_hourly_targets(
-            connection,
-            priority_symbol,
-            stale_priority,
-            wave_limit as i64,
-        )?;
-        if target_rows.is_empty() {
-            break;
-        }
+    while !pending_targets.is_empty() {
+        let wave_limit = pending_targets.len().min(MAX_REGISTERED_CANDLE_TARGETS_PER_TICK);
+        let target_rows = pending_targets.drain(..wave_limit).collect::<Vec<_>>();
         let target_rows = targets::rank_intraday_targets_by_recent_volume(
             target_rows,
             market_database,
             priority_symbol,
-            stale_priority,
+            &stale_priorities,
             now_millis().saturating_mul(quant_core::NANOS_PER_MILLISECOND),
         );
         let targets = target_rows
@@ -199,8 +208,7 @@ fn sync_hourly_chart_targets(
         attempted_targets += wave_size;
         refreshed += wave_refreshed;
         worker_count = worker_count.max(wave_workers);
-        remaining_targets = remaining_targets.saturating_sub(wave_size);
-        if remaining_targets > 0 {
+        if !pending_targets.is_empty() {
             thread::sleep(Duration::from_millis(CANDLE_SYNC_WAVE_PAUSE_MILLISECONDS));
         }
     }

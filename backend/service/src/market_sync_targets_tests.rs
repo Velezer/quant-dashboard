@@ -73,7 +73,7 @@ fn latest_relative_15m_quote_volume_moves_active_target_to_front_of_due_batch() 
         vec![target("NORMAL-USD"), target("ACTIVE-USD")],
         &path,
         None,
-        None,
+        &[],
         now_ns,
     );
 
@@ -108,7 +108,7 @@ fn stale_signal_priority_stays_ahead_of_higher_volume_candidates() {
         vec![target("ACTIVE-USD"), target("NORMAL-USD")],
         &path,
         None,
-        Some(&stale_priority),
+        &[stale_priority],
         now_ns,
     );
 

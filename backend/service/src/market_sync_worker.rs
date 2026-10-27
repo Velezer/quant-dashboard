@@ -33,16 +33,12 @@ pub(super) fn background_market_sync_loop(state: Arc<AppState>) {
         match open_app_db_for_market_directory(&state.market_database) {
             Ok(connection) => {
                 let stale_daily_priority = state.take_stale_signal_sync_priority("1d");
-                let stale_intraday_priority = state.take_stale_signal_sync_priority("15m");
-                let priority_symbol = stale_intraday_priority
-                    .as_ref()
-                    .map(|priority| priority.symbol.clone())
-                    .or_else(|| state.take_chart_sync_priority());
+                let priority_symbol = state.take_chart_sync_priority();
                 match sync_hourly_chart_targets(
                     &connection,
                     &state.market_database,
                     priority_symbol.as_deref(),
-                    stale_intraday_priority.as_ref(),
+                    Some(state.as_ref()),
                     storage_symbol_gate.as_ref(),
                 ) {
                     Ok(refreshed) => {

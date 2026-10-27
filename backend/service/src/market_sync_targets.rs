@@ -7,7 +7,7 @@ use super::{
     StaleSignalSyncPriority, CANDLE_SYNC_ADAPTERS, CANDLE_SYNC_WORKER_SQLITE_PAGE_CACHE_KIB,
     MAX_DAILY_REGISTERED_CANDLE_TARGETS_PER_TICK, STALE_DAILY_REFRESH_COOLDOWN_SECONDS,
 };
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 const CANDLE_SYNC_SWEEP_TICKS: usize = 12;
 const INTRADAY_VOLUME_BASELINE_BAR_COUNT: usize = 20;
@@ -196,9 +196,46 @@ pub(super) fn sync_prepared_candle_targets(
 pub(crate) fn registered_hourly_targets(
     connection: &Connection,
     priority_symbol: Option<&str>,
-    stale_priority: Option<&StaleSignalSyncPriority>,
+    stale_priorities: &[StaleSignalSyncPriority],
     target_limit: i64,
 ) -> Result<Vec<(String, String, String, String, String)>, rusqlite::Error> {
+    let target_limit = usize::try_from(target_limit.max(1)).unwrap_or(usize::MAX);
+    let mut targets = Vec::with_capacity(target_limit);
+    let mut seen = std::collections::HashSet::with_capacity(target_limit);
+    let mut priority_statement = connection.prepare(
+        "SELECT exchange_id, storage_symbol, product_id, underlying_symbol, asset_category_id
+           FROM app.instruments
+          WHERE is_active=1 AND venue_verified=1 AND storage_symbol <> ''
+            AND listing_status IN ('venue_active','public_listed_snapshot')
+            AND exchange_id=?1 AND storage_symbol=?2 AND product_id=?3
+          GROUP BY exchange_id, product_id, storage_symbol
+          LIMIT 1",
+    )?;
+    for priority in stale_priorities {
+        let target = priority_statement
+            .query_row(
+                rusqlite::params![
+                    priority.exchange_id,
+                    priority.symbol,
+                    priority.product_id
+                ],
+                registered_hourly_target_from_row,
+            )
+            .optional()?;
+        if let Some(target) = target {
+            let identity = registered_hourly_target_identity(&target);
+            if seen.insert(identity) {
+                targets.push(target);
+            }
+        }
+        if targets.len() >= target_limit {
+            return Ok(targets);
+        }
+    }
+
+    let normal_limit = target_limit
+        .saturating_add(stale_priorities.len())
+        .min(i64::MAX as usize) as i64;
     let mut statement = connection.prepare(
         "SELECT i.exchange_id, i.storage_symbol, i.product_id, i.underlying_symbol, i.asset_category_id
            FROM app.instruments AS i
@@ -208,57 +245,68 @@ pub(crate) fn registered_hourly_targets(
           WHERE i.is_active=1 AND i.venue_verified=1 AND i.storage_symbol <> ''
             AND i.listing_status IN ('venue_active','public_listed_snapshot')
           GROUP BY i.exchange_id, i.product_id, i.storage_symbol
-          ORDER BY MAX(CASE WHEN ?2 IS NOT NULL
-                                  AND i.storage_symbol=?2
-                                  AND i.exchange_id=?3
-                                  AND i.product_id=?4
-                             THEN 1 ELSE 0 END) DESC,
-                   MAX(CASE WHEN ?1 IS NOT NULL AND
+          ORDER BY MAX(CASE WHEN ?1 IS NOT NULL AND
                                   (i.storage_symbol=?1 OR i.venue_symbol=?1 OR i.symbol=?1)
                              THEN 1 ELSE 0 END) DESC,
                    COALESCE(MIN(c.attempted_at), '') ASC,
                    i.exchange_id ASC, i.product_id ASC, i.storage_symbol ASC
-          LIMIT ?5",
+          LIMIT ?2",
     )?;
-    let targets = statement
+    let normal_targets = statement
         .query_map(
-            rusqlite::params![
-                priority_symbol,
-                stale_priority.map(|priority| priority.symbol.as_str()),
-                stale_priority.map(|priority| priority.exchange_id.as_str()),
-                stale_priority.map(|priority| priority.product_id.as_str()),
-                target_limit.max(1)
-            ],
-            |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                ))
-            },
+            rusqlite::params![priority_symbol, normal_limit],
+            registered_hourly_target_from_row,
         )?
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<Vec<_>, _>>()?;
+    for target in normal_targets {
+        let identity = registered_hourly_target_identity(&target);
+        if seen.insert(identity) {
+            targets.push(target);
+        }
+        if targets.len() >= target_limit {
+            break;
+        }
+    }
     Ok(targets)
+}
+
+fn registered_hourly_target_from_row(
+    row: &rusqlite::Row<'_>,
+) -> Result<(String, String, String, String, String), rusqlite::Error> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+    ))
+}
+
+fn registered_hourly_target_identity(
+    target: &(String, String, String, String, String),
+) -> (String, String, String) {
+    (target.0.clone(), target.2.clone(), target.1.clone())
 }
 
 pub(super) fn rank_intraday_targets_by_recent_volume(
     targets: Vec<(String, String, String, String, String)>,
     market_directory: &str,
     priority_symbol: Option<&str>,
-    stale_priority: Option<&StaleSignalSyncPriority>,
+    stale_priorities: &[StaleSignalSyncPriority],
     now_ns: i64,
 ) -> Vec<(String, String, String, String, String)> {
     let mut ranked = targets
         .into_iter()
         .enumerate()
         .map(|(queue_position, target)| {
-            let stale_priority_rank = u8::from(!stale_priority.is_some_and(|priority| {
-                priority.exchange_id == target.0
-                    && priority.product_id == target.2
-                    && priority.symbol == target.1
-            }));
+            let stale_priority_rank = stale_priorities
+                .iter()
+                .position(|priority| {
+                    priority.exchange_id == target.0
+                        && priority.product_id == target.2
+                        && priority.symbol == target.1
+                })
+                .unwrap_or(stale_priorities.len());
             let chart_priority_rank = u8::from(
                 !priority_symbol.is_some_and(|symbol| symbol == target.1 || symbol == target.3),
             );
