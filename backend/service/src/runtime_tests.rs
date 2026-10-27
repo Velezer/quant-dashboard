@@ -80,6 +80,30 @@ fn scan_progress_reports_current_symbol_and_completion() {
 }
 
 #[test]
+fn concurrent_scan_progress_never_moves_backwards() {
+    let state = AppState::new("unused.sqlite3".into(), 900);
+
+    state.update_scan_progress("TOKO-1", 12, 100);
+    state.update_scan_progress("STOCK-1", 11, 100);
+
+    assert_eq!(
+        *state
+            .scan_progress_pct
+            .lock()
+            .expect("progress lock should be available"),
+        12.0
+    );
+    assert_eq!(
+        state
+            .current_scan_symbol
+            .lock()
+            .expect("scan symbol lock should be available")
+            .as_str(),
+        "TOKO-1"
+    );
+}
+
+#[test]
 fn failed_scan_progress_resets_to_stale_idle_state() {
     let state = AppState::new("unused.sqlite3".into(), 900);
     state.update_scan_progress("AAPL", 3, 4);
