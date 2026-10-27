@@ -61,19 +61,31 @@ fn tokenized_stock_uses_real_equity_for_fallback_without_changing_exchange_ident
     let connection = open_db_minimal(&path).expect("database should initialize");
     connection
         .execute(
-            "INSERT INTO series(symbol, interval, source, exchange_id, data_provider,
+            "INSERT INTO series(symbol, interval, source, exchange_id, product_id, data_provider,
                                 timezone, price_basis, instrument_kind)
-             VALUES('TSLA', '15m', 'tokocrypto_yfinance_fallback', 'tokocrypto',
-                    'yfinance', 'UTC', 'unadjusted', 'tokenized_stock')",
+             VALUES('TSLA', '15m', 'tokocrypto_tokenized_stock_yfinance_fallback', 'tokocrypto',
+                    'tokocrypto_tokenized_stock', 'yfinance', 'UTC', 'yahoo_unadjusted', 'tokenized_stock')",
             [],
         )
         .expect("provider metadata should persist");
-    annotate_plan_market_data(&connection, &mut plan, "TSLA", "tokocrypto", "15m", true);
+    connection.execute("INSERT INTO bars(symbol,interval,source,ts,open,high,low,close,volume,ingested_at)
+        VALUES('TSLA','15m','tokocrypto_tokenized_stock_yfinance_fallback',0,100,101,99,100,10,'test')",[]).unwrap();
+    annotate_plan_market_data(
+        &connection,
+        &mut plan,
+        "TSLA",
+        "tokocrypto_tokenized_stock",
+        "15m",
+        true,
+    );
     assert_eq!(plan["Exchange"], "TOKOCRYPTO");
     assert_eq!(plan["Class"], "TOKENIZED_STOCK");
     assert_eq!(plan["Underlying_Symbol"], "TSLA");
     assert_eq!(plan["Data_Symbol"], "TSLA");
-    assert_eq!(plan["Data_Source"], "tokocrypto_yfinance_fallback");
+    assert_eq!(
+        plan["Data_Source"],
+        "tokocrypto_tokenized_stock_yfinance_fallback"
+    );
     assert_eq!(plan["Data_Provider"], "yfinance");
     drop(connection);
     remove_temporary_database(&path);
@@ -83,18 +95,37 @@ fn tokenized_stock_uses_real_equity_for_fallback_without_changing_exchange_ident
 fn plan_app_identity_stays_independent_of_candle_provider() {
     let path = temporary_database_path("app-provider-identity");
     let connection = open_db_minimal(&path).expect("database should initialize");
-    for (source, exchange, provider) in [
-        ("tokocrypto_native", "tokocrypto", "tokocrypto"),
-        ("pintu_futures_binance_futures", "pintu_futures", "binance"),
+    for (source, exchange, product, category, provider) in [
+        (
+            "tokocrypto_native",
+            "tokocrypto",
+            "tokocrypto_spot",
+            "crypto_spot",
+            "tokocrypto",
+        ),
+        (
+            "shared_crypto_perpetual_binance_usdm_futures_proxy",
+            "research_reference",
+            "",
+            "crypto_perpetual",
+            "binance",
+        ),
     ] {
         connection
             .execute(
-                "INSERT INTO series(symbol,interval,source,exchange_id,data_provider,
+                "INSERT INTO series(symbol,interval,source,exchange_id,product_id,data_provider,
                                     timezone,price_basis,instrument_kind)
-                 VALUES('BTC-USD','15m',?1,?2,?3,'UTC','unadjusted','crypto')",
-                params![source, exchange, provider],
+                 VALUES('BTC-USD','15m',?1,?2,?3,?4,'UTC','binance_usdt_reference',?5)",
+                params![source, exchange, product, provider, category],
             )
             .expect("source metadata should persist");
+        connection
+            .execute(
+                "INSERT INTO bars(symbol,interval,source,ts,open,high,low,close,volume,ingested_at)
+            VALUES('BTC-USD','15m',?1,0,100,101,99,100,10,'test')",
+                [source],
+            )
+            .unwrap();
     }
     let mut plan = serde_json::json!({"Exchange":"PINTU_FUTURES","Symbol":"BTC-USD"});
     annotate_plan_market_data(
@@ -106,7 +137,10 @@ fn plan_app_identity_stays_independent_of_candle_provider() {
         false,
     );
     assert_eq!(plan["Exchange"], "PINTU_FUTURES");
-    assert_eq!(plan["Data_Source"], "pintu_futures_binance_futures");
+    assert_eq!(
+        plan["Data_Source"],
+        "shared_crypto_perpetual_binance_usdm_futures_proxy"
+    );
     assert_eq!(plan["Data_Provider"], "binance");
     assert_eq!(plan["Data_Symbol"], "BTC-USD");
     drop(connection);

@@ -33,28 +33,17 @@ pub(super) fn sync_interval_for_exchange(
     ) {
         return result;
     }
-    let source_prefix = if product_id.is_empty() {
-        normalized_exchange.as_str()
-    } else if matches!(
-        (normalized_exchange.as_str(), product_id),
-        ("stockbit", "stockbit_regular")
-            | (
-                "tokocrypto",
-                "tokocrypto_spot" | "tokocrypto_tokenized_stock"
-            )
-            | (
-                "pintu",
-                "pintu_retail_spot" | "pintu_pro_spot" | "pintu_pro_futures"
-            )
-            | ("pluang", "pluang_spot" | "pluang_perpetual")
-    ) {
-        if product_id == "pintu_pro_futures" {
-            "pintu_futures"
-        } else {
-            product_id
+    let source_prefix = shared::app_source_prefix(&normalized_exchange, product_id)
+        .ok_or("product does not belong to the selected app")?;
+    if let Some(expected_category) = shared::category_for_product(&normalized_exchange, product_id)
+    {
+        if category != expected_category {
+            return Err("asset category does not belong to the selected product".into());
         }
-    } else {
-        return Err("product does not belong to the selected app".into());
+    }
+    let source_for = |suffix: &str| {
+        shared::canonical_source(&category, suffix)
+            .unwrap_or_else(|| format!("{source_prefix}_{suffix}"))
     };
     let family = match category.as_str() {
         "crypto_spot" => Some(BinanceMarket::Spot),
@@ -66,7 +55,7 @@ pub(super) fn sync_interval_for_exchange(
     let mut rows_received = 0usize;
     let mut errors = Vec::new();
     if let Some(family) = family {
-        let source = format!("{source_prefix}_{}", family.source_suffix());
+        let source = source_for(family.source_suffix());
         let binance_result = match yahoo_base_asset(yahoo_symbol) {
             Ok(base) => {
                 let binance_pair = format!("{base}USDT");
@@ -109,7 +98,7 @@ pub(super) fn sync_interval_for_exchange(
                 if !adapter.supports(&category) {
                     continue;
                 }
-                let source = format!("{source_prefix}_{}", adapter.source_suffix());
+                let source = source_for(adapter.source_suffix());
                 let provider_result = recent_proxy_result(
                     connection,
                     storage_symbol,
@@ -146,7 +135,7 @@ pub(super) fn sync_interval_for_exchange(
     }
 
     if successful_sources == 0 {
-        let yahoo_source = format!("{source_prefix}_yfinance_fallback");
+        let yahoo_source = source_for("yfinance_fallback");
         let yahoo_result = recent_proxy_result(
             connection,
             storage_symbol,

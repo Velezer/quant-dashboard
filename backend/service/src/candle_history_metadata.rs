@@ -31,13 +31,15 @@ pub(crate) fn load_series_metadata_for_exchange(
         requested_timeframe,
     )?
     .unwrap_or_else(|| "unknown".to_string());
-    load_series_metadata_from_source(
+    let mut metadata = load_series_metadata_from_source(
         connection,
         symbol,
         requested_timeframe,
         force_direct_storage,
         &source,
-    )
+    )?;
+    attach_requested_candle_context(connection, symbol, exchange, None, &mut metadata)?;
+    Ok(metadata)
 }
 
 pub(crate) fn load_product_candle_metadata(
@@ -65,7 +67,40 @@ pub(crate) fn load_product_candle_metadata(
     let mut metadata =
         load_series_metadata_from_source(connection, symbol, timeframe, false, &source)?;
     metadata["data_provider"] = serde_json::json!(data_provider);
+    attach_requested_candle_context(
+        connection,
+        symbol,
+        exchange,
+        Some(product_id),
+        &mut metadata,
+    )?;
+    metadata["product_id"] = serde_json::json!(product_id);
     Ok(metadata)
+}
+
+fn attach_requested_candle_context(
+    connection: &Connection,
+    symbol: &str,
+    exchange: &str,
+    product: Option<&str>,
+    metadata: &mut Value,
+) -> Result<(), rusqlite::Error> {
+    let app = candle_product_scope(exchange).map_or(exchange, |(app, _)| app);
+    let product = product.or_else(|| candle_product_scope(exchange).map(|(_, product)| product));
+    metadata["app_exchange_id"] = serde_json::json!(app);
+    if metadata["source_is_proxy"] == true {
+        let native_error = candle_source_for_exchange(Some(app)).0.map(|native| {
+            connection.query_row(
+                "SELECT last_error FROM series WHERE symbol=?1 AND exchange_id=?2 AND source=?3
+                    AND (?4 IS NULL OR product_id=?4) AND instrument_kind=?5
+                    AND last_error IS NOT NULL AND TRIM(last_error)<>''
+                 ORDER BY COALESCE(last_attempt,'') DESC LIMIT 1",
+                params![symbol,app,native,product,metadata["instrument_kind"].as_str().unwrap_or("")], |row| row.get::<_,String>(0),
+            ).optional()
+        }).transpose()?.flatten();
+        metadata["native_fallback_reason"] = serde_json::json!(native_error);
+    }
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -327,6 +362,7 @@ pub(crate) fn load_series_metadata_from_source(
         "source": source,
         "source_label": candle_source_label(&source),
         "source_is_proxy": is_research_proxy_source(&source),
+        "shared_reference": research_proxy::shared::is_shared_source(&source),
         "exchange_id": exchange_id,
         "data_provider": data_provider,
         "native_fallback_reason": native_fallback_reason,

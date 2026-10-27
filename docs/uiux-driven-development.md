@@ -71,6 +71,40 @@ app/product/ticker identities. The next market batch services queued stale
 signals before the normal rotating targets, so one stale ticker cannot block
 the others from recovery.
 
+## Shared crypto research candles
+
+The user's task is to see signals and charts for each registered app using the
+same provider history for the same asset and category. Chart Data checks names
+the provider, category, quote basis, freshness, last attempt, and observed error.
+Shared references explain that matching apps reuse the provider's candles and
+that research prices do not validate app execution. Existing loading, missing,
+stale, and error states and Retry/Sync controls remain available. Native-feed
+failures describe the requested app even when shared proxy history is selected.
+Sharing requires no user registration or extra screen; the explicit offline
+history consolidation remains a documented maintainer operation.
+
+Decision effects for the 2026-10-27 category-sharing change:
+
+1. Direct: one canonical reference serves matching app products; acceptance is
+   identical source/history for matching Spot assets and distinct Perpetual data.
+2. Consequence: shared freshness and failure cooldowns reduce duplicate fetches.
+3. Response: repeated app refreshes reuse only actual fresh completed bars.
+4. Interaction: native adapters stay first; selectors, listing coverage, charts,
+   and validation accept the same provider/category identity.
+5. Accumulation: explicit SQL consolidation keeps the complete history union;
+   new reference writes no longer duplicate it per app product.
+6. Failure: malformed provider/quote/category metadata is ineligible; missing or
+   stale bars retain the existing recovery state and signal freshness checks.
+7. Recovery: Data checks exposes errors and sync actions; migration provenance
+   conflicts roll back per ticker and retain its old data for diagnosis.
+8. Governance: the user authorized sharing by category; app registrations,
+   signal ownership, and venue-native execution evidence retain their identities.
+9. Trajectory: fewer requests may improve coverage and sweep duration; measure
+   freshness, duration, provider errors, and memory to confirm that hypothesis.
+10. Decision: use the existing per-symbol SQLite stores and bounded workers.
+    A category/provider mismatch or dropped historical timestamp requires fixing
+    the selector or migration before using the resulting research evidence.
+
 ## Per-ticker entry-model validation
 
 The primary task is to backtest the actual current entry scoring models for

@@ -191,6 +191,16 @@ fn main() {
         }
         return;
     }
+    if env::args().any(|arg| arg == "--share-crypto-candles") {
+        match database::share_crypto_candles(&market_dir, &app_database) {
+            Ok(summary) => println!("shared crypto candle migration {summary}"),
+            Err(error) => {
+                eprintln!("shared crypto candle migration failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if env::args().any(|arg| arg == "--migrate-signal-snapshot") {
         match migrate_signal_screener_snapshot(&app_database, &signal_database) {
             Ok(summary) => println!("signal snapshot migration {summary}"),
@@ -473,6 +483,9 @@ mod chart_indicators_tests;
 #[cfg(test)]
 #[path = "main_candle_scope_tests.rs"]
 mod main_candle_scope_tests;
+#[cfg(test)]
+#[path = "main_shared_candle_tests.rs"]
+mod main_shared_candle_tests;
 #[cfg(test)]
 #[path = "main_dss_bressert_tests.rs"]
 mod main_dss_bressert_tests;

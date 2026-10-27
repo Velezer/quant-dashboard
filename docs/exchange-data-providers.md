@@ -15,6 +15,15 @@ equities and tokenized-stock underlyings use Yahoo Finance. Each attempted or
 successful provider retains its own series and diagnostics; the app exchange
 and data provider stay distinct. Proxy bars remain labeled as research proxies.
 
+Crypto research references are shared across registered app products for the
+same storage symbol, exact asset category, provider, quote basis, and interval.
+They belong to `research_reference`, rather than to the first app that fetched
+them. Native series keep their venue identity. Matching Spot products can reuse
+one Binance Spot series, while Perpetual/Futures references and other provider
+quotes remain separate. Worker attempts, signals, and evidence still identify
+the selected app/product. See the explicit history-consolidation command in
+[market-data storage](market-data-storage.md#consolidating-existing-crypto-references).
+
 Pintu Pro Futures uses its public `get-candles` endpoint for verified
 perpetual listings. The adapter stores completed native one-hour candles,
 builds 15-minute candles from three completed 5-minute venue bars, and

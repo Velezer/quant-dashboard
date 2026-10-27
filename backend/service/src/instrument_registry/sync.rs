@@ -242,19 +242,21 @@ fn market_candle_coverage(
     exchange_id: &str,
     product_id: &str,
 ) -> Result<(bool, bool), rusqlite::Error> {
-    connection.query_row(
-        "SELECT
-            EXISTS(SELECT 1 FROM main.series s WHERE s.symbol=?1
-                AND s.interval='15m' AND s.exchange_id=?2 AND s.product_id=?3
-                AND EXISTS(SELECT 1 FROM main.bars b WHERE b.symbol=s.symbol
-                    AND b.interval=s.interval AND b.source=s.source)),
-            EXISTS(SELECT 1 FROM main.series s WHERE s.symbol=?1
-                AND s.interval='1d' AND s.exchange_id=?2 AND s.product_id=?3
-                AND EXISTS(SELECT 1 FROM main.bars b WHERE b.symbol=s.symbol
-                    AND b.interval=s.interval AND b.source=s.source))",
-        params![storage_symbol, exchange_id, product_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )
+    let has_interval = |interval| -> Result<bool, rusqlite::Error> {
+        // Coverage counts directly stored candles in the requested product or
+        // shared category, independently of chart rollups.
+        Ok(
+            crate::selected_candle_source_metadata_for_product_at_interval(
+                connection,
+                storage_symbol,
+                exchange_id,
+                product_id,
+                interval,
+            )?
+            .is_some(),
+        )
+    };
+    Ok((has_interval("15m")?, has_interval("1d")?))
 }
 
 pub(crate) const STOCKBIT_PRODUCT_ID: &str = "stockbit_regular";

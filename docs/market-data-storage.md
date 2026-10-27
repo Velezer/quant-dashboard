@@ -168,9 +168,54 @@ validates `QUANT_SIGNAL_DB` while preparing the app schema (default
 Canonical chart history lives only in SQLite `bars`. Keep source, provider,
 exchange, product, and timeframe provenance in `series` and `ingestion_runs`.
 Each ticker database contains history for one exact storage symbol, while
-multiple products with that symbol retain separate series/source identities.
+matching crypto products share a research series when the asset category,
+provider, quote/price basis, and interval match. For example, Pintu Retail Spot,
+Pintu Pro Spot, Pluang Spot, and Tokocrypto Spot can read the same
+`shared_crypto_spot_binance_spot_proxy` bars for `BTC-USD`. Perpetual and Futures
+categories have separate keys. Each provider keeps its own source: Coinbase USD
+and Binance USDT prices are never merged. Native Pintu and Tokocrypto history
+retains its exact venue/product identity. Shared series use
+`exchange_id=research_reference`, an empty product, and no instrument ID;
+registrations, worker cursors, signals, and backtest reports remain app-specific.
 Missing history stays missing; charts must not fabricate or forward-fill
 candles.
+Listing coverage uses the same ownership and provider checks on the exact
+stored interval. A lower-timeframe rollup never counts as direct daily coverage.
+
+The first product refresh writes the shared reference. Later matching products
+reuse fresh completed candles during the interval's refresh window (10 minutes
+for 15m, one hour for 1h, one day for 1d). A provider failure has the existing
+five-minute retry cooldown across those products. Reuse requires actual fresh
+completed bars, so a recently successful response containing old prices does
+not suppress recovery. The per-symbol writer gate and two-worker bound apply.
+
+### Consolidating existing crypto references
+
+Stop the service, then run the new binary with the existing storage paths:
+
+```sh
+QUANT_APP_DB=/data/app/app.sqlite3 QUANT_MARKET_DIR=/data/market/tickers \
+  ./rust_chart_api --share-crypto-candles
+```
+
+For a local source checkout use `cargo run --release -p rust_chart_api --
+--share-crypto-candles` with the same environment variables. Normal startup
+does not run this operation. New refreshes use shared keys immediately; the
+command consolidates older app-scoped proxy histories without refetching them.
+
+The migration checks provider, quote basis, category, app/product ownership,
+and UTC timezone before combining a series. SQL copies the complete timestamp
+union, chooses the newest `ingested_at` on overlap (including fractional
+seconds), and validates counts and winning OHLCV values before deleting the
+original bars and series. Equal ingestion times use stable source ordering.
+Native candles and unknown or incompatible provenance stay untouched, including
+old failed attempts without a known quote basis. Historical ingestion attempts
+retain their original app attribution while referencing the canonical source.
+Ticker changes and app checkpoints commit in one durable transaction. SQLite
+checkpoints record hashes and counts; interrupted runs resume by ticker and
+repeated completed runs do not duplicate bars. A provenance conflict rolls back
+the ticker and reports an error. Restart the service after completion and use
+Refresh signals to rebuild app-specific results from the shared references.
 
 Research-proxy candles remain visibly labeled and cannot count as venue-native
 execution evidence. Hourly candle sync selects active registered instruments

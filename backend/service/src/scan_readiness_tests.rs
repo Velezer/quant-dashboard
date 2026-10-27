@@ -143,8 +143,15 @@ fn readiness_never_calls_stale_or_cross_source_crypto_data_evaluated() {
         .iter()
         .find(|frame| frame.timeframe == "4h")
         .unwrap();
-    assert_eq!(frame.source_mismatch_count, 1);
+    // The preferred price source already has 15m candles, so its 4h rollup
+    // takes precedence over another provider's longer 4h history. That short
+    // same-source sample must stay unevaluated rather than borrowing Bybit.
+    assert_eq!(frame.source_mismatch_count, 0);
+    assert_eq!(frame.insufficient_history_count, 1);
     assert_eq!(frame.evaluated_count, 0);
+    assert!(mismatch.issues.iter().any(|issue| issue.timeframe == "4h"
+        && issue.reason == "insufficient_history"
+        && issue.source.as_deref() == Some("pintu_pro_spot_binance_spot_proxy")));
     drop(connection);
     remove_temporary_database(&path);
 }

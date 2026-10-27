@@ -11,6 +11,7 @@ mod interval;
 mod parsing;
 #[path = "research_proxy/providers.rs"]
 mod providers;
+pub(crate) mod shared;
 #[path = "research_proxy_sources.rs"]
 mod sources;
 mod transport;
@@ -110,8 +111,13 @@ fn recent_proxy_result(
 ) -> Option<Result<usize, String>> {
     let refresh_interval_seconds = match interval {
         "15m" => RESEARCH_15M_REFRESH_INTERVAL_SECONDS,
-        "1h" => duration_seconds,
+        "1h" | "1d" => duration_seconds,
         _ => return None,
+    };
+    let (exchange, product_id) = if shared::is_shared_source(source) {
+        (shared::SOURCE_EXCHANGE_ID, "")
+    } else {
+        (exchange, product_id)
     };
     let now = i64::try_from(super::now_secs()).ok()?;
     let result: Option<(String, Option<String>, Option<String>, Option<String>, i64)> = connection
@@ -140,7 +146,30 @@ fn recent_proxy_result(
     let (_source, last_success, last_error, last_attempt, rows) = result?;
     let success_epoch = last_success.and_then(|value| value.parse::<i64>().ok());
     let attempt_epoch = last_attempt.and_then(|value| value.parse::<i64>().ok());
-    if success_epoch.is_some_and(|epoch| now.saturating_sub(epoch) < refresh_interval_seconds) {
+    let latest_completed: Option<i64> = connection
+        .query_row(
+            "SELECT MAX(ts) FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3
+            AND close>0 AND ts<=?4",
+            params![
+                symbol,
+                interval,
+                source,
+                now.saturating_sub(duration_seconds)
+                    .saturating_mul(NANOS_PER_SECOND)
+            ],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    let fresh = latest_completed.is_some_and(|ts| {
+        now.saturating_sub(ts.div_euclid(NANOS_PER_SECOND))
+            <= crate::freshness_threshold_seconds(symbol, interval)
+    });
+    if rows > 0
+        && fresh
+        && last_error.as_deref().is_none_or(str::is_empty)
+        && success_epoch.is_some_and(|epoch| now.saturating_sub(epoch) < refresh_interval_seconds)
+    {
         return Some(Ok(rows.max(0) as usize));
     }
     if attempt_epoch.is_some_and(|epoch| now.saturating_sub(epoch) < 300) {
@@ -167,16 +196,35 @@ fn sync_with_binance(
 ) -> Result<usize, String> {
     // Candle timestamps are the durable cursor, scoped to the exact source series.
     // Replay the last closed candle so provider corrections remain idempotent.
-    let resume_ts: Option<i64> = connection.query_row(
-        "SELECT MAX(ts) FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3",
-        params![storage_symbol, interval, source],
-        |row| row.get(0),
-    ).map_err(|error| error.to_string())?;
+    let resume_ts: Option<i64> = connection
+        .query_row(
+            "SELECT MAX(ts) FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3",
+            params![storage_symbol, interval, source],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
     let resume_ts = resume_ts.map(|ts| ts.div_euclid(NANOS_PER_SECOND));
     let result = fetch_binance_interval(
-        pair, market, interval, duration_seconds, maximum_rows, resume_ts,
-        |candles| persist(connection, storage_symbol, kind, exchange, "binance", source,
-            pair, interval, "binance_usdt_reference", candles),
+        pair,
+        market,
+        interval,
+        duration_seconds,
+        maximum_rows,
+        resume_ts,
+        |candles| {
+            persist(
+                connection,
+                storage_symbol,
+                kind,
+                exchange,
+                "binance",
+                source,
+                pair,
+                interval,
+                "binance_usdt_reference",
+                candles,
+            )
+        },
     );
     if let Err(error) = &result {
         let now = super::format_timestamp(super::now_secs());
@@ -297,7 +345,11 @@ fn record_proxy_failure(
     now: &str,
     error: &str,
 ) {
-    let product_id = app_product_from_source(source).unwrap_or("");
+    let (exchange, product_id) = if shared::is_shared_source(source) {
+        (shared::SOURCE_EXCHANGE_ID, "")
+    } else {
+        (exchange, app_product_from_source(source).unwrap_or(""))
+    };
     let _ = connection.execute(
         "INSERT INTO ingestion_runs(symbol,interval,source,exchange_id,product_id,data_provider,attempted_at,status,rows_received,error) VALUES (?1,?2,?3,?4,?5,?6,?7,'error',0,?8)",
         params![symbol, interval, source, exchange, product_id, provider, now, error],
@@ -369,7 +421,9 @@ fn persist(
         "UTC"
     };
     let product_id = app_product_from_source(source).unwrap_or("");
-    let app_id = if exchange == "pintu_futures" {
+    let app_id = if shared::is_shared_source(source) {
+        shared::SOURCE_EXCHANGE_ID
+    } else if exchange == "pintu_futures" {
         "pintu"
     } else {
         exchange

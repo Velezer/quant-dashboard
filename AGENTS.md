@@ -232,6 +232,16 @@ never an active runtime store. `data/` may contain the app database, signal
 database, ticker SQLite databases, and their SQLite-managed journals/WAL files.
 Do not add other application-data files, caches, exports, or databases.
 
+With the user's explicit approval on 2026-10-27, crypto research-provider
+candles for the same exact storage symbol, asset category, provider/quote basis,
+and interval share one canonical `shared_<category>_<provider suffix>` series
+across app products. Shared series use `exchange_id=research_reference`, an
+empty product, and no instrument ID. App registrations, scheduler attempts,
+signals, and evidence retain their app/product identity. Venue-native sources
+stay venue-specific; Spot, Perpetual, and Futures categories never share bars.
+Consolidating existing app-specific reference history is an explicit offline
+maintainer migration, never a startup operation.
+
 The legacy single-file split and ticker sharding are explicit maintainer-run
 operations. Stop the service. If the legacy source still contains app-owned
 tables, run `tooling/split-market-database.bat` first. Then run
