@@ -5,7 +5,7 @@ use crate::signal_alerts::{InstrumentReadiness, ReadinessIssue, TimeframeReadine
 mod market_inputs;
 use market_inputs::{
     annotate_current_price_provenance, completed_bars, current_time_ns, fresh_current_price,
-    load_stockbit_signal_candles, CurrentPrice,
+    latest_current_price_reference, load_stockbit_signal_candles, CurrentPrice,
 };
 
 #[path = "scan_timeframes/nwe_dss_models.rs"]
@@ -68,6 +68,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
     let is_stockbit_signal_scope = input.exchange_id == quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID
         && input.product_id == quant_core::STOCKBIT_NWE_4H_PRODUCT_ID
         && input.category_id == quant_core::STOCKBIT_NWE_4H_ASSET_CATEGORY_ID;
+    let is_crypto_signal_scope = input.category_id.starts_with("crypto_");
     let intraday_result = product_candle_scan_state_at(
         input.market_connection,
         input.symbol,
@@ -80,6 +81,14 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
     let stockbit_intraday_state = intraday_state.filter(|_| is_stockbit_signal_scope);
     let current_price =
         intraday_state.and_then(|state| fresh_current_price(&input, Some(state), now_ns));
+    let stale_reference_price = if current_price.is_none() && is_crypto_signal_scope {
+        intraday_state.and_then(|state| {
+            latest_current_price_reference(&input, Some(state), now_ns)
+        })
+    } else {
+        None
+    };
+    let signal_reference_price = current_price.as_ref().or(stale_reference_price.as_ref());
     readiness.price_status = if current_price.is_some() {
         "fresh"
     } else if intraday_result.is_err() {
@@ -126,7 +135,6 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
     for (frame_index, definition) in DSS_BRESSERT_MTF_TIMEFRAMES.iter().enumerate() {
         let timeframe = definition.timeframe;
         let diagnosis_index = readiness.timeframes.len();
-        let is_crypto_signal_scope = input.category_id.starts_with("crypto_");
         let is_nwe_dss_signal_scope = is_stockbit_signal_scope || is_crypto_signal_scope;
         readiness.timeframes.push(TimeframeReadiness {
             timeframe: timeframe.into(),
@@ -145,7 +153,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
             continue;
         }
         let preferred_source = if is_crypto_signal_scope {
-            current_price.as_ref().map(|price| price.source.as_str())
+            signal_reference_price.map(|price| price.source.as_str())
         } else {
             None
         };
@@ -191,7 +199,20 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
         }
         let duration_ns = timeframe_duration_ns(timeframe).unwrap_or_default();
         let use_stockbit_timeframe_history = is_stockbit_signal_scope && !stale;
-        if (stale && !stockbit_intraday_is_fresh) || duration_ns <= 0 {
+        let stale_crypto_history_is_live = is_crypto_signal_scope
+            && timeframe_state
+                .as_ref()
+                .and_then(|state| state.latest_bar_time)
+                .is_some_and(|bar_time| {
+                    !signal_alerts::signal_candle_is_expired(
+                        bar_time,
+                        timeframe,
+                        now_ns.div_euclid(NANOS_PER_SECOND),
+                    )
+                });
+        if (stale && !stockbit_intraday_is_fresh && !stale_crypto_history_is_live)
+            || duration_ns <= 0
+        {
             let missing = timeframe_state
                 .as_ref()
                 .is_none_or(|state| state.latest_bar_time.is_none());
@@ -330,11 +351,13 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
             continue;
         }
 
-        let same_price_source = current_price
-            .as_ref()
+        let same_price_source = signal_reference_price
             .zip(source_metadata.as_ref())
             .is_some_and(|(price, (source, _))| price.source == *source);
-        if is_nwe_dss_signal_scope && current_price.is_some() && !same_price_source {
+        if is_nwe_dss_signal_scope
+            && signal_reference_price.is_some()
+            && !same_price_source
+        {
             readiness.timeframes[diagnosis_index].source_mismatch_count += 1;
             readiness.issue(ReadinessIssue {
                 symbol: input.asset.into(),
@@ -365,7 +388,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
                 timeframe,
                 source_metadata.as_ref(),
                 &bars,
-                current_price.as_ref(),
+                signal_reference_price,
                 standalone_indicator_signals,
                 standalone_score_updates,
             );
