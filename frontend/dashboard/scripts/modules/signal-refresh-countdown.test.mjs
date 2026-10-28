@@ -4,12 +4,14 @@ import { installSignalRefresh } from './signal-refresh.js';
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
 
 test('automatic refresh waits for a slow request and backs off after a failure', async () => {
-    const keys = ['document', 'window', 'CustomEvent', 'fetch', 'DATA', 'setInterval', 'clearInterval'];
+    const keys = ['document', 'window', 'CustomEvent', 'fetch', 'DATA', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'];
     const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
     const originalNow = Date.now;
     const intervals = [];
     const requests = [];
     const snapshots = [];
+    const timeouts = new Map();
+    let timeoutId = 0;
     let now = 100_000;
     Date.now = () => now;
     globalThis.document = { getElementById: id => id === 'countdown-timer' ? {} : null };
@@ -17,9 +19,14 @@ test('automatic refresh waits for a slow request and backs off after a failure',
     globalThis.CustomEvent = class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } };
     globalThis.setInterval = callback => { intervals.push(callback); return intervals.length; };
     globalThis.clearInterval = () => {};
-    globalThis.fetch = url => {
+    globalThis.setTimeout = callback => { timeouts.set(++timeoutId, callback); return timeoutId; };
+    globalThis.clearTimeout = id => timeouts.delete(id);
+    globalThis.fetch = (url, options) => {
         if (url.startsWith('/api/signals?')) {
-            return new Promise((resolve, reject) => requests.push({ resolve, reject }));
+            return new Promise((resolve, reject) => {
+                options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+                requests.push({ resolve, reject });
+            });
         }
         const data = url.startsWith('/api/signals/count') ? { signal_count: 0 } : {};
         return Promise.resolve({ ok: true, text: async () => JSON.stringify(data) });
@@ -35,7 +42,7 @@ test('automatic refresh waits for a slow request and backs off after a failure',
         installSignalRefresh();
         getDashboardBinding('startCountdown')();
         assert.equal(requests.length, 1);
-        now += 90_000;
+        now += 40_000;
         intervals[0]();
         assert.equal(requests.length, 1, 'a slow request is not superseded by the timer');
         requests[0].resolve(response());
@@ -55,7 +62,13 @@ test('automatic refresh waits for a slow request and backs off after a failure',
         now += 1_000;
         intervals[0]();
         assert.equal(requests.length, 3, 'the timer retries after the cooldown');
-        requests[2].resolve(response());
+        now += 60_000;
+        assert.equal(timeouts.size, 1);
+        [...timeouts.values()][0]();
+        await flush();
+        intervals[0]();
+        assert.equal(requests.length, 4, 'a timed-out request does not block recovery');
+        requests[3].resolve(response());
         await flush();
         assert.equal(snapshots.length, 2, 'a later successful response restores the screener');
     } finally {
