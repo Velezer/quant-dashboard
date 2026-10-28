@@ -105,10 +105,15 @@ pub(super) fn latest_current_price_reference(
         &source_state.source,
     )
     .ok()?;
+    let interval_ns = timeframe_duration_ns("15m")?;
     let latest = candles
         .iter()
         .rev()
-        .find(|bar| bar.close.is_finite() && bar.close > 0.0)?;
+        .find(|bar| {
+            bar.time.saturating_add(interval_ns) <= now_ns
+                && bar.close.is_finite()
+                && bar.close > 0.0
+        })?;
     Some(CurrentPrice {
         value: latest.close,
         signal_bar_time: latest.time,
