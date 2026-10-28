@@ -6,6 +6,7 @@ pub(super) const ONE_HOUR_INTERVAL_SECONDS: i64 = quant_core::SECONDS_PER_HOUR;
 pub(super) const ONE_DAY_INTERVAL_SECONDS: i64 = crate::SECONDS_PER_DAY;
 
 const YAHOO_HOURLY_SESSION_OFFSET_SECONDS: i64 = 30 * quant_core::SECONDS_PER_MINUTE;
+const YAHOO_15M_TIMESTAMP_TOLERANCE_SECONDS: i64 = 5;
 
 pub(super) fn parse_yahoo_candles(
     body: &[u8],
@@ -45,23 +46,31 @@ pub(super) fn parse_yahoo_candles(
         column("volume")?,
     );
     let mut bars = Vec::new();
+    let mut previous_provider_timestamp = 0;
     let mut previous = 0;
     for index in 0..timestamps.len() {
-        let ts = timestamps[index]
+        let provider_ts = timestamps[index]
             .as_i64()
             .ok_or("invalid Yahoo timestamp")?;
+        if provider_ts <= previous_provider_timestamp {
+            return Err("Yahoo timestamps are not chronological".into());
+        }
+        previous_provider_timestamp = provider_ts;
+        let Some(ts) = normalize_yahoo_timestamp(provider_ts, duration_seconds) else {
+            if !candle_interval_complete_at(provider_ts, duration_seconds, now) {
+                continue;
+            }
+            return Err(format!(
+                "Yahoo timestamp {provider_ts} is not aligned to the requested candle interval"
+            ));
+        };
+        if !candle_interval_complete_at(ts, duration_seconds, now) {
+            continue;
+        }
         if ts <= previous {
             return Err("Yahoo timestamps are not chronological".into());
         }
         previous = ts;
-        if !candle_interval_complete_at(ts, duration_seconds, now) {
-            continue;
-        }
-        if !yahoo_timestamp_matches_interval(ts, duration_seconds) {
-            return Err(format!(
-                "Yahoo timestamp {ts} is not aligned to the requested candle interval"
-            ));
-        }
         let values = [
             opens[index].as_f64(),
             highs[index].as_f64(),
@@ -86,6 +95,22 @@ pub(super) fn parse_yahoo_candles(
         return Err("Yahoo returned no completed candles".into());
     }
     Ok(bars)
+}
+
+fn normalize_yahoo_timestamp(timestamp: i64, duration_seconds: i64) -> Option<i64> {
+    if duration_seconds == FIFTEEN_MINUTE_INTERVAL_SECONDS {
+        let lower = timestamp.div_euclid(duration_seconds) * duration_seconds;
+        let upper = lower.saturating_add(duration_seconds);
+        let (nearest, distance) = if timestamp.saturating_sub(lower)
+            <= upper.saturating_sub(timestamp)
+        {
+            (lower, timestamp.saturating_sub(lower))
+        } else {
+            (upper, upper.saturating_sub(timestamp))
+        };
+        return (distance <= YAHOO_15M_TIMESTAMP_TOLERANCE_SECONDS).then_some(nearest);
+    }
+    yahoo_timestamp_matches_interval(timestamp, duration_seconds).then_some(timestamp)
 }
 
 fn yahoo_timestamp_matches_interval(timestamp: i64, duration_seconds: i64) -> bool {

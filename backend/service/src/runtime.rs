@@ -536,18 +536,21 @@ pub(super) fn handle_sse(mut stream: TcpStream, state: Arc<AppState>) {
 // ─── Background scan scheduler ─────────────────────────────────────────────────
 
 const FAILED_SCAN_RETRY_DELAY_SECS: u64 = 60;
+const SCAN_COMPLETION_SAFETY_MARGIN_SECS: u64 = 2 * 60;
 
 fn next_scan_epoch_after_completion(
-    scan_started_epoch: u64,
     completed_epoch: u64,
     interval_secs: u64,
-    succeeded: bool,
+    measured_scan_duration_secs: Option<u64>,
 ) -> u64 {
-    if !succeeded {
+    let Some(measured_scan_duration_secs) = measured_scan_duration_secs else {
         return completed_epoch.saturating_add(FAILED_SCAN_RETRY_DELAY_SECS);
-    }
+    };
 
-    scan_started_epoch.saturating_add(interval_secs)
+    let idle_delay = interval_secs
+        .saturating_sub(measured_scan_duration_secs)
+        .saturating_sub(SCAN_COMPLETION_SAFETY_MARGIN_SECS);
+    completed_epoch.saturating_add(idle_delay)
 }
 
 fn publish_next_scan_time(state: &AppState, next_epoch: u64) {
@@ -699,7 +702,12 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
             "scheduled_interval"
         };
         let scan_started_epoch = now_secs();
-        next_scan_epoch = scan_started_epoch.saturating_add(interval_sec);
+        // Publish a provisional target while this scan is running. Completion
+        // replaces it using the measured duration; this loop never launches a
+        // second scan before the current one returns.
+        next_scan_epoch = scan_started_epoch.saturating_add(
+            interval_sec.saturating_sub(SCAN_COMPLETION_SAFETY_MARGIN_SECS),
+        );
         publish_next_scan_time(&state, next_scan_epoch);
         eprintln!(
             "\n[Daemon] Scan event received ({trigger_mode}). Running exchange-specific Rust scan workers..."
@@ -725,11 +733,13 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                 Ok(payload) => {
                     let completed_epoch = now_secs();
                     let now_str = format_timestamp(completed_epoch);
+                    let measured_scan_duration_secs = completed_epoch
+                        .saturating_sub(scan_started_epoch)
+                        .max(1);
                     next_scan_epoch = next_scan_epoch_after_completion(
-                        scan_started_epoch,
                         completed_epoch,
                         interval_sec,
-                        true,
+                        Some(measured_scan_duration_secs),
                     );
                     publish_next_scan_time(&state, next_scan_epoch);
                     let next_str2 = format_timestamp(next_scan_epoch);
@@ -773,10 +783,9 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                     }
                     let completed_epoch = now_secs();
                     next_scan_epoch = next_scan_epoch_after_completion(
-                        scan_started_epoch,
                         completed_epoch,
                         interval_sec,
-                        false,
+                        None,
                     );
                     publish_next_scan_time(&state, next_scan_epoch);
                     state.is_scanning.store(false, Ordering::Relaxed);
@@ -798,10 +807,9 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                 eprintln!("[Daemon] Cannot open DB: {e}");
                 let completed_epoch = now_secs();
                 next_scan_epoch = next_scan_epoch_after_completion(
-                    scan_started_epoch,
                     completed_epoch,
                     interval_sec,
-                    false,
+                    None,
                 );
                 publish_next_scan_time(&state, next_scan_epoch);
                 state.is_scanning.store(false, Ordering::Relaxed);

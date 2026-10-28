@@ -11,8 +11,8 @@ use std::{
 const SQLITE_PAGE_CACHE_KIB: i64 = 256;
 #[path = "database_connections/journal.rs"]
 pub(super) mod journal;
-pub(super) const MAX_OPEN_REGULAR_MARKET_DATABASES: usize = 10;
-pub(super) const SIGNAL_SCAN_DATABASE_RESERVE: usize = 1;
+pub(super) const MAX_OPEN_REGULAR_MARKET_DATABASES: usize = 9;
+pub(super) const SIGNAL_SCAN_DATABASE_RESERVE: usize = 2;
 const MAX_OPEN_MARKET_DATABASES_TOTAL: usize =
     MAX_OPEN_REGULAR_MARKET_DATABASES + SIGNAL_SCAN_DATABASE_RESERVE;
 const TICKER_FILE_PREFIX: &str = "s";

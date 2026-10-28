@@ -358,17 +358,20 @@ identifies the upstream candle provider.
 The market-data worker runs independently of dashboard heartbeats. It refreshes
 registered-product `15m` and `1h` candles in a rotating batch sized to cover the
 current registry in twelve scheduler ticks, rounded up. Each bounded wave has
-at most 512 products and at most 10 concurrent workers. With 2,911 active
-products, a tick attempts 243 products. Batch duration and refreshed interval
-count are logged. Each product keeps its own SQLite history file and
-app-product cursor. Intraday work keeps its one-minute cadence even when the
-daily queue is busy. A shared per-symbol gate serializes intraday and daily
-writes to the same history file. The database gate admits ten regular market
-connections and reserves one additional connection for the signal scan, so a
-provider request cannot consume the scanner's only path to SQLite.
+at most eight targets and two concurrent workers. With 2,911 active products,
+a tick attempts 243 products. Batch duration and refreshed interval count are
+logged. Each product keeps its own SQLite history file and app-product cursor.
+Intraday batches target a one-minute tick independently of daily work; if a
+batch runs longer, the next starts immediately after it finishes. A shared
+per-symbol gate serializes intraday and daily writes to the same history file.
+The database gate caps all open market histories at eleven: nine regular
+connections and two slots reserved for signal scans.
 
-Signals are regenerated on a fixed 15-minute schedule, independent of
-dashboard activity. The screener creates separate rows for `15m`, `1h`, `2h`,
+Completed signal snapshots target 13-minute spacing to leave a two-minute
+margin inside the 15-minute freshness window, independent of dashboard
+activity. The scheduler uses the last measured scan duration to place the next
+start; if a scan exceeds 13 minutes, the next one starts after completion.
+Scans never overlap. The screener creates separate rows for `15m`, `1h`, `2h`,
 `4h`, `1d`, and `1w` using the same scoring rules; each row retains its own
 timeframe identity. A `15m` bar older than 30 minutes by its open timestamp is
 stale; the scan withholds it until fresh history is available. Proxy-origin
@@ -816,6 +819,71 @@ private memory below 16 MB while a scan overlaps the data refresh.
 10. **Decision and learning:** Keep the smallest reversible cache reduction,
     then remeasure memory and elapsed time under the actual scan-plus-sync
     workload before accepting the capacity change.
+
+### Restore bounded concurrent, balanced signal scans — 2026-10-28
+
+The production scan code created four app workers, but the market database
+gate reserved only one `SignalScan` connection. Each worker needs that lease
+while it reads a ticker's candles, so the workers serialized at the gate and
+did not deliver concurrent market-history scans. The concurrent production
+path also assigned whole app queues to workers, while the 1:3 app rotation was
+only exercised by the test-only path. This undermined the duration-aware scan
+recovery and left the documented production rotation unimplemented.
+
+The scanner now schedules one ticker at a time in Stockbit, Pintu, Pluang,
+Tokocrypto order across two workers. The gate reserves two scan connections,
+reduces the regular limit from ten to nine, and keeps the total open ticker
+database cap at eleven. The market-sync worker cap is four, below the regular
+connection limit; the scan worker count comes from the same reservation that
+the gate enforces.
+
+1. **Direct effect:** Two distinct ticker histories can be scanned at once;
+   app tickers are dequeued in the documented 1:3 rotation.
+2. **Immediate consequence:** Scan work can progress across apps while one
+   ticker waits on its per-symbol writer lock; the screener snapshot remains
+   transactional and is still published after every ticker finishes.
+3. **Repeated operation:** Two app database connections and at most two signal
+   history leases are used; empty app queues remain skipped.
+4. **Interactions:** The total ticker connection limit stays eleven, with one
+   regular slot reassigned to the scanner. The shared-symbol gate still
+   serializes readers against writes to the same ticker history.
+5. **Accumulation:** The change adds no store, cache, provider request, or
+   candle copy. Removing two redundant scan app connections should offset the
+   additional reserved history connection's cache; production memory is the
+   evidence that will confirm this.
+6. **Boundary conditions:** Missing, stale, malformed, or cross-category data
+   remains ineligible; worker errors still fail the complete scan instead of
+   publishing a partial snapshot.
+7. **Operational recovery:** Per-app counts, progress, scan duration, status,
+   and candle freshness expose whether the rotation shortens completion time.
+   Restore the prior caps if memory exceeds 16 MiB or database errors rise.
+8. **Governance:** This restores the existing app rotation and connection
+   bounds without changing source policy, signal qualification, or execution.
+9. **Longer-term hypothesis:** The two-worker pool should reduce scan time and
+   publish fresher snapshots while staying within the same connection budget;
+   production timing and private-memory samples will test that claim.
+10. **Decision and learning:** Share the scan-reservation limit between the
+    scheduler and database gate, then reconsider the two-worker limit only if
+    live data shows the 15-minute target or memory budget is still missed.
+
+### Restore the 15-minute market-data sweep — 2026-10-28
+
+Production diagnostics showed the intraday sweep falling behind its target.
+Each batch attempted about 246 registered targets and took 153 seconds, while
+the registry rotation contains twelve such batches. That puts a full sweep near
+30 minutes, allowing otherwise valid signal rows to expire before their next
+refresh. Raise the bounded market-sync worker pool from two to four. The four
+workers use fewer than the nine regular market-history leases; the existing
+two signal-scan leases and eleven-connection total cap remain unchanged. A
+historical live sample at ten workers used 13.76 MB of private memory, so four
+workers remain below a previously measured configuration. Recheck complete
+sweep duration, candle freshness, and process memory after deployment.
+
+The same diagnostics showed Yahoo 15-minute candles with a timestamp five
+seconds before an interval boundary (for example, 04:59:55 instead of 05:00).
+The parser rejected the entire completed-candle response on that offset. It now
+normalizes only timestamps within five seconds of a 15-minute boundary before
+checking bar completeness; larger offsets and invalid intervals remain errors.
 
 ### Stale daily-frame recovery follow-up — 2026-10-02
 

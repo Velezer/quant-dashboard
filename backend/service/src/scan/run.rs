@@ -5,6 +5,12 @@ use super::*;
 mod shared_market_history_tests;
 
 type RegisteredInstrument = (String, String, String, String, String, String);
+#[cfg(not(test))]
+type AppScanMetrics = (
+    AppScanResult,
+    Option<std::time::Duration>,
+    Option<std::time::Duration>,
+);
 
 struct ScanCycleOutput {
     user_indicator_alerts: Vec<Value>,
@@ -50,9 +56,6 @@ impl ScanCycleOutput {
         self.app_workers.append(&mut other.app_workers);
     }
 }
-
-#[cfg(not(test))]
-const MAX_CONCURRENT_APP_SCAN_WORKERS: usize = 4;
 
 pub(super) fn run_rust_scan_inner(
     app_connection: &Connection,
@@ -165,70 +168,108 @@ pub(super) fn run_rust_scan_inner(
 
     #[cfg(not(test))]
     {
-        use std::collections::VecDeque;
         use std::sync::Mutex;
 
-        let worker_count = workers.len().min(MAX_CONCURRENT_APP_SCAN_WORKERS);
+        let active_app_worker_count = workers
+            .iter()
+            .filter(|worker| worker.total > 0)
+            .count();
+        let worker_count = active_app_worker_count.min(SIGNAL_SCAN_DATABASE_RESERVE);
         let mut app_connections = Vec::with_capacity(worker_count);
         for _ in 0..worker_count {
             app_connections.push(open_app_db_for_market_directory(market_database)?);
         }
-        let queue = Mutex::new(VecDeque::from(workers));
+        let app_instrument_counts = workers
+            .iter()
+            .map(|worker| (worker.exchange_id.clone(), worker.total))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut app_scan_results = app_instrument_counts
+            .keys()
+            .map(|exchange_id| {
+                (
+                    exchange_id.clone(),
+                    (AppScanResult::default(), None, None),
+                )
+            })
+            .collect::<std::collections::BTreeMap<String, AppScanMetrics>>();
+        let queue = Mutex::new((workers, 0usize));
         std::thread::scope(|scope| -> Result<(), rusqlite::Error> {
             let mut handles = Vec::with_capacity(worker_count);
             for app_connection in app_connections {
                 let queue = &queue;
                 let progress = &completed_count;
-                handles.push(scope.spawn(move || -> Result<ScanCycleOutput, rusqlite::Error> {
+                handles.push(scope.spawn(move || -> Result<_, rusqlite::Error> {
                     let mut worker_output = ScanCycleOutput::new();
+                    let mut worker_app_results =
+                        std::collections::BTreeMap::<String, AppScanMetrics>::new();
                     loop {
-                        let worker = queue
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner())
-                            .pop_front();
-                        let Some(worker) = worker else {
+                        let next_task = {
+                            let mut queue = queue
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            let (workers, cursor) = &mut *queue;
+                            next_scan_task(workers, cursor)
+                        };
+                        let Some((exchange_id, instrument)) = next_task else {
                             break;
                         };
-                        eprintln!(
-                            "[ScanWorker] Starting {} scan for {} registered instruments.",
-                            worker.exchange_id, worker.total
-                        );
                         let started = std::time::Instant::now();
                         let result = scan_registered_app(
                             &app_connection,
                             market_database,
                             sync_state,
-                            &worker.exchange_id,
-                            worker.instruments,
+                            &exchange_id,
+                            std::iter::once(instrument),
                             progress,
                             registered_count,
                             &mut worker_output,
                         )?;
                         let elapsed = started.elapsed();
-                        eprintln!(
-                            "[ScanWorker] Finished {}: {} fresh prices, {} signal rows, elapsed {}ms.",
-                            worker.exchange_id,
-                            result.fresh_price_count,
-                            result.signal_row_count,
-                            elapsed.as_millis()
+                        let started_at = started.duration_since(scan_started);
+                        let finished_at = started_at.saturating_add(elapsed);
+                        let app_result = worker_app_results.entry(exchange_id).or_default();
+                        app_result.0.fresh_price_count += result.fresh_price_count;
+                        app_result.0.unavailable_price_count += result.unavailable_price_count;
+                        app_result.0.generated_plan_count += result.generated_plan_count;
+                        app_result.0.signal_row_count += result.signal_row_count;
+                        app_result.1 = Some(
+                            app_result
+                                .1
+                                .map_or(started_at, |first| first.min(started_at)),
                         );
-                        worker_output.app_workers.push(serde_json::json!({
-                            "exchange_id": worker.exchange_id,
-                            "status": "complete",
-                            "registered_instruments": worker.total,
-                            "fresh_price_instruments": result.fresh_price_count,
-                            "unavailable_price_instruments": result.unavailable_price_count,
-                            "generated_plans": result.generated_plan_count,
-                            "signal_rows": result.signal_row_count,
-                            "elapsed_ms": elapsed.as_millis(),
-                        }));
+                        app_result.2 = Some(
+                            app_result
+                                .2
+                                .map_or(finished_at, |last| last.max(finished_at)),
+                        );
                     }
-                    Ok(worker_output)
+                    Ok((worker_output, worker_app_results))
                 }));
             }
             for handle in handles {
                 match handle.join() {
-                    Ok(Ok(worker_output)) => output.merge(worker_output),
+                    Ok(Ok((worker_output, worker_results))) => {
+                        output.merge(worker_output);
+                        for (exchange_id, (result, started_at, finished_at)) in worker_results {
+                            let aggregate = app_scan_results
+                                .entry(exchange_id)
+                                .or_insert_with(|| (AppScanResult::default(), None, None));
+                            aggregate.0.fresh_price_count += result.fresh_price_count;
+                            aggregate.0.unavailable_price_count += result.unavailable_price_count;
+                            aggregate.0.generated_plan_count += result.generated_plan_count;
+                            aggregate.0.signal_row_count += result.signal_row_count;
+                            if let Some(started_at) = started_at {
+                                aggregate.1 = Some(
+                                    aggregate.1.map_or(started_at, |first| first.min(started_at)),
+                                );
+                            }
+                            if let Some(finished_at) = finished_at {
+                                aggregate.2 = Some(
+                                    aggregate.2.map_or(finished_at, |last| last.max(finished_at)),
+                                );
+                            }
+                        }
+                    }
                     Ok(Err(error)) => return Err(error),
                     Err(_) => {
                         return Err(rusqlite::Error::InvalidParameterName(
@@ -239,6 +280,31 @@ pub(super) fn run_rust_scan_inner(
             }
             Ok(())
         })?;
+        for (exchange_id, registered_instruments) in app_instrument_counts {
+            let (result, started_at, finished_at) = app_scan_results
+                .remove(&exchange_id)
+                .unwrap_or_default();
+            let elapsed = match (started_at, finished_at) {
+                (Some(started_at), Some(finished_at)) => finished_at.saturating_sub(started_at),
+                _ => std::time::Duration::ZERO,
+            };
+            eprintln!(
+                "[ScanWorker] Finished {exchange_id}: {registered_instruments} registered, {} fresh prices, {} signal rows, elapsed {}ms.",
+                result.fresh_price_count,
+                result.signal_row_count,
+                elapsed.as_millis()
+            );
+            output.app_workers.push(serde_json::json!({
+                "exchange_id": exchange_id,
+                "status": "complete",
+                "registered_instruments": registered_instruments,
+                "fresh_price_instruments": result.fresh_price_count,
+                "unavailable_price_instruments": result.unavailable_price_count,
+                "generated_plans": result.generated_plan_count,
+                "signal_rows": result.signal_row_count,
+                "elapsed_ms": elapsed.as_millis(),
+            }));
+        }
     }
 
     if let Some(state) = sync_state {
@@ -373,7 +439,6 @@ impl ScanWorker {
 }
 
 /// Cycle across nonempty app queues; exhausted apps do not block other apps.
-#[cfg(test)]
 pub(super) fn next_scan_worker(remaining: &[usize], cursor: &mut usize) -> Option<usize> {
     if remaining.is_empty() {
         return None;
@@ -386,6 +451,20 @@ pub(super) fn next_scan_worker(remaining: &[usize], cursor: &mut usize) -> Optio
         }
     }
     None
+}
+
+#[cfg(not(test))]
+fn next_scan_task(
+    workers: &mut [ScanWorker],
+    cursor: &mut usize,
+) -> Option<(String, RegisteredInstrument)> {
+    let remaining = workers
+        .iter()
+        .map(|worker| worker.instruments.len())
+        .collect::<Vec<_>>();
+    let index = next_scan_worker(&remaining, cursor)?;
+    let worker = workers.get_mut(index)?;
+    Some((worker.exchange_id.clone(), worker.instruments.next()?))
 }
 
 /// Resolve an app ticker to its own fresh series first. If that history is

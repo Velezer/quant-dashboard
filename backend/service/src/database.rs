@@ -14,6 +14,8 @@ pub(super) use connections::ticker_database_path;
 pub(super) use connections::TickerConnection;
 #[cfg(test)]
 use connections::{MarketConnectionGate, MarketConnectionKind, MAX_OPEN_REGULAR_MARKET_DATABASES};
+#[cfg(not(test))]
+pub(super) use connections::SIGNAL_SCAN_DATABASE_RESERVE;
 pub(super) const LAYOUT_VERSION: &str = "3";
 
 #[cfg(not(test))]
