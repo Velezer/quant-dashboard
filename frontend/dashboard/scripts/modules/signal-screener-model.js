@@ -18,17 +18,22 @@ export function signalIdentity(signal) {
 }
 
 export function signalScoreState(signal) {
-    if (signal?.persistent_score !== true) return null;
-    if (signal.score_status === 'stale') {
-        return { label: 'STALE · NO MARKET ENTRY · HELD', tone: 'stale', current: false };
+    if (signal?.persistent_score === true) {
+        if (signal.score_status === 'stale') {
+            return { label: 'STALE · NO MARKET ENTRY · HELD', tone: 'stale', current: false };
+        }
+        if (signal.score_status === 'not_qualifying') {
+            return { label: 'NO MARKET ENTRY · SCORE 0', tone: 'inactive', current: false };
+        }
+        const timeframe = String(signal.timeframe || '').toUpperCase();
+        return signal.score_bar_is_forming
+            ? { label: `MARKET ENTRY NOW · PROVISIONAL ${timeframe}`, tone: 'provisional', current: true }
+            : { label: `MARKET ENTRY NOW · LATEST CLOSED ${timeframe}`, tone: 'current', current: true };
     }
-    if (signal.score_status === 'not_qualifying') {
-        return { label: 'NO MARKET ENTRY · SCORE 0', tone: 'inactive', current: false };
+    if (!signalPriceIsFresh(signal)) {
+        return { label: 'SETUP RETAINED · STALE PRICE · NOT A MARKET ENTRY', tone: 'stale', current: false };
     }
-    const timeframe = String(signal.timeframe || '').toUpperCase();
-    return signal.score_bar_is_forming
-        ? { label: `MARKET ENTRY NOW · PROVISIONAL ${timeframe}`, tone: 'provisional', current: true }
-        : { label: `MARKET ENTRY NOW · LATEST CLOSED ${timeframe}`, tone: 'current', current: true };
+    return { label: 'MARKET ENTRY NOW · FRESH PRICE', tone: 'current', current: true };
 }
 
 export function signalStrategyLabel(signal, strategies) {

@@ -49,8 +49,8 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
             : 'Stored candles alone do not confirm fresh prices or a qualifying setup. The next completed scan will provide detailed checks.';
         if (workerMetric) result.metrics = [workerMetric];
         if (count(summary.stale_price_signal_count)) {
-            result.title = 'Saved signals are hidden by stale prices';
-            result.message += ` ${count(summary.stale_price_signal_count)} saved signals in this response were withheld because their price bars are stale.`;
+            result.title = 'Signal setups retained with stale reference prices';
+            result.message += ` ${count(summary.stale_price_signal_count)} active setups remain visible for inspection; stale reference prices make them ineligible as current market entries.`;
         }
         result.retryListings = supportsListingRefresh && Boolean(error || (listings.length && (!registered || !confirmed)));
         result.nextStep = result.retryListings ? 'Retry listings, then scan again after market history is available.'
@@ -113,8 +113,8 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         result.message = `A new completed scan is needed to explain this view now.${blockers.length ? ` Last observed blockers: ${blockers.join('; ')}.` : ''}`;
         result.nextStep = 'Refresh signals or wait for the running scan to complete, then Recheck status.';
     } else if (count(summary.stale_price_signal_count)) {
-        result.title = 'Saved signals are hidden by stale prices';
-        result.message = `${count(summary.stale_price_signal_count)} saved signals in this response failed the current price freshness check. Fresh matching 15m candles and a new signal scan are needed.`;
+        result.title = 'Signal setups retained with stale reference prices';
+        result.message = `${count(summary.stale_price_signal_count)} active setups remain visible for inspection. Their reference prices are stale, so they are not current market entries.`;
     } else if (!instruments) {
         result.title = 'No verified tickers were scanned';
         result.message = 'This product has no eligible app listings in the completed scan.';

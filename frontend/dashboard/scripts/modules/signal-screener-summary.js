@@ -55,12 +55,11 @@ export function createSignalScreenerSummary({
                 : 'The selected filters have no current rows. Retry after market data recovers.';
             status.textContent = `${priceCoverageMessage} ${currentViewMessage}`;
             retry.classList.remove('hidden');
-        } else if (stalePriceSignalCount > 0 && visibleCount === 0) {
-            status.textContent = `${stalePriceSignalCount} saved signal${stalePriceSignalCount === 1 ? ' was' : 's were'} withheld because the price bar is stale. Waiting for fresh price data.`;
-            retry.classList.add('hidden');
         } else {
-            const withheld = stalePriceSignalCount > 0 ? ` · ${stalePriceSignalCount} stale hidden` : '';
-            status.textContent = `Updated ${ageLabel(generatedAt)}${withheld}`;
+            const staleReference = stalePriceSignalCount > 0
+                ? ` · ${stalePriceSignalCount} setup${stalePriceSignalCount === 1 ? '' : 's'} shown with stale reference prices; not market entries`
+                : '';
+            status.textContent = `Updated ${ageLabel(generatedAt)}${staleReference}`;
             retry.classList.add('hidden');
         }
         freshness.textContent = generatedAt
