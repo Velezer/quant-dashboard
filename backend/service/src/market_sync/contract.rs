@@ -29,6 +29,7 @@ pub(super) struct PreparedCandleSyncTarget {
     pub(super) product_id: String,
     pub(super) underlying_symbol: String,
     pub(super) asset_category_id: String,
+    pub(super) shared_reference_symbols: Vec<String>,
     pub(super) tokocrypto_market: Option<PreparedTokocryptoMarket>,
 }
 
@@ -36,6 +37,7 @@ pub(super) struct PreparedCandleSyncTarget {
 pub(super) enum CandleSyncWindow {
     Intraday,
     Daily,
+    SingleInterval(&'static str),
 }
 
 impl CandleSyncWindow {
@@ -43,6 +45,10 @@ impl CandleSyncWindow {
         match self {
             Self::Intraday => &["15m", "1h"],
             Self::Daily => &["1d"],
+            Self::SingleInterval("15m") => &["15m"],
+            Self::SingleInterval("1h") => &["1h"],
+            Self::SingleInterval("1d") => &["1d"],
+            Self::SingleInterval(_) => &[],
         }
     }
 }

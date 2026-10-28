@@ -76,6 +76,12 @@ impl SignalReadiness {
         }
     }
 
+    #[cfg(not(test))]
+    pub(crate) fn merge(&mut self, mut other: Self) {
+        self.scan_started_at = self.scan_started_at.min(other.scan_started_at);
+        self.products.append(&mut other.products);
+    }
+
     pub(crate) fn record(
         &mut self,
         exchange: &str,

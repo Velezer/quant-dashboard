@@ -7,7 +7,12 @@ use super::{
     StaleSignalSyncPriority, CANDLE_SYNC_ADAPTERS, CANDLE_SYNC_WORKER_SQLITE_PAGE_CACHE_KIB,
     MAX_DAILY_REGISTERED_CANDLE_TARGETS_PER_TICK, STALE_DAILY_REFRESH_COOLDOWN_SECONDS,
 };
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::HashSet;
+
+#[cfg(test)]
+#[path = "market_sync_peer_reference_tests.rs"]
+mod peer_reference_tests;
 
 const CANDLE_SYNC_SWEEP_TICKS: usize = 12;
 const INTRADAY_VOLUME_BASELINE_BAR_COUNT: usize = 20;
@@ -63,21 +68,139 @@ impl Drop for StorageSymbolSyncGuard<'_> {
     }
 }
 
+/// Return intervals whose fresh, canonical crypto research candles already
+/// exist in this ticker shard or a verified same-category peer shard.
+pub(super) fn shared_reference_storage_symbols(
+    app_connection: &Connection,
+    exchange_id: &str,
+    storage_symbol: &str,
+    underlying_symbol: &str,
+    asset_category_id: &str,
+) -> Result<Vec<String>, rusqlite::Error> {
+    if !matches!(
+        asset_category_id,
+        "crypto_spot" | "crypto_perpetual" | "crypto_futures"
+    ) || underlying_symbol.trim().is_empty()
+    {
+        return Ok(Vec::new());
+    }
+    let mut statement = app_connection.prepare(
+        "SELECT DISTINCT candidate.storage_symbol
+           FROM app.instruments AS candidate
+           JOIN app.market_store_inventory AS inventory
+             ON inventory.storage_symbol=candidate.storage_symbol
+          WHERE candidate.is_active=1 AND candidate.venue_verified=1
+            AND candidate.listing_status IN ('venue_active','public_listed_snapshot')
+            AND candidate.asset_category_id=?1
+            AND upper(trim(candidate.underlying_symbol))=upper(trim(?2))
+            AND candidate.exchange_id<>?3
+            AND candidate.storage_symbol<>?4
+          ORDER BY candidate.storage_symbol",
+    )?;
+    let rows = statement
+        .query_map(
+            params![asset_category_id, underlying_symbol, exchange_id, storage_symbol],
+            |row| row.get::<_, String>(0),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub(super) fn fresh_shared_reference_intervals(
+    market_database: &str,
+    instrument: super::RegisteredCandleInstrument<'_>,
+    candidate_symbols: &[String],
+    intervals: &[&'static str],
+) -> HashSet<&'static str> {
+    let mut fresh = HashSet::new();
+    let now_ns = super::now_millis().saturating_mul(quant_core::NANOS_PER_MILLISECOND);
+    if let Ok(Some(connection)) =
+        open_market_history_for_symbol(market_database, instrument.storage_symbol, false)
+    {
+        for interval in intervals {
+            if has_fresh_shared_reference(
+                &connection,
+                instrument.storage_symbol,
+                instrument.exchange_id,
+                instrument.product_id,
+                instrument.asset_category_id,
+                interval,
+                now_ns,
+            ) {
+                fresh.insert(*interval);
+            }
+        }
+    }
+    if fresh.len() == intervals.len() {
+        return fresh;
+    }
+
+    // Probe one shard at a time before opening the write target. This avoids
+    // reciprocal shard locks while allowing any matching peer storage key.
+    for candidate_symbol in candidate_symbols {
+        if fresh.len() == intervals.len() {
+            break;
+        }
+        let Ok(Some(connection)) =
+            open_market_history_for_symbol(market_database, candidate_symbol, false)
+        else {
+            continue;
+        };
+        for interval in intervals {
+            if !fresh.contains(interval)
+                && has_fresh_shared_reference(
+                    &connection,
+                    candidate_symbol,
+                    instrument.exchange_id,
+                    instrument.product_id,
+                    instrument.asset_category_id,
+                    interval,
+                    now_ns,
+                )
+            {
+                fresh.insert(*interval);
+            }
+        }
+    }
+    fresh
+}
+
+fn has_fresh_shared_reference(
+    connection: &Connection,
+    storage_symbol: &str,
+    exchange_id: &str,
+    product_id: &str,
+    asset_category_id: &str,
+    interval: &str,
+    now_ns: i64,
+) -> bool {
+    let Some(source) = selected_candle_source_for_product(
+        connection,
+        storage_symbol,
+        exchange_id,
+        product_id,
+        interval,
+    )
+    .ok()
+    .flatten()
+    .filter(|source| {
+        crate::research_proxy::shared::is_shared_source_for_category(
+            source,
+            asset_category_id,
+        )
+    }) else {
+        return false;
+    };
+    load_candles_from_source(connection, storage_symbol, interval, 1, &source)
+        .ok()
+        .and_then(|candles| candles.last().map(|candle| candle.time))
+        .is_some_and(|last_bar| completed_bar_is_fresh_at(storage_symbol, interval, last_bar, now_ns))
+}
+
 pub(super) fn sync_prepared_candle_target(
     target: &PreparedCandleSyncTarget,
     market_database: &str,
 ) -> Result<usize, String> {
-    let market_connection =
-        match open_market_history_for_symbol(market_database, &target.storage_symbol, true) {
-            Ok(Some(connection)) => connection,
-            Ok(None) => return Ok(0),
-            Err(error) => return Err(error.to_string()),
-        };
-    let _ = market_connection.pragma_update(
-        None,
-        "cache_size",
-        -CANDLE_SYNC_WORKER_SQLITE_PAGE_CACHE_KIB,
-    );
     let tokocrypto_market =
         target
             .tokocrypto_market
@@ -99,9 +222,47 @@ pub(super) fn sync_prepared_candle_target(
         instrument,
         window: CandleSyncWindow::Intraday,
     };
+    let already_fresh = fresh_shared_reference_intervals(
+        market_database,
+        instrument,
+        &target.shared_reference_symbols,
+        request.window.intervals(),
+    );
+    let market_connection =
+        match open_market_history_for_symbol(market_database, &target.storage_symbol, true) {
+            Ok(Some(connection)) => connection,
+            Ok(None) => return Ok(0),
+            Err(error) => return Err(error.to_string()),
+        };
+    let _ = market_connection.pragma_update(
+        None,
+        "cache_size",
+        -CANDLE_SYNC_WORKER_SQLITE_PAGE_CACHE_KIB,
+    );
     let mut refreshed = 0;
     for adapter in &CANDLE_SYNC_ADAPTERS {
         if !adapter.supports(&request) {
+            continue;
+        }
+        if adapter.source_class() == CandleSourceClass::ResearchProxy {
+            for interval in request.window.intervals() {
+                if already_fresh.contains(interval) {
+                    continue;
+                }
+                let interval_request = CandleSyncRequest {
+                    instrument,
+                    window: CandleSyncWindow::SingleInterval(*interval),
+                };
+                if !adapter.supports(&interval_request) {
+                    continue;
+                }
+                let report = adapter.sync(&market_connection, &interval_request);
+                refreshed += report
+                    .outcomes
+                    .iter()
+                    .filter(|outcome| outcome.result.is_ok())
+                    .count();
+            }
             continue;
         }
         let report = adapter.sync(&market_connection, &request);

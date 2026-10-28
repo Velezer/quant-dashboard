@@ -416,23 +416,33 @@ impl AppState {
     }
 
     pub(super) fn update_scan_progress(&self, symbol: &str, completed: usize, total: usize) {
-        *self
-            .current_scan_symbol
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = symbol.to_string();
         let progress = if total == 0 {
             0.0
         } else {
             (completed.min(total) as f64 / total as f64 * 100.0).clamp(0.0, 100.0)
         };
-        *self
+        let mut progress_pct = self
             .scan_progress_pct
             .lock()
-            .unwrap_or_else(|error| error.into_inner()) = progress;
+            .unwrap_or_else(|error| error.into_inner());
+        if progress >= *progress_pct {
+            *progress_pct = progress;
+            *self
+                .current_scan_symbol
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = symbol.to_string();
+        }
     }
 
     pub(super) fn reset_scan_progress(&self) {
-        self.update_scan_progress("", 0, 1);
+        *self
+            .scan_progress_pct
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = 0.0;
+        *self
+            .current_scan_symbol
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = String::new();
     }
 
     pub(super) fn complete_scan_progress(&self) {
@@ -470,15 +480,15 @@ pub(super) fn handle_sse(mut stream: TcpStream, state: Arc<AppState>) {
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     let next_scan_epoch = state.next_scan_epoch.load(Ordering::Relaxed);
+    let pct = *state
+        .scan_progress_pct
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let current_sym = state
         .current_scan_symbol
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    let pct = *state
-        .scan_progress_pct
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
     let is_scanning = state.is_scanning.load(Ordering::Relaxed);
     let secs = now_secs();
     let server_time = format_timestamp(secs);

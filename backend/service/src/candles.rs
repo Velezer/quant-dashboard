@@ -210,18 +210,51 @@ pub(super) fn resolve_registered_candle_storage_symbol(
     product_id: &str,
     request_storage_symbol: &str,
 ) -> Result<Option<String>, rusqlite::Error> {
-    connection
+    let exchange = exchange.trim().to_ascii_lowercase();
+    let product_id = product_id.trim();
+    let request_storage_symbol = request_storage_symbol.trim();
+    let registered_symbol = connection
         .query_row(
             "SELECT storage_symbol FROM instruments
               WHERE exchange_id=?1 AND is_active=1 AND venue_verified=1
                 AND upper(storage_symbol)=upper(?2)
                 AND (?3='' OR product_id=?3)
+                AND listing_status IN ('venue_active','public_listed_snapshot')
               LIMIT 1",
-            params![
-                exchange.trim().to_ascii_lowercase(),
-                request_storage_symbol.trim(),
-                product_id.trim()
-            ],
+            params![exchange, request_storage_symbol, product_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if registered_symbol.is_some() {
+        return Ok(registered_symbol);
+    }
+
+    // Signal rows may point at a verified peer's shared candle database. Only
+    // allow this when the requested asset resolves back to this app's active
+    // registration and both registrations agree on category and underlying.
+    let underlying = normalize_registered_ticker(request_storage_symbol);
+    if underlying.is_empty() {
+        return Ok(None);
+    }
+    connection
+        .query_row(
+            "SELECT peer.storage_symbol
+               FROM instruments AS target
+               JOIN instruments AS peer
+                 ON peer.asset_category_id=target.asset_category_id
+                AND upper(trim(peer.underlying_symbol))=upper(trim(target.underlying_symbol))
+              WHERE target.exchange_id=?1 AND target.is_active=1 AND target.venue_verified=1
+                AND target.listing_status IN ('venue_active','public_listed_snapshot')
+                AND (?2='' OR target.product_id=?2)
+                AND upper(trim(target.underlying_symbol))=?3
+                AND target.asset_category_id IN ('crypto_spot','crypto_perpetual','crypto_futures')
+                AND peer.exchange_id<>target.exchange_id
+                AND peer.is_active=1 AND peer.venue_verified=1
+                AND peer.listing_status IN ('venue_active','public_listed_snapshot')
+                AND upper(peer.storage_symbol)=upper(?4)
+              ORDER BY peer.exchange_id,peer.product_id
+              LIMIT 1",
+            params![exchange, product_id, underlying, request_storage_symbol],
             |row| row.get(0),
         )
         .optional()

@@ -1,6 +1,10 @@
 use super::*;
 
-type RegisteredInstrument = (String, String, String, String, String);
+#[cfg(test)]
+#[path = "run/shared_market_history_tests.rs"]
+mod shared_market_history_tests;
+
+type RegisteredInstrument = (String, String, String, String, String, String);
 
 struct ScanCycleOutput {
     user_indicator_alerts: Vec<Value>,
@@ -28,7 +32,27 @@ impl ScanCycleOutput {
             app_workers: Vec::new(),
         }
     }
+
+    #[cfg(not(test))]
+    fn merge(&mut self, mut other: Self) {
+        self.user_indicator_alerts
+            .append(&mut other.user_indicator_alerts);
+        self.running_signal_rows
+            .append(&mut other.running_signal_rows);
+        self.potential_signal_rows
+            .append(&mut other.potential_signal_rows);
+        self.standalone_signal_rows
+            .append(&mut other.standalone_signal_rows);
+        self.readiness.merge(other.readiness);
+        self.score_updates.append(&mut other.score_updates);
+        self.generated_plan_count += other.generated_plan_count;
+        self.price_data_unavailable_count += other.price_data_unavailable_count;
+        self.app_workers.append(&mut other.app_workers);
+    }
 }
+
+#[cfg(not(test))]
+const MAX_CONCURRENT_APP_SCAN_WORKERS: usize = 4;
 
 pub(super) fn run_rust_scan_inner(
     app_connection: &Connection,
@@ -40,7 +64,8 @@ pub(super) fn run_rust_scan_inner(
     // prices; they cannot create a ticker or choose an app.
     let registered = {
         let mut statement = app_connection.prepare(
-            "SELECT exchange_id, product_id, asset_category_id, storage_symbol, symbol
+            "SELECT exchange_id, product_id, asset_category_id, storage_symbol, symbol,
+                    underlying_symbol
                FROM instruments
               WHERE is_active=1 AND venue_verified=1
                 AND listing_status IN ('venue_active','public_listed_snapshot')
@@ -53,6 +78,7 @@ pub(super) fn run_rust_scan_inner(
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
             ))
         })?;
         rows.collect::<Result<Vec<_>, _>>()?
@@ -82,54 +108,137 @@ pub(super) fn run_rust_scan_inner(
     for (exchange_id, instruments) in app_registrations {
         workers.push(ScanWorker::new(exchange_id, instruments));
     }
-    let mut remaining: Vec<usize> = workers.iter().map(|worker| worker.total).collect();
-    let mut cursor = 0usize;
     let mut output = ScanCycleOutput::new();
-    let mut completed_count = 0usize;
-    while let Some(index) = next_scan_worker(&remaining, &mut cursor) {
-        let worker = &mut workers[index];
-        let instrument = worker
-            .instruments
-            .next()
-            .expect("remaining count matches scan queue");
-        let started = std::time::Instant::now();
-        let result = scan_registered_app(
-            app_connection,
-            market_database,
-            sync_state,
-            &worker.exchange_id,
-            std::iter::once(instrument),
-            completed_count,
-            registered_count,
-            &mut output,
-        )?;
-        worker.elapsed += started.elapsed();
-        worker.result.fresh_price_count += result.fresh_price_count;
-        worker.result.unavailable_price_count += result.unavailable_price_count;
-        worker.result.generated_plan_count += result.generated_plan_count;
-        worker.result.signal_row_count += result.signal_row_count;
-        remaining[index] -= 1;
-        completed_count += 1;
-        if remaining[index] == 0 {
-            eprintln!(
-                "[ScanWorker] Finished {}: {} fresh prices, {} signal rows, elapsed {}ms.",
-                worker.exchange_id,
-                worker.result.fresh_price_count,
-                worker.result.signal_row_count,
-                worker.elapsed.as_millis()
-            );
+    let scan_started = std::time::Instant::now();
+    let completed_count = std::sync::atomic::AtomicUsize::new(0);
+
+    #[cfg(test)]
+    {
+        // Keep tests deterministic and compatible with their in-memory app DB.
+        let mut remaining: Vec<usize> = workers.iter().map(|worker| worker.total).collect();
+        let mut cursor = 0usize;
+        while let Some(index) = next_scan_worker(&remaining, &mut cursor) {
+            let worker = &mut workers[index];
+            let instrument = worker
+                .instruments
+                .next()
+                .expect("remaining count matches scan queue");
+            let started = std::time::Instant::now();
+            let result = scan_registered_app(
+                app_connection,
+                market_database,
+                sync_state,
+                &worker.exchange_id,
+                std::iter::once(instrument),
+                &completed_count,
+                registered_count,
+                &mut output,
+            )?;
+            worker.elapsed += started.elapsed();
+            worker.result.fresh_price_count += result.fresh_price_count;
+            worker.result.unavailable_price_count += result.unavailable_price_count;
+            worker.result.generated_plan_count += result.generated_plan_count;
+            worker.result.signal_row_count += result.signal_row_count;
+            remaining[index] -= 1;
+            if remaining[index] == 0 {
+                eprintln!(
+                    "[ScanWorker] Finished {}: {} fresh prices, {} signal rows, elapsed {}ms.",
+                    worker.exchange_id,
+                    worker.result.fresh_price_count,
+                    worker.result.signal_row_count,
+                    worker.elapsed.as_millis()
+                );
+            }
+        }
+        for worker in workers {
+            output.app_workers.push(serde_json::json!({
+                "exchange_id": worker.exchange_id,
+                "status": "complete",
+                "registered_instruments": worker.total,
+                "fresh_price_instruments": worker.result.fresh_price_count,
+                "unavailable_price_instruments": worker.result.unavailable_price_count,
+                "generated_plans": worker.result.generated_plan_count,
+                "signal_rows": worker.result.signal_row_count,
+            }));
         }
     }
-    for worker in workers {
-        output.app_workers.push(serde_json::json!({
-            "exchange_id": worker.exchange_id,
-            "status": "complete",
-            "registered_instruments": worker.total,
-            "fresh_price_instruments": worker.result.fresh_price_count,
-            "unavailable_price_instruments": worker.result.unavailable_price_count,
-            "generated_plans": worker.result.generated_plan_count,
-            "signal_rows": worker.result.signal_row_count,
-        }));
+
+    #[cfg(not(test))]
+    {
+        use std::collections::VecDeque;
+        use std::sync::Mutex;
+
+        let worker_count = workers.len().min(MAX_CONCURRENT_APP_SCAN_WORKERS);
+        let mut app_connections = Vec::with_capacity(worker_count);
+        for _ in 0..worker_count {
+            app_connections.push(open_app_db_for_market_directory(market_database)?);
+        }
+        let queue = Mutex::new(VecDeque::from(workers));
+        std::thread::scope(|scope| -> Result<(), rusqlite::Error> {
+            let mut handles = Vec::with_capacity(worker_count);
+            for app_connection in app_connections {
+                let queue = &queue;
+                let progress = &completed_count;
+                handles.push(scope.spawn(move || -> Result<ScanCycleOutput, rusqlite::Error> {
+                    let mut worker_output = ScanCycleOutput::new();
+                    loop {
+                        let worker = queue
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .pop_front();
+                        let Some(worker) = worker else {
+                            break;
+                        };
+                        eprintln!(
+                            "[ScanWorker] Starting {} scan for {} registered instruments.",
+                            worker.exchange_id, worker.total
+                        );
+                        let started = std::time::Instant::now();
+                        let result = scan_registered_app(
+                            &app_connection,
+                            market_database,
+                            sync_state,
+                            &worker.exchange_id,
+                            worker.instruments,
+                            progress,
+                            registered_count,
+                            &mut worker_output,
+                        )?;
+                        let elapsed = started.elapsed();
+                        eprintln!(
+                            "[ScanWorker] Finished {}: {} fresh prices, {} signal rows, elapsed {}ms.",
+                            worker.exchange_id,
+                            result.fresh_price_count,
+                            result.signal_row_count,
+                            elapsed.as_millis()
+                        );
+                        worker_output.app_workers.push(serde_json::json!({
+                            "exchange_id": worker.exchange_id,
+                            "status": "complete",
+                            "registered_instruments": worker.total,
+                            "fresh_price_instruments": result.fresh_price_count,
+                            "unavailable_price_instruments": result.unavailable_price_count,
+                            "generated_plans": result.generated_plan_count,
+                            "signal_rows": result.signal_row_count,
+                            "elapsed_ms": elapsed.as_millis(),
+                        }));
+                    }
+                    Ok(worker_output)
+                }));
+            }
+            for handle in handles {
+                match handle.join() {
+                    Ok(Ok(worker_output)) => output.merge(worker_output),
+                    Ok(Err(error)) => return Err(error),
+                    Err(_) => {
+                        return Err(rusqlite::Error::InvalidParameterName(
+                            "app signal scan worker panicked".into(),
+                        ));
+                    }
+                }
+            }
+            Ok(())
+        })?;
     }
 
     if let Some(state) = sync_state {
@@ -169,6 +278,7 @@ pub(super) fn run_rust_scan_inner(
             "generated_at": now_str,
             "interval_minutes": interval_min,
             "interval_seconds": interval_min * 60,
+            "scan_duration_ms": scan_started.elapsed().as_millis(),
             "score_interpretation": "ranking_only_not_probability",
             "engine": "rust_native_zero_allocation",
             "workers": readiness["workers"].clone(),
@@ -219,8 +329,29 @@ struct ScanWorker {
     exchange_id: String,
     total: usize,
     instruments: std::vec::IntoIter<RegisteredInstrument>,
+    #[cfg(test)]
     result: AppScanResult,
+    #[cfg(test)]
     elapsed: std::time::Duration,
+}
+
+struct ScanProgressStep<'a> {
+    completed_count: &'a std::sync::atomic::AtomicUsize,
+    sync_state: Option<&'a AppState>,
+    label: String,
+    total: usize,
+}
+
+impl Drop for ScanProgressStep<'_> {
+    fn drop(&mut self) {
+        let completed = self
+            .completed_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .saturating_add(1);
+        if let Some(state) = self.sync_state {
+            state.update_scan_progress(&self.label, completed, self.total);
+        }
+    }
 }
 
 impl ScanWorker {
@@ -233,13 +364,16 @@ impl ScanWorker {
             exchange_id,
             total,
             instruments: instruments.into_iter(),
+            #[cfg(test)]
             result: AppScanResult::default(),
+            #[cfg(test)]
             elapsed: std::time::Duration::ZERO,
         }
     }
 }
 
 /// Cycle across nonempty app queues; exhausted apps do not block other apps.
+#[cfg(test)]
 pub(super) fn next_scan_worker(remaining: &[usize], cursor: &mut usize) -> Option<usize> {
     if remaining.is_empty() {
         return None;
@@ -254,6 +388,138 @@ pub(super) fn next_scan_worker(remaining: &[usize], cursor: &mut usize) -> Optio
     None
 }
 
+/// Resolve an app ticker to its own fresh series first. If that history is
+/// stale, a verified peer in the same crypto asset category may supply a
+/// canonical shared research reference without copying candle rows.
+fn open_scan_market_history(
+    app_connection: &Connection,
+    market_database: &str,
+    exchange: &str,
+    product: &str,
+    category: &str,
+    storage_symbol: &str,
+    underlying_symbol: &str,
+) -> Result<Option<(SignalScanConnection, String)>, rusqlite::Error> {
+    let now_seconds = now_secs().min(i64::MAX as u64) as i64;
+    let now_ns = now_seconds.saturating_mul(NANOS_PER_SECOND);
+    let mut own_database_exists = false;
+    let mut own_open_error = None;
+    match open_market_history_for_signal_scan(market_database, storage_symbol, false) {
+        Ok(Some(connection)) => {
+            own_database_exists = true;
+            let state = product_candle_scan_state_at(
+                &connection,
+                storage_symbol,
+                exchange,
+                product,
+                "15m",
+                now_seconds,
+            );
+            match state {
+                Ok(state)
+                    if scan_state_has_fresh_price(
+                        &state,
+                        storage_symbol,
+                        category,
+                        now_ns,
+                        false,
+                    ) =>
+                {
+                    return Ok(Some((connection, storage_symbol.to_string())));
+                }
+                Ok(_) => {}
+                Err(error) => own_open_error = Some(error),
+            }
+        }
+        Ok(None) => {}
+        Err(error) => own_open_error = Some(error),
+    }
+
+    if matches!(category, "crypto_spot" | "crypto_perpetual" | "crypto_futures")
+        && !underlying_symbol.trim().is_empty()
+    {
+        let candidates = {
+            let mut statement = app_connection.prepare(
+                "SELECT DISTINCT candidate.storage_symbol
+                   FROM instruments AS candidate
+                   JOIN market_store_inventory AS inventory
+                     ON inventory.storage_symbol=candidate.storage_symbol
+                  WHERE candidate.is_active=1 AND candidate.venue_verified=1
+                    AND candidate.listing_status IN ('venue_active','public_listed_snapshot')
+                    AND candidate.asset_category_id=?1
+                    AND upper(trim(candidate.underlying_symbol))=upper(trim(?2))
+                    AND candidate.exchange_id<>?3
+                    AND candidate.storage_symbol<>?4
+                  ORDER BY candidate.storage_symbol",
+            )?;
+            let rows = statement
+                .query_map(
+                    params![category, underlying_symbol, exchange, storage_symbol],
+                    |row| row.get::<_, String>(0),
+                )?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+        for candidate_symbol in candidates {
+            let Ok(Some(connection)) = open_market_history_for_signal_scan(
+                market_database,
+                &candidate_symbol,
+                false,
+            ) else {
+                continue;
+            };
+            if let Ok(state) = product_candle_scan_state_at(
+                &connection,
+                &candidate_symbol,
+                exchange,
+                product,
+                "15m",
+                now_seconds,
+            ) {
+                if scan_state_has_fresh_price(
+                    &state,
+                    &candidate_symbol,
+                    category,
+                    now_ns,
+                    true,
+                ) {
+                    return Ok(Some((connection, candidate_symbol)));
+                }
+            }
+        }
+    }
+
+    if own_database_exists {
+        if let Some(error) = own_open_error {
+            return Err(error);
+        }
+        return open_market_history_for_signal_scan(market_database, storage_symbol, false)
+            .map(|connection| connection.map(|connection| (connection, storage_symbol.to_string())));
+    }
+    if let Some(error) = own_open_error {
+        return Err(error);
+    }
+    Ok(None)
+}
+
+fn scan_state_has_fresh_price(
+    state: &Option<ProductCandleScanState>,
+    symbol: &str,
+    category: &str,
+    now_ns: i64,
+    require_shared_reference: bool,
+) -> bool {
+    let Some(state) = state.as_ref() else {
+        return false;
+    };
+    !state.is_stale
+        && (!require_shared_reference
+            || research_proxy::shared::is_shared_source_for_category(&state.source, category))
+        && state.latest_bar_time.is_some_and(|bar_time| {
+            completed_bar_is_fresh_at(symbol, "15m", bar_time, now_ns)
+        })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn scan_registered_app(
     app_connection: &Connection,
@@ -261,7 +527,7 @@ fn scan_registered_app(
     sync_state: Option<&AppState>,
     exchange_id: &str,
     instruments: impl IntoIterator<Item = RegisteredInstrument>,
-    progress_offset: usize,
+    completed_count: &std::sync::atomic::AtomicUsize,
     total_instruments: usize,
     output: &mut ScanCycleOutput,
 ) -> Result<AppScanResult, rusqlite::Error> {
@@ -271,70 +537,75 @@ fn scan_registered_app(
         generated_plan_count: 0,
         signal_row_count: 0,
     };
-    for (index, (instrument_exchange, product_id, category_id, sym, asset)) in
-        instruments.into_iter().enumerate()
-    {
+    for (instrument_exchange, product_id, category_id, sym, asset, underlying) in instruments {
         if instrument_exchange != exchange_id {
             continue;
         }
         let instrument_started = std::time::Instant::now();
-        if let Some(state) = sync_state {
-            state.update_scan_progress(
-                &format!("{exchange_id} · {sym}"),
-                progress_offset.saturating_add(index),
-                total_instruments,
-            );
-        }
+        let _progress_step = ScanProgressStep {
+            completed_count,
+            sync_state,
+            label: format!("{exchange_id} · {sym}"),
+            total: total_instruments,
+        };
         let mut cagr_stats = HashMap::new();
-        let market_connection =
-            match open_market_history_for_signal_scan(market_database, &sym, false) {
-                Ok(Some(connection)) => connection,
-                Ok(None) => {
-                    app_result.unavailable_price_count += 1;
-                    output.price_data_unavailable_count += 1;
-                    let mut diagnosis = signal_alerts::InstrumentReadiness::default();
-                    diagnosis.issue(signal_alerts::ReadinessIssue {
-                        symbol: asset.clone(),
-                        reason: "missing_history".into(),
-                        timeframe: "15m".into(),
-                        ..signal_alerts::ReadinessIssue::default()
-                    });
-                    output.readiness.record(
-                        &instrument_exchange,
-                        &product_id,
-                        &sym,
-                        diagnosis,
-                        &Default::default(),
-                        None,
-                    );
-                    continue;
-                }
-                Err(error) => {
-                    eprintln!("scan skipped unavailable market history for {sym}: {error}");
-                    app_result.unavailable_price_count += 1;
-                    output.price_data_unavailable_count += 1;
-                    let mut diagnosis = signal_alerts::InstrumentReadiness {
-                        price_status: "error",
-                        ..signal_alerts::InstrumentReadiness::default()
-                    };
-                    diagnosis.issue(signal_alerts::ReadinessIssue {
-                        symbol: asset.clone(),
-                        reason: "data_error".into(),
-                        timeframe: "15m".into(),
-                        error: Some(error.to_string()),
-                        ..signal_alerts::ReadinessIssue::default()
-                    });
-                    output.readiness.record(
-                        &instrument_exchange,
-                        &product_id,
-                        &sym,
-                        diagnosis,
-                        &Default::default(),
-                        None,
-                    );
-                    continue;
-                }
-            };
+        let market_selection = match open_scan_market_history(
+            app_connection,
+            market_database,
+            &instrument_exchange,
+            &product_id,
+            &category_id,
+            &sym,
+            &underlying,
+        ) {
+            Ok(Some(selection)) => selection,
+            Ok(None) => {
+                app_result.unavailable_price_count += 1;
+                output.price_data_unavailable_count += 1;
+                let mut diagnosis = signal_alerts::InstrumentReadiness::default();
+                diagnosis.issue(signal_alerts::ReadinessIssue {
+                    symbol: asset.clone(),
+                    reason: "missing_history".into(),
+                    timeframe: "15m".into(),
+                    ..signal_alerts::ReadinessIssue::default()
+                });
+                output.readiness.record(
+                    &instrument_exchange,
+                    &product_id,
+                    &sym,
+                    diagnosis,
+                    &Default::default(),
+                    None,
+                );
+                continue;
+            }
+            Err(error) => {
+                eprintln!("scan skipped unavailable market history for {sym}: {error}");
+                app_result.unavailable_price_count += 1;
+                output.price_data_unavailable_count += 1;
+                let mut diagnosis = signal_alerts::InstrumentReadiness {
+                    price_status: "error",
+                    ..signal_alerts::InstrumentReadiness::default()
+                };
+                diagnosis.issue(signal_alerts::ReadinessIssue {
+                    symbol: asset.clone(),
+                    reason: "data_error".into(),
+                    timeframe: "15m".into(),
+                    error: Some(error.to_string()),
+                    ..signal_alerts::ReadinessIssue::default()
+                });
+                output.readiness.record(
+                    &instrument_exchange,
+                    &product_id,
+                    &sym,
+                    diagnosis,
+                    &Default::default(),
+                    None,
+                );
+                continue;
+            }
+        };
+        let (market_connection, market_symbol) = market_selection;
         let connection = &market_connection;
         let is_idx = instrument_exchange == "stockbit" && category_id == "idx_stock";
         let is_tokenized = instrument_exchange == "tokocrypto" && category_id == "tokenized_stock";
@@ -384,7 +655,7 @@ fn scan_registered_app(
                 exchange_id: &instrument_exchange,
                 product_id: &product_id,
                 category_id: &category_id,
-                symbol: &sym,
+                symbol: &market_symbol,
                 asset: &asset,
                 strategy,
                 evidence_class,
@@ -417,7 +688,7 @@ fn scan_registered_app(
         if new_directional_signal {
             let diagnostic = build_dss_bressert_mtf_annotation(
                 connection,
-                &sym,
+                &market_symbol,
                 &instrument_exchange,
                 &product_id,
             );
@@ -460,7 +731,7 @@ fn scan_registered_app(
         output.readiness.record(
             &instrument_exchange,
             &product_id,
-            &sym,
+            &market_symbol,
             instrument_readiness,
             &accepted_by_timeframe,
             Some(connection),

@@ -60,6 +60,10 @@ impl CandleSyncAdapter for PintuNativeAdapter {
                     instrument.asset_category_id,
                 ),
             )],
+            CandleSyncWindow::SingleInterval(interval) => vec![CandleProviderReport::interval(
+                interval,
+                Err("venue-native adapter requires the complete scheduled window".into()),
+            )],
         };
         CandleProviderReport { outcomes }
     }
@@ -134,6 +138,10 @@ impl CandleSyncAdapter for TokocryptoNativeAdapter {
                     ),
                     None => Err("verified Tokocrypto market metadata is unavailable".into()),
                 },
+            )],
+            CandleSyncWindow::SingleInterval(interval) => vec![CandleProviderReport::interval(
+                interval,
+                Err("venue-native adapter requires the complete scheduled window".into()),
             )],
         };
         CandleProviderReport { outcomes }

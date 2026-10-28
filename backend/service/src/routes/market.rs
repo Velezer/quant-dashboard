@@ -17,15 +17,15 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         && method == "POST"
     {
         if state.is_scanning.load(Ordering::Relaxed) {
+            let pct = *state
+                .scan_progress_pct
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let current_sym = state
                 .current_scan_symbol
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
-            let pct = *state
-                .scan_progress_pct
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
             respond_status(stream, crate::wire::encode(&serde_json::json!({"status":"already_scanning","message":"Scan cycle is currently in progress","current_symbol":current_sym,"progress_pct":pct})).unwrap_or_default(), "409 Conflict");
             return Ok(());
         }
