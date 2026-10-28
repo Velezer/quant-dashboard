@@ -589,11 +589,11 @@ fn screener_pages_filter_and_reach_rows_beyond_the_first_page() {
 }
 
 #[test]
-fn expired_rows_do_not_consume_pages_or_inflate_the_current_count() {
+fn expired_and_below_floor_rows_do_not_consume_pages_or_inflate_the_count() {
     let mut connection = screener_connection();
     let now_ns = (crate::now_secs() as i64).saturating_mul(crate::NANOS_PER_SECOND);
     let fresh_bar = now_ns.saturating_sub(16 * 60 * crate::NANOS_PER_SECOND);
-    let rows = ["EXPIRED.JK", "LIVE-A.JK", "LIVE-B.JK"]
+    let rows = ["EXPIRED.JK", "BELOW.JK", "LIVE-A.JK", "LIVE-B.JK"]
         .into_iter()
         .map(|symbol| stored_screener_row(symbol, fresh_bar))
         .collect::<Vec<_>>();
@@ -601,6 +601,10 @@ fn expired_rows_do_not_consume_pages_or_inflate_the_current_count() {
     connection.execute(
         "UPDATE signals.signal_screener_rows SET signal_bar_time=?1, score=100 WHERE symbol='EXPIRED.JK'",
         [now_ns.saturating_sub(4 * 60 * 60 * crate::NANOS_PER_SECOND)],
+    ).unwrap();
+    connection.execute(
+        "UPDATE signals.signal_screener_rows SET score=50, score_basis_json=?1 WHERE symbol='BELOW.JK'",
+        [json!({"score_scale_max": 10, "minimum_score_out_of_10": 100}).to_string()],
     ).unwrap();
 
     let first = list_signal_screener_page(&connection, 900, None, None, None, None, 0, 1).unwrap();

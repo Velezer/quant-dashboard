@@ -23,6 +23,19 @@ fn mark_legacy_score(signal: &mut Value, models: &std::collections::HashMap<&str
     }
 }
 
+fn score_meets_render_minimum(
+    strategy: String,
+    score: f64,
+    basis_json: &str,
+    strategies: &std::collections::HashMap<&str, &str>,
+    models: &Value,
+) -> bool {
+    let basis = serde_json::from_str::<Value>(basis_json).unwrap_or(Value::Null);
+    let mut signal = json!({"signal_strategy_id": strategy, "score": score, "score_basis": basis});
+    mark_legacy_score(&mut signal, strategies);
+    signal_meets_render_minimum(&signal, models)
+}
+
 fn signal_is_visible_at(exchange: &str, product: &str, category: &str, strategy: &str, timeframe: &str, signal_bar_time: i64, now: i64) -> bool {
     is_stockbit_signal_score_row(exchange, product, category, strategy, timeframe)
         || !super::super::signal_candle_is_expired(signal_bar_time, timeframe, now)
@@ -99,6 +112,7 @@ pub(crate) fn list_signal_screener_page(
     let page_size = limit.clamp(1, MAX_SIGNAL_SCREENER_PAGE_SIZE);
     let display_order = signal_screener_display_order_sql();
     let score_model_by_strategy = score_model_by_strategy();
+    let master_data = crate::master_data::signal_screener_master_data_for_connection(connection)?;
     let query = format!(
         "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,signal_strategy_id,
                 signal_strategy_name,timeframe,direction,score,strategy_strength,confluence_score,
@@ -176,6 +190,12 @@ pub(crate) fn list_signal_screener_page(
             now,
         );
         if !visible {
+            continue;
+        }
+        if !score_meets_render_minimum(
+            row.get(5)?, row.get(9)?, &row.get::<_, String>(12)?,
+            &score_model_by_strategy, &master_data["signal_score_models"],
+        ) {
             continue;
         }
         if matching_rows >= offset && rows.len() < page_size {
@@ -331,11 +351,10 @@ pub(crate) fn count_current_signal_screener_rows(
             ) {
                 continue;
             }
-            let basis = serde_json::from_str::<Value>(&row.get::<_, String>(7)?)
-                .unwrap_or(Value::Null);
-            let mut signal = json!({"signal_strategy_id": strategy, "score": row.get::<_, f64>(6)?, "score_basis": basis});
-            mark_legacy_score(&mut signal, &score_models);
-            if signal_meets_render_minimum(&signal, &master_data["signal_score_models"]) {
+            if score_meets_render_minimum(
+                strategy, row.get(6)?, &row.get::<_, String>(7)?,
+                &score_models, &master_data["signal_score_models"],
+            ) {
                 signal_count = signal_count.saturating_add(1);
             }
         }
