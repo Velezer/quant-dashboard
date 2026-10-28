@@ -902,6 +902,18 @@ The parser rejected the entire completed-candle response on that offset. It now
 normalizes only timestamps within five seconds of a 15-minute boundary before
 checking bar completeness; larger offsets and invalid intervals remain errors.
 
+### Reduce stale-price delay with the measured refresh capacity — 2026-10-28
+
+The four-worker cap did not meet the data-age target: production batches of
+about 246 targets took 153 seconds, and the scheduler rotates through twelve
+batches. That permits a full pass near 30 minutes, while a 15m candle becomes
+stale after 30 minutes from its open. The repository's earlier eight-worker
+run completed 2,911 targets in 13m22 with a 14.4 MiB private-memory peak.
+Restore the eight-worker cap. The existing eight-target wave bound, nine
+regular history leases, two scan leases, and eleven total history connections
+remain in force. Recheck full sweep duration and private memory after deploy;
+the acceptance targets are at most 900 seconds and 16 MiB.
+
 ### Stale daily-frame recovery follow-up — 2026-10-02
 
 The full service test suite found that a stale `1d` series did not enter the
