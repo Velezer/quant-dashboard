@@ -5,6 +5,12 @@ use super::*;
 mod shared_market_history_tests;
 
 type RegisteredInstrument = (String, String, String, String, String, String);
+#[cfg(not(test))]
+type AppScanMetrics = (
+    AppScanResult,
+    Option<std::time::Duration>,
+    Option<std::time::Duration>,
+);
 
 struct ScanCycleOutput {
     user_indicator_alerts: Vec<Value>,
@@ -185,7 +191,7 @@ pub(super) fn run_rust_scan_inner(
                     (AppScanResult::default(), None, None),
                 )
             })
-            .collect::<std::collections::BTreeMap<_, _>>();
+            .collect::<std::collections::BTreeMap<String, AppScanMetrics>>();
         let queue = Mutex::new((workers, 0usize));
         std::thread::scope(|scope| -> Result<(), rusqlite::Error> {
             let mut handles = Vec::with_capacity(worker_count);
@@ -194,14 +200,8 @@ pub(super) fn run_rust_scan_inner(
                 let progress = &completed_count;
                 handles.push(scope.spawn(move || -> Result<_, rusqlite::Error> {
                     let mut worker_output = ScanCycleOutput::new();
-                    let mut worker_app_results = std::collections::BTreeMap::<
-                        String,
-                        (
-                            AppScanResult,
-                            Option<std::time::Duration>,
-                            Option<std::time::Duration>,
-                        ),
-                    >::new();
+                    let mut worker_app_results =
+                        std::collections::BTreeMap::<String, AppScanMetrics>::new();
                     loop {
                         let next_task = {
                             let mut queue = queue
