@@ -24,10 +24,9 @@ pub(super) use targets::{registered_daily_targets, registered_hourly_targets};
 
 const MAX_REGISTERED_CANDLE_TARGETS_PER_TICK: usize = 8;
 const MAX_DAILY_REGISTERED_CANDLE_TARGETS_PER_TICK: i64 = 12;
-// Production samples took 153s for each ~246-target slice with two workers,
-// making the twelve-slice intraday sweep take about 30 minutes. Four workers
-// bring the same bounded sweep close to the 15-minute candle freshness target
-// while staying below the nine regular market-history connection slots.
+// Production logs show 153s per ~246-target slice, making the twelve-slice
+// intraday sweep about 30 minutes. Four workers shorten stale-candle gaps while
+// leaving a regular history slot available when daily and intraday syncs overlap.
 const MAX_PARALLEL_CANDLE_SYNC_WORKERS: usize = 4;
 const DAILY_CANDLE_SYNC_MINIMUM_INTERVAL_SECONDS: u64 = 5 * 60;
 const CANDLE_SYNC_WORKER_SQLITE_PAGE_CACHE_KIB: i64 = 64;

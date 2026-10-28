@@ -447,7 +447,7 @@ does not advance or shorten the next interval. The market-data scheduler sizes
 rotating batches to cover the active registered product set in twelve nominal
 one-minute ticks, subject to the bounded batch and worker limits documented in
 `exchange-data-providers.md`. Live logs showed a 246-target batch taking 153
-seconds with two workers, extending the full intraday pass to about 30 minutes.
+seconds, extending the full intraday pass to about 30 minutes.
 The market-sync pool is now capped at four workers; the database gate still
 allows at most nine regular ticker histories and reserves two for signal scans.
 A 15-minute candle is stale after 30 minutes from its open timestamp. Stale
