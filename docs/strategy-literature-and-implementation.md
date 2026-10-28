@@ -448,13 +448,21 @@ rotating batches to cover the active registered product set in twelve nominal
 one-minute ticks, subject to the bounded batch and worker limits documented in
 `exchange-data-providers.md`. Live logs showed a 246-target batch taking 153
 seconds, extending the full intraday pass to about 30 minutes.
-The market-sync pool is now capped at four workers; the database gate still
+The market-sync pool is now capped at eight workers; the database gate still
 allows at most nine regular ticker histories and reserves two for signal scans.
 A 15-minute candle is stale after 30 minutes from its open timestamp. Stale
 products cannot emit strategy or indicator signals; their existing strategy
 plans are retired until a fresh candle is stored.
 Provider errors stay visible in ingestion diagnostics, and a proxy success
 remains proxy-origin research data.
+
+Production evidence showed the four-worker cap let 246-target batches take
+153 seconds across a twelve-batch rotation, putting a complete pass near 30
+minutes. The eight-worker cap restores the previously measured 13m22 sweep of
+2,911 targets with a 14.4 MiB peak. The existing eight-target wave size and
+database connection reservations are unchanged; production must confirm a
+full pass within 900 seconds and private memory at or below 16 MiB.
+
 
 Screener signals expire after the two-hour lifetime and are cleaned during
 scheduled scans. This is a lifecycle limit, not a historical performance
