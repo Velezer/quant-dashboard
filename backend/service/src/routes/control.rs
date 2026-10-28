@@ -366,6 +366,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             "status": "ok",
             "service": "rust_quant_engine",
             "version": SERVICE_VERSION,
+            "build_id": SERVICE_BUILD_ID,
         "compute": ["bounded_candles", "dss_bressert", "nadaraya_watson_envelope", "chart_bundle", "historical_research_engine", "idx_stockbit_day_trade", "idx_stockbit_opening_range_momentum", "idx_stockbit_first_half_hour_momentum", "idx_stockbit_time_of_day_momentum", "idx_stockbit_swing", "idx_stockbit_time_series_momentum_swing_research", "stockbit_multibagger", "pintu_futures_day_trade", PINTU_GOLDEN_CROSS_STRATEGY_ID, TOKOCRYPTO_SPOT_CONFLUENCE_STRATEGY_ID, TOKENIZED_STOCK_CONFLUENCE_STRATEGY_ID, "registered_plan_generation", "markov_regime_models", "liquidity_zone_risk", "venue_risk_position_sizing", "day_trade_profile", "storage_stats"],
         });
         respond(
@@ -406,6 +407,8 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             .clone();
         let interval_min = state.scan_interval_sec.load(Ordering::Relaxed) / 60;
         let info = serde_json::json!({
+            "version": SERVICE_VERSION,
+            "build_id": SERVICE_BUILD_ID,
             "server_time": format_timestamp(now as u64),
             "tab_active": tab_active,
             "is_scanning": is_scanning,
