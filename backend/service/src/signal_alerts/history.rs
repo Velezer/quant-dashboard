@@ -39,13 +39,20 @@ pub fn list_alerts(
             })
             .collect::<Vec<_>>();
         let read_at = row.get::<_, Option<i64>>(16)?;
+        let strategy_id = row.get::<_, String>(5)?;
+        let alert_kind = if strategy_id.starts_with("user_indicator_combo_v1:") {
+            "custom_indicator"
+        } else {
+            "screener_signal"
+        };
         Ok(json!({
             "alert_id": row.get::<_, i64>(0)?,
             "exchange_id": row.get::<_, String>(1)?,
             "product_id": row.get::<_, String>(2)?,
             "asset_category_id": row.get::<_, String>(3)?,
             "symbol": row.get::<_, String>(4)?,
-            "signal_strategy_id": row.get::<_, String>(5)?,
+            "signal_strategy_id": strategy_id,
+            "alert_kind": alert_kind,
             "signal_strategy_name": row.get::<_, String>(6)?,
             "indicator_ids": indicator_ids,
             "indicators": indicators,
