@@ -1020,7 +1020,8 @@ many stored rows were withheld, so the UI can explain the empty/recovery state.
 
 Implementation reuses `completed_bar_is_fresh_at` in the existing screener
 reader. The JSON summary reports `stale_price_signal_count`; the dashboard
-explains when qualifying stale-price setups remain visible but are not market entries. Dedicated tests cover stale-price
+explains when qualifying stale-price setups remain visible but are not
+market entries. Dedicated tests cover stale-price
 filtering and physical deletion at the two-hour retention boundary. A live
 read-only audit found 2,701 of 2,911 exact-product `15m` series with a successful
 provider update inside 15 minutes after the scheduler attempted all 2,911 in
