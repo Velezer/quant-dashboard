@@ -88,7 +88,7 @@ export function createBrowserSignalNotifications({
             ? `${apps[0]} · ${fresh[0].symbol} ${fresh[0].direction} ${isIndicatorAlert(fresh[0]) ? 'indicator alert' : 'signal'}`
             : `${fresh.length} new ${batchType} · ${apps.join(', ')}`;
         const body = fresh.slice(0, 3).map(alert =>
-            `${isIndicatorAlert(alert) ? 'Indicator alert' : 'Screener signal'} · ${APP_LABELS[alert.exchange_id]} ${alert.symbol} ${alert.direction} · ${alert.timeframe} · ${alert.product_id} · ${alert.data_source}`
+            `${isIndicatorAlert(alert) ? 'Indicator alert' : 'Saved screener alert'} · ${APP_LABELS[alert.exchange_id]} ${alert.symbol} ${alert.direction} · ${alert.timeframe} · ${alert.product_id} · ${alert.data_source}`
         ).join('\n') + (fresh.length > 3 ? `\n+${fresh.length - 3} more in the notification inbox.` : '');
         const tag = `quant-signals-${fresh.map(alert => `${alert.alert_id}-${alert.created_at}`).join('-').slice(0, 180)}`;
         if (!display(title, body, tag)) return 0;
