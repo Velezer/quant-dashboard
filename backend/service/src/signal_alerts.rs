@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::{params, Connection};
@@ -184,13 +185,13 @@ pub(super) fn reject_legacy_screener_tables(
     Ok(())
 }
 
-pub(super) fn record_scan_signal_alerts(
+pub(super) fn record_scan_signal_alerts<C: Borrow<Value>>(
     connection: &Connection,
-    candidates: impl Iterator<Item = Value>,
+    candidates: impl Iterator<Item = C>,
 ) -> Result<Vec<Value>, rusqlite::Error> {
     persist_alerts(
         connection,
-        candidates.filter_map(|candidate| signal_alert_from_candidate(&candidate)),
+        candidates.filter_map(|candidate| signal_alert_from_candidate(candidate.borrow())),
     )
 }
 

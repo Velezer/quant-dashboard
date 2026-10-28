@@ -350,13 +350,13 @@ pub(super) fn run_rust_scan_inner(
             "workers": readiness["workers"].clone(),
             "readiness": readiness
         },
-        "signals": signals,
+        "signals": [],
         "master_data": signal_master_data
     });
 
     let mut newly_detected_alerts = Vec::new();
     let mut alert_storage_available = true;
-    match signal_alerts::record_scan_signal_alerts(app_connection, signals.iter().cloned()) {
+    match signal_alerts::record_scan_signal_alerts(app_connection, signals.iter()) {
         Ok(alerts) => newly_detected_alerts.extend(alerts),
         Err(error) => {
             eprintln!("[Alerts] Could not persist new signal alerts: {error}");
@@ -375,7 +375,8 @@ pub(super) fn run_rust_scan_inner(
         eprintln!("[Alerts] Could not refresh signal lifecycles: {error}");
         alert_storage_available = false;
     }
-    payload["new_signal_alerts"] = serde_json::json!(newly_detected_alerts);
+    payload["signals"] = Value::Array(signals);
+    payload["new_signal_alerts"] = Value::Array(newly_detected_alerts);
     if !alert_storage_available {
         payload["signal_alert_status"] = serde_json::json!("unavailable");
     }
