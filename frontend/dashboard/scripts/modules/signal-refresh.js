@@ -7,6 +7,7 @@ const SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS = 30_000;
 export function installSignalRefresh() {
     let lastRequestAt = 0;
     let requestSerial = 0;
+    let signalRequestsInFlight = 0;
     let nextScanEpoch = 0;
     let countdownPoll = null;
     let eventSource = null;
@@ -47,6 +48,8 @@ export function installSignalRefresh() {
 
     async function fetchFreshSignals({ quiet = false, append = false, offset = 0 } = {}) {
         const currentRequest = ++requestSerial;
+        lastRequestAt = Date.now();
+        signalRequestsInFlight += 1;
         if (!quiet && !getDashboardBinding('DATA')) getDashboardBinding('setScreenerLoading')?.();
         try {
             const query = getDashboardBinding('getSignalScreenerQuery')?.() || {};
@@ -93,6 +96,7 @@ export function installSignalRefresh() {
                 getDashboardBinding('setAppSignalReadinessError')?.(error?.message || error);
             }
         } finally {
+            signalRequestsInFlight -= 1;
         }
     }
 
@@ -121,7 +125,7 @@ export function installSignalRefresh() {
         const minutes = Math.floor(remaining / 60);
         const seconds = String(remaining % 60).padStart(2, '0');
         timer.textContent = `${minutes}m ${seconds}s`;
-        if (remaining === 0 && Date.now() - lastRequestAt >= 20_000) {
+        if (remaining === 0 && signalRequestsInFlight === 0 && Date.now() - lastRequestAt >= 20_000) {
             void fetchFreshSignals({ quiet: true });
             void fetchRuntimeStatus();
         }
@@ -132,7 +136,7 @@ export function installSignalRefresh() {
         if (countdownPoll) clearInterval(countdownPoll);
         countdownPoll = setInterval(() => {
             renderCountdown();
-            if (Date.now() - lastRequestAt >= 60_000) void fetchFreshSignals({ quiet: true });
+            if (signalRequestsInFlight === 0 && Date.now() - lastRequestAt >= 60_000) void fetchFreshSignals({ quiet: true });
         }, 1_000);
         setInterval(() => { void fetchRuntimeStatus(); }, 30_000);
         setInterval(() => {
