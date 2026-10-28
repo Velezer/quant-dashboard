@@ -454,16 +454,19 @@ remains proxy-origin research data.
 
 Screener signals expire after the two-hour lifetime and are cleaned during
 scheduled scans. This is a lifecycle limit, not a historical performance
-claim. The scan cadence is fixed at 15 minutes; the dashboard displays that
-cadence without allowing it to be changed. A stale-candle sync keeps its
-product priority but does not launch another full-universe scan when it
-succeeds. The next scheduled scan consumes refreshed candles; the explicit
-Refresh signals action remains available for an immediate user-requested scan.
+claim. The scan publication target is 15 minutes; the dashboard displays that
+target without allowing it to be changed. The scheduler uses the last measured
+scan duration and a two-minute safety margin to place the next start, and never
+overlaps scans. A stale-candle sync keeps its product priority but does not
+launch another full-universe scan when it succeeds. The next scheduled scan
+consumes refreshed candles; the explicit Refresh signals action remains
+available for an immediate user-requested scan.
 
-Ten-order decision trail for fixed scan scheduling and recovery:
+Ten-order decision trail for duration-aware scan scheduling and recovery:
 
-1. **Direct effect:** successful scans keep the next start at the previous
-   start plus 15 minutes; a failed scan still retries after one minute.
+1. **Direct effect:** successful scans schedule the next start from the
+   measured duration and two-minute lead against the 15-minute publication
+   target; a failed scan still retries after one minute.
 2. **Immediate consequence:** a fresh candle produced by a stale-priority sync
    appears in the next scheduled screener snapshot unless the user explicitly
    requests an earlier refresh.
@@ -472,9 +475,9 @@ Ten-order decision trail for fixed scan scheduling and recovery:
 4. **Interactions:** market sync owns candle acquisition and priority, while
    the scan scheduler owns generation timing. Manual refresh remains a separate
    explicit control.
-5. **Accumulation:** limiting routine scan starts to the fixed cadence reduces
-   repeated CPU, database, and memory work while retaining per-15-minute data
-   recomputation.
+5. **Accumulation:** duration-aware scheduling reduces avoidable gaps between
+   completed snapshots while keeping one scan cycle active at a time and
+   retaining the bounded database and memory work.
 6. **Failure boundary:** missing or failed provider data remains stale and
    cannot create a current signal. A scan that exceeds its interval finishes
    before the serial scheduler starts its next cycle.
@@ -483,13 +486,13 @@ Ten-order decision trail for fixed scan scheduling and recovery:
    Refresh signals to request an immediate scan after market data recovers.
 8. **Governance and precedent:** the change does not alter source selection,
    app identity, the SQLite ownership model, or the read-only execution rule.
-9. **System trajectory (hypothesis):** a fixed start interval should make scan
-   load more predictable; live scan timing and memory observations will test
-   that hypothesis.
-10. **Decision and learning:** anchor successful scans to their start time and
-    remove automatic sync-triggered scans. Reconsider this if a successful
-    market-data update is not reflected by the next scheduled scan, or if a
-    full scan regularly takes longer than 15 minutes.
+9. **System trajectory (hypothesis):** a duration-aware start target should
+   publish snapshots within the 15-minute target when each scan completes
+   within the target; live scan timing and memory observations will test this.
+10. **Decision and learning:** schedule from the previous completion using the
+    measured scan duration and bounded two-minute lead; remove automatic
+    sync-triggered scans. Reconsider this if snapshots still miss the target,
+    or CPU/memory rises above project limits.
 
 For the active screener score, directional candidates must have a recent DSS
 Bressert extreme that has turned back and a completed candle whose wick or body
