@@ -449,6 +449,36 @@ fn screener_connection() -> Connection {
 }
 
 #[test]
+fn snapshot_stores_all_scan_rows_even_beyond_a_single_page() {
+    let connection = screener_connection();
+    let now_ns = i64::try_from(crate::now_secs()).unwrap() * crate::NANOS_PER_SECOND;
+    let rows = (0..2_001)
+        .map(|index| stored_screener_row(&format!("SIG-{index:04}.JK"), now_ns))
+        .collect::<Vec<_>>();
+
+    replace_signal_screener_snapshot(&connection, &rows).expect("all scan rows should persist");
+
+    let stored: i64 = connection
+        .query_row("SELECT COUNT(*) FROM signals.signal_screener_rows", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(stored, 2_001);
+    let page = list_signal_screener_page(
+        &connection,
+        900,
+        None,
+        None,
+        None,
+        Some("SIG-2000"),
+        0,
+        50,
+    )
+    .expect("the row beyond the old cutoff should be searchable");
+    assert_eq!(page["signals"][0]["symbol"], "SIG-2000.JK");
+}
+
+#[test]
 fn screener_read_retains_unexpired_setups_with_stale_price_bars() {
     let connection = screener_connection();
     let now_ns = i64::try_from(crate::now_secs())
