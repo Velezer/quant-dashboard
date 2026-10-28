@@ -64,7 +64,10 @@ impl Drop for StorageSymbolSyncGuard<'_> {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(self.storage_symbol);
-        self.gate.available.notify_one();
+        // Waiters share this condition variable across different symbols.
+        // Waking only one can choose a waiter whose symbol is still locked,
+        // leaving the waiter for the newly released symbol asleep forever.
+        self.gate.available.notify_all();
     }
 }
 

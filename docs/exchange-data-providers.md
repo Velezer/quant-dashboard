@@ -1280,3 +1280,25 @@ and backfill, service private memory measured 15,917,056 bytes, below the
 This improves input availability; it does not promise that a market is
 currently crossing the upper band. Outside Stockbit's trading session or after
 the signal-age limit, an empty list can still be the correct result.
+
+### Per-symbol refresh gate wakeup
+
+The intraday and daily refresh workers share a condition variable while waiting
+for different symbol locks. A single wakeup can select a waiter whose symbol is
+still locked and leave the waiter for the released symbol asleep, potentially
+stalling the refresh wave. Releasing a symbol now wakes all gate waiters; each
+checks its own symbol under the mutex before proceeding.
+
+1. **Direct effect:** A released symbol's waiter can resume and refresh data.
+2. **Immediate consequence:** Other waiters briefly recheck their own locks.
+3. **Repeated operation:** The existing bounded worker pool limits wakeups.
+4. **Interactions:** The per-symbol lock still serializes competing writes.
+5. **Accumulation:** No extra persistent data, queues, or long-lived state are added.
+6. **Failure boundary:** Provider failures and missing candles can still cause stale data.
+7. **Recovery:** Scheduler logs and ingestion diagnostics remain the recovery path;
+   investigate provider errors if completed waves do not restore freshness.
+8. **Governance:** The change preserves existing provider and storage policies.
+9. **Hypothesis:** Avoiding stranded waiters should reduce stalled waves; live
+   scheduler durations and memory measurements are needed to establish impact.
+10. **Decision:** Broadcast is the smallest change to the existing gate. Reconsider
+    if wakeup overhead or memory measurements exceed the service targets.
