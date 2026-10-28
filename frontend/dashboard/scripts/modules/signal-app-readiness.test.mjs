@@ -24,7 +24,7 @@ test('listing failures, unverified listings, missing history and stale saved sig
     const products = [{ exchange_id: 'stockbit', registered: 10, confirmed: 10, with_15m_candles: 0 }];
     assert.match(appSignalReadiness('stockbit', { products }).message, /history is being gathered/);
     products[0].with_15m_candles = 10;
-    assert.match(appSignalReadiness('stockbit', { products }, { stale_price_signal_count: 7 }).message, /7 saved signals.*stale/);
+    assert.match(appSignalReadiness('stockbit', { products }, { stale_price_signal_count: 7 }).message, /7 active setups remain visible.*stale reference prices/);
     assert.equal(appSignalReadiness('pluang', { products: [] }).retryListings, false);
 });
 
@@ -73,11 +73,11 @@ test('product and timeframe scope preserve insufficient history, source mismatch
     assert.match(partial.message, /2 unreadable timeframe histories/);
 });
 
-test('stale, failed, missing diagnostics and hidden stale-price rows remain distinct', () => {
+test('stale, failed, missing diagnostics and retained stale-price setups remain distinct', () => {
     const summary = snapshot([product('pintu', 'pintu_pro_spot', { fresh_price_count: 10, timeframes: [frame('15m', { evaluated_count: 10 })] })]);
     assert.match(appSignalReadiness('pintu', null, { ...summary, stale: true }).title, /outdated/);
     assert.match(appSignalReadiness('pintu', null, { ...summary, status: { last_attempt_status: 'error', last_error: 'database is locked' } }).message, /database is locked/);
-    assert.match(appSignalReadiness('pintu', null, { ...summary, stale_price_signal_count: 3 }).title, /hidden by stale prices/);
+    assert.match(appSignalReadiness('pintu', null, { ...summary, stale_price_signal_count: 3 }).title, /retained with stale reference prices/);
     assert.match(appSignalReadiness('pintu', null, { status: { last_attempt_status: 'waiting' } }).title, /first signal scan/);
     const absent = appSignalReadiness('pintu', null, {});
     assert.equal(absent.hasScanDetails, false);

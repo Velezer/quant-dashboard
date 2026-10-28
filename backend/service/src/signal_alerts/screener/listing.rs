@@ -214,15 +214,20 @@ pub(crate) fn list_signal_screener_page(
                     score_basis.insert("status".into(), json!("stale"));
                 }
             }
-            if !is_current_price_fresh && !is_stockbit_persistent {
+            signal["price_is_fresh"] = json!(is_current_price_fresh);
+            let is_unexpired = !super::super::signal_candle_is_expired(
+                signal_bar_time,
+                &signal_timeframe,
+                now,
+            );
+            if !is_current_price_fresh && !is_stockbit_persistent && is_unexpired {
                 stale_price_signal_count += 1;
             }
-            let is_visible = is_stockbit_persistent
-                || (!super::super::signal_candle_is_expired(
-                    signal_bar_time,
-                    &signal_timeframe,
-                    now,
-                ) && is_current_price_fresh);
+            // A stale reference price makes a setup ineligible as a current
+            // market entry, but it does not erase the still-live setup itself.
+            // Keep it in the screener with its freshness metadata so users can
+            // inspect why it is not actionable while the market feed recovers.
+            let is_visible = is_stockbit_persistent || is_unexpired;
             is_visible.then_some(signal)
         })
         .collect::<Vec<_>>();

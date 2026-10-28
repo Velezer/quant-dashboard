@@ -449,7 +449,7 @@ fn screener_connection() -> Connection {
 }
 
 #[test]
-fn screener_read_withholds_price_bars_that_expired_after_generation() {
+fn screener_read_retains_unexpired_setups_with_stale_price_bars() {
     let connection = screener_connection();
     let now_ns = i64::try_from(crate::now_secs())
         .unwrap_or(i64::MAX)
@@ -467,8 +467,10 @@ fn screener_read_withholds_price_bars_that_expired_after_generation() {
 
     let payload =
         list_signal_screener(&connection, 900, None, None).expect("screener snapshot should load");
-    assert_eq!(payload["signals"].as_array().unwrap().len(), 1);
+    assert_eq!(payload["signals"].as_array().unwrap().len(), 2);
     assert_eq!(payload["signals"][0]["symbol"], "FRESH.JK");
+    assert_eq!(payload["signals"][1]["symbol"], "STALE.JK");
+    assert_eq!(payload["signals"][1]["price_is_fresh"], false);
     assert_eq!(payload["summary"]["stale_price_signal_count"], 1);
     assert_eq!(payload["summary"]["status"]["last_attempt_status"], "ready");
 }
