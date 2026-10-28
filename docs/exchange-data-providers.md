@@ -879,6 +879,12 @@ historical live sample at ten workers used 13.76 MB of private memory, so four
 workers remain below a previously measured configuration. Recheck complete
 sweep duration, candle freshness, and process memory after deployment.
 
+The same diagnostics showed Yahoo 15-minute candles with a timestamp five
+seconds before an interval boundary (for example, 04:59:55 instead of 05:00).
+The parser rejected the entire completed-candle response on that offset. It now
+normalizes only timestamps within five seconds of a 15-minute boundary before
+checking bar completeness; larger offsets and invalid intervals remain errors.
+
 ### Stale daily-frame recovery follow-up — 2026-10-02
 
 The full service test suite found that a stale `1d` series did not enter the
