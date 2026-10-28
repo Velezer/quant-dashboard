@@ -59,6 +59,7 @@ use std::{
 };
 
 const SERVICE_VERSION: &str = "0.2.0";
+const SERVICE_BUILD_ID: &str = env!("QUANT_BUILD_ID");
 const DEFAULT_TIMEFRAME: &str = "15m";
 const DEFAULT_LEGACY_MARKET_DB: &str = "data/market/market.sqlite3";
 const DEFAULT_MARKET_DIR: &str = "data/market/tickers";

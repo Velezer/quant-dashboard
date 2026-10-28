@@ -1,6 +1,7 @@
 import { publishDashboardBindings } from './runtime-context.js';
 import { QuantChart } from './chart-math.js';
 import { readApiResponse } from './api.js';
+import { renderApplicationBuild } from './app-build-version.js';
 
 /** Initializes the chart diagnostics dashboard feature. */
 export function installChartDiagnostics() {
@@ -87,8 +88,9 @@ export function installChartDiagnostics() {
             async function fetchDaemonDiagnostics() {
                 try {
                     const res = await fetch('/api/status', { cache: 'no-store' });
-                    if (!res.ok) return;
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     const status = await readApiResponse(res);
+                    renderApplicationBuild(status);
                     const intervalSeconds = Number(status.scan_interval_minutes) * 60;
                     if (Number.isFinite(intervalSeconds) && intervalSeconds > 0) countdownSeconds = intervalSeconds;
                     setNextScanEpoch(status.next_scan_epoch);
@@ -101,6 +103,7 @@ export function installChartDiagnostics() {
                     }
                     if (state && status.status) state.textContent = `🟢 ${String(status.status).toUpperCase()}`;
                 } catch (error) {
+                    renderApplicationBuild(null);
                     console.warn('[Diagnostics] Status unavailable:', error);
                 }
             }
