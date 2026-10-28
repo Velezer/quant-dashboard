@@ -77,7 +77,7 @@ const MAX_CANDLES: i64 = quant_pine_runtime::MAX_CANDLES as i64;
 const MIN_CHART_CANDLES: usize = 2;
 // A higher-timeframe chart may need more lower-timeframe rows than the normal
 // response cap. The rollup is built in one bounded request and released before
-// the response is assembled, keeping the 16 MB steady-state target intact.
+// the response is assembled, keeping the 32 MB steady-state cap intact.
 const MAX_AGGREGATION_SOURCE_CANDLES: i64 = 12_000;
 // A 20,000-bar 4h strategy sample needs at most 80,000 hourly rows plus
 // bounded rollup warm-up. This cap applies only to transient strategy reads.
