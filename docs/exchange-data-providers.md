@@ -1020,22 +1020,27 @@ many stored rows were withheld, so the UI can explain the empty/recovery state.
 
 Implementation reuses `completed_bar_is_fresh_at` in the existing screener
 reader. The JSON summary reports `stale_price_signal_count`; the dashboard
-explains when stale-price rows are hidden. Dedicated tests cover stale-price
+explains when qualifying stale-price setups remain visible but are not
+market entries. Dedicated tests cover stale-price
 filtering and physical deletion at the two-hour retention boundary. A live
 read-only audit found 2,701 of 2,911 exact-product `15m` series with a successful
 provider update inside 15 minutes after the scheduler attempted all 2,911 in
 14m37s. The remaining 210 were Stockbit 113, Pintu 75, Pluang 19, and
 Tokocrypto 3. These are provider/session coverage gaps, not scheduler skips;
-signals continue to require a fresh completed price bar. Highest observed
+crypto NWE/DSS may evaluate the latest valid same-source stored bars and retain
+an unexpired setup when its 15m reference price is stale. The screener marks
+that setup as not a current market entry. Other strategies continue to require
+a fresh completed 15m price bar. Highest observed
 service private-memory sample during overlapping work was 15.73 MiB, below the
 16 MiB target. This result validates the bounded scheduler and resource limit,
 but not universal provider success.
 
-The rebuilt live API then withheld one stored signal whose Tokocrypto-native
-`15m` price bar had aged to 33 minutes while the `1h` signal was only 3.7
-minutes old. It returned zero visible rows, `stale_price_signal_count: 1`, and
-the ready scan state. A fresh browser session displayed the stale-price
-withheld message, the two-hour cleanup notice, and all six enabled frames.
+A prior live audit, before stale-price crypto setup generation, observed the
+reader withhold one stored signal whose Tokocrypto-native `15m` price bar had
+aged to 33 minutes while the `1h` signal was only 3.7 minutes old. It returned
+zero visible rows and `stale_price_signal_count: 1`. With the current behavior,
+an unexpired crypto NWE/DSS setup remains visible with stale-price status and
+the same two-hour retention boundary.
 
 ### Free IDX intraday source check — 2026-10-02
 

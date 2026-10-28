@@ -77,6 +77,51 @@ pub(super) fn load_stockbit_signal_candles(
     merged
 }
 
+/// Reads the newest valid close from the selected 15m source even when it is stale.
+/// Callers must still use `fresh_current_price` to decide whether the value can
+/// support a current market entry.
+pub(super) fn latest_current_price_reference(
+    input: &TimeframeScanInput<'_>,
+    known_15m_state: Option<&ProductCandleScanState>,
+    now_ns: i64,
+) -> Option<CurrentPrice> {
+    let source_state = match known_15m_state {
+        Some(state) => state.clone(),
+        None => product_candle_scan_state_at(
+            input.market_connection,
+            input.symbol,
+            input.exchange_id,
+            input.product_id,
+            "15m",
+            now_ns.div_euclid(NANOS_PER_SECOND),
+        )
+        .ok()??,
+    };
+    let candles = load_series_candles_from_source(
+        input.market_connection,
+        input.symbol,
+        "15m",
+        4,
+        &source_state.source,
+    )
+    .ok()?;
+    let interval_ns = timeframe_duration_ns("15m")?;
+    let latest = candles
+        .iter()
+        .rev()
+        .find(|bar| {
+            bar.time.saturating_add(interval_ns) <= now_ns
+                && bar.close.is_finite()
+                && bar.close > 0.0
+        })?;
+    Some(CurrentPrice {
+        value: latest.close,
+        signal_bar_time: latest.time,
+        source: source_state.source,
+        provider: source_state.data_provider,
+    })
+}
+
 pub(super) fn fresh_current_price(
     input: &TimeframeScanInput<'_>,
     known_15m_state: Option<&ProductCandleScanState>,

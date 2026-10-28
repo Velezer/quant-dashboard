@@ -105,7 +105,10 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         && score_bar_time
             .saturating_add(crate::timeframe_duration_ns(&timeframe).unwrap_or_default())
             > now_ns;
+    // A qualifying crypto NWE/DSS setup can survive a stale reference price.
+    // The screener reports it as a setup, not as a current market entry.
     if !forming_bar_is_valid
+        && !is_crypto_nwe_dss_signal_score
         && !crate::completed_bar_is_fresh_at(
             &storage_symbol,
             &price_timeframe,
