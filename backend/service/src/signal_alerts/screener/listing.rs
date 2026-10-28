@@ -122,7 +122,7 @@ pub(crate) fn list_signal_screener_page(
           ORDER BY {display_order}"
     );
     let mut statement = connection.prepare(&query)?;
-    let row_mapper = |row: &rusqlite::Row<'_>| {
+    let row_mapper = |row: &rusqlite::Row<'_>| -> Result<Value, rusqlite::Error> {
         let storage_symbol = row.get::<_, String>(4)?;
         let price_timeframe = row.get::<_, String>(14)?;
         let price_bar_time = row.get::<_, i64>(15)?;
