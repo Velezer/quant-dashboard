@@ -361,9 +361,10 @@ current registry in twelve scheduler ticks, rounded up. Each bounded wave has
 at most eight targets and two concurrent workers. With 2,911 active products,
 a tick attempts 243 products. Batch duration and refreshed interval count are
 logged. Each product keeps its own SQLite history file and app-product cursor.
-Intraday work keeps its one-minute cadence even when the daily queue is busy. A
-shared per-symbol gate serializes intraday and daily writes to the same history
-file. The database gate caps all open market histories at eleven: nine regular
+Intraday batches target a one-minute tick independently of daily work; if a
+batch runs longer, the next starts immediately after it finishes. A shared
+per-symbol gate serializes intraday and daily writes to the same history file.
+The database gate caps all open market histories at eleven: nine regular
 connections and two slots reserved for signal scans.
 
 Completed signal snapshots target 13-minute spacing to leave a two-minute
