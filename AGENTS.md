@@ -27,7 +27,7 @@ changed flow in a fresh browser session.
 Resolve low-risk ambiguity from existing behavior and established project decisions.
 Preserve the app-first exchange contract, Tokocrypto tokenized-stock categorization,
 durable SQLite history, validated performance evidence, chart recovery states,
-and the 16 MB steady-state memory target. The dashboard is read-only with respect
+and the 32 MB steady-state memory cap. The dashboard is read-only with respect
 to execution; paper trading and order placement are not part of the product.
 With the user's explicit approval on 2026-10-01, the existing R:R simulator may
 show an illustrative expected account-equity curve from editable assumptions.
