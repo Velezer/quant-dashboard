@@ -24,9 +24,9 @@ pub(super) use targets::{registered_daily_targets, registered_hourly_targets};
 
 const MAX_REGISTERED_CANDLE_TARGETS_PER_TICK: usize = 8;
 const MAX_DAILY_REGISTERED_CANDLE_TARGETS_PER_TICK: i64 = 12;
-// Eight workers match the measured full-sweep cadence while staying within
-// the existing regular history lease limit during overlapping daily and intraday syncs.
-const MAX_PARALLEL_CANDLE_SYNC_WORKERS: usize = 8;
+// Match the existing regular history lease allowance while preserving the
+// two scan leases and eleven-connection cap.
+const MAX_PARALLEL_CANDLE_SYNC_WORKERS: usize = 9;
 const DAILY_CANDLE_SYNC_MINIMUM_INTERVAL_SECONDS: u64 = 5 * 60;
 const CANDLE_SYNC_WORKER_SQLITE_PAGE_CACHE_KIB: i64 = 64;
 const CANDLE_SYNC_WAVE_PAUSE_MILLISECONDS: u64 = 250;
