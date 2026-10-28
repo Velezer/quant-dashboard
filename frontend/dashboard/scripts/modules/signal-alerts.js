@@ -87,8 +87,21 @@ export function installSignalAlerts() {
         return element;
     }
 
+    function isIndicatorAlert(alert) {
+        return alert?.alert_kind === 'custom_indicator'
+            || String(alert?.signal_strategy_id || '').startsWith('user_indicator_combo_v1:');
+    }
+
     function lifecyclePresentation(alert) {
         const state = String(alert?.lifecycle_state || 'SIGNAL').toUpperCase();
+        if (isIndicatorAlert(alert) && state !== 'EXPIRED') {
+            return {
+                state: 'INDICATOR_ALERT',
+                label: 'Indicator alert',
+                detail: 'A custom indicator condition was met. It does not create a scored screener entry.',
+                classes: 'border-violet-800 bg-violet-950/40 text-violet-200',
+            };
+        }
         const labels = {
             SIGNAL: { label: 'Signal', detail: 'Informational condition from stored candle data.', classes: 'border-sky-800 bg-sky-950/40 text-sky-200' },
             EXPIRED: { label: 'Expired', detail: 'This signal is older than the two-hour retention window.', classes: 'border-gray-700 bg-gray-900 text-gray-300' },
@@ -108,7 +121,8 @@ export function installSignalAlerts() {
             const heading = document.createElement('div');
             heading.className = 'flex items-center justify-between gap-2';
             const directionClass = alert.direction === 'LONG' ? 'text-emerald-300' : 'text-rose-300';
-            appendText(heading, 'strong', `${alert.direction} signal · ${alert.symbol}`, `text-xs font-bold ${directionClass}`);
+            const indicatorAlert = isIndicatorAlert(alert);
+            appendText(heading, 'strong', `${alert.direction} ${indicatorAlert ? 'indicator alert' : 'signal'} · ${alert.symbol}`, `text-xs font-bold ${directionClass}`);
             const appIdentity = [alert.exchange_id, alert.product_id].filter(Boolean).join(' · ') || 'app';
             appendText(heading, 'span', `${appIdentity} · ${alert.timeframe || 'timeframe'}`, 'text-[9px] font-mono text-gray-500');
             item.append(heading);
@@ -135,16 +149,22 @@ export function installSignalAlerts() {
                 ? `Signal price ${priceNumber.toLocaleString(undefined, { maximumSignificantDigits: 8 })} · `
                 : '';
             appendText(item, 'div', `${signalPrice}candle ${formatTimestamp(alert.signal_bar_time, true)} · detected ${formatTimestamp(alert.created_at)} · ${evidence}`, 'mt-1 text-[9px] leading-relaxed text-gray-500');
-            const openSignalButton = appendText(item, 'button', 'View current signal', 'mt-2 rounded border border-cyan-800 px-2 py-1 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-950 focus:outline focus:outline-2 focus:outline-cyan-400 disabled:cursor-wait disabled:opacity-50');
-            openSignalButton.type = 'button';
-            openSignalButton.dataset.openSignalAlert = String(alert.alert_id);
-            openSignalButton.disabled = navigationInProgress;
-            openSignalButton.setAttribute('aria-label', `Open current ${alert.symbol} ${alert.timeframe} signal in the screener`);
+            if (!indicatorAlert) {
+                const openSignalButton = appendText(item, 'button', 'View current signal', 'mt-2 rounded border border-cyan-800 px-2 py-1 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-950 focus:outline focus:outline-2 focus:outline-cyan-400 disabled:cursor-wait disabled:opacity-50');
+                openSignalButton.type = 'button';
+                openSignalButton.dataset.openSignalAlert = String(alert.alert_id);
+                openSignalButton.disabled = navigationInProgress;
+                openSignalButton.setAttribute('aria-label', `Open current ${alert.symbol} ${alert.timeframe} signal in the screener`);
+            } else {
+                appendText(item, 'div', 'This alert tracks a custom indicator condition and has no scored screener row.', 'mt-2 text-[10px] leading-relaxed text-violet-200');
+            }
             const source = [alert.data_source, alert.data_provider]
                 .filter(value => value && value !== 'unknown')
                 .join(' · ');
             appendText(item, 'div', `Market data: ${source || 'source unavailable'}`, 'mt-1 text-[9px] leading-relaxed text-gray-500');
-            appendText(item, 'div', 'Informational screener alert from stored candle data. It is not an order instruction.', 'mt-1 text-[9px] leading-relaxed text-amber-200/90');
+            appendText(item, 'div', indicatorAlert
+                ? 'Indicator condition from stored candle data. It is not a scored screener signal or an order instruction.'
+                : 'Informational screener alert from stored candle data. It is not an order instruction.', 'mt-1 text-[9px] leading-relaxed text-amber-200/90');
             list.append(item);
         }
 
@@ -250,12 +270,14 @@ export function installSignalAlerts() {
         browserAlerts.notify(incoming);
         const first = incoming[0];
         const count = incoming.length;
+        const indicatorCount = incoming.filter(isIndicatorAlert).length;
+        const alertType = indicatorCount === count ? 'indicator alert' : indicatorCount === 0 ? 'signal alert' : 'market alert';
         const model = first.signal_strategy_name || 'Signal update';
         const toast = getDashboardBinding('showToast');
         if (typeof toast === 'function') {
-            toast(`${count} new signal ${count === 1 ? 'alert' : 'alerts'} · ${first.symbol || 'asset'} ${first.direction || ''} · ${model}. Signal only; not an order.`, 'info');
+            toast(`${count} new ${alertType}${count === 1 ? '' : 's'} · ${first.symbol || 'asset'} ${first.direction || ''} · ${model}. Informational only; not an order.`, 'info');
         }
-        if (status) setStatus(`${count} new signal ${count === 1 ? 'notification' : 'notifications'} detected.`, 'ready');
+        if (status) setStatus(`${count} new ${alertType}${count === 1 ? '' : 's'} detected.`, 'ready');
         void loadAlerts();
     });
 
