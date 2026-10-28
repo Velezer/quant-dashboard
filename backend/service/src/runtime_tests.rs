@@ -128,25 +128,30 @@ fn failed_scan_progress_resets_to_stale_idle_state() {
 }
 
 #[test]
-fn successful_scan_keeps_the_fixed_start_to_start_interval() {
+fn successful_scan_schedules_the_next_start_from_measured_duration() {
     let scan_started_epoch = 10_000;
     let completed_epoch = scan_started_epoch + 8 * 60 + 47;
     let interval_secs = 15 * 60;
-    let next_scan_epoch =
-        next_scan_epoch_after_completion(scan_started_epoch, completed_epoch, interval_secs, true);
+    let runtime_secs = completed_epoch - scan_started_epoch;
+    let next_scan_epoch = next_scan_epoch_after_completion(
+        completed_epoch,
+        interval_secs,
+        Some(runtime_secs),
+    );
 
-    assert_eq!(next_scan_epoch, scan_started_epoch + interval_secs);
+    assert_eq!(
+        next_scan_epoch,
+        completed_epoch + interval_secs - runtime_secs - 2 * 60
+    );
 }
 
 #[test]
-fn overdue_scan_target_runs_only_after_the_current_scan_completes() {
-    let scan_started_epoch = 10_000;
-    let completed_epoch = scan_started_epoch + 16 * 60;
+fn scan_longer_than_interval_runs_again_only_after_completion() {
+    let completed_epoch = 10_000 + 16 * 60;
     let next_scan_epoch =
-        next_scan_epoch_after_completion(scan_started_epoch, completed_epoch, 15 * 60, true);
+        next_scan_epoch_after_completion(completed_epoch, 15 * 60, Some(16 * 60));
 
-    assert_eq!(next_scan_epoch, scan_started_epoch + 15 * 60);
-    assert!(next_scan_epoch < completed_epoch);
+    assert_eq!(next_scan_epoch, completed_epoch);
 }
 
 #[test]
@@ -154,7 +159,7 @@ fn failed_scan_retries_after_one_minute() {
     let scan_started_epoch = 10_000;
     let completed_epoch = scan_started_epoch + 500;
     let next_scan_epoch =
-        next_scan_epoch_after_completion(scan_started_epoch, completed_epoch, 900, false);
+        next_scan_epoch_after_completion(completed_epoch, 900, None);
 
     assert_eq!(next_scan_epoch, completed_epoch + 60);
 }
