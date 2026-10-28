@@ -88,7 +88,7 @@ fn replace_signal_screener_snapshot_attempt(
             [],
         )?;
         mark_stockbit_score_rows_stale(connection)?;
-        for signal in signals.iter().take(MAX_SIGNAL_SCREENER_ROWS) {
+        for signal in signals {
             let score_basis = json!({
                 "model_id": signal["score_model_id"],
                 "score_scale_max": signal["score_scale_max"],

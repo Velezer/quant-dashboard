@@ -1,6 +1,57 @@
 use super::*;
 use rusqlite::OptionalExtension;
 
+fn score_model_by_strategy() -> std::collections::HashMap<&'static str, &'static str> {
+    crate::master_data::master_data_records("signal_strategies")
+        .iter()
+        .filter_map(|model| Some((
+            crate::master_data::catalog_string(model, "id")?,
+            crate::master_data::catalog_string(model, "score_model_id")?,
+        )))
+        .collect()
+}
+
+fn mark_legacy_score(signal: &mut Value, models: &std::collections::HashMap<&str, &str>) {
+    let strategy_id = signal["signal_strategy_id"].as_str().unwrap_or_default();
+    let stored_model_id = signal["score_basis"]["model_id"].as_str().unwrap_or_default();
+    if models.get(strategy_id).is_some_and(|model_id| *model_id != stored_model_id) {
+        signal["score_status"] = json!("stale");
+        if let Some(basis) = signal["score_basis"].as_object_mut() {
+            basis.insert("score_model_status".into(), json!("legacy"));
+            basis.insert("status".into(), json!("stale"));
+        }
+    }
+}
+
+fn score_meets_render_minimum(
+    strategy: String,
+    score: f64,
+    basis_json: &str,
+    strategies: &std::collections::HashMap<&str, &str>,
+    models: &Value,
+) -> bool {
+    let basis = serde_json::from_str::<Value>(basis_json).unwrap_or(Value::Null);
+    let mut signal = json!({"signal_strategy_id": strategy, "score": score, "score_basis": basis});
+    mark_legacy_score(&mut signal, strategies);
+    signal_meets_render_minimum(&signal, models)
+}
+
+fn signal_is_visible_at(exchange: &str, product: &str, category: &str, strategy: &str, timeframe: &str, signal_bar_time: i64, now: i64) -> bool {
+    is_stockbit_signal_score_row(exchange, product, category, strategy, timeframe)
+        || !super::super::signal_candle_is_expired(signal_bar_time, timeframe, now)
+}
+
+fn prune_old_snapshot_rows(connection: &Connection, now: i64) -> Result<(), rusqlite::Error> {
+    connection.execute(
+        &format!(
+            "DELETE FROM signals.signal_screener_rows WHERE last_updated_at <= ?1 AND NOT ({})",
+            stockbit_signal_score_row_scope_sql()
+        ),
+        [now.saturating_sub(SIGNAL_MAX_AGE_SECONDS)],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 pub(super) fn list_signal_screener(
     connection: &Connection,
@@ -31,14 +82,7 @@ pub(crate) fn list_signal_screener_page(
     limit: usize,
 ) -> Result<Value, rusqlite::Error> {
     let now = now_secs() as i64;
-    connection.execute(
-        &format!(
-            "DELETE FROM signals.signal_screener_rows
-              WHERE last_updated_at <= ?1 AND NOT ({})",
-            stockbit_signal_score_row_scope_sql()
-        ),
-        [now.saturating_sub(SIGNAL_MAX_AGE_SECONDS)],
-    )?;
+    prune_old_snapshot_rows(connection, now)?;
     let mut query_values = Vec::new();
     let mut where_clause = String::new();
     if let Some(exchange) = exchange_filter {
@@ -65,32 +109,17 @@ pub(crate) fn list_signal_screener_page(
             .replace('_', "\\_");
         query_values.push(rusqlite::types::Value::Text(format!("%{escaped_search}%")));
     }
-    let count_query =
-        format!("SELECT COUNT(*) FROM signals.signal_screener_rows WHERE 1=1{where_clause}");
-    let matching_rows = connection.query_row(
-        &count_query,
-        rusqlite::params_from_iter(query_values.iter()),
-        |row| row.get::<_, usize>(0),
-    )?;
     let page_size = limit.clamp(1, MAX_SIGNAL_SCREENER_PAGE_SIZE);
-    let page_offset = offset.min(matching_rows);
     let display_order = signal_screener_display_order_sql();
-    let score_model_by_strategy = crate::master_data::master_data_records("signal_strategies")
-        .iter()
-        .filter_map(|model| {
-            Some((
-                crate::master_data::catalog_string(model, "id")?,
-                crate::master_data::catalog_string(model, "score_model_id")?,
-            ))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
+    let score_model_by_strategy = score_model_by_strategy();
+    let master_data = crate::master_data::signal_screener_master_data_for_connection(connection)?;
     let query = format!(
         "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,signal_strategy_id,
                 signal_strategy_name,timeframe,direction,score,strategy_strength,confluence_score,
                 score_basis_json,current_price,price_timeframe,price_bar_time,signal_bar_time,
                 data_source,data_provider,data_quality,evidence_status,evidence_source,last_updated_at
            FROM signals.signal_screener_rows WHERE 1=1{where_clause}
-          ORDER BY {display_order} LIMIT {page_size} OFFSET {page_offset}"
+          ORDER BY {display_order}"
     );
     let mut statement = connection.prepare(&query)?;
     let row_mapper = |row: &rusqlite::Row<'_>| {
@@ -143,8 +172,38 @@ pub(crate) fn list_signal_screener_page(
             "score_bar_is_forming": score_bar_is_forming,
         }))
     };
-    let rows = statement.query_map(rusqlite::params_from_iter(query_values.iter()), row_mapper)?;
-    let rows = rows.collect::<Result<Vec<_>, _>>()?;
+    // Expiry is evaluated before pagination with the same Rust policy used
+    // when constructing signals. This avoids empty pages and inflated totals
+    // when expired rows precede visible rows in the stored ordering.
+    let mut query_rows = statement.query(rusqlite::params_from_iter(query_values.iter()))?;
+    let mut matching_rows = 0usize;
+    let mut rows = Vec::with_capacity(page_size);
+    while let Some(row) = query_rows.next()? {
+        let timeframe = row.get::<_, String>(7)?;
+        let visible = signal_is_visible_at(
+            &row.get::<_, String>(0)?,
+            &row.get::<_, String>(1)?,
+            &row.get::<_, String>(2)?,
+            &row.get::<_, String>(5)?,
+            &timeframe,
+            row.get::<_, i64>(16)?,
+            now,
+        );
+        if !visible {
+            continue;
+        }
+        if !score_meets_render_minimum(
+            row.get(5)?, row.get(9)?, &row.get::<_, String>(12)?,
+            &score_model_by_strategy, &master_data["signal_score_models"],
+        ) {
+            continue;
+        }
+        if matching_rows >= offset && rows.len() < page_size {
+            rows.push(row_mapper(row)?);
+        }
+        matching_rows = matching_rows.saturating_add(1);
+    }
+    let page_offset = offset.min(matching_rows);
     let fetched_rows = rows.len();
     let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
     let mut stale_price_signal_count = 0;
@@ -170,18 +229,7 @@ pub(crate) fn list_signal_screener_page(
                 &signal_timeframe,
             );
             signal["persistent_score"] = json!(is_stockbit_persistent);
-            let strategy_id = signal["signal_strategy_id"].as_str().unwrap_or_default();
-            let stored_model_id = signal["score_basis"]["model_id"]
-                .as_str()
-                .unwrap_or_default();
-            let current_model_id = score_model_by_strategy.get(strategy_id).copied();
-            if current_model_id.is_some_and(|model_id| model_id != stored_model_id) {
-                signal["score_status"] = json!("stale");
-                if let Some(score_basis) = signal["score_basis"].as_object_mut() {
-                    score_basis.insert("score_model_status".into(), json!("legacy"));
-                    score_basis.insert("status".into(), json!("stale"));
-                }
-            }
+            mark_legacy_score(&mut signal, &score_model_by_strategy);
             let score_bar_is_forming = signal["score_bar_is_forming"].as_bool().unwrap_or(false);
             let score_bar_time = signal["score_bar_time"].as_i64().unwrap_or(price_bar_time);
             let score_updated_at = signal["last_updated_at"].as_i64().unwrap_or_default();
@@ -283,44 +331,39 @@ pub(crate) fn count_current_signal_screener_rows(
     scan_interval_seconds: i64,
 ) -> Result<Value, rusqlite::Error> {
     let transaction = connection.transaction()?;
-    let mut offset = 0usize;
+    let now = now_secs() as i64;
+    prune_old_snapshot_rows(&transaction, now)?;
     let mut signal_count = 0usize;
     let master_data = crate::master_data::signal_screener_master_data_for_connection(&transaction)?;
-
-    let (stale, generated_at) = loop {
-        let payload = list_signal_screener_page(
-            &transaction,
-            scan_interval_seconds,
-            None,
-            None,
-            None,
-            None,
-            offset,
-            MAX_SIGNAL_SCREENER_PAGE_SIZE,
+    let score_models = score_model_by_strategy();
+    {
+        let mut statement = transaction.prepare(
+            "SELECT exchange_id,product_id,asset_category_id,signal_strategy_id,timeframe,
+                    signal_bar_time,score,score_basis_json FROM signals.signal_screener_rows",
         )?;
-        if let Some(signals) = payload["signals"].as_array() {
-            signal_count = signal_count.saturating_add(
-                signals
-                    .iter()
-                    .filter(|signal| {
-                        signal_meets_render_minimum(signal, &master_data["signal_score_models"])
-                    })
-                    .count(),
-            );
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let strategy = row.get::<_, String>(3)?;
+            let timeframe = row.get::<_, String>(4)?;
+            if !signal_is_visible_at(
+                &row.get::<_, String>(0)?, &row.get::<_, String>(1)?,
+                &row.get::<_, String>(2)?, &strategy, &timeframe, row.get(5)?, now,
+            ) {
+                continue;
+            }
+            if score_meets_render_minimum(
+                strategy, row.get(6)?, &row.get::<_, String>(7)?,
+                &score_models, &master_data["signal_score_models"],
+            ) {
+                signal_count = signal_count.saturating_add(1);
+            }
         }
-
-        let summary = &payload["summary"];
-        let stale = summary["stale"].as_bool().unwrap_or(true);
-        let generated_at = summary["generated_at"].clone();
-        let next_offset = summary["next_offset"]
-            .as_u64()
-            .and_then(|value| usize::try_from(value).ok())
-            .unwrap_or(offset);
-        if summary["has_more"].as_bool() != Some(true) || next_offset <= offset {
-            break (stale, generated_at);
-        }
-        offset = next_offset;
-    };
+    }
+    let generated_at = transaction.query_row(
+        "SELECT last_success_at FROM signals.signal_screener_status WHERE id=1",
+        [], |row| row.get::<_, Option<i64>>(0),
+    ).optional()?.flatten();
+    let stale = generated_at.is_none_or(|timestamp| now.saturating_sub(timestamp) > scan_interval_seconds);
 
     transaction.commit()?;
 

@@ -1177,3 +1177,27 @@ minimum render score of 1.
     storage, and UI boundaries. Verify the minimum, maximum, additive total,
     independent timeframe rows, and retained legacy scale in a fresh browser
     session. Revisit if any layer disagrees about the row's scale or identity.
+
+## 2026-10-28 — Screener pagination and count
+
+1. **Direct effect:** Apply the existing candle expiry rule before page offsets;
+   a page begins with visible rows and its matching count excludes expired rows.
+2. **Immediate consequence:** The notification badge and screener count use the
+   same visibility and score rules without loading the full snapshot in memory.
+3. **Response:** Users can continue paging without skipping live rows behind
+   expired entries; a new scan can still change the snapshot between requests.
+4. **Interactions:** Keep the persistent Stockbit score exception and the
+   authoritative Rust expiry and score rules, including timestamp units.
+5. **Accumulation:** Streaming bounds per-request row allocations as the
+   registry grows; the database still owns all retained snapshot rows.
+6. **Failures:** Empty, expired, stale, and mixed timestamp rows remain subject
+   to the same rules; a failed query reports an error rather than a partial count.
+7. **Recovery:** The existing scan and refresh controls rebuild the snapshot;
+   roll back the read path if counts disagree with visible rows.
+8. **Governance:** This changes presentation and resource use, not strategy
+   thresholds, data provenance, or execution capabilities.
+9. **Trajectory:** Hypothesis: lower allocation reduces memory pressure during
+   polling. Measure production peak memory and query latency to confirm it.
+10. **Decision:** Stream the ordered rows through the shared visibility rule,
+    retain only the requested page, and count in one bounded pass. Reconsider
+    if measured latency or screener and count results diverge.

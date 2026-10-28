@@ -449,6 +449,36 @@ fn screener_connection() -> Connection {
 }
 
 #[test]
+fn snapshot_stores_all_scan_rows_even_beyond_a_single_page() {
+    let connection = screener_connection();
+    let now_ns = i64::try_from(crate::now_secs()).unwrap() * crate::NANOS_PER_SECOND;
+    let rows = (0..2_001)
+        .map(|index| stored_screener_row(&format!("SIG-{index:04}.JK"), now_ns))
+        .collect::<Vec<_>>();
+
+    replace_signal_screener_snapshot(&connection, &rows).expect("all scan rows should persist");
+
+    let stored: i64 = connection
+        .query_row("SELECT COUNT(*) FROM signals.signal_screener_rows", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(stored, 2_001);
+    let page = list_signal_screener_page(
+        &connection,
+        900,
+        None,
+        None,
+        None,
+        Some("SIG-2000"),
+        0,
+        50,
+    )
+    .expect("the row beyond the old cutoff should be searchable");
+    assert_eq!(page["signals"][0]["symbol"], "SIG-2000.JK");
+}
+
+#[test]
 fn screener_read_retains_unexpired_setups_with_stale_price_bars() {
     let connection = screener_connection();
     let now_ns = i64::try_from(crate::now_secs())
@@ -556,6 +586,36 @@ fn screener_pages_filter_and_reach_rows_beyond_the_first_page() {
     assert_eq!(strategy_id_search["summary"]["matching_rows"], 250);
     assert_eq!(wildcard_search["signals"].as_array().unwrap().len(), 0);
     assert_eq!(wildcard_search["summary"]["matching_rows"], 0);
+}
+
+#[test]
+fn expired_and_below_floor_rows_do_not_consume_pages_or_inflate_the_count() {
+    let mut connection = screener_connection();
+    let now_ns = (crate::now_secs() as i64).saturating_mul(crate::NANOS_PER_SECOND);
+    let fresh_bar = now_ns.saturating_sub(16 * 60 * crate::NANOS_PER_SECOND);
+    let rows = ["EXPIRED.JK", "BELOW.JK", "LIVE-A.JK", "LIVE-B.JK"]
+        .into_iter()
+        .map(|symbol| stored_screener_row(symbol, fresh_bar))
+        .collect::<Vec<_>>();
+    replace_signal_screener_snapshot(&connection, &rows).unwrap();
+    connection.execute(
+        "UPDATE signals.signal_screener_rows SET signal_bar_time=?1, score=100 WHERE symbol='EXPIRED.JK'",
+        [now_ns.saturating_sub(4 * 60 * 60 * crate::NANOS_PER_SECOND)],
+    ).unwrap();
+    connection.execute(
+        "UPDATE signals.signal_screener_rows SET score=50, score_basis_json=?1 WHERE symbol='BELOW.JK'",
+        [json!({"score_scale_max": 10, "minimum_score_out_of_10": 100}).to_string()],
+    ).unwrap();
+
+    let first = list_signal_screener_page(&connection, 900, None, None, None, None, 0, 1).unwrap();
+    let second = list_signal_screener_page(&connection, 900, None, None, None, None, 1, 1).unwrap();
+    assert_eq!(first["summary"]["matching_rows"], 2);
+    assert_eq!(first["summary"]["next_offset"], 1);
+    assert_eq!(first["signals"][0]["symbol"], "LIVE-A.JK");
+    assert_eq!(second["signals"][0]["symbol"], "LIVE-B.JK");
+    assert_eq!(second["summary"]["has_more"], false);
+    let count = super::count_current_signal_screener_rows(&mut connection, 900).unwrap();
+    assert_eq!(count["signal_count"], 2);
 }
 
 #[test]

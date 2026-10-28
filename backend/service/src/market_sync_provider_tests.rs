@@ -63,6 +63,39 @@ fn shared_storage_gate_serializes_daily_and_intraday_writes_for_one_symbol() {
 }
 
 #[test]
+fn releasing_one_symbol_wakes_its_waiter_even_if_another_symbol_is_locked() {
+    let gate = Arc::new(StorageSymbolSyncGate::default());
+    let held_a = gate.lock("BTC-USD");
+    let held_b = gate.lock("ETH-USD");
+    let (started_tx, started_rx) = mpsc::channel();
+    let (acquired_tx, acquired_rx) = mpsc::channel();
+    let mut workers = Vec::new();
+    for symbol in ["ETH-USD", "BTC-USD"] {
+        let worker_gate = Arc::clone(&gate);
+        let started = started_tx.clone();
+        let acquired = acquired_tx.clone();
+        workers.push(thread::spawn(move || {
+            started.send(symbol).unwrap();
+            let _guard = worker_gate.lock(symbol);
+            acquired.send(symbol).unwrap();
+        }));
+        assert_eq!(started_rx.recv_timeout(Duration::from_secs(1)).unwrap(), symbol);
+        assert!(matches!(
+            acquired_rx.recv_timeout(Duration::from_millis(50)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+    }
+
+    drop(held_a);
+    let acquired_after_release = acquired_rx.recv_timeout(Duration::from_secs(1));
+    drop(held_b);
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    assert_eq!(acquired_after_release.unwrap(), "BTC-USD");
+}
+
+#[test]
 fn native_success_stops_the_chain_but_native_failure_allows_proxy_fallback() {
     assert!(!should_continue_candle_provider_chain(
         CandleSourceClass::VenueNative,

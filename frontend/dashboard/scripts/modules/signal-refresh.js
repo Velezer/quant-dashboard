@@ -2,11 +2,13 @@ import { getDashboardBinding, publishDashboardBindings } from './runtime-context
 import { readApiResponse } from './api.js';
 
 const SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS = 30_000;
+const SIGNAL_REQUEST_TIMEOUT_MS = 60_000;
 
 /** Coordinates the 15-minute scan view, refresh action, and reconnect recovery. */
 export function installSignalRefresh() {
     let lastRequestAt = 0;
     let requestSerial = 0;
+    let signalRequestsInFlight = 0;
     let nextScanEpoch = 0;
     let countdownPoll = null;
     let eventSource = null;
@@ -47,6 +49,10 @@ export function installSignalRefresh() {
 
     async function fetchFreshSignals({ quiet = false, append = false, offset = 0 } = {}) {
         const currentRequest = ++requestSerial;
+        lastRequestAt = Date.now();
+        signalRequestsInFlight += 1;
+        const controller = new AbortController();
+        const requestTimeout = setTimeout(() => controller.abort(), SIGNAL_REQUEST_TIMEOUT_MS);
         if (!quiet && !getDashboardBinding('DATA')) getDashboardBinding('setScreenerLoading')?.();
         try {
             const query = getDashboardBinding('getSignalScreenerQuery')?.() || {};
@@ -58,7 +64,7 @@ export function installSignalRefresh() {
                 offset: String(offset),
                 limit: String(query.limit || 100),
             });
-            const response = await fetch(`/api/signals?${params}`, { cache: 'no-store' });
+            const response = await fetch(`/api/signals?${params}`, { cache: 'no-store', signal: controller.signal });
             const payload = await readApiResponse(response);
             if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
             if (!payload || !Array.isArray(payload.signals) || typeof payload.summary !== 'object'
@@ -89,10 +95,13 @@ export function installSignalRefresh() {
             lastRequestAt = Date.now();
         } catch (error) {
             if (currentRequest === requestSerial) {
-                getDashboardBinding('setScreenerFetchError')?.(error?.message || error);
-                getDashboardBinding('setAppSignalReadinessError')?.(error?.message || error);
+                const message = controller.signal.aborted ? 'The signal request timed out. Retry to recover.' : error?.message || error;
+                getDashboardBinding('setScreenerFetchError')?.(message);
+                getDashboardBinding('setAppSignalReadinessError')?.(message);
             }
         } finally {
+            clearTimeout(requestTimeout);
+            signalRequestsInFlight -= 1;
         }
     }
 
@@ -121,7 +130,7 @@ export function installSignalRefresh() {
         const minutes = Math.floor(remaining / 60);
         const seconds = String(remaining % 60).padStart(2, '0');
         timer.textContent = `${minutes}m ${seconds}s`;
-        if (remaining === 0 && Date.now() - lastRequestAt >= 20_000) {
+        if (remaining === 0 && signalRequestsInFlight === 0 && Date.now() - lastRequestAt >= 20_000) {
             void fetchFreshSignals({ quiet: true });
             void fetchRuntimeStatus();
         }
@@ -132,7 +141,7 @@ export function installSignalRefresh() {
         if (countdownPoll) clearInterval(countdownPoll);
         countdownPoll = setInterval(() => {
             renderCountdown();
-            if (Date.now() - lastRequestAt >= 60_000) void fetchFreshSignals({ quiet: true });
+            if (signalRequestsInFlight === 0 && Date.now() - lastRequestAt >= 60_000) void fetchFreshSignals({ quiet: true });
         }, 1_000);
         setInterval(() => { void fetchRuntimeStatus(); }, 30_000);
         setInterval(() => {
