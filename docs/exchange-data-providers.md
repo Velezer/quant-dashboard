@@ -24,6 +24,23 @@ quotes remain separate. Worker attempts, signals, and evidence still identify
 the selected app/product. See the explicit history-consolidation command in
 [market-data storage](market-data-storage.md#consolidating-existing-crypto-references).
 
+The public Binance market WebSocket feed keeps warmed shared crypto-reference
+series current between REST history sweeps. It subscribes to completed 15m, 1h,
+and 1d klines for active verified registrations that already have Binance 15m
+history, saves typed candle rows into the same per-symbol SQLite
+`bars`/`series`/`ingestion_runs` tables, and leaves venue-native data untouched.
+Spot and USD-M Futures use separate Binance public stream endpoints and
+category-specific source identities. Subscriptions are bounded to 900 streams
+per connection and four simultaneous connections;
+the registry is reread every five minutes, and dropped connections retry with
+bounded exponential backoff. The existing paginated REST adapter remains the
+history bootstrap and recovery path. Existing data checks continue to show the
+source, last successful candle, and stored provider errors; socket connection
+problems are logged by the background daemon. Live streaming improves refresh
+latency but cannot guarantee fresh data during Binance, network, or app outages;
+signals still fail closed when candle history does not pass current freshness
+checks.
+
 Tokocrypto native intraday refreshes request the full initial window until the
 stored series has its model warm-up. Thereafter, they request the elapsed gap
 plus a small replay margin, bounded by the original provider window. The 15m

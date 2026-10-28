@@ -433,6 +433,16 @@ fn main() {
                 .spawn(move || background_market_sync_loop(state_clone))
                 .expect("spawn market sync daemon");
         }
+
+        // Binance's public kline WebSocket keeps shared crypto references
+        // current between the bounded REST history sweeps.
+        let stream_market_directory = market_dir.clone();
+        thread::Builder::new()
+            .name("binance-kline-daemon".to_string())
+            .spawn(move || {
+                research_proxy::background_binance_kline_stream_loop(stream_market_directory)
+            })
+            .expect("spawn Binance kline stream daemon");
     } else {
         eprintln!("[Daemon] Background work disabled by QUANT_DISABLE_BACKGROUND_WORK.");
     }
@@ -444,6 +454,9 @@ fn main() {
     eprintln!("  SSE Event Stream: http://{address}/api/events");
     eprintln!("  Scan Interval: {scan_interval_min} min");
     eprintln!("  Provider sync: Tokocrypto native first; Binance, Coinbase, Bybit, OKX, and Yahoo research proxies");
+    if background_work_enabled {
+        eprintln!("  Binance public kline streams: completed 15m, 1h, and 1d shared crypto references");
+    }
     eprintln!("  Market directory: {market_dir}");
     eprintln!("  App database: {app_database}");
     eprintln!("  Signal database: {signal_database}");

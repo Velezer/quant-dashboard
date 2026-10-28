@@ -7,6 +7,8 @@ use serde_json::Value;
 
 #[path = "research_proxy/interval.rs"]
 mod interval;
+#[path = "research_proxy/binance_stream.rs"]
+mod binance_stream;
 #[path = "research_proxy_parsing.rs"]
 mod parsing;
 #[path = "research_proxy/providers.rs"]
@@ -402,7 +404,7 @@ fn app_product_from_source(source: &str) -> Option<&'static str> {
     })
 }
 
-fn persist(
+pub(in crate::research_proxy) fn persist(
     connection: &Connection,
     symbol: &str,
     kind: &str,
@@ -487,6 +489,10 @@ fn persist(
             Err(error)
         }
     }
+}
+
+pub(crate) fn background_binance_kline_stream_loop(market_directory: String) {
+    binance_stream::run_loop(market_directory);
 }
 
 #[cfg(test)]
