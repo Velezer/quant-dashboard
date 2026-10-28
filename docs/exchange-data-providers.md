@@ -833,8 +833,9 @@ recovery and left the documented production rotation unimplemented.
 The scanner now schedules one ticker at a time in Stockbit, Pintu, Pluang,
 Tokocrypto order across two workers. The gate reserves two scan connections,
 reduces the regular limit from ten to nine, and keeps the total open ticker
-database cap at eleven. The market-sync worker cap remains two, and the scan
-worker count comes from the same reservation that the gate enforces.
+database cap at eleven. The market-sync worker cap is four, below the regular
+connection limit; the scan worker count comes from the same reservation that
+the gate enforces.
 
 1. **Direct effect:** Two distinct ticker histories can be scanned at once;
    app tickers are dequeued in the documented 1:3 rotation.
@@ -864,6 +865,19 @@ worker count comes from the same reservation that the gate enforces.
 10. **Decision and learning:** Share the scan-reservation limit between the
     scheduler and database gate, then reconsider the two-worker limit only if
     live data shows the 15-minute target or memory budget is still missed.
+
+### Restore the 15-minute market-data sweep — 2026-10-28
+
+Production diagnostics showed the intraday sweep falling behind its target.
+Each batch attempted about 246 registered targets and took 153 seconds, while
+the registry rotation contains twelve such batches. That puts a full sweep near
+30 minutes, allowing otherwise valid signal rows to expire before their next
+refresh. Raise the bounded market-sync worker pool from two to four. The four
+workers use fewer than the nine regular market-history leases; the existing
+two signal-scan leases and eleven-connection total cap remain unchanged. A
+historical live sample at ten workers used 13.76 MB of private memory, so four
+workers remain below a previously measured configuration. Recheck complete
+sweep duration, candle freshness, and process memory after deployment.
 
 ### Stale daily-frame recovery follow-up — 2026-10-02
 

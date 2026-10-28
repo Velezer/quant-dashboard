@@ -443,12 +443,16 @@ the next section, “Fifteen-minute signal refresh and confluence ranking.”
 
 The background scanner runs on a fixed 15-minute schedule anchored to each
 scan start, without requiring a dashboard heartbeat. Successful completion
-does not advance or shorten the next interval. The market-data scheduler runs
-once per minute and sizes each rotating batch to cover the active registered
-product set in 12 ticks, subject to the bounded batch and worker limits documented in
-`exchange-data-providers.md`. A 15-minute candle is stale after 30 minutes from
-its open timestamp. Stale products cannot emit strategy or indicator signals;
-their existing strategy plans are retired until a fresh candle is stored.
+does not advance or shorten the next interval. The market-data scheduler sizes
+rotating batches to cover the active registered product set in twelve nominal
+one-minute ticks, subject to the bounded batch and worker limits documented in
+`exchange-data-providers.md`. Live logs showed a 246-target batch taking 153
+seconds with two workers, extending the full intraday pass to about 30 minutes.
+The market-sync pool is now capped at four workers; the database gate still
+allows at most nine regular ticker histories and reserves two for signal scans.
+A 15-minute candle is stale after 30 minutes from its open timestamp. Stale
+products cannot emit strategy or indicator signals; their existing strategy
+plans are retired until a fresh candle is stored.
 Provider errors stay visible in ingestion diagnostics, and a proxy success
 remains proxy-origin research data.
 
