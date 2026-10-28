@@ -103,7 +103,7 @@ export function installSignalAlerts() {
             };
         }
         const labels = {
-            SIGNAL: { label: 'Signal', detail: 'Informational condition from stored candle data.', classes: 'border-sky-800 bg-sky-950/40 text-sky-200' },
+            SIGNAL: { label: 'Saved screener alert', detail: 'Recorded during a completed scan. It may no longer qualify for the current screener or have a fresh price.', classes: 'border-sky-800 bg-sky-950/40 text-sky-200' },
             EXPIRED: { label: 'Expired', detail: 'This signal is older than the two-hour retention window.', classes: 'border-gray-700 bg-gray-900 text-gray-300' },
         };
         return { state, ...(labels[state] || labels.SIGNAL) };
@@ -122,7 +122,7 @@ export function installSignalAlerts() {
             heading.className = 'flex items-center justify-between gap-2';
             const directionClass = alert.direction === 'LONG' ? 'text-emerald-300' : 'text-rose-300';
             const indicatorAlert = isIndicatorAlert(alert);
-            appendText(heading, 'strong', `${alert.direction} ${indicatorAlert ? 'indicator alert' : 'signal'} · ${alert.symbol}`, `text-xs font-bold ${directionClass}`);
+            appendText(heading, 'strong', `${alert.direction} ${indicatorAlert ? 'indicator alert' : 'screener alert'} · ${alert.symbol}`, `text-xs font-bold ${directionClass}`);
             const appIdentity = [alert.exchange_id, alert.product_id].filter(Boolean).join(' · ') || 'app';
             appendText(heading, 'span', `${appIdentity} · ${alert.timeframe || 'timeframe'}`, 'text-[9px] font-mono text-gray-500');
             item.append(heading);
@@ -164,7 +164,7 @@ export function installSignalAlerts() {
             appendText(item, 'div', `Market data: ${source || 'source unavailable'}`, 'mt-1 text-[9px] leading-relaxed text-gray-500');
             appendText(item, 'div', indicatorAlert
                 ? 'Indicator condition from stored candle data. It is not a scored screener signal or an order instruction.'
-                : 'Informational screener alert from stored candle data. It is not an order instruction.', 'mt-1 text-[9px] leading-relaxed text-amber-200/90');
+                : 'Saved from a completed scan. The current screener may omit it if the setup no longer qualifies or its price is stale. It is not an order instruction.', 'mt-1 text-[9px] leading-relaxed text-amber-200/90');
             list.append(item);
         }
 
