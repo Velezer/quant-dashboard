@@ -8,5 +8,6 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "3.4", default-features = false, features = ["brotli", "gzip", "platform-verifier", "rustls"] }
+tungstenite = { version = "0.27", features = ["rustls-tls-webpki-roots"] }
 quant_core = { path = "../../quant/core" }
 quant_pine_runtime = { path = "../../quant/pine_runtime" }
