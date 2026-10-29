@@ -535,13 +535,20 @@ fn next_scan_task(
     workers: &mut [ScanWorker],
     cursor: &mut usize,
 ) -> Option<(String, RegisteredInstrument)> {
-    let remaining = workers
-        .iter()
-        .map(|worker| worker.instruments.len())
-        .collect::<Vec<_>>();
-    let index = next_scan_worker(&remaining, cursor)?;
-    let worker = workers.get_mut(index)?;
-    Some((worker.exchange_id.clone(), worker.instruments.next()?))
+    let worker_count = workers.len();
+    if worker_count == 0 {
+        return None;
+    }
+    for offset in 0..worker_count {
+        let index = (*cursor + offset) % worker_count;
+        if workers[index].instruments.len() == 0 {
+            continue;
+        }
+        *cursor = (index + 1) % worker_count;
+        let worker = &mut workers[index];
+        return Some((worker.exchange_id.clone(), worker.instruments.next()?));
+    }
+    None
 }
 
 /// Resolve an app ticker to its own fresh series first. If that history is

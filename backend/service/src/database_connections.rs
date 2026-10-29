@@ -337,6 +337,25 @@ fn open_app_database_with_signal_store(
     Ok(connection)
 }
 
+#[cfg(not(test))]
+fn initialized_application_databases() -> &'static Mutex<HashSet<PathBuf>> {
+    static INITIALIZED_DATABASES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    INITIALIZED_DATABASES.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+#[cfg(not(test))]
+fn application_database_key(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+#[cfg(not(test))]
+fn application_database_is_initialized(path: &Path) -> bool {
+    initialized_application_databases()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .contains(&application_database_key(path))
+}
+
 fn initialize_application_storage_once(
     connection: &Connection,
     _app_database: &Path,
@@ -351,11 +370,8 @@ fn initialize_application_storage_once(
     }
     #[cfg(not(test))]
     {
-        static INITIALIZED_DATABASES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
-        let initialized = INITIALIZED_DATABASES.get_or_init(|| Mutex::new(HashSet::new()));
-        let app_database_key = _app_database
-            .canonicalize()
-            .unwrap_or_else(|_| _app_database.to_path_buf());
+        let initialized = initialized_application_databases();
+        let app_database_key = application_database_key(_app_database);
         let mut initialized = initialized
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -465,7 +481,12 @@ fn open_ticker_database(
     create: bool,
     new_database: bool,
 ) -> Result<Connection, rusqlite::Error> {
+    #[cfg(test)]
     drop(open_app_database_without_signal_store(paths)?);
+    #[cfg(not(test))]
+    if !application_database_is_initialized(&paths.app_db) {
+        drop(open_app_database_without_signal_store(paths)?);
+    }
     if create {
         create_parent(ticker_path)?;
     }

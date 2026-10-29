@@ -296,7 +296,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
             }
         };
         let completed_strategy_bars = completed_bars(&candles, duration_ns, now_ns);
-        let bars = if is_stockbit_signal_scope {
+        let stockbit_bars = is_stockbit_signal_scope.then(|| {
             candles
                 .iter()
                 .map(|bar| StrategyBar {
@@ -308,9 +308,10 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
                     volume: bar.volume,
                 })
                 .collect::<Vec<_>>()
-        } else {
-            completed_strategy_bars.clone()
-        };
+        });
+        let bars = stockbit_bars
+            .as_deref()
+            .unwrap_or(completed_strategy_bars.as_slice());
         let minimum_available_history_bars = if is_stockbit_signal_scope || is_crypto_signal_scope {
             quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS
         } else {
