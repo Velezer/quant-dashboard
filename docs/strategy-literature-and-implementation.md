@@ -465,15 +465,16 @@ steady-state memory ceiling is now 32 MB. Production must confirm a full pass
 within 900 seconds and private memory at or below 32 MB.
 
 
-Screener signals expire after the two-hour lifetime and are cleaned during
-scheduled scans. This is a lifecycle limit, not a historical performance
-claim. The scan publication target is 15 minutes; the dashboard displays that
-target without allowing it to be changed. The scheduler uses the last measured
-scan duration and a two-minute safety margin to place the next start, and never
+The scan publication target is 15 minutes; the dashboard displays that target
+without allowing it to be changed. The scheduler uses the last measured scan
+duration and a two-minute safety margin to place the next start, and never
 overlaps scans. A stale-candle sync keeps its product priority but does not
 launch another full-universe scan when it succeeds. The next scheduled scan
 consumes refreshed candles; the explicit Refresh signals action remains
-available for an immediate user-requested scan.
+available for an immediate user-requested scan. Current signal rows are
+recalculated from each scan's latest qualifying strategy bar and score floor;
+they have no separate signal-age expiry. Notification history has its own
+two-hour retention window based on alert creation.
 
 Ten-order decision trail for duration-aware scan scheduling and recovery:
 
@@ -754,3 +755,14 @@ four-factor model.
 Recovery trigger: any NWE/DSS screener row with fewer or more than four factors,
 an incorrect subtotal/total, a legacy score shown as current, or an unlabeled
 OHLCV proxy presented as true buy/sell volume delta.
+
+### Current crypto signal refresh policy — 2026-10-29
+
+Crypto NWE/DSS is recalculated on each scan using only the latest completed
+bar for that timeframe. The current directional setup and model score floor
+decide whether a row appears; an older qualifying bar is not carried forward
+once the latest bar no longer qualifies. There is no separate wall-clock
+signal-age cutoff. This supersedes the earlier two-hour active screener-row
+expiry. Notification history keeps its separate two-hour retention from alert
+creation, and candle freshness checks still determine whether a scan may use
+the timeframe data.

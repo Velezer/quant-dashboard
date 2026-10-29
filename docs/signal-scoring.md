@@ -13,13 +13,15 @@ Compare rows only when their `score_model_id`, app/product/category, timeframe,
 and data-source basis match. Keep legacy score bases at their recorded scale;
 never convert an old `/10` or `/20` value into `/40` by multiplying it.
 
-## Crypto signal lifetime
+## Crypto signal refresh
 
-For crypto NWE/DSS models, a scan keeps the newest directional setup emitted by
-the completed-bar strategy while it remains within the existing two-hour
-post-close signal lifetime. The score uses only candles through that setup bar.
-The row still requires a fresh same-source 15m candle close; stale or
-cross-source prices remain withheld.
+Each scan recalculates crypto NWE/DSS from the latest completed bar in the
+selected timeframe. The directional strategy setup and the active model's
+score floor determine whether that scan emits a row; there is no separate
+signal-age expiry. A successful scan replaces rows that no longer qualify.
+Notification history has a separate two-hour retention window based on when
+the alert was created. A stale reference price can remain visible with its
+freshness label, but it is not a current market entry.
 
 ## Total-strength display distinction
 

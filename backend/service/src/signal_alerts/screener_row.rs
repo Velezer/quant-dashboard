@@ -1,4 +1,4 @@
-use super::super::{canonical_exchange_id, first_candidate_string, signal_candle_is_expired};
+use super::super::{canonical_exchange_id, first_candidate_string};
 use super::{
     is_crypto_nwe_dss_signal_score_row, is_stockbit_signal_score_row, score_components_match,
 };
@@ -94,11 +94,6 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
     let now_ns = i64::try_from(now_secs())
         .unwrap_or(i64::MAX)
         .saturating_mul(crate::NANOS_PER_SECOND);
-    if !is_stockbit_signal_score
-        && signal_candle_is_expired(signal_bar_time, &timeframe, now_secs() as i64)
-    {
-        return None;
-    }
     let forming_bar_is_valid = is_stockbit_signal_score
         && score_bar_is_forming
         && score_bar_time <= now_ns

@@ -36,22 +36,6 @@ fn score_meets_render_minimum(
     signal_meets_render_minimum(&signal, models)
 }
 
-fn signal_is_visible_at(exchange: &str, product: &str, category: &str, strategy: &str, timeframe: &str, signal_bar_time: i64, now: i64) -> bool {
-    is_stockbit_signal_score_row(exchange, product, category, strategy, timeframe)
-        || !super::super::signal_candle_is_expired(signal_bar_time, timeframe, now)
-}
-
-fn prune_old_snapshot_rows(connection: &Connection, now: i64) -> Result<(), rusqlite::Error> {
-    connection.execute(
-        &format!(
-            "DELETE FROM signals.signal_screener_rows WHERE last_updated_at <= ?1 AND NOT ({})",
-            stockbit_signal_score_row_scope_sql()
-        ),
-        [now.saturating_sub(SIGNAL_MAX_AGE_SECONDS)],
-    )?;
-    Ok(())
-}
-
 #[cfg(test)]
 pub(super) fn list_signal_screener(
     connection: &Connection,
@@ -82,7 +66,6 @@ pub(crate) fn list_signal_screener_page(
     limit: usize,
 ) -> Result<Value, rusqlite::Error> {
     let now = now_secs() as i64;
-    prune_old_snapshot_rows(connection, now)?;
     let mut query_values = Vec::new();
     let mut where_clause = String::new();
     if let Some(exchange) = exchange_filter {
@@ -172,26 +155,10 @@ pub(crate) fn list_signal_screener_page(
             "score_bar_is_forming": score_bar_is_forming,
         }))
     };
-    // Expiry is evaluated before pagination with the same Rust policy used
-    // when constructing signals. This avoids empty pages and inflated totals
-    // when expired rows precede visible rows in the stored ordering.
     let mut query_rows = statement.query(rusqlite::params_from_iter(query_values.iter()))?;
     let mut matching_rows = 0usize;
     let mut rows = Vec::with_capacity(page_size);
     while let Some(row) = query_rows.next()? {
-        let timeframe = row.get::<_, String>(7)?;
-        let visible = signal_is_visible_at(
-            &row.get::<_, String>(0)?,
-            &row.get::<_, String>(1)?,
-            &row.get::<_, String>(2)?,
-            &row.get::<_, String>(5)?,
-            &timeframe,
-            row.get::<_, i64>(16)?,
-            now,
-        );
-        if !visible {
-            continue;
-        }
         if !score_meets_render_minimum(
             row.get(5)?, row.get(9)?, &row.get::<_, String>(12)?,
             &score_model_by_strategy, &master_data["signal_score_models"],
@@ -220,7 +187,6 @@ pub(crate) fn list_signal_screener_page(
                 .to_string();
             let price_bar_time = signal["price_bar_time"].as_i64().unwrap_or_default();
             let signal_timeframe = signal["timeframe"].as_str().unwrap_or_default().to_string();
-            let signal_bar_time = signal["signal_bar_time"].as_i64().unwrap_or_default();
             let is_stockbit_persistent = is_stockbit_signal_score_row(
                 signal["exchange_id"].as_str().unwrap_or_default(),
                 signal["product_id"].as_str().unwrap_or_default(),
@@ -263,20 +229,14 @@ pub(crate) fn list_signal_screener_page(
                 }
             }
             signal["price_is_fresh"] = json!(is_current_price_fresh);
-            let is_unexpired = !super::super::signal_candle_is_expired(
-                signal_bar_time,
-                &signal_timeframe,
-                now,
-            );
-            if !is_current_price_fresh && !is_stockbit_persistent && is_unexpired {
+            if !is_current_price_fresh && !is_stockbit_persistent {
                 stale_price_signal_count += 1;
             }
             // A stale reference price makes a setup ineligible as a current
-            // market entry, but it does not erase the still-live setup itself.
-            // Keep it in the screener with its freshness metadata so users can
+            // market entry, but it does not erase the setup emitted by the
+            // latest successful scan. Keep its freshness metadata so users can
             // inspect why it is not actionable while the market feed recovers.
-            let is_visible = is_stockbit_persistent || is_unexpired;
-            is_visible.then_some(signal)
+            Some(signal)
         })
         .collect::<Vec<_>>();
     let signal_count = signals.len();
@@ -332,27 +292,19 @@ pub(crate) fn count_current_signal_screener_rows(
 ) -> Result<Value, rusqlite::Error> {
     let transaction = connection.transaction()?;
     let now = now_secs() as i64;
-    prune_old_snapshot_rows(&transaction, now)?;
     let mut signal_count = 0usize;
     let master_data = crate::master_data::signal_screener_master_data_for_connection(&transaction)?;
     let score_models = score_model_by_strategy();
     {
         let mut statement = transaction.prepare(
-            "SELECT exchange_id,product_id,asset_category_id,signal_strategy_id,timeframe,
-                    signal_bar_time,score,score_basis_json FROM signals.signal_screener_rows",
+            "SELECT signal_strategy_id,score,score_basis_json
+               FROM signals.signal_screener_rows",
         )?;
         let mut rows = statement.query([])?;
         while let Some(row) = rows.next()? {
-            let strategy = row.get::<_, String>(3)?;
-            let timeframe = row.get::<_, String>(4)?;
-            if !signal_is_visible_at(
-                &row.get::<_, String>(0)?, &row.get::<_, String>(1)?,
-                &row.get::<_, String>(2)?, &strategy, &timeframe, row.get(5)?, now,
-            ) {
-                continue;
-            }
+            let strategy = row.get::<_, String>(0)?;
             if score_meets_render_minimum(
-                strategy, row.get(6)?, &row.get::<_, String>(7)?,
+                strategy, row.get(1)?, &row.get::<_, String>(2)?,
                 &score_models, &master_data["signal_score_models"],
             ) {
                 signal_count = signal_count.saturating_add(1);

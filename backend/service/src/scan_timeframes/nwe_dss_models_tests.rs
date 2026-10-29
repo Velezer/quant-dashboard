@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+fn crypto_signal_uses_only_the_latest_completed_bar() {
+    let bars = [
+        StrategyBar {
+            time: 1,
+            open: 100.0,
+            high: 101.0,
+            low: 99.0,
+            close: 100.0,
+            volume: 1.0,
+        },
+        StrategyBar {
+            time: 2,
+            open: 100.0,
+            high: 102.0,
+            low: 99.0,
+            close: 101.0,
+            volume: 1.0,
+        },
+    ];
+    let mut signals = vec![quant_core::StrategySignal::default(); bars.len()];
+    signals[0].direction = "LONG".into();
+
+    assert!(latest_crypto_signal_for_latest_bar(&signals, &bars).is_none());
+
+    signals[1].direction = "SHORT".into();
+    let (index, signal) = latest_crypto_signal_for_latest_bar(&signals, &bars).unwrap();
+    assert_eq!(index, 1);
+    assert_eq!(signal.direction, "SHORT");
+}
+
+#[test]
 fn crypto_dss_rows_keep_dss_and_nwe_points_on_the_correct_indicators() {
     let mut bars: Vec<StrategyBar> = (0..quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS + 20)
         .map(|index| {

@@ -1201,3 +1201,13 @@ minimum render score of 1.
 10. **Decision:** Stream the ordered rows through the shared visibility rule,
     retain only the requested page, and count in one bounded pass. Reconsider
     if measured latency or screener and count results diverge.
+
+## 2026-10-29 — Latest-bar signal refresh supersedes age expiry
+
+Crypto NWE/DSS is recalculated during each scan from the latest completed
+bar. Strategy qualification and the active score floor decide whether a row
+appears; there is no additional wall-clock signal expiry. A completed scan
+removes rows that no longer qualify, while a failed scan preserves the last
+good snapshot and marks it stale. Notification history retains its separate
+two-hour window from alert creation. Stale reference prices remain visible
+with their freshness label and are not presented as current market entries.

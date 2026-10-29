@@ -25,30 +25,34 @@ fn stockbit_4h_candidate(signal_bar_time: i64, price_bar_time: i64) -> serde_jso
 }
 
 #[test]
-fn screener_candidate_expires_two_hours_after_its_signal_candle_closes() {
+fn screener_candidate_with_stale_price_is_withheld() {
     let connection = Connection::open_in_memory().expect("in-memory app database should open");
     connection
         .execute_batch("ATTACH DATABASE ':memory:' AS app;")
         .expect("app schema should attach");
+    crate::instrument_registry::initialize_schema(&connection)
+        .expect("instrument-registry schema should initialize");
     crate::master_data::initialize(&connection).expect("signal catalog should initialize");
 
     let now_ns = i64::try_from(crate::now_secs())
         .unwrap_or(i64::MAX)
         .saturating_mul(1_000_000_000);
     let fresh_price_bar = now_ns.saturating_sub(5 * HOUR_NANOSECONDS);
-    let expired_signal_bar = now_ns.saturating_sub(6 * HOUR_NANOSECONDS + 1_000_000_000);
+    let signal_bar = now_ns.saturating_sub(6 * HOUR_NANOSECONDS + 1_000_000_000);
 
     assert!(
-        signal_screener_row(&stockbit_4h_candidate(expired_signal_bar, fresh_price_bar)).is_none()
+        signal_screener_row(&stockbit_4h_candidate(signal_bar, fresh_price_bar)).is_none()
     );
 }
 
 #[test]
-fn list_signal_screener_keeps_expired_stockbit_score_rows_stale() {
+fn list_signal_screener_keeps_stockbit_score_rows_stale() {
     let connection = Connection::open_in_memory().expect("in-memory app database should open");
     connection
         .execute_batch("ATTACH DATABASE ':memory:' AS app; ATTACH DATABASE ':memory:' AS signals;")
         .expect("app schema should attach");
+    crate::instrument_registry::initialize_schema(&connection)
+        .expect("instrument-registry schema should initialize");
     crate::master_data::initialize(&connection).expect("signal catalog should initialize");
     super::super::initialize_schema(&connection).expect("screener schema should initialize");
     super::super::initialize_screener_schema(&connection)
@@ -56,7 +60,7 @@ fn list_signal_screener_keeps_expired_stockbit_score_rows_stale() {
 
     let now = crate::now_secs() as i64;
     let now_ns = now.saturating_mul(1_000_000_000);
-    let expired_signal_bar = now_ns
+    let old_signal_bar = now_ns
         .saturating_sub(6 * HOUR_NANOSECONDS)
         .saturating_sub(1_000_000_000);
     let fresh_price_bar = now_ns.saturating_sub(5 * HOUR_NANOSECONDS);
@@ -84,11 +88,11 @@ fn list_signal_screener_keeps_expired_stockbit_score_rows_stale() {
                 })
                 .to_string(),
                 fresh_price_bar,
-                expired_signal_bar,
+                old_signal_bar,
                 now
             ],
         )
-        .expect("expired snapshot row should persist for the read-path check");
+        .expect("older scan row should persist for the read-path check");
 
     let payload = list_signal_screener(&connection, 900, None, None)
         .expect("the screener snapshot should load");
@@ -110,6 +114,8 @@ fn retained_completed_scores_use_their_signal_timeframe_for_freshness() {
         connection
             .execute_batch("ATTACH DATABASE ':memory:' AS app; ATTACH DATABASE ':memory:' AS signals;")
             .expect("app and signal schemas should attach");
+        crate::instrument_registry::initialize_schema(&connection)
+            .expect("instrument-registry schema should initialize");
         crate::master_data::initialize(&connection).expect("signal catalog should initialize");
         super::super::initialize_schema(&connection).expect("alert schema should initialize");
         super::super::initialize_screener_schema(&connection)
