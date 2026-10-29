@@ -40,6 +40,7 @@ pub use dss_bressert::{
     calculate_dss_bressert_mtf, DssBressertFrameResult, DssBressertMtfResult, DssBressertTimeframe,
     DssBressertTimeframeInput, DSS_BRESSERT_MINIMUM_HISTORY_BARS, DSS_BRESSERT_MTF_STRATEGY_ID,
     DSS_BRESSERT_MTF_TIMEFRAMES, DSS_BRESSERT_NEAR_SPREAD_THRESHOLD,
+    SIGNAL_SCREENER_TIMEFRAMES,
 };
 pub use dss_bressert_4h::{
     crypto_dss_bressert_signal_strategy_id, generate_stockbit_dss_bressert_4h_signals,

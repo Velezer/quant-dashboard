@@ -107,7 +107,7 @@ pub(super) fn save_report(conn: &Connection, report: &Value) -> Result<(), rusql
     let instrument_id = report.pointer("/instrument/instrument_id").and_then(Value::as_str)
         .filter(|value| !value.is_empty()).ok_or_else(|| invalid("report instrument_id is required"))?;
     let timeframe = report.get("timeframe").and_then(Value::as_str)
-        .filter(|value| crate::DSS_BRESSERT_MTF_TIMEFRAMES.iter().any(|frame| frame.timeframe == *value))
+        .filter(|value| crate::SIGNAL_SCREENER_TIMEFRAMES.contains(value))
         .ok_or_else(|| invalid("report timeframe is not supported"))?;
     let protocol_id = report.get("protocol_id").and_then(Value::as_str)
         .filter(|value| *value == super::PROTOCOL_ID)
@@ -213,7 +213,7 @@ pub(super) fn list(
         "has_more":next_offset < total,"next_offset":next_offset,
         "summary":{"registered":total,"backtested":backtested,"validated":validated},
         "products":products(conn,exchange)?,
-        "timeframes":crate::DSS_BRESSERT_MTF_TIMEFRAMES.iter().map(|frame|frame.timeframe).collect::<Vec<_>>(),
+        "timeframes":crate::SIGNAL_SCREENER_TIMEFRAMES,
         "protocol_id":super::PROTOCOL_ID,
     }))
 }

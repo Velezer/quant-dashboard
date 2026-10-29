@@ -132,8 +132,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
     let history_limit = required_history_bars.max(720).min(MAX_CANDLES as usize) as i64;
     let stockbit_intraday_is_fresh =
         stockbit_intraday_state.is_some_and(|metadata| !metadata.is_stale);
-    for (frame_index, definition) in DSS_BRESSERT_MTF_TIMEFRAMES.iter().enumerate() {
-        let timeframe = definition.timeframe;
+    for timeframe in SIGNAL_SCREENER_TIMEFRAMES.iter().copied() {
         let diagnosis_index = readiness.timeframes.len();
         let is_nwe_dss_signal_scope = is_stockbit_signal_scope || is_crypto_signal_scope;
         readiness.timeframes.push(TimeframeReadiness {
@@ -408,11 +407,8 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
         };
 
         let is_pintu_golden_cross = is_pintu_golden_cross_strategy(input.strategy);
-        let next = DSS_BRESSERT_MTF_TIMEFRAMES
-            .get(frame_index + 1)
-            .unwrap_or(&DSS_BRESSERT_MTF_TIMEFRAMES[frame_index]);
         let context_timeframe = if is_pintu_golden_cross {
-            next.timeframe
+            pintu_golden_cross_context_timeframe(timeframe)
         } else {
             timeframe
         };
@@ -510,6 +506,17 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
         );
     }
     Ok(current_price.is_some())
+}
+
+fn pintu_golden_cross_context_timeframe(timeframe: &str) -> &str {
+    match timeframe {
+        "15m" | "30m" => "1h",
+        "1h" => "2h",
+        "2h" => "4h",
+        "4h" => "1d",
+        "1d" => "1w",
+        _ => timeframe,
+    }
 }
 
 #[path = "scan_timeframes/score_rows.rs"]

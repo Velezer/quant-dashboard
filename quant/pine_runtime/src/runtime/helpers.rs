@@ -47,6 +47,7 @@ pub(super) fn timeframe_duration_ns(timeframe: &str) -> Option<i64> {
 fn timeframe_definition(value: &str) -> Option<(&'static str, i64)> {
     match value.trim().to_ascii_lowercase().as_str() {
         "15" | "15m" => Some(("15m", 15 * quant_core::SECONDS_PER_MINUTE)),
+        "30" | "30m" => Some(("30m", 30 * quant_core::SECONDS_PER_MINUTE)),
         "60" | "1h" => Some(("1h", quant_core::SECONDS_PER_HOUR)),
         "240" | "4h" => Some(("4h", 4 * quant_core::SECONDS_PER_HOUR)),
         "d" | "1d" => Some(("1d", quant_core::SECONDS_PER_DAY)),

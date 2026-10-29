@@ -184,6 +184,9 @@ Missing history stays missing; charts must not fabricate or forward-fill
 candles.
 Listing coverage uses the same ownership and provider checks on the exact
 stored interval. A lower-timeframe rollup never counts as direct daily coverage.
+The 30m screener and chart interval is derived locally from two adjacent,
+completed 15m candles from the selected source; it does not make another
+provider request. Chart data checks identify the stored source interval.
 
 The first product refresh writes the shared reference. Later matching products
 reuse fresh completed candles during the interval's refresh window (10 minutes

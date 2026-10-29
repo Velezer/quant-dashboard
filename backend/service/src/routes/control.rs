@@ -88,9 +88,9 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                     }
                     object.insert(
                         "available_timeframes".into(),
-                        serde_json::json!(DSS_BRESSERT_MTF_TIMEFRAMES
+                        serde_json::json!(SIGNAL_SCREENER_TIMEFRAMES
                             .iter()
-                            .map(|definition| definition.timeframe)
+                            .copied()
                             .collect::<Vec<_>>()),
                     );
                 }

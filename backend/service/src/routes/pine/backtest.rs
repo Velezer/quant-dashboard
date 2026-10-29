@@ -92,9 +92,9 @@ pub(super) fn run_registered_pine_strategy(
             "Category is missing its canonical id.".to_string(),
         )
     })?;
-    if !DSS_BRESSERT_MTF_TIMEFRAMES
+    if !SIGNAL_SCREENER_TIMEFRAMES
         .iter()
-        .any(|item| item.timeframe == request.timeframe)
+        .any(|item| *item == request.timeframe)
     {
         return Err((
             "400 Bad Request",
@@ -241,7 +241,7 @@ pub(super) fn run_registered_pine_strategy(
     };
     let mut timeframe_candles = HashMap::new();
     let chart_duration_ns = timeframe_duration_ns(&request.timeframe).unwrap_or(i64::MAX);
-    for timeframe in ["15m", "1h", "4h", "1d"] {
+    for timeframe in ["15m", "30m", "1h", "4h", "1d"] {
         if timeframe == request.timeframe {
             continue;
         }

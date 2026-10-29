@@ -25,10 +25,10 @@ pub(crate) fn nwe_dss_research_selection(
     asset_class: &str,
     timeframe: &str,
 ) -> Result<ResearchSelection, String> {
-    let timeframe = quant_core::DSS_BRESSERT_MTF_TIMEFRAMES
+    let timeframe = quant_core::SIGNAL_SCREENER_TIMEFRAMES
         .iter()
-        .find(|definition| definition.timeframe == timeframe)
-        .map(|definition| definition.timeframe)
+        .find(|supported| **supported == timeframe)
+        .copied()
         .ok_or_else(|| "timeframe is not supported for NWE/DSS research".to_string())?;
     let exchange_record = exchange_by_alias(exchange)
         .filter(|record| catalog_string(record, "status") == Some("enabled"))

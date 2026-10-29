@@ -22,17 +22,17 @@ pub const CRYPTO_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID: &str = "crypto_dss_bressert
 
 /// Return the stable crypto DSS Bressert strategy identity for a supported screener frame.
 pub fn crypto_dss_bressert_signal_strategy_id(timeframe: &str) -> Option<String> {
-    super::DSS_BRESSERT_MTF_TIMEFRAMES
+    super::SIGNAL_SCREENER_TIMEFRAMES
         .iter()
-        .any(|definition| definition.timeframe == timeframe)
+        .any(|supported| *supported == timeframe)
         .then(|| format!("crypto_dss_bressert_near_cross_{timeframe}_v1"))
 }
 
 /// Return the timeframe-specific Stockbit DSS Bressert screener identity.
 pub fn stockbit_dss_bressert_signal_strategy_id(timeframe: &str) -> Option<String> {
-    super::DSS_BRESSERT_MTF_TIMEFRAMES
+    super::SIGNAL_SCREENER_TIMEFRAMES
         .iter()
-        .any(|definition| definition.timeframe == timeframe)
+        .any(|supported| *supported == timeframe)
         .then(|| {
             if timeframe == super::indicator_combination::STOCKBIT_NWE_4H_TIMEFRAME {
                 STOCKBIT_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID.to_string()

@@ -116,9 +116,8 @@ pub(crate) fn signal_screener_master_data_from_catalog(catalog: &Value) -> Value
                 let timeframe = catalog_string(model, "timeframe");
                 let is_supported_crypto_timeframe = is_crypto_scope
                     && timeframe.is_some_and(|timeframe| {
-                        quant_core::DSS_BRESSERT_MTF_TIMEFRAMES
-                            .iter()
-                            .any(|definition| definition.timeframe == timeframe)
+                        quant_core::SIGNAL_SCREENER_TIMEFRAMES
+                            .contains(&timeframe)
                     });
                 let is_supported_stockbit_timeframe = is_stockbit_scope
                     && timeframe.is_some_and(|timeframe| {

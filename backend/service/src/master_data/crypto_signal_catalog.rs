@@ -61,8 +61,7 @@ pub(super) fn ensure_crypto_signal_catalog(catalog: &mut Value) -> bool {
     let indicator_component_score_scale_max = quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX;
     let mut changed = false;
 
-    for definition in quant_core::DSS_BRESSERT_MTF_TIMEFRAMES {
-        let timeframe = definition.timeframe;
+    for timeframe in quant_core::SIGNAL_SCREENER_TIMEFRAMES.iter().copied() {
         let Some(nwe_strategy_id) = quant_core::crypto_nwe_signal_strategy_id(timeframe) else {
             continue;
         };
@@ -149,8 +148,13 @@ fn crypto_score_description(
     indicator_component_score_scale_max: f64,
 ) -> String {
     let volume_lookback_bars = quant_core::FOUR_INDICATOR_VOLUME_LOOKBACK_BARS;
+    let timeframe_source_note = if timeframe == "30m" {
+        " 30m setup candles are aggregated locally from two adjacent, completed same-source 15m candles; no separate 30m provider request is made."
+    } else {
+        ""
+    };
     format!(
-        "Crypto research market-entry signals are recalculated each scan from the latest directional setup on a completed {timeframe} bar. The strategy setup and score floor determine whether a row qualifies; there is no separate signal-age expiry. The latest same-source 15m reference price is shown when available; a stale reference remains labeled and is not a market entry. Setup-strength score has four equal-weight factors: NWE, DSS Bressert, {volume_lookback_bars}-bar relative volume, and estimated volume delta from OHLCV close location. Each factor contributes 0–{indicator_component_score_scale_max:.0}; the two price factors and two volume factors form groups capped at {component_score_scale_max:.0} each, for {score_scale_max:.0} total. Relative volume compares the setup bar to the preceding {volume_lookback_bars} same-source bars; estimated delta is a candle proxy, not true aggressor-side trade delta. Unavailable volume evidence contributes zero and remains labeled unavailable. Scores below {minimum_score:.1}/{score_scale_max:.0} are withheld. Requires at least {minimum_history_bars} completed {timeframe} bars. The 15m price is a candle close, not a live bid/ask. Source and quality stay attached; proxy candles are not venue-native execution evidence. The score is not win probability or execution availability, and no order is placed."
+        "Crypto research market-entry signals are recalculated each scan from the latest directional setup on a completed {timeframe} bar. The strategy setup and score floor determine whether a row qualifies; there is no separate signal-age expiry. The latest same-source 15m reference price is shown when available; a stale reference remains labeled and is not a market entry. Setup-strength score has four equal-weight factors: NWE, DSS Bressert, {volume_lookback_bars}-bar relative volume, and estimated volume delta from OHLCV close location. Each factor contributes 0–{indicator_component_score_scale_max:.0}; the two price factors and two volume factors form groups capped at {component_score_scale_max:.0} each, for {score_scale_max:.0} total. Relative volume compares the setup bar to the preceding {volume_lookback_bars} same-source bars; estimated delta is a candle proxy, not true aggressor-side trade delta. Unavailable volume evidence contributes zero and remains labeled unavailable. Scores below {minimum_score:.1}/{score_scale_max:.0} are withheld. Requires at least {minimum_history_bars} completed {timeframe} bars.{timeframe_source_note} The 15m price is a candle close, not a live bid/ask. Source and quality stay attached; proxy candles are not venue-native execution evidence. The score is not win probability or execution availability, and no order is placed."
     )
 }
 

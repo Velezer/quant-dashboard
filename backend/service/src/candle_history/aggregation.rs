@@ -57,6 +57,8 @@ pub(crate) fn aggregate_candles_from_base_source_with_cap_and_range(
     if duration_ns <= base_duration_ns {
         return Ok(Vec::new());
     }
+    let require_complete_30m = timeframe == "30m" && base == "15m";
+    let expected_source_bars = duration_ns / base_duration_ns;
     let source_limit =
         aggregation_source_candle_limit_with_cap(duration_ns, base_duration_ns, limit, source_cap);
     let source = match range {
@@ -101,6 +103,9 @@ pub(crate) fn aggregate_candles_from_base_source_with_cap_and_range(
     };
     let mut aggregated: Vec<Candle> = Vec::new();
     let mut current_bucket: Option<i64> = None;
+    let mut current_source_count = 0_i64;
+    let mut current_source_contiguous = true;
+    let mut previous_source_time = None;
     for bar in source {
         let local_ts = bar.time.saturating_add(offset);
         let local_bucket = if is_intraday {
@@ -120,16 +125,36 @@ pub(crate) fn aggregate_candles_from_base_source_with_cap_and_range(
         };
         let bucket = local_bucket.saturating_sub(offset);
         if current_bucket != Some(bucket) {
+            if require_complete_30m
+                && current_bucket.is_some()
+                && (current_source_count != expected_source_bars || !current_source_contiguous)
+            {
+                aggregated.pop();
+            }
             aggregated.push(new_candle(
                 bucket, bar.open, bar.high, bar.low, bar.close, bar.volume,
             ));
             current_bucket = Some(bucket);
+            current_source_count = 1;
+            current_source_contiguous = bar.time == bucket;
         } else if let Some(last) = aggregated.last_mut() {
+            if require_complete_30m {
+                current_source_count += 1;
+                current_source_contiguous &= previous_source_time
+                    .is_some_and(|previous| bar.time == previous.saturating_add(base_duration_ns));
+            }
             last.high = last.high.max(bar.high);
             last.low = last.low.min(bar.low);
             last.close = bar.close;
             last.volume += bar.volume;
         }
+        previous_source_time = Some(bar.time);
+    }
+    if require_complete_30m
+        && current_bucket.is_some()
+        && (current_source_count != expected_source_bars || !current_source_contiguous)
+    {
+        aggregated.pop();
     }
     if aggregated.len() > limit as usize {
         let start = aggregated.len() - limit as usize;
