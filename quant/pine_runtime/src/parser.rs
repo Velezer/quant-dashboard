@@ -85,7 +85,7 @@ pub(crate) fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
     let validation = Validation { valid: true, script_type: if parser.strategy_seen { "strategy" } else { "indicator" }.to_string(), version: 6, name: parser.name, overlay: parser.overlay, approximations: vec![
         "Pine input controls use their declared defaults; interactive Pine settings are not yet editable.".to_string(),
         "Only the supported statement and built-in set is executable; unsupported constructs are rejected with source locations.".to_string(),
-        "Realtime is unavailable. request.security() can use only confirmed 15m, 4h, or 1d history for the selected app instrument.".to_string(),
+        "Realtime is unavailable. request.security() can use only confirmed 15m, 30m, 1h, 4h, or 1d history for the selected app instrument.".to_string(),
     ], diagnostics: Vec::new() };
     Ok(Program {
         statements,

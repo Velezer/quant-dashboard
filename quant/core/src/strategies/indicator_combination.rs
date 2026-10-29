@@ -31,17 +31,17 @@ pub const STOCKBIT_NWE_4H_TIMEFRAME: &str = "4h";
 
 /// Return the stable crypto NWE strategy identity for a supported screener frame.
 pub fn crypto_nwe_signal_strategy_id(timeframe: &str) -> Option<String> {
-    super::DSS_BRESSERT_MTF_TIMEFRAMES
+    super::SIGNAL_SCREENER_TIMEFRAMES
         .iter()
-        .any(|definition| definition.timeframe == timeframe)
+        .any(|supported| *supported == timeframe)
         .then(|| format!("crypto_nwe_band_proximity_{timeframe}_v1"))
 }
 
 /// Return the timeframe-specific Stockbit NWE screener identity.
 pub fn stockbit_nwe_signal_strategy_id(timeframe: &str) -> Option<String> {
-    super::DSS_BRESSERT_MTF_TIMEFRAMES
+    super::SIGNAL_SCREENER_TIMEFRAMES
         .iter()
-        .any(|definition| definition.timeframe == timeframe)
+        .any(|supported| *supported == timeframe)
         .then(|| {
             if timeframe == STOCKBIT_NWE_4H_TIMEFRAME {
                 STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID.to_string()

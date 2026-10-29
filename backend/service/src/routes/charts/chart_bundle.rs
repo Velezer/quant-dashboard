@@ -128,12 +128,11 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         }
     };
     let market_connection = &market_connection;
-    // Intraday context includes 15m and 1h bars for chart and Pine
-    // higher-timeframe requests. Higher views keep their existing direct
-    // or lower-timeframe storage resolution. Metadata retains each source.
-    let timeframes = DSS_BRESSERT_MTF_TIMEFRAMES
+    // The chart exposes every signal interval. Derived 30m candles come from
+    // the same selected 15m source; metadata retains its provenance.
+    let timeframes = SIGNAL_SCREENER_TIMEFRAMES
         .iter()
-        .map(|definition| (definition.timeframe, 120_i64))
+        .map(|timeframe| (*timeframe, 120_i64))
         .collect::<Vec<_>>();
     let mut result = serde_json::Map::new();
     let mut markov_regimes = serde_json::Map::new();

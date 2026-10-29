@@ -7,6 +7,11 @@ pub const DSS_BRESSERT_MTF_STRATEGY_ID: &str = "dss_bressert_mtf_screener_v1";
 pub const DSS_BRESSERT_MINIMUM_HISTORY_BARS: usize = 50;
 pub const DSS_BRESSERT_NEAR_SPREAD_THRESHOLD: f64 = 5.0;
 
+/// Timeframes exposed by the signal screener and its per-frame research models.
+/// The composite DSS diagnostic below keeps its separate, versioned frame set.
+pub const SIGNAL_SCREENER_TIMEFRAMES: &[&str] =
+    &["15m", "30m", "1h", "2h", "4h", "1d", "1w"];
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DssBressertTimeframe {
     pub timeframe: &'static str,

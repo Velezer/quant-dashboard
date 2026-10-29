@@ -16,10 +16,10 @@ fn stockbit_signal_score_model_id(strategy_id: &str, timeframe: &str) -> Option<
 }
 
 fn stockbit_signal_score_row_scope_sql() -> String {
-    let model_timeframe_pairs = quant_core::DSS_BRESSERT_MTF_TIMEFRAMES
+    let model_timeframe_pairs = quant_core::SIGNAL_SCREENER_TIMEFRAMES
         .iter()
-        .flat_map(|definition| {
-            let timeframe = definition.timeframe;
+        .copied()
+        .flat_map(|timeframe| {
             [
                 quant_core::stockbit_nwe_signal_strategy_id(timeframe),
                 quant_core::stockbit_dss_bressert_signal_strategy_id(timeframe),

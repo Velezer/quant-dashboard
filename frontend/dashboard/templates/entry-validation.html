@@ -26,11 +26,11 @@
             <form id="scope-form" class="scope-form">
                 <label>App<select id="validation-app" name="exchange"><option value="stockbit">Stockbit</option><option value="pintu">Pintu</option><option value="pluang">Pluang</option><option value="tokocrypto">Tokocrypto</option></select></label>
                 <label>Product<select id="validation-product" name="product"><option value="all">All products</option></select></label>
-                <label>Signal timeframe<select id="validation-timeframe" name="timeframe"><option value="15m">15m</option><option value="1h">1h</option><option value="2h">2h</option><option value="4h">4h</option><option value="1d">1d</option><option value="1w">1w</option></select></label>
+                <label>Signal timeframe<select id="validation-timeframe" name="timeframe"><option value="15m">15m</option><option value="30m">30m</option><option value="1h">1h</option><option value="2h">2h</option><option value="4h">4h</option><option value="1d">1d</option><option value="1w">1w</option></select></label>
                 <label class="search-field">Ticker search<input id="validation-search" type="search" name="search" placeholder="Symbol or registered ticker" autocomplete="off"></label>
                 <button id="apply-scope" type="submit" class="secondary-button">Apply scope</button>
             </form>
-            <p class="small-text">Each run uses stored matching candles. Backtesting does not fetch provider data. For missing history or listing problems, use the screener’s <a href="/">Sync Market and app readiness controls</a>, then refresh this page’s list.</p>
+            <p class="small-text">Each run uses stored matching candles. 30m candles are locally derived from complete pairs of same-source 15m bars; backtesting does not fetch provider data. For missing history or listing problems, use the screener’s <a href="/">Sync Market and app readiness controls</a>, then refresh this page’s list.</p>
         </section>
         <section class="summary-grid" aria-label="Selected scope coverage">
             <div class="summary-card"><span>Registered tickers</span><strong id="summary-registered">—</strong><small>In this filtered scope</small></div>

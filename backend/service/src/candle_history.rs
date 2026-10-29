@@ -36,8 +36,10 @@ pub(super) fn timezone_offset_ns_from_source(
 
 pub(super) fn derived_spec(timeframe: &str) -> Option<(&'static str, i64)> {
     let hour = quant_core::SECONDS_PER_HOUR * NANOS_PER_SECOND;
+    let minute = quant_core::SECONDS_PER_MINUTE * NANOS_PER_SECOND;
     let day = NANOS_PER_DAY;
     match timeframe {
+        "30m" => Some(("15m", 30 * minute)),
         "2h" => Some(("1h", 2 * hour)),
         "4h" => Some(("1h", 4 * hour)),
         "6h" => Some(("1h", 6 * hour)),
@@ -86,6 +88,7 @@ pub(super) fn is_removed_candle_timeframe(timeframe: &str) -> bool {
 pub(super) fn lower_timeframe_candidates(timeframe: &str) -> &'static [&'static str] {
     match timeframe {
         "1h" => &["15m"],
+        "30m" => &["15m"],
         "2h" | "4h" | "6h" | "12h" => &["1h", "15m"],
         "1d" => &["1h", "15m"],
         "1w" => &["1d", "1h", "15m"],

@@ -167,7 +167,7 @@ fn run_profile(
                 vec![Diagnostic::error(
                     1,
                     1,
-                    "No approved stored 1h candle series is available for this selected app instrument. Load local 1h history and use a 15m chart to evaluate this source.",
+                    "No approved stored 1h candle series is available for this selected app instrument. Load local 1h history or use a chart timeframe below 1h to evaluate this source.",
                 )]
             })?
     };

@@ -498,9 +498,10 @@ are zero; the result uses an explicit unbounded flag instead of a finite
 sentinel value.
 
 `request.security()` supports confirmed higher or same timeframe series for
-the selected app instrument when stored 15m, 1h, 4h, and 1d candles are
-available. Cross-symbol, lower-timeframe, nested, and lookahead-on requests
-stop with diagnostics. Higher-timeframe alignment uses bar-close timestamps;
+the selected app instrument when stored 15m, 30m, 1h, 4h, and 1d candles are
+available. The 30m series is rolled up locally from complete, same-source 15m
+candles. Cross-symbol, lower-timeframe, nested, and lookahead-on requests stop
+with diagnostics. Higher-timeframe alignment uses bar-close timestamps;
 session gaps and historical/realtime edge cases may differ from TradingView.
 `barstate.isrealtime` is false for stored history.
 Calculations use only the selected app's stored candles, retain the app,

@@ -7,9 +7,9 @@ pub(super) const PROTOCOL_ID: &str = quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL
 mod store;
 
 pub(crate) fn entry_validation_timeframe(timeframe: &str) -> Result<&str, String> {
-    DSS_BRESSERT_MTF_TIMEFRAMES
+    SIGNAL_SCREENER_TIMEFRAMES
         .iter()
-        .any(|definition| definition.timeframe == timeframe)
+        .any(|supported| *supported == timeframe)
         .then_some(timeframe)
         .ok_or_else(|| "Choose a registered entry-model timeframe.".to_string())
 }

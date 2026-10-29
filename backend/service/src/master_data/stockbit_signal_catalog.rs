@@ -28,8 +28,12 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
         }),
     );
 
-    for definition in quant_core::DSS_BRESSERT_MTF_TIMEFRAMES {
-        let timeframe = definition.timeframe;
+    for timeframe in quant_core::SIGNAL_SCREENER_TIMEFRAMES.iter().copied() {
+        let timeframe_source_note = if timeframe == "30m" {
+            " 30m setup candles are aggregated locally from two adjacent, completed same-source 15m candles; no separate 30m provider request is made."
+        } else {
+            ""
+        };
         let (Some(nwe_strategy_id), Some(dss_strategy_id)) = (
             quant_core::stockbit_nwe_signal_strategy_id(timeframe),
             quant_core::stockbit_dss_bressert_signal_strategy_id(timeframe),
@@ -59,7 +63,7 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             indicator_component_maximum_score,
         );
         let nwe_description = format!(
-            "Stockbit IDX research market-entry signal on the latest {timeframe} bar, shown only when that bar qualifies and a fresh same-source 15m price is available. A forming-bar score is provisional and can change before close. {nwe_basis} Require at least {minimum_nwe_history} {timeframe} bars. The score measures setup strength, not win probability or execution availability; the 15m price is a candle close, not a live bid/ask. Direction is informational; IDX plans and execution remain long-only. Research only, unvalidated; proxy candles are not venue-native execution evidence. No order is placed."
+            "Stockbit IDX research market-entry signal on the latest {timeframe} bar, shown only when that bar qualifies and a fresh same-source 15m price is available. A forming-bar score is provisional and can change before close. {nwe_basis} Require at least {minimum_nwe_history} {timeframe} bars.{timeframe_source_note} The score measures setup strength, not win probability or execution availability; the 15m price is a candle close, not a live bid/ask. Direction is informational; IDX plans and execution remain long-only. Research only, unvalidated; proxy candles are not venue-native execution evidence. No order is placed."
         );
         let nwe_strategy = serde_json::json!({
             "id": nwe_strategy_id,
@@ -102,7 +106,7 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             indicator_component_maximum_score,
         );
         let dss_description = format!(
-            "Stockbit IDX research market-entry signal on the latest {timeframe} bar, shown only when that bar qualifies and a fresh same-source 15m price is available. A forming-bar score is provisional and can change before close. {dss_basis} Require at least {minimum_dss_history} {timeframe} bars. The score measures setup strength, not win probability or execution availability; the 15m price is a candle close, not a live bid/ask. Direction is informational; IDX plans and execution remain long-only. Research only, unvalidated; proxy candles are not venue-native execution evidence. No order is placed."
+            "Stockbit IDX research market-entry signal on the latest {timeframe} bar, shown only when that bar qualifies and a fresh same-source 15m price is available. A forming-bar score is provisional and can change before close. {dss_basis} Require at least {minimum_dss_history} {timeframe} bars.{timeframe_source_note} The score measures setup strength, not win probability or execution availability; the 15m price is a candle close, not a live bid/ask. Direction is informational; IDX plans and execution remain long-only. Research only, unvalidated; proxy candles are not venue-native execution evidence. No order is placed."
         );
         let dss_strategy = serde_json::json!({
             "id": dss_strategy_id,

@@ -215,7 +215,7 @@
                                       <div class="flex items-center gap-2">
                                           <label for="nweExcursionReportTimeframe" class="text-[10px] text-gray-400">Report timeframe</label>
                                           <select id="nweExcursionReportTimeframe" class="rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" aria-label="NWE report timeframe">
-                                              <option value="1h" selected>1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="15m">15M</option>
+                                              <option value="1h" selected>1H</option><option value="4h">4H</option><option value="1d">1D</option><option value="15m">15M</option><option value="30m">30M</option>
                                           </select>
                                           <button id="runNweExcursionReport" type="button" class="rounded border border-violet-700 bg-violet-950/60 px-2.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-900">Run for registered tickers</button>
                                           <button id="cancelNweExcursionReport" type="button" class="hidden rounded border border-gray-700 px-2 py-1.5 text-[10px] text-gray-300 hover:bg-gray-800">Cancel</button>
@@ -239,14 +239,14 @@
                                       <div class="flex items-center gap-2">
                                           <label for="nweDssBacktestTimeframe" class="text-[10px] text-gray-400">Signal timeframe</label>
                                           <select id="nweDssBacktestTimeframe" class="rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" aria-label="NWE and DSS Bressert backtest timeframe">
-                                              <option value="15m">15M</option><option value="1h">1H</option><option value="2h">2H</option><option value="4h" selected>4H</option><option value="1d">1D</option><option value="1w">1W</option>
+                                              <option value="15m">15M</option><option value="30m">30M</option><option value="1h">1H</option><option value="2h">2H</option><option value="4h" selected>4H</option><option value="1d">1D</option><option value="1w">1W</option>
                                           </select>
                                           <button id="runNweDssBacktest" type="button" class="rounded border border-cyan-700 bg-cyan-950/60 px-2.5 py-1.5 text-[10px] font-bold text-cyan-200 hover:bg-cyan-900">Backtest all scoped tickers</button>
                                           <button id="cancelNweDssBacktest" type="button" class="hidden rounded border border-gray-700 px-2 py-1.5 text-[10px] text-gray-300 hover:bg-gray-800">Cancel</button>
                                       </div>
                                   </div>
                                   <label for="nweDssBacktestSymbols" class="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-gray-400">Optional ticker filter<input id="nweDssBacktestSymbols" type="text" class="min-w-56 flex-1 rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-[10px] text-gray-200" placeholder="Blank = all tickers in the active scope" autocomplete="off" aria-label="Optional registered tickers for the NWE and DSS Bressert research report"></label>
-                                  <p class="mt-1 text-[10px] leading-relaxed text-gray-500">Causal completed-bar NWE/DSS entry; compares 4, 8, and 12-bar timeouts using chronological training, validation selection, and untouched holdout. Next-bar-open entry, one position at a time. No order-book, slippage, impact, funding, or borrow model. A research candidate is not an execution recommendation.</p>
+                                  <p class="mt-1 text-[10px] leading-relaxed text-gray-500">Causal completed-bar NWE/DSS entry; 30m candles are aggregated locally from complete same-source 15m pairs. Compares 4, 8, and 12-bar timeouts using chronological training, validation selection, and untouched holdout. Next-bar-open entry, one position at a time. No order-book, slippage, impact, funding, or borrow model. A research candidate is not an execution recommendation.</p>
                                   <p id="nweDssBacktestStatus" class="mt-2 text-[10px] text-gray-400" role="status" aria-live="polite">Run in the active app/category scope. Stored source, fee coverage, sample size, and holdout status remain visible per ticker.</p>
                                   <div class="mt-2 max-h-72 overflow-auto rounded border border-gray-800">
                                       <table class="w-full min-w-[1000px] border-collapse text-left text-[10px]">

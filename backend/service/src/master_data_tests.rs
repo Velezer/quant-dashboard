@@ -100,21 +100,21 @@ fn screener_reference_payload_exposes_app_identity_without_strategy_plans() {
     let models = reference["signal_score_models"].as_array().unwrap();
     assert_eq!(
         models.len(),
-        quant_core::DSS_BRESSERT_MTF_TIMEFRAMES.len() * 4
+        quant_core::SIGNAL_SCREENER_TIMEFRAMES.len() * 4
     );
-    for frame in quant_core::DSS_BRESSERT_MTF_TIMEFRAMES {
+    for timeframe in quant_core::SIGNAL_SCREENER_TIMEFRAMES {
         let expected_ids = [
-            quant_core::stockbit_nwe_signal_strategy_id(frame.timeframe),
-            quant_core::stockbit_dss_bressert_signal_strategy_id(frame.timeframe),
-            quant_core::crypto_nwe_signal_strategy_id(frame.timeframe),
-            quant_core::crypto_dss_bressert_signal_strategy_id(frame.timeframe),
+            quant_core::stockbit_nwe_signal_strategy_id(timeframe),
+            quant_core::stockbit_dss_bressert_signal_strategy_id(timeframe),
+            quant_core::crypto_nwe_signal_strategy_id(timeframe),
+            quant_core::crypto_dss_bressert_signal_strategy_id(timeframe),
         ];
         for expected_id in expected_ids.into_iter().flatten() {
             let model = models
                 .iter()
                 .find(|model| model["id"] == expected_id)
                 .expect("each indicator and timeframe should have its own score model");
-            assert_eq!(model["timeframe"], frame.timeframe);
+            assert_eq!(model["timeframe"], *timeframe);
             assert_eq!(
                 model["score_scale_max"],
                 quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX
