@@ -5,6 +5,8 @@ use super::*;
 mod shared_market_history_tests;
 
 type RegisteredInstrument = (String, String, String, String, String, String);
+const SIGNAL_SCAN_APP_ORDER: [&str; 4] = ["pintu", "pluang", "tokocrypto", "stockbit"];
+const SIGNAL_SCAN_PUBLISH_BATCH_SIZE: usize = 25;
 #[cfg(not(test))]
 type AppScanMetrics = (
     AppScanResult,
@@ -19,6 +21,7 @@ struct ScanCycleOutput {
     standalone_signal_rows: Vec<Value>,
     readiness: signal_alerts::SignalReadiness,
     score_updates: Vec<signal_alerts::StockbitSignalScoreUpdate>,
+    scanned_instruments: Vec<(String, String, String)>,
     generated_plan_count: usize,
     price_data_unavailable_count: usize,
     app_workers: Vec<Value>,
@@ -33,6 +36,7 @@ impl ScanCycleOutput {
             standalone_signal_rows: Vec::new(),
             readiness: signal_alerts::SignalReadiness::new(),
             score_updates: Vec::new(),
+            scanned_instruments: Vec::new(),
             generated_plan_count: 0,
             price_data_unavailable_count: 0,
             app_workers: Vec::new(),
@@ -51,10 +55,18 @@ impl ScanCycleOutput {
             .append(&mut other.standalone_signal_rows);
         self.readiness.merge(other.readiness);
         self.score_updates.append(&mut other.score_updates);
+        self.scanned_instruments
+            .append(&mut other.scanned_instruments);
         self.generated_plan_count += other.generated_plan_count;
         self.price_data_unavailable_count += other.price_data_unavailable_count;
         self.app_workers.append(&mut other.app_workers);
     }
+}
+
+#[cfg(not(test))]
+struct AppScanProgress {
+    remaining: std::collections::BTreeMap<String, usize>,
+    pending: std::collections::BTreeMap<String, ScanCycleOutput>,
 }
 
 pub(super) fn run_rust_scan_inner(
@@ -90,7 +102,7 @@ pub(super) fn run_rust_scan_inner(
     let registered_count = registered.len();
     let mut app_registrations =
         std::collections::BTreeMap::<String, Vec<RegisteredInstrument>>::new();
-    for exchange_id in ["stockbit", "pintu", "pluang", "tokocrypto"] {
+    for exchange_id in SIGNAL_SCAN_APP_ORDER {
         app_registrations.insert(exchange_id.to_string(), Vec::new());
     }
     for instrument in registered {
@@ -101,7 +113,7 @@ pub(super) fn run_rust_scan_inner(
     }
 
     let mut workers = Vec::new();
-    for exchange_id in ["stockbit", "pintu", "pluang", "tokocrypto"] {
+    for exchange_id in SIGNAL_SCAN_APP_ORDER {
         if let Some(instruments) = app_registrations.remove(exchange_id) {
             workers.push(ScanWorker::new(exchange_id.to_string(), instruments));
         }
@@ -183,6 +195,18 @@ pub(super) fn run_rust_scan_inner(
             .iter()
             .map(|worker| (worker.exchange_id.clone(), worker.total))
             .collect::<std::collections::BTreeMap<_, _>>();
+        for worker in workers.iter().filter(|worker| worker.total == 0) {
+            signal_alerts::publish_signal_screener_app_batch(
+                app_connection,
+                &worker.exchange_id,
+                &[],
+                true,
+                &[],
+                &[],
+                &[],
+                &[],
+            )?;
+        }
         let mut app_scan_results = app_instrument_counts
             .keys()
             .map(|exchange_id| {
@@ -192,12 +216,17 @@ pub(super) fn run_rust_scan_inner(
                 )
             })
             .collect::<std::collections::BTreeMap<String, AppScanMetrics>>();
+        let app_scan_progress = Mutex::new(AppScanProgress {
+            remaining: app_instrument_counts.clone(),
+            pending: std::collections::BTreeMap::new(),
+        });
         let queue = Mutex::new((workers, 0usize));
         std::thread::scope(|scope| -> Result<(), rusqlite::Error> {
             let mut handles = Vec::with_capacity(worker_count);
             for app_connection in app_connections {
                 let queue = &queue;
                 let progress = &completed_count;
+                let app_scan_progress = &app_scan_progress;
                 handles.push(scope.spawn(move || -> Result<_, rusqlite::Error> {
                     let mut worker_output = ScanCycleOutput::new();
                     let mut worker_app_results =
@@ -213,6 +242,7 @@ pub(super) fn run_rust_scan_inner(
                         let Some((exchange_id, instrument)) = next_task else {
                             break;
                         };
+                        let mut instrument_output = ScanCycleOutput::new();
                         let started = std::time::Instant::now();
                         let result = scan_registered_app(
                             &app_connection,
@@ -222,12 +252,14 @@ pub(super) fn run_rust_scan_inner(
                             std::iter::once(instrument),
                             progress,
                             registered_count,
-                            &mut worker_output,
+                            &mut instrument_output,
                         )?;
                         let elapsed = started.elapsed();
                         let started_at = started.duration_since(scan_started);
                         let finished_at = started_at.saturating_add(elapsed);
-                        let app_result = worker_app_results.entry(exchange_id).or_default();
+                        let app_result = worker_app_results
+                            .entry(exchange_id.clone())
+                            .or_default();
                         app_result.0.fresh_price_count += result.fresh_price_count;
                         app_result.0.unavailable_price_count += result.unavailable_price_count;
                         app_result.0.generated_plan_count += result.generated_plan_count;
@@ -242,6 +274,50 @@ pub(super) fn run_rust_scan_inner(
                                 .2
                                 .map_or(finished_at, |last| last.max(finished_at)),
                         );
+                        let completed_batch = {
+                            let mut scan_progress = app_scan_progress
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            let remaining = scan_progress
+                                .remaining
+                                .entry(exchange_id.clone())
+                                .or_default();
+                            *remaining = remaining.saturating_sub(1);
+                            let app_finished = *remaining == 0;
+                            let pending = scan_progress
+                                .pending
+                                .entry(exchange_id.clone())
+                                .or_insert_with(ScanCycleOutput::new);
+                            pending.merge(instrument_output);
+                            let should_publish = pending.scanned_instruments.len()
+                                >= SIGNAL_SCAN_PUBLISH_BATCH_SIZE
+                                || app_finished;
+                            if should_publish {
+                                scan_progress.pending.remove(&exchange_id)
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(batch) = completed_batch {
+                            let batch_signal_count = batch.running_signal_rows.len()
+                                + batch.potential_signal_rows.len()
+                                + batch.standalone_signal_rows.len();
+                            signal_alerts::publish_signal_screener_app_batch(
+                                &app_connection,
+                                &exchange_id,
+                                &batch.scanned_instruments,
+                                false,
+                                &batch.running_signal_rows,
+                                &batch.potential_signal_rows,
+                                &batch.standalone_signal_rows,
+                                &batch.score_updates,
+                            )?;
+                            eprintln!(
+                                "[ScanWorker] Published {exchange_id} batch: {} instruments, {batch_signal_count} signal rows.",
+                                batch.scanned_instruments.len()
+                            );
+                            worker_output.merge(batch);
+                        }
                     }
                     Ok((worker_output, worker_app_results))
                 }));
@@ -621,6 +697,11 @@ fn scan_registered_app(
         if instrument_exchange != exchange_id {
             continue;
         }
+        output.scanned_instruments.push((
+            product_id.clone(),
+            category_id.clone(),
+            asset.clone(),
+        ));
         let instrument_started = std::time::Instant::now();
         let _progress_step = ScanProgressStep {
             completed_count,

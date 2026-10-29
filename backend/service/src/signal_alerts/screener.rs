@@ -514,7 +514,8 @@ mod expiry_tests;
 #[path = "screener/snapshot.rs"]
 mod snapshot;
 pub(crate) use snapshot::{
-    record_signal_screener_failure, replace_signal_screener_snapshot_with_readiness,
+    publish_signal_screener_app_batch, record_signal_screener_failure,
+    replace_signal_screener_snapshot_with_readiness,
 };
 #[cfg(test)]
 pub(crate) use snapshot::{
