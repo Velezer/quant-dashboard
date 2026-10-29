@@ -65,7 +65,7 @@ export function createSignalScreenerSummary({
         freshness.textContent = generatedAt
             ? stockbitSignalSelected
                 ? `Scan ${formatTime(generatedAt)} WIB · per timeframe`
-                : `Scan ${formatTime(generatedAt)} WIB · 2h expiry`
+                : `Scan ${formatTime(generatedAt)} WIB · latest-bar signals`
             : requestState === 'loading'
                 ? ''
                 : 'No scan yet.';

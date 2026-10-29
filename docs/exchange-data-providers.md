@@ -418,13 +418,24 @@ chart freshness state visible and cannot create a signal from old candles.
 Daily stale-priority retries are limited to one per hour, while the ordinary
 daily backlog remains once per UTC day.
 
-Signal-alert lifecycles are refreshed by each scheduled scan. The screener
-snapshot is replaced after a successful scan, and rows expire after the
-two-hour signal lifetime; expired alerts and alerts detected more than two
-hours ago are removed from the app SQLite database. The screen carries ranking,
+Signal alerts are retained for two hours after creation. Current screener rows
+are separately recalculated from each scan's latest qualifying strategy bar
+and score floor; they have no signal-age expiry. The screen carries ranking,
 source, timeframe, and freshness state without a trade-plan lifecycle.
 
 ## Implemented venue-first candlestick flow
+
+### Current signal refresh rule — 2026-10-29
+
+Crypto NWE/DSS rows are recalculated from the latest completed bar each scan.
+The latest bar must qualify under the strategy, and the configured model score
+floor determines whether its row is published. There is no independent
+signal-age expiry. A successful scan removes that instrument's prior rows when
+the latest result no longer qualifies; a failed scan preserves the last good
+snapshot and marks it stale. Candle freshness remains a separate input check.
+A stale reference price can remain visible with its freshness label, but it is
+not a current market entry. Saved notification history separately expires two
+hours after alert creation.
 
 Tokocrypto's `type` field selects a market system and candle route; it does not
 classify an asset as a tokenized stock. The registry identifies tokenized

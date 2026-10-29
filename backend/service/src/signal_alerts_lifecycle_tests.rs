@@ -1,4 +1,3 @@
-use super::{signal_candle_is_expired, timeframe_duration_ns};
 use rusqlite::Connection;
 
 #[test]
@@ -28,32 +27,30 @@ fn screener_schema_creates_storage_symbol_in_dedicated_database() {
 }
 
 #[test]
-fn fifteen_minute_signal_expires_two_hours_after_its_candle_closes() {
-    let candle_open = 1_700_000_000_i64;
-    let candle_close = candle_open + 15 * 60;
-    let expiry = candle_close + 2 * 60 * 60;
+fn alert_history_expires_two_hours_after_creation() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "ATTACH DATABASE ':memory:' AS app;
+             CREATE TABLE app.signal_alerts(
+                 alert_id INTEGER PRIMARY KEY,
+                 created_at INTEGER NOT NULL
+             );",
+        )
+        .unwrap();
+    let now = crate::now_secs() as i64;
+    let expiry = now.saturating_sub(super::super::SIGNAL_ALERT_HISTORY_RETENTION_SECONDS);
+    connection
+        .execute(
+            "INSERT INTO app.signal_alerts(alert_id,created_at) VALUES(1,?1),(2,?2)",
+            rusqlite::params![expiry + 1, expiry],
+        )
+        .unwrap();
 
-    assert!(!signal_candle_is_expired(candle_open, "15m", expiry - 1));
-    assert!(signal_candle_is_expired(candle_open, "15m", expiry));
-}
+    super::refresh_lifecycles(&connection).unwrap();
 
-#[test]
-fn every_enabled_timeframe_expires_two_hours_after_its_candle_closes() {
-    let candle_open = 1_700_000_000_i64;
-    for definition in crate::DSS_BRESSERT_MTF_TIMEFRAMES {
-        let candle_close =
-            candle_open + timeframe_duration_ns(definition.timeframe).unwrap() / 1_000_000_000;
-        let expiry = candle_close + 2 * 60 * 60;
-
-        assert!(
-            !signal_candle_is_expired(candle_open, definition.timeframe, expiry - 1),
-            "{} should be current before its two-hour expiry",
-            definition.timeframe
-        );
-        assert!(
-            signal_candle_is_expired(candle_open, definition.timeframe, expiry),
-            "{} should expire at its two-hour deadline",
-            definition.timeframe
-        );
-    }
+    let remaining_alerts = connection
+        .query_row("SELECT COUNT(*) FROM app.signal_alerts", [], |row| row.get::<_, i64>(0))
+        .unwrap();
+    assert_eq!(remaining_alerts, 1);
 }

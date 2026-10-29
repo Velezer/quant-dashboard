@@ -508,8 +508,8 @@ pub(crate) fn signal_screener_score_update(candidate: &Value) -> Option<Value> {
 mod screener_tests;
 
 #[cfg(test)]
-#[path = "../signal_alerts_screener_expiry_tests.rs"]
-mod expiry_tests;
+#[path = "../signal_alerts_screener_freshness_tests.rs"]
+mod freshness_tests;
 
 #[path = "screener/snapshot.rs"]
 mod snapshot;

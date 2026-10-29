@@ -15,7 +15,8 @@ pub(crate) use readiness::{
 const MAX_SIGNAL_ALERT_HISTORY: usize = 1_000;
 const DEFAULT_SIGNAL_ALERT_LIST_LIMIT: i64 = 50;
 const MAX_SIGNAL_ALERT_LIST_LIMIT: i64 = 100;
-pub(super) const SIGNAL_MAX_AGE_SECONDS: i64 = 2 * quant_core::SECONDS_PER_HOUR;
+pub(super) const SIGNAL_ALERT_HISTORY_RETENTION_SECONDS: i64 =
+    2 * quant_core::SECONDS_PER_HOUR;
 pub(super) const SIGNAL_SCORE_SUM_TOLERANCE: f64 = 1e-10;
 pub(super) const SIGNAL_LAYOUT_VERSION: &str = "1";
 pub(super) const SIGNAL_SCORE_SCHEMA_VERSION: &str = "3";
@@ -152,7 +153,7 @@ pub(super) fn initialize_schema(connection: &Connection) -> Result<(), rusqlite:
 
 #[path = "signal_alerts_lifecycle.rs"]
 mod lifecycle;
-pub(super) use lifecycle::{persist_alerts, refresh_lifecycles, signal_candle_is_expired};
+pub(super) use lifecycle::{persist_alerts, refresh_lifecycles};
 
 #[path = "signal_alerts/screener.rs"]
 mod screener;

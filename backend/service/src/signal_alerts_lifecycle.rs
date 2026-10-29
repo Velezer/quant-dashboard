@@ -1,11 +1,7 @@
-use super::super::{now_secs, timeframe_duration_ns};
+use super::super::now_secs;
 use super::MAX_SIGNAL_ALERT_HISTORY;
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
-
-const NANOSECOND_TIMESTAMP_MAGNITUDE_THRESHOLD: i64 = 1_000_000_000_000_000;
-const MICROSECOND_TIMESTAMP_MAGNITUDE_THRESHOLD: i64 = 1_000_000_000_000;
-const NANOS_PER_MICROSECOND: i64 = 1_000;
 
 pub(crate) fn refresh_lifecycles(connection: &Connection) -> Result<(), rusqlite::Error> {
     delete_expired_alerts(connection, now_secs() as i64)
@@ -14,29 +10,9 @@ pub(crate) fn refresh_lifecycles(connection: &Connection) -> Result<(), rusqlite
 fn delete_expired_alerts(connection: &Connection, now: i64) -> Result<(), rusqlite::Error> {
     connection.execute(
         "DELETE FROM app.signal_alerts WHERE created_at <= ?1",
-        [now.saturating_sub(super::SIGNAL_MAX_AGE_SECONDS)],
+        [now.saturating_sub(super::SIGNAL_ALERT_HISTORY_RETENTION_SECONDS)],
     )?;
     Ok(())
-}
-
-pub(crate) fn signal_candle_is_expired(
-    signal_bar_time: i64,
-    timeframe: &str,
-    now_seconds: i64,
-) -> bool {
-    let duration_ns = timeframe_duration_ns(timeframe).unwrap_or_default();
-    let signal_time_ns = if signal_bar_time > NANOSECOND_TIMESTAMP_MAGNITUDE_THRESHOLD {
-        signal_bar_time
-    } else if signal_bar_time > MICROSECOND_TIMESTAMP_MAGNITUDE_THRESHOLD {
-        signal_bar_time.saturating_mul(NANOS_PER_MICROSECOND)
-    } else {
-        signal_bar_time.saturating_mul(crate::NANOS_PER_SECOND)
-    };
-    signal_time_ns
-        .saturating_add(duration_ns)
-        .saturating_add(super::SIGNAL_MAX_AGE_SECONDS.saturating_mul(crate::NANOS_PER_SECOND))
-        .div_euclid(crate::NANOS_PER_SECOND)
-        <= now_seconds
 }
 
 pub(crate) fn persist_alerts(
@@ -57,9 +33,6 @@ fn persist_alerts_once(
         for alert in alerts.iter().cloned() {
             let timeframe = alert["timeframe"].as_str().unwrap_or_default();
             let signal_bar_time = alert["signal_bar_time"].as_i64().unwrap_or_default();
-            if signal_candle_is_expired(signal_bar_time, timeframe, now_secs() as i64) {
-                continue;
-            }
             let indicator_ids = alert["indicator_ids"]
                 .as_array()
                 .cloned()

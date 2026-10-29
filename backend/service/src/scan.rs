@@ -198,21 +198,9 @@ pub(super) fn append_scan_plan_with_options(
         }
     }
     fresh_reg_plan = fresh_reg_plan.filter(|plan| {
-        if options.signals_only
-            && !plan.signal.direction.eq_ignore_ascii_case("LONG")
-            && !plan.signal.direction.eq_ignore_ascii_case("SHORT")
-        {
-            return false;
-        }
-        let timeframe = options.timeframe.unwrap_or_else(|| {
-            plan.plan
-                .get("timeframe")
-                .and_then(Value::as_str)
-                .unwrap_or("15m")
-        });
-        bars.last().is_some_and(|bar| {
-            !signal_alerts::signal_candle_is_expired(bar.time, timeframe, now_secs() as i64)
-        })
+        !options.signals_only
+            || (plan.signal.direction.eq_ignore_ascii_case("LONG")
+                || plan.signal.direction.eq_ignore_ascii_case("SHORT"))
     });
     if let Some(reg_plan) = fresh_reg_plan {
         let mut plan = reg_plan.plan;

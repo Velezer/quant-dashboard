@@ -286,6 +286,27 @@ fn catalog_free_crypto_timeframe_models_use_the_forty_point_scale() {
 }
 
 #[test]
+fn crypto_signal_candidate_has_no_signal_age_expiry() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch("ATTACH DATABASE ':memory:' AS app;")
+        .unwrap();
+    crate::master_data::initialize(&connection).unwrap();
+    let now_ns = i64::try_from(crate::now_secs())
+        .unwrap_or(i64::MAX)
+        .saturating_mul(crate::NANOS_PER_SECOND);
+    let current_price_bar = now_ns.saturating_sub(16 * 60 * crate::NANOS_PER_SECOND);
+    let old_signal_bar = now_ns.saturating_sub(6 * 60 * 60 * crate::NANOS_PER_SECOND);
+    let mut candidate = crypto_nwe_candidate("15m", current_price_bar, 1.0, 0.0);
+    candidate["Signal_Bar_Time"] = json!(old_signal_bar);
+
+    let row = signal_screener_row(&candidate)
+        .expect("score floor, not signal age, should determine candidate eligibility");
+    assert_eq!(row["score"], 1.0);
+    assert_eq!(row["signal_bar_time"], old_signal_bar);
+}
+
+#[test]
 fn crypto_indicator_signals_render_from_one_point_and_keep_indicator_timeframes_independent() {
     let connection = screener_connection();
     crate::master_data::initialize(&connection).unwrap();
@@ -441,6 +462,8 @@ fn screener_connection() -> Connection {
     connection
         .execute_batch("ATTACH DATABASE ':memory:' AS app; ATTACH DATABASE ':memory:' AS signals;")
         .expect("app schema should attach");
+    crate::instrument_registry::initialize_schema(&connection)
+        .expect("instrument-registry schema should initialize");
     super::super::initialize_schema(&connection).expect("screener schema should initialize");
     super::super::initialize_screener_schema(&connection)
         .expect("signal snapshot schema should initialize");
@@ -479,19 +502,18 @@ fn snapshot_stores_all_scan_rows_even_beyond_a_single_page() {
 }
 
 #[test]
-fn screener_read_retains_unexpired_setups_with_stale_price_bars() {
+fn screener_read_retains_old_signal_bars_with_stale_price_bars() {
     let connection = screener_connection();
     let now_ns = i64::try_from(crate::now_secs())
         .unwrap_or(i64::MAX)
         .saturating_mul(1_000_000_000);
     let fresh_bar = now_ns.saturating_sub(16 * 60 * 1_000_000_000);
     let stale_bar = now_ns.saturating_sub(46 * 60 * 1_000_000_000);
+    let mut old_signal = stored_screener_row("STALE.JK", stale_bar);
+    old_signal["signal_bar_time"] = json!(now_ns.saturating_sub(6 * 60 * 60 * 1_000_000_000));
     replace_signal_screener_snapshot(
         &connection,
-        &[
-            stored_screener_row("FRESH.JK", fresh_bar),
-            stored_screener_row("STALE.JK", stale_bar),
-        ],
+        &[stored_screener_row("FRESH.JK", fresh_bar), old_signal],
     )
     .expect("screener rows should save");
 
@@ -500,6 +522,10 @@ fn screener_read_retains_unexpired_setups_with_stale_price_bars() {
     assert_eq!(payload["signals"].as_array().unwrap().len(), 2);
     assert_eq!(payload["signals"][0]["symbol"], "FRESH.JK");
     assert_eq!(payload["signals"][1]["symbol"], "STALE.JK");
+    assert_eq!(
+        payload["signals"][1]["signal_bar_time"],
+        now_ns - 6 * 60 * 60 * 1_000_000_000
+    );
     assert_eq!(payload["signals"][1]["price_is_fresh"], false);
     assert_eq!(payload["summary"]["stale_price_signal_count"], 1);
     assert_eq!(payload["summary"]["status"]["last_attempt_status"], "ready");
@@ -589,21 +615,17 @@ fn screener_pages_filter_and_reach_rows_beyond_the_first_page() {
 }
 
 #[test]
-fn expired_and_below_floor_rows_do_not_consume_pages_or_inflate_the_count() {
+fn below_floor_rows_do_not_consume_pages_or_inflate_the_count() {
     let mut connection = screener_connection();
     let now_ns = (crate::now_secs() as i64).saturating_mul(crate::NANOS_PER_SECOND);
     let fresh_bar = now_ns.saturating_sub(16 * 60 * crate::NANOS_PER_SECOND);
-    let rows = ["EXPIRED.JK", "BELOW.JK", "LIVE-A.JK", "LIVE-B.JK"]
+    let rows = ["BELOW.JK", "LIVE-A.JK", "LIVE-B.JK"]
         .into_iter()
         .map(|symbol| stored_screener_row(symbol, fresh_bar))
         .collect::<Vec<_>>();
     replace_signal_screener_snapshot(&connection, &rows).unwrap();
     connection.execute(
-        "UPDATE signals.signal_screener_rows SET signal_bar_time=?1, score=100 WHERE symbol='EXPIRED.JK'",
-        [now_ns.saturating_sub(4 * 60 * 60 * crate::NANOS_PER_SECOND)],
-    ).unwrap();
-    connection.execute(
-        "UPDATE signals.signal_screener_rows SET score=50, score_basis_json=?1 WHERE symbol='BELOW.JK'",
+        "UPDATE signals.signal_screener_rows SET score=0, score_basis_json=?1 WHERE symbol='BELOW.JK'",
         [json!({"score_scale_max": 10, "minimum_score_out_of_10": 100}).to_string()],
     ).unwrap();
 
@@ -687,23 +709,24 @@ fn screener_read_prioritizes_15m_rows_when_response_is_capped() {
 }
 
 #[test]
-fn screener_read_deletes_snapshot_rows_after_the_two_hour_retention() {
+fn successful_scan_replaces_rows_that_no_longer_qualify() {
     let connection = screener_connection();
-    let now = crate::now_secs() as i64;
-    let fresh_bar = now
-        .saturating_mul(1_000_000_000)
-        .saturating_sub(16 * 60 * 1_000_000_000);
-    replace_signal_screener_snapshot(&connection, &[stored_screener_row("FRESH.JK", fresh_bar)])
-        .expect("screener row should save");
-    connection
-        .execute(
-            "UPDATE signals.signal_screener_rows SET last_updated_at=?1",
-            [now.saturating_sub(super::super::SIGNAL_MAX_AGE_SECONDS)],
-        )
-        .expect("row should age to its expiry boundary");
+    let fresh_bar = (crate::now_secs() as i64)
+        .saturating_mul(crate::NANOS_PER_SECOND)
+        .saturating_sub(16 * 60 * crate::NANOS_PER_SECOND);
+    replace_signal_screener_snapshot(
+        &connection,
+        &[stored_screener_row("RECENT.JK", fresh_bar)],
+    )
+    .expect("current scan signal should save");
+    let first = list_signal_screener(&connection, 900, None, None)
+        .expect("first completed scan should be visible");
+    assert_eq!(first["summary"]["matching_rows"], 1);
 
+    replace_signal_screener_snapshot(&connection, &[])
+        .expect("the next scan should replace signals that no longer qualify");
     let payload = list_signal_screener(&connection, 900, None, None)
-        .expect("expired rows should be cleaned during screener read");
+        .expect("the updated scan snapshot should load");
     let stored_rows = connection
         .query_row(
             "SELECT COUNT(*) FROM signals.signal_screener_rows",

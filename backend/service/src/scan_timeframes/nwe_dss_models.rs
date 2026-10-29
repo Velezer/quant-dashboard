@@ -103,8 +103,7 @@ fn append_crypto_model_signal(
     let Some(strategy_id) = strategy_id else {
         return;
     };
-    let Some((signal_index, signal)) =
-        latest_active_crypto_signal(signals, context.bars, context.timeframe)
+    let Some((signal_index, signal)) = latest_crypto_signal_for_latest_bar(signals, context.bars)
     else {
         return;
     };
@@ -144,22 +143,14 @@ fn append_crypto_model_signal(
     );
 }
 
-fn latest_active_crypto_signal<'a>(
+fn latest_crypto_signal_for_latest_bar<'a>(
     signals: &'a [quant_core::StrategySignal],
     bars: &[StrategyBar],
-    timeframe: &str,
 ) -> Option<(usize, &'a quant_core::StrategySignal)> {
-    let now_seconds = current_time_ns().div_euclid(NANOS_PER_SECOND);
-    signals
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(index, signal)| {
-            matches!(signal.direction.as_str(), "LONG" | "SHORT")
-                && bars.get(*index).is_some_and(|bar| {
-                    !signal_alerts::signal_candle_is_expired(bar.time, timeframe, now_seconds)
-                })
-        })
+    let latest_index = signals.len().min(bars.len()).checked_sub(1)?;
+    let latest_signal = signals.get(latest_index)?;
+    matches!(latest_signal.direction.as_str(), "LONG" | "SHORT")
+        .then_some((latest_index, latest_signal))
 }
 
 #[cfg(test)]

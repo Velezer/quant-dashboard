@@ -199,20 +199,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
         }
         let duration_ns = timeframe_duration_ns(timeframe).unwrap_or_default();
         let use_stockbit_timeframe_history = is_stockbit_signal_scope && !stale;
-        let stale_crypto_history_is_live = is_crypto_signal_scope
-            && timeframe_state
-                .as_ref()
-                .and_then(|state| state.latest_bar_time)
-                .is_some_and(|bar_time| {
-                    !signal_alerts::signal_candle_is_expired(
-                        bar_time,
-                        timeframe,
-                        now_ns.div_euclid(NANOS_PER_SECOND),
-                    )
-                });
-        if (stale && !stockbit_intraday_is_fresh && !stale_crypto_history_is_live)
-            || duration_ns <= 0
-        {
+        if (stale && !stockbit_intraday_is_fresh) || duration_ns <= 0 {
             let missing = timeframe_state
                 .as_ref()
                 .is_none_or(|state| state.latest_bar_time.is_none());

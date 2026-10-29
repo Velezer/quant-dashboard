@@ -11,8 +11,10 @@ configured screener timeframes. Each retained row has its own timeframe and
 strategy identity and updates from that timeframe's fresh same-source candle on
 every sync. If those inputs are unavailable, the last score remains visible
 and is marked stale. A failed scan keeps the last-good state and records an
-error status. Other screener rows keep their existing two-hour signal
-lifecycle; alert history also keeps its two-hour expiry.
+error status. Each successful scan recalculates active screener rows from the
+latest completed strategy bar and removes rows that no longer qualify under
+the strategy and score floor; there is no separate signal-age expiry. Alert
+history keeps a separate two-hour retention window based on alert creation.
 `QUANT_MARKET_DIR` defaults to `data/market/tickers` and contains one SQLite
 history database per exact storage symbol. Each file owns that symbol's
 canonical `bars`, provenance `series`, and `ingestion_runs`. File names use a
@@ -105,9 +107,10 @@ scan; it is not an append-only signal history.
 4. **Interactions:** The scanner still reads registered instruments and
    strategy metadata from the app database and market bars from ticker
    databases. No market-data or execution ownership changes.
-5. **Accumulation:** The existing row bound and two-hour expiry continue to
-   bound active signal state. The one-time migration records source hash and
-   row counts in `QUANT_APP_DB`.
+5. **Accumulation:** The existing row bound contains active signal state; each
+   scan replaces current rows according to latest-bar strategy output and the
+   score floor. The one-time migration records source hash and row counts in
+   `QUANT_APP_DB`.
 6. **Failure boundaries:** Startup refuses a legacy app-database snapshot until
    the maintainer runs the explicit migration. An interrupted copy leaves the
    app source intact; rerunning recopies idempotently, validates rows and
