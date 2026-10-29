@@ -13,8 +13,8 @@ fn rotation(mut remaining: Vec<usize>) -> Vec<usize> {
 }
 
 #[test]
-fn equal_queues_rotate_stockbit_then_each_crypto_app() {
-    // Worker order: Stockbit, Pintu, Pluang, Tokocrypto.
+fn equal_queues_rotate_each_crypto_app_then_stockbit() {
+    // Worker order: Pintu, Pluang, Tokocrypto, Stockbit.
     assert_eq!(rotation(vec![2, 2, 2, 2]), vec![0, 1, 2, 3, 0, 1, 2, 3]);
 }
 
