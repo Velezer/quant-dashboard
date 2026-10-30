@@ -4,13 +4,15 @@ pub fn list_alerts(
     connection: &Connection,
     requested_limit: Option<i64>,
 ) -> Result<Value, rusqlite::Error> {
-    refresh_lifecycles(connection)?;
+    let now = i64::try_from(now_secs()).unwrap_or(i64::MAX);
+    let retention_cutoff = now.saturating_sub(SIGNAL_ALERT_HISTORY_RETENTION_SECONDS);
     let limit = requested_limit
         .unwrap_or(DEFAULT_SIGNAL_ALERT_LIST_LIMIT)
         .clamp(1, MAX_SIGNAL_ALERT_LIST_LIMIT);
     let unread_count = connection.query_row(
-        "SELECT COUNT(*) FROM app.signal_alerts WHERE read_at IS NULL",
-        [],
+        "SELECT COUNT(*) FROM app.signal_alerts
+          WHERE read_at IS NULL AND created_at > ?1",
+        [retention_cutoff],
         |row| row.get::<_, i64>(0),
     )?;
     let mut statement = connection.prepare(
@@ -19,9 +21,10 @@ pub fn list_alerts(
                 data_provider,timeframe,direction,price,signal_bar_time,validation_status,
                 created_at,read_at
            FROM app.signal_alerts
-          ORDER BY created_at DESC,alert_id DESC LIMIT ?1",
+          WHERE created_at > ?1
+          ORDER BY created_at DESC,alert_id DESC LIMIT ?2",
     )?;
-    let rows = statement.query_map([limit], |row| {
+    let rows = statement.query_map([retention_cutoff, limit], |row| {
         let indicator_json = row.get::<_, String>(7)?;
         let indicator_ids =
             serde_json::from_str::<Vec<String>>(&indicator_json).unwrap_or_default();

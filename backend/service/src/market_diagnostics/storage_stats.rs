@@ -1,7 +1,10 @@
 use super::*;
 
 pub const STORAGE_SUMMARY_SYMBOL_LIMIT: usize = 50;
+#[cfg(not(test))]
+const STORAGE_STATS_WORKER_LIMIT: usize = 8;
 
+#[cfg(test)]
 pub fn summarized_market_inventory<'a>(
     inventory: &'a [(String, String)],
 ) -> impl Iterator<Item = &'a (String, String)> {
@@ -22,6 +25,118 @@ fn stored_market_inventory(
     inventory
 }
 
+#[cfg(not(test))]
+fn summarize_market_inventory_stats(
+    inventory: &[(String, String)],
+    market_directory: &str,
+) -> Result<(u64, i64, Vec<serde_json::Value>), rusqlite::Error> {
+    if inventory.is_empty() {
+        return Ok((0, 0, Vec::new()));
+    }
+
+    let worker_count = inventory.len().min(STORAGE_STATS_WORKER_LIMIT);
+    let chunk_size = inventory.len().div_ceil(worker_count);
+    std::thread::scope(|scope| {
+        let mut workers = Vec::with_capacity(worker_count);
+        for (chunk_index, chunk) in inventory.chunks(chunk_size).enumerate() {
+            let first_index = chunk_index * chunk_size;
+            workers.push(scope.spawn(move || {
+                let mut market_size_bytes = 0_u64;
+                let mut total_series = 0_i64;
+                let mut summaries = Vec::with_capacity(
+                    chunk.len().min(STORAGE_SUMMARY_SYMBOL_LIMIT),
+                );
+
+                for (index_in_chunk, (symbol, inventory_filename)) in chunk.iter().enumerate() {
+                    let inventory_index = first_index + index_in_chunk;
+                    let path = ticker_database_path(
+                        std::path::Path::new(market_directory),
+                        symbol,
+                    )
+                    .map_err(|error| {
+                        rusqlite::Error::InvalidParameterName(error.to_string())
+                    })?;
+                    market_size_bytes = market_size_bytes.saturating_add(
+                        std::fs::metadata(&path)
+                            .map(|metadata| metadata.len())
+                            .unwrap_or(0),
+                    );
+                    if inventory_index >= STORAGE_SUMMARY_SYMBOL_LIMIT {
+                        continue;
+                    }
+
+                    let database_exists = path.is_file();
+                    let expected_filename = path
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .unwrap_or("");
+                    let mut series_count = None;
+                    let status = if inventory_filename != expected_filename {
+                        "error"
+                    } else if !database_exists {
+                        "missing"
+                    } else {
+                        match open_market_history_for_symbol(market_directory, symbol, false) {
+                            Ok(Some(market_connection)) => match market_connection.query_row(
+                                "SELECT COUNT(*) FROM main.series",
+                                [],
+                                |row| row.get::<_, i64>(0),
+                            ) {
+                                Ok(count) => {
+                                    total_series = total_series.saturating_add(count);
+                                    series_count = Some(count);
+                                    "available"
+                                }
+                                Err(_) => "error",
+                            },
+                            Ok(None) => "missing",
+                            Err(_) => "error",
+                        }
+                    };
+                    summaries.push((
+                        inventory_index,
+                        serde_json::json!({
+                            "storage_symbol": symbol,
+                            "ticker_database": path.to_string_lossy(),
+                            "database_exists": database_exists,
+                            "series_count": series_count,
+                            "status": status,
+                            "recovery": match status {
+                                "missing" => Some("sync the registered instrument to restore chart history"),
+                                "error" => Some("repair or restore this ticker database, then retry the chart"),
+                                _ => None,
+                            },
+                        }),
+                    ));
+                }
+
+                Ok::<_, rusqlite::Error>((market_size_bytes, total_series, summaries))
+            }));
+        }
+
+        let mut market_size_bytes = 0_u64;
+        let mut total_series = 0_i64;
+        let mut summaries = Vec::with_capacity(STORAGE_SUMMARY_SYMBOL_LIMIT);
+        for worker in workers {
+            let (worker_size, worker_series, mut worker_summaries) =
+                worker.join().map_err(|_| {
+                    rusqlite::Error::InvalidParameterName(
+                        "market storage summary worker panicked".into(),
+                    )
+                })??;
+            market_size_bytes = market_size_bytes.saturating_add(worker_size);
+            total_series = total_series.saturating_add(worker_series);
+            summaries.append(&mut worker_summaries);
+        }
+        summaries.sort_unstable_by_key(|(inventory_index, _)| *inventory_index);
+        Ok((
+            market_size_bytes,
+            total_series,
+            summaries.into_iter().map(|(_, summary)| summary).collect(),
+        ))
+    })
+}
+
 /// Return durable market-store metadata without loading candle values into memory.
 #[cfg(not(test))]
 pub fn load_storage_stats(
@@ -36,62 +151,8 @@ pub fn load_storage_stats(
     let ticker_database_count = i64::try_from(inventory.len()).unwrap_or(i64::MAX);
     let Some(storage_symbol) = storage_symbol else {
         let summary_limit = STORAGE_SUMMARY_SYMBOL_LIMIT as i64;
-        let mut total_series = 0_i64;
-        let mut market_size_bytes = 0_u64;
-        for (symbol, _) in &inventory {
-            let path = ticker_database_path(std::path::Path::new(market_directory), symbol)
-                .map_err(|error| rusqlite::Error::InvalidParameterName(error.to_string()))?;
-            market_size_bytes = market_size_bytes.saturating_add(
-                std::fs::metadata(&path)
-                    .map(|metadata| metadata.len())
-                    .unwrap_or(0),
-            );
-        }
-        let mut summaries = Vec::with_capacity(STORAGE_SUMMARY_SYMBOL_LIMIT);
-        for (symbol, inventory_filename) in summarized_market_inventory(&inventory) {
-            let path = ticker_database_path(std::path::Path::new(market_directory), symbol)
-                .map_err(|error| rusqlite::Error::InvalidParameterName(error.to_string()))?;
-            let database_exists = path.is_file();
-            let expected_filename = path
-                .file_name()
-                .and_then(|value| value.to_str())
-                .unwrap_or("");
-            let mut series_count = None;
-            let status = if inventory_filename != expected_filename {
-                "error"
-            } else if !database_exists {
-                "missing"
-            } else {
-                match open_market_history_for_symbol(market_directory, symbol, false) {
-                    Ok(Some(market_connection)) => match market_connection.query_row(
-                        "SELECT COUNT(*) FROM main.series",
-                        [],
-                        |row| row.get::<_, i64>(0),
-                    ) {
-                        Ok(count) => {
-                            total_series += count;
-                            series_count = Some(count);
-                            "available"
-                        }
-                        Err(_) => "error",
-                    },
-                    Ok(None) => "missing",
-                    Err(_) => "error",
-                }
-            };
-            summaries.push(serde_json::json!({
-                "storage_symbol": symbol,
-                "ticker_database": path.to_string_lossy(),
-                "database_exists": database_exists,
-                "series_count": series_count,
-                "status": status,
-                "recovery": match status {
-                    "missing" => Some("sync the registered instrument to restore chart history"),
-                    "error" => Some("repair or restore this ticker database, then retry the chart"),
-                    _ => None,
-                },
-            }));
-        }
+        let (market_size_bytes, total_series, summaries) =
+            summarize_market_inventory_stats(&inventory, market_directory)?;
         let market_size_mb = round_size_mb(market_size_bytes as f64 / (1024.0 * 1024.0));
         let app_size_mb = round_size_mb(database_size_mb(&app_database));
         let total_size_mb = round_size_mb(market_size_mb + app_size_mb);

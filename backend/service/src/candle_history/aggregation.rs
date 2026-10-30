@@ -105,7 +105,7 @@ pub(crate) fn aggregate_candles_from_base_source_with_cap_and_range(
     let mut current_bucket: Option<i64> = None;
     let mut current_source_count = 0_i64;
     let mut current_source_contiguous = true;
-    let mut previous_source_time = None;
+    let mut previous_source_time: Option<i64> = None;
     for bar in source {
         let local_ts = bar.time.saturating_add(offset);
         let local_bucket = if is_intraday {

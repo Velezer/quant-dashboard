@@ -100,6 +100,7 @@ export function createSignalScreenerChartContext({
         }
         if (markovButton) markovButton.disabled = false;
         const venue = executionVenueMeta(signal);
+        const marketSymbol = marketSymbolForSignal(signal);
         const product = String(signal.product_id || '').replaceAll('_', ' ');
         const category = String(signal.asset_category_id || 'asset').replaceAll('_', ' ');
         const scoreState = signalScoreState(signal);
