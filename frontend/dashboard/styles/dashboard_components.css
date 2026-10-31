@@ -738,85 +738,11 @@
 
 #chart-score-summary.signal-chart-low-total { color:#fde68a; font-weight:600; }
 
-/* On phones the page scrolls as one surface, so neither the chart nor
-   the signal list is squeezed into a small independently scrolling panel. */
+/* Keep the chart and screener in document flow on narrow screens. */
 @media (max-width: 760px) {
     .tv-terminal.signals-workspace-active {
-        height: auto;
+        height: auto !important;
         min-height: 100vh !important;
-        overflow-x: clip;
-        overflow-y: visible;
-    }
-    .tv-terminal.signals-workspace-active #viewScreener,
-    .tv-terminal.signals-workspace-active #viewScreener > #workspaceGrid {
-        flex: 0 0 auto;
-        height: auto;
-        overflow: visible;
-    }
-    .tv-terminal.signals-workspace-active #viewScreener > #workspaceGrid,
-    .tv-terminal.signals-workspace-active:not(.signal-chart-selected) #viewScreener > #workspaceGrid,
-    .tv-terminal.signals-workspace-active.refinements-open #viewScreener > #workspaceGrid {
-        grid-template-rows: auto auto !important;
-    }
-    .tv-terminal.signals-workspace-active #viewScreener > #workspaceGrid > .tv-chart-column,
-    .tv-terminal.signals-workspace-active #viewScreener > #workspaceGrid > .tv-watchlist-column {
-        height: auto !important;
-        max-height: none;
-        overflow: visible !important;
-    }
-    .tv-terminal.signals-workspace-active .tv-watchlist-column > section:last-child {
-        flex: 0 0 auto;
-        height: auto;
-        overflow: visible !important;
-    }
-    .tv-terminal.signals-workspace-active #watchlistPanel,
-    .tv-terminal.signals-workspace-active #registryRefineDetails[open],
-    .tv-terminal.signals-workspace-active.refinements-open #registryRefineDetails[open] {
-        max-height: none !important;
-        overflow: visible !important;
-    }
-    .tv-terminal.signals-workspace-active #signalResultsScroll {
-        flex: 0 0 auto;
-        overflow: visible;
-    }
-    .tv-terminal.signals-workspace-active #signalResultsScroll #signalsList {
-        height: auto !important;
-        max-height: none !important;
-        overflow: visible !important;
-    }
-    .tv-terminal.signals-workspace-active #signal-banner {
-        scroll-margin-top: 88px;
-    }
-    .tv-terminal.signals-workspace-active #main-nav {
-        height: auto;
-        overflow-x: auto;
-    }
-    .tv-terminal.signals-workspace-active #main-nav .main-nav-btn,
-    .tv-terminal.signals-workspace-active #watchlist-exchange-filter > button,
-    .tv-terminal.signals-workspace-active .refine-filter-option,
-    .tv-terminal.signals-workspace-active .screener-timeframe-btn,
-    .tv-terminal.signals-workspace-active .signal-readiness-actions button {
-        min-height: 40px;
-    }
-    .tv-terminal.signals-workspace-active #main-nav .main-nav-btn {
-        flex: 1 0 auto;
-    }
-    .tv-terminal.signals-workspace-active #signalSearch .refine-filter-search {
-        min-height: 40px;
-        font-size: 16px;
-    }
-    .tv-terminal.signals-workspace-active .signal-row-meta,
-    .tv-terminal.signals-workspace-active .signal-row-footer,
-    .tv-terminal.signals-workspace-active .signal-row-provenance,
-    .tv-terminal.signals-workspace-active .signal-score-details {
-        font-size: 11px;
-    }
-}
-
-/* On phones, let the chart and screener stack in the document flow. */
-@media (max-width: 760px) {
-    .tv-terminal.signals-workspace-active {
-        height: auto !important;
         min-height: 100dvh !important;
         overflow-x: clip !important;
         overflow-y: visible !important;
@@ -875,8 +801,8 @@
         height: 40px;
     }
     .tv-terminal.signals-workspace-active #scanScheduleDetails > summary {
-        min-height: 40px;
         display: inline-flex;
+        min-height: 40px;
         align-items: center;
     }
     .tv-terminal.signals-workspace-active #main-nav {
