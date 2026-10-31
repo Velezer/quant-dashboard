@@ -812,3 +812,114 @@
         font-size: 11px;
     }
 }
+
+/* On phones, let the chart and screener stack in the document flow. */
+@media (max-width: 760px) {
+    .tv-terminal.signals-workspace-active {
+        height: auto !important;
+        min-height: 100dvh !important;
+        overflow-x: clip !important;
+        overflow-y: visible !important;
+    }
+    .tv-terminal.signals-workspace-active #viewScreener,
+    .tv-terminal.signals-workspace-active #viewScreener > #workspaceGrid {
+        flex: 0 0 auto;
+        height: auto !important;
+        overflow: visible !important;
+    }
+    .tv-terminal.signals-workspace-active #viewScreener > #workspaceGrid,
+    .tv-terminal.signals-workspace-active:not(.signal-chart-selected) #viewScreener > #workspaceGrid,
+    .tv-terminal.signals-workspace-active.refinements-open #viewScreener > #workspaceGrid {
+        grid-template-rows: auto auto !important;
+    }
+    .tv-terminal.signals-workspace-active #viewScreener > #workspaceGrid > .tv-chart-column,
+    .tv-terminal.signals-workspace-active #viewScreener > #workspaceGrid > .tv-watchlist-column {
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+    .tv-terminal.signals-workspace-active .tv-watchlist-column > section:last-child {
+        flex: 0 0 auto;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+    }
+    .tv-terminal.signals-workspace-active #watchlistPanel,
+    .tv-terminal.signals-workspace-active #registryRefineDetails[open],
+    .tv-terminal.signals-workspace-active.refinements-open #registryRefineDetails[open] {
+        max-height: none !important;
+        overflow: visible !important;
+    }
+    .tv-terminal.signals-workspace-active #signalResultsScroll {
+        flex: 0 0 auto;
+        overflow: visible !important;
+    }
+    .tv-terminal.signals-workspace-active #signalResultsScroll #signalsList {
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+    .tv-terminal.signals-workspace-active #signal-banner {
+        scroll-margin-top: 96px;
+    }
+    .tv-terminal.signals-workspace-active #top-app-bar {
+        height: auto !important;
+        min-height: 48px !important;
+        max-height: none !important;
+    }
+    .tv-terminal.signals-workspace-active #top-app-bar #refreshBtn {
+        flex-basis: 40px;
+        width: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        height: 40px;
+    }
+    .tv-terminal.signals-workspace-active #scanScheduleDetails > summary {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+    }
+    .tv-terminal.signals-workspace-active #main-nav {
+        height: auto !important;
+        min-height: 40px;
+        overflow-x: auto !important;
+    }
+    .tv-terminal.signals-workspace-active #main-nav .main-nav-btn,
+    .tv-terminal.signals-workspace-active #watchlist-exchange-filter > button,
+    .tv-terminal.signals-workspace-active .refine-filter-option,
+    .tv-terminal.signals-workspace-active .screener-timeframe-btn,
+    .tv-terminal.signals-workspace-active .signal-readiness-actions button {
+        min-height: 40px;
+    }
+    .tv-terminal.signals-workspace-active #main-nav .main-nav-btn {
+        flex: 1 0 auto;
+    }
+    .tv-terminal.signals-workspace-active .tv-symbol-toolbar {
+        grid-template-rows: 32px 40px !important;
+        height: 72px !important;
+        min-height: 72px !important;
+        max-height: none !important;
+    }
+    .tv-terminal.signals-workspace-active .tv-symbol-line {
+        min-height: 32px !important;
+        height: 32px !important;
+    }
+    .tv-terminal.signals-workspace-active #tv-chart-toolbar {
+        min-height: 40px !important;
+        height: 40px !important;
+    }
+    .tv-terminal.signals-workspace-active .tv-timeframe-group .tf-btn {
+        min-width: 40px !important;
+        min-height: 36px !important;
+    }
+    .tv-terminal.signals-workspace-active #signalSearch .refine-filter-search {
+        min-height: 40px;
+        font-size: 16px;
+    }
+    .tv-terminal.signals-workspace-active .signal-row-meta,
+    .tv-terminal.signals-workspace-active .signal-row-footer,
+    .tv-terminal.signals-workspace-active .signal-row-provenance,
+    .tv-terminal.signals-workspace-active .signal-score-details {
+        font-size: 11px;
+    }
+}
