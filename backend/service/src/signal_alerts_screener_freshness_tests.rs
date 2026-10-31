@@ -46,7 +46,7 @@ fn screener_candidate_with_stale_price_is_withheld() {
 }
 
 #[test]
-fn list_signal_screener_keeps_stockbit_score_rows_stale() {
+fn list_signal_screener_withholds_stale_stockbit_score_rows() {
     let connection = Connection::open_in_memory().expect("in-memory app database should open");
     connection
         .execute_batch("ATTACH DATABASE ':memory:' AS app; ATTACH DATABASE ':memory:' AS signals;")
@@ -98,17 +98,14 @@ fn list_signal_screener_keeps_stockbit_score_rows_stale() {
         .expect("the screener snapshot should load");
     let signals = payload["signals"]
         .as_array()
-        .expect("Stockbit score rows should remain visible");
-    assert_eq!(signals.len(), 1);
-    assert_eq!(signals[0]["score"], 5.0);
-    assert_eq!(signals[0]["score_status"], "stale");
-    assert_eq!(signals[0]["score_basis"]["score_scale_max"], 10);
-    assert_eq!(signals[0]["score_basis"]["score_model_status"], "legacy");
+        .expect("screener rows should be readable");
+    assert!(signals.is_empty(), "a legacy score must not appear as a current entry");
+    assert_eq!(payload["summary"]["matching_rows"], 0);
     assert_eq!(payload["summary"]["stale_price_signal_count"], 0);
 }
 
 #[test]
-fn retained_completed_scores_use_their_signal_timeframe_for_freshness() {
+fn screener_returns_only_completed_scores_with_fresh_strategy_bars() {
     for timeframe in ["1h", "2h", "4h", "1d", "1w"] {
         let connection = Connection::open_in_memory().expect("in-memory app database should open");
         connection
@@ -175,19 +172,15 @@ fn retained_completed_scores_use_their_signal_timeframe_for_freshness() {
             .expect("retained timeframe scores should load");
         let signals = payload["signals"]
             .as_array()
-            .expect("score rows should be visible");
-        assert_eq!(signals.len(), 2);
-        for (symbol, expected_status) in [("FRESH.JK", "qualifying"), ("STALE.JK", "stale")] {
-            let signal = signals
-                .iter()
-                .find(|signal| signal["symbol"] == symbol)
-                .expect("retained symbol should stay visible");
-            assert_eq!(signal["score_status"], expected_status, "{timeframe} {symbol}");
-            assert_eq!(signal["score_basis"]["status"], expected_status);
-            assert_eq!(signal["score"], 23.5);
-            assert_eq!(signal["timeframe"], timeframe);
-            assert_eq!(signal["price_timeframe"], "15m");
-            assert_eq!(signal["data_source"], "stockbit_regular_yfinance_fallback");
-        }
+            .expect("current score rows should be readable");
+        assert_eq!(signals.len(), 1, "{timeframe}");
+        assert_eq!(signals[0]["symbol"], "FRESH.JK", "{timeframe}");
+        assert_eq!(signals[0]["score_status"], "qualifying", "{timeframe}");
+        assert_eq!(signals[0]["score_basis"]["status"], "qualifying", "{timeframe}");
+        assert_eq!(signals[0]["score"], 23.5, "{timeframe}");
+        assert_eq!(signals[0]["timeframe"], timeframe);
+        assert_eq!(signals[0]["price_timeframe"], "15m");
+        assert_eq!(signals[0]["data_source"], "stockbit_regular_yfinance_fallback");
+        assert_eq!(payload["summary"]["matching_rows"], 1, "{timeframe}");
     }
 }
