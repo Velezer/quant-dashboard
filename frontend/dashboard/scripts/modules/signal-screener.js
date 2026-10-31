@@ -582,7 +582,16 @@ export function installSignalScreener() {
             return;
         }
         const button = event.target.closest('[data-signal-id]');
-        if (button) selectSignal(button.dataset.signalId);
+        if (button) {
+            selectSignal(button.dataset.signalId);
+            if (window.matchMedia?.('(max-width: 760px)').matches) {
+                const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+                window.requestAnimationFrame(() => document.getElementById('signal-banner')?.scrollIntoView({
+                    behavior: reducedMotion ? 'auto' : 'smooth',
+                    block: 'start',
+                }));
+            }
+        }
     });
     document.getElementById('screenerTimeframeButtons')?.addEventListener('click', event => {
         const button = event.target.closest('.screener-timeframe-btn');
