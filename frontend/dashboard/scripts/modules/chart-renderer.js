@@ -14,6 +14,27 @@ export function installChartRenderer() {
                 const canvas = document.getElementById('candleCanvas');
                 const dssCanvas = document.getElementById('dssCanvas');
                 if (!canvas) return;
+                if (!canvas.hasWindowListeners) {
+                    canvas.hasWindowListeners = true;
+                    installChartCanvasInteractions(canvas, dssCanvas);
+                    if (typeof window.addEventListener === 'function' && !window.__quantResizeHandlerInstalled) {
+                        window.__quantResizeHandlerInstalled = true;
+                        window.addEventListener('resize', () => {
+                            if (selectedSignal) drawCandleChart(selectedSignal);
+                        }, { passive: true });
+                    }
+                }
+                if (!canvas.hasChartResizeObserver && typeof ResizeObserver === 'function') {
+                    const observer = new ResizeObserver(entries => {
+                        const rect = entries[0]?.contentRect;
+                        if (rect?.width > 0 && rect.height > 0 && selectedSignal) {
+                            drawCandleChart(selectedSignal);
+                        }
+                    });
+                    observer.observe(canvas);
+                    canvas.chartResizeObserver = observer;
+                    canvas.hasChartResizeObserver = true;
+                }
 
                 const currentPrice = Number(signal.current_price);
                 const validCurrentPrice = Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : null;
@@ -32,7 +53,12 @@ export function installChartRenderer() {
                 const ctx = canvas.getContext('2d');
                 if (!ctx) return;
                 const rect = canvas.getBoundingClientRect();
-                if (!rect.width || !rect.height) return;
+                if (!rect.width || !rect.height) {
+                    if (typeof setChartStatus === 'function') {
+                        setChartStatus('loading', 'Waiting for the chart area to finish laying out.', { signal });
+                    }
+                    return;
+                }
                 const pixelRatio = window.devicePixelRatio || 1;
                 const bitmapWidth = Math.round(rect.width * pixelRatio);
                 const bitmapHeight = Math.round(rect.height * pixelRatio);
@@ -770,17 +796,7 @@ export function installChartRenderer() {
                     chartIndicatorScale,
                 });
 
-                // Keep canvas input listeners attached once; their callbacks read live selection state.
-                if (!canvas.hasWindowListeners) {
-                    canvas.hasWindowListeners = true;
-                    installChartCanvasInteractions(canvas, dssCanvas);
-                    if (typeof window.addEventListener === 'function' && !window.__quantResizeHandlerInstalled) {
-                        window.__quantResizeHandlerInstalled = true;
-                        window.addEventListener('resize', () => {
-                            if (selectedSignal) drawCandleChart(selectedSignal);
-                        }, { passive: true });
-                    }
-                }
+
             }
     publishDashboardBindings('chart-renderer', {
         drawCandleChartNow: { get: () => drawCandleChartNow },
