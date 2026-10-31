@@ -770,7 +770,8 @@
         overflow: visible !important;
     }
     .tv-terminal.signals-workspace-active #watchlistPanel,
-    .tv-terminal.signals-workspace-active #registryRefineDetails[open] {
+    .tv-terminal.signals-workspace-active #registryRefineDetails[open],
+    .tv-terminal.signals-workspace-active.refinements-open #registryRefineDetails[open] {
         max-height: none !important;
         overflow: visible !important;
     }
