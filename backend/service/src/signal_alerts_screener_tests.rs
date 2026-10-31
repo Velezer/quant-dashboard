@@ -502,7 +502,7 @@ fn snapshot_stores_all_scan_rows_even_beyond_a_single_page() {
 }
 
 #[test]
-fn screener_read_retains_old_signal_bars_with_stale_price_bars() {
+fn screener_read_omits_old_signal_bars_but_reports_stale_prices() {
     let connection = screener_connection();
     let now_ns = i64::try_from(crate::now_secs())
         .unwrap_or(i64::MAX)
@@ -519,14 +519,10 @@ fn screener_read_retains_old_signal_bars_with_stale_price_bars() {
 
     let payload =
         list_signal_screener(&connection, 900, None, None).expect("screener snapshot should load");
-    assert_eq!(payload["signals"].as_array().unwrap().len(), 2);
+    assert_eq!(payload["signals"].as_array().unwrap().len(), 1);
     assert_eq!(payload["signals"][0]["symbol"], "FRESH.JK");
-    assert_eq!(payload["signals"][1]["symbol"], "STALE.JK");
-    assert_eq!(
-        payload["signals"][1]["signal_bar_time"],
-        now_ns - 6 * 60 * 60 * 1_000_000_000
-    );
-    assert_eq!(payload["signals"][1]["price_is_fresh"], false);
+    assert_eq!(payload["signals"][0]["price_is_fresh"], true);
+    assert_eq!(payload["summary"]["matching_rows"], 1);
     assert_eq!(payload["summary"]["stale_price_signal_count"], 1);
     assert_eq!(payload["summary"]["status"]["last_attempt_status"], "ready");
 }
