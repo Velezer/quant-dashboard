@@ -29,7 +29,7 @@ fn update_signal_market_entry_freshness(
     now_ns: i64,
     scan_interval_seconds: i64,
     strategies: &std::collections::HashMap<&str, &str>,
-) -> (bool, bool) {
+) -> (bool, bool, bool) {
     let symbol = signal["storage_symbol"]
         .as_str()
         .unwrap_or_default()
@@ -88,6 +88,7 @@ fn update_signal_market_entry_freshness(
     (
         is_current_price_fresh && score_is_current,
         !is_current_price_fresh && !is_stockbit_persistent,
+        !score_is_current,
     )
 }
 
@@ -242,7 +243,7 @@ pub(crate) fn list_signal_screener_page(
             continue;
         }
         let mut signal = row_mapper(row)?;
-        let (is_current, is_stale_price) = update_signal_market_entry_freshness(
+        let (is_current, is_stale_price, is_stale_score) = update_signal_market_entry_freshness(
             &mut signal,
             now,
             now_ns,
@@ -251,6 +252,9 @@ pub(crate) fn list_signal_screener_page(
         );
         if is_stale_price {
             stale_price_signal_count = stale_price_signal_count.saturating_add(1);
+        }
+        if is_stale_score {
+            stale_score_signal_count = stale_score_signal_count.saturating_add(1);
         }
         if !is_current {
             continue;
@@ -302,7 +306,7 @@ pub(crate) fn list_signal_screener_page(
             "interval_seconds": scan_interval_seconds,
             "interval_minutes": scan_interval_seconds / 60,
             "stale": stale,
-            "stale_price_signal_count": stale_price_signal_count,
+            "stale_price_signal_count": stale_price_signal_count,\n            "stale_score_signal_count": stale_score_signal_count,
             "readiness": load_scan_readiness(connection)?,
             "status": status,
         }
@@ -366,7 +370,7 @@ pub(crate) fn count_current_signal_screener_rows(
                 "price_bar_time": row.get::<_, i64>(10)?,
                 "last_updated_at": row.get::<_, i64>(11)?,
             });
-            let (is_current, _) = update_signal_market_entry_freshness(
+            let (is_current, _, _) = update_signal_market_entry_freshness(
                 &mut signal,
                 now,
                 now_ns,
