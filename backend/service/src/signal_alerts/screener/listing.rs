@@ -306,7 +306,8 @@ pub(crate) fn list_signal_screener_page(
             "interval_seconds": scan_interval_seconds,
             "interval_minutes": scan_interval_seconds / 60,
             "stale": stale,
-            "stale_price_signal_count": stale_price_signal_count,\n            "stale_score_signal_count": stale_score_signal_count,
+            "stale_price_signal_count": stale_price_signal_count,
+            "stale_score_signal_count": stale_score_signal_count,
             "readiness": load_scan_readiness(connection)?,
             "status": status,
         }
