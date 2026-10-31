@@ -503,7 +503,7 @@ fn snapshot_stores_all_scan_rows_even_beyond_a_single_page() {
 
 #[test]
 fn screener_read_omits_old_signal_bars_but_reports_stale_prices() {
-    let connection = screener_connection();
+    let mut connection = screener_connection();
     let now_ns = i64::try_from(crate::now_secs())
         .unwrap_or(i64::MAX)
         .saturating_mul(1_000_000_000);
@@ -525,6 +525,9 @@ fn screener_read_omits_old_signal_bars_but_reports_stale_prices() {
     assert_eq!(payload["summary"]["matching_rows"], 1);
     assert_eq!(payload["summary"]["stale_price_signal_count"], 1);
     assert_eq!(payload["summary"]["status"]["last_attempt_status"], "ready");
+    let notification_count = super::count_current_signal_screener_rows(&mut connection, 900)
+        .expect("notification count should use current market entries");
+    assert_eq!(notification_count["signal_count"], 1);
 }
 
 #[test]
