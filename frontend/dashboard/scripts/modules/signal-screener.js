@@ -521,6 +521,7 @@ export function installSignalScreener() {
                 replacement._rustIndicatorCache = previousSelection._rustIndicatorCache;
                 replacement._chartBundlePromise = previousSelection._chartBundlePromise;
                 replacement._chartBundleRequestToken = previousSelection._chartBundleRequestToken;
+                replacement._chartBundleTimeframe = previousSelection._chartBundleTimeframe;
                 replacement._chartBundleAbortController = previousSelection._chartBundleAbortController;
                 replacement._rustIndicatorAbortController = previousSelection._rustIndicatorAbortController;
                 globalThis.selectedSignal = replacement;

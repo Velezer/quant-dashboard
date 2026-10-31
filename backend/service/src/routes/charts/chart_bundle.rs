@@ -128,12 +128,27 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         }
     };
     let market_connection = &market_connection;
-    // The chart exposes every signal interval. Derived 30m candles come from
-    // the same selected 15m source; metadata retains its provenance.
-    let timeframes = SIGNAL_SCREENER_TIMEFRAMES
-        .iter()
-        .map(|timeframe| (*timeframe, 120_i64))
-        .collect::<Vec<_>>();
+    // Load the displayed interval on demand so selecting a signal does not
+    // wait for seven independent histories and Markov calculations.
+    let timeframes = if let Some(requested) = values
+        .get("timeframe")
+        .map(|value| value.trim().to_ascii_lowercase())
+    {
+        let Some(timeframe) = SIGNAL_SCREENER_TIMEFRAMES
+            .iter()
+            .copied()
+            .find(|candidate| *candidate == requested.as_str())
+        else {
+            api_error(stream, "400 Bad Request", "unsupported chart timeframe");
+            return Ok(());
+        };
+        vec![(timeframe, 120_i64)]
+    } else {
+        SIGNAL_SCREENER_TIMEFRAMES
+            .iter()
+            .map(|timeframe| (*timeframe, 120_i64))
+            .collect::<Vec<_>>()
+    };
     let mut result = serde_json::Map::new();
     let mut markov_regimes = serde_json::Map::new();
     let mut freshness = serde_json::Map::new();
