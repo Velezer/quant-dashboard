@@ -342,6 +342,13 @@ pub(crate) fn count_current_signal_screener_rows(
             }
             let score_basis =
                 serde_json::from_str::<Value>(&score_basis_json).unwrap_or(Value::Null);
+            let score_status = score_basis["status"].as_str().unwrap_or("stale");
+            let score_bar_time = score_basis["score_bar_time"]
+                .as_i64()
+                .unwrap_or(row.get::<_, i64>(10)?);
+            let score_bar_is_forming = score_basis["score_bar_is_forming"]
+                .as_bool()
+                .unwrap_or(false);
             let mut signal = json!({
                 "exchange_id": row.get::<_, String>(0)?,
                 "product_id": row.get::<_, String>(1)?,
@@ -352,9 +359,9 @@ pub(crate) fn count_current_signal_screener_rows(
                 "timeframe": row.get::<_, String>(6)?,
                 "score": score,
                 "score_basis": score_basis,
-                "score_status": score_basis_status(&score_basis_json),
-                "score_bar_time": score_bar_time(&score_basis_json).unwrap_or(row.get::<_, i64>(10)?),
-                "score_bar_is_forming": score_bar_is_forming(&score_basis_json),
+                "score_status": score_status,
+                "score_bar_time": score_bar_time,
+                "score_bar_is_forming": score_bar_is_forming,
                 "price_timeframe": row.get::<_, String>(9)?,
                 "price_bar_time": row.get::<_, i64>(10)?,
                 "last_updated_at": row.get::<_, i64>(11)?,
@@ -386,25 +393,6 @@ pub(crate) fn count_current_signal_screener_rows(
     }))
 }
 
-fn score_basis_status(score_basis_json: &str) -> String {
-    serde_json::from_str::<Value>(score_basis_json)
-        .ok()
-        .and_then(|basis| basis["status"].as_str().map(ToOwned::to_owned))
-        .unwrap_or_else(|| "stale".to_string())
-}
-
-fn score_bar_time(score_basis_json: &str) -> Option<i64> {
-    serde_json::from_str::<Value>(score_basis_json)
-        .ok()
-        .and_then(|basis| basis["score_bar_time"].as_i64())
-}
-
-fn score_bar_is_forming(score_basis_json: &str) -> bool {
-    serde_json::from_str::<Value>(score_basis_json)
-        .ok()
-        .and_then(|basis| basis["score_bar_is_forming"].as_bool())
-        .unwrap_or(false)
-}
 
 fn signal_meets_render_minimum(signal: &Value, models: &Value) -> bool {
     let basis = &signal["score_basis"];
