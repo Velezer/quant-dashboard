@@ -144,8 +144,7 @@ export function installSignalScreener() {
         if (globalThis.DATA?.summary) {
             globalThis.DATA.summary.stale_price_signal_count = summary.stale_price_signal_count;
         }
-        // Keep a still-live setup visible when its reference price ages out.
-        // The row changes to "not a market entry" and shows the bar age.
+        // Once the reference price expires, omit the row until a fresh scan qualifies it.
         renderSignalsList();
         schedulePriceExpiry();
     }
@@ -280,6 +279,8 @@ export function installSignalScreener() {
         const product = String(getDashboardBinding('activeProductFilter') || 'all').toLowerCase();
         const query = searchQuery.trim().toLowerCase();
         return rows.filter(signal => {
+            const state = signalScoreState(signal);
+            if (state?.tone === 'stale' || signal.score_status === 'stale') return false;
             if (!signalMeetsRenderMinimum(signal, scoreModelFor(signal))) return false;
             if (signal.exchange_id !== exchange) return false;
             if (product !== 'all' && signal.product_id !== product) return false;
@@ -401,6 +402,7 @@ export function installSignalScreener() {
         getDashboardBinding('showAppSignalReadiness')?.(selectedApp, summary, readinessScope);
         const selectedId = globalThis.selectedSignal?.signal_id || '';
         const stalePriceSignalCount = Number(summary.stale_price_signal_count || 0);
+        const staleScoreSignalCount = Number(summary.stale_score_signal_count || 0);
         const priceDataStatus = String(summary.status?.price_data_status || 'ready');
         const priceDataUnavailableCount = Number(summary.status?.price_data_unavailable_count || 0);
         const stockbitSignalModels = stockbitSignalModelsForView();
@@ -433,21 +435,23 @@ export function installSignalScreener() {
         if (signals.length === 0) {
             const emptyText = requestState === 'error' && rows.length === 0
                 ? 'Signal data could not be loaded. Retry after checking the service connection.'
+                : summary.stale && rows.length === 0
+                    ? 'The saved snapshot is stale and has no current signals. Retry the scan or wait for the running scan to complete.'
+                : staleScoreSignalCount > 0
+                    ? `${staleScoreSignalCount} saved score row${staleScoreSignalCount === 1 ? '' : 's'} had outdated strategy bars and were hidden. A fresh scan must qualify them again.`
+                : stalePriceSignalCount > 0
+                    ? `${stalePriceSignalCount} saved row${stalePriceSignalCount === 1 ? '' : 's'} had stale reference prices and were hidden until a fresh scan.`
                 : appReadiness.hasScanDetails
                     ? 'The app data checks and recovery actions are shown in Signal availability above.'
                 : summary.status?.last_attempt_status === 'waiting'
                     ? 'The first scan has not completed yet. Signals will appear after the scheduled scan or a manual refresh.'
-                : summary.stale && rows.length === 0
-                        ? 'The saved snapshot is stale and has no current signals. Retry the scan or wait for the running scan to complete.'
-                    : stockbitSignalView
-                        ? stockbitSignalEmptyText(stockbitSignalModels)
-                    : cryptoSignalView
-                        ? cryptoSignalEmptyText(cryptoSignalModels)
-                    : rows.length > 0
-                        ? 'No signals match the selected app, product, timeframe, and search. Clear a filter to see more.'
-                        : stalePriceSignalCount > 0 && !stockbitSignalSelected
-                            ? 'The retained setups have stale reference prices, so they are not current market entries. Recheck after the next scan.'
-                        : 'No current signal rows were returned. Detailed scan checks are not available yet; see Signal availability for the known listing and data status.';
+                : stockbitSignalView
+                    ? stockbitSignalEmptyText(stockbitSignalModels)
+                : cryptoSignalView
+                    ? cryptoSignalEmptyText(cryptoSignalModels)
+                : rows.length > 0
+                    ? 'No signals match the selected app, product, timeframe, and search. Clear a filter to see more.'
+                : 'No current signal rows were returned. Detailed scan checks are not available yet; see Signal availability for the known listing and data status.';
             const priceCoverageMessage = appReadiness.hasScanDetails ? ''
                 : signalPriceCoverageMessage(priceDataStatus, priceDataUnavailableCount);
             const emptyStateText = [emptyText, priceCoverageMessage]
