@@ -137,7 +137,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         let Some(timeframe) = SIGNAL_SCREENER_TIMEFRAMES
             .iter()
             .copied()
-            .find(|candidate| *candidate == requested)
+            .find(|candidate| *candidate == requested.as_str())
         else {
             api_error(stream, "400 Bad Request", "unsupported chart timeframe");
             return Ok(());
