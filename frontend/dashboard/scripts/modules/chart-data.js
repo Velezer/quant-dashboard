@@ -450,6 +450,7 @@ export function installChartData() {
                 signal._chartBundleAbortController = null;
                 signal._rustIndicatorAbortController = null;
                 signal._chartBundlePromise = null;
+                signal._chartBundleTimeframe = null;
                 signal.candles = [];
                 signal.candles_by_tf = null;
                 signal.chart_freshness = null;
