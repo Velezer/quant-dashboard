@@ -39,6 +39,7 @@ fn replace_signal_screener_snapshot_with_compact_score_updates(
         price_data_unavailable_count,
         registered_count,
         None,
+        &std::collections::BTreeSet::new(),
     )
 }
 
@@ -49,6 +50,7 @@ pub(crate) fn replace_signal_screener_snapshot_with_readiness(
     price_data_unavailable_count: usize,
     registered_count: usize,
     readiness: Option<&Value>,
+    preserved_stockbit: &std::collections::BTreeSet<(String, String, String)>,
 ) -> Result<(), rusqlite::Error> {
     crate::database::retry_sqlite_busy(|| {
         replace_signal_screener_snapshot_attempt(
@@ -58,6 +60,7 @@ pub(crate) fn replace_signal_screener_snapshot_with_readiness(
             price_data_unavailable_count,
             registered_count,
             readiness,
+            preserved_stockbit,
         )
     })
 }
@@ -123,7 +126,8 @@ fn publish_signal_screener_app_batch_attempt(
             }
         }
         if exchange_id == quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID {
-            mark_stockbit_score_rows_stale(connection)?;
+            let scanned = scanned_instruments.iter().cloned().collect::<std::collections::BTreeSet<_>>();
+            mark_stockbit_score_rows_stale(connection, if clear_app { None } else { Some(&scanned) }, false)?;
         }
         let app_signals = running_signals
             .iter()
@@ -176,6 +180,7 @@ fn replace_signal_screener_snapshot_attempt(
     price_data_unavailable_count: usize,
     registered_count: usize,
     readiness: Option<&Value>,
+    preserved_stockbit: &std::collections::BTreeSet<(String, String, String)>,
 ) -> Result<(), rusqlite::Error> {
     let now = now_secs() as i64;
     let price_data_status = if price_data_unavailable_count == 0 {
@@ -187,14 +192,45 @@ fn replace_signal_screener_snapshot_attempt(
     };
     connection.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| {
+        if !preserved_stockbit.is_empty() {
+            connection.execute_batch(
+                "CREATE TEMP TABLE IF NOT EXISTS preserved_stockbit_scan_rows (
+                    product_id TEXT NOT NULL, asset_category_id TEXT NOT NULL, symbol TEXT NOT NULL,
+                    PRIMARY KEY(product_id, asset_category_id, symbol)
+                 ) WITHOUT ROWID;
+                 DELETE FROM temp.preserved_stockbit_scan_rows;",
+            )?;
+            for (product, category, symbol) in preserved_stockbit {
+                connection.execute(
+                    "INSERT INTO temp.preserved_stockbit_scan_rows(product_id,asset_category_id,symbol)
+                     VALUES(?1,?2,?3)",
+                    params![product, category, symbol],
+                )?;
+            }
+        }
+        let keep_preserved = if preserved_stockbit.is_empty() {
+            String::new()
+        } else {
+            " AND NOT (exchange_id='stockbit' AND EXISTS (
+                SELECT 1 FROM temp.preserved_stockbit_scan_rows AS p
+                 WHERE p.product_id=signal_screener_rows.product_id
+                   AND p.asset_category_id=signal_screener_rows.asset_category_id
+                   AND p.symbol=signal_screener_rows.symbol
+            ))".to_string()
+        };
         connection.execute(
             &format!(
-                "DELETE FROM signals.signal_screener_rows WHERE NOT ({})",
-                stockbit_signal_score_row_scope_sql()
+                "DELETE FROM signals.signal_screener_rows WHERE NOT ({}){}",
+                stockbit_signal_score_row_scope_sql(), keep_preserved
             ),
             [],
         )?;
-        mark_stockbit_score_rows_stale(connection)?;
+        // Preserve values and timestamps, but never expose a closed-market
+        // retained row as an active entry while its scan is paused.
+        mark_stockbit_score_rows_stale(connection, None, false)?;
+        if !preserved_stockbit.is_empty() {
+            mark_stockbit_score_rows_stale(connection, Some(preserved_stockbit), true)?;
+        }
         insert_signal_screener_rows(connection, signals.iter(), now)?;
         apply_signal_score_updates(connection, score_updates.iter(), now)?;
         let stored_signal_count: i64 = connection.query_row(
@@ -216,7 +252,8 @@ fn replace_signal_screener_snapshot_attempt(
                 price_data_unavailable_count as i64,
             ],
         )?;
-        save_scan_readiness(connection, readiness)?;
+        let merged_readiness = readiness_with_historical_stockbit(connection, readiness, preserved_stockbit)?;
+        save_scan_readiness(connection, merged_readiness.as_ref())?;
         Ok::<(), rusqlite::Error>(())
     })();
     match result {
@@ -232,6 +269,39 @@ fn replace_signal_screener_snapshot_attempt(
             Err(error)
         }
     }
+}
+
+// Readiness is aggregated by product, so previous Stockbit totals cannot be
+// mixed with this scan's partial counts. Retain them separately as historical.
+fn readiness_with_historical_stockbit(
+    connection: &Connection,
+    readiness: Option<&Value>,
+    preserved_stockbit: &std::collections::BTreeSet<(String, String, String)>,
+) -> Result<Option<Value>, rusqlite::Error> {
+    let Some(mut current) = readiness.cloned() else { return Ok(None); };
+    if preserved_stockbit.is_empty() || !current.is_object() {
+        return Ok(Some(current));
+    }
+    let previous = load_scan_readiness(connection)?;
+    let mut historical = previous.get("retained_stockbit_readiness")
+        .filter(|value| value.is_object())
+        .cloned()
+        .unwrap_or_else(|| {
+            let products = previous["products"].as_array().map(|products| {
+                products.iter().filter(|product| product["exchange_id"] == "stockbit")
+                    .cloned().collect::<Vec<_>>()
+            }).unwrap_or_default();
+            json!({
+                "state": "historical_market_closed",
+                "scan_started_at": previous["scan_started_at"],
+                "checked_at": previous["checked_at"],
+                "products": products,
+            })
+        });
+    historical["state"] = json!("historical_market_closed");
+    historical["preserved_instrument_count"] = json!(preserved_stockbit.len());
+    current["retained_stockbit_readiness"] = historical;
+    Ok(Some(current))
 }
 
 fn insert_signal_screener_rows<'a>(
@@ -357,13 +427,22 @@ pub(crate) fn replace_signal_screener_snapshot_with_score_updates(
     )
 }
 
-fn mark_stockbit_score_rows_stale(connection: &Connection) -> Result<(), rusqlite::Error> {
+fn mark_stockbit_score_rows_stale(
+    connection: &Connection,
+    instruments: Option<&std::collections::BTreeSet<(String, String, String)>>,
+    include_nonpersistent: bool,
+) -> Result<(), rusqlite::Error> {
+    let scope = if include_nonpersistent {
+        "exchange_id='stockbit'".to_string()
+    } else {
+        stockbit_signal_score_row_scope_sql()
+    };
     let rows = {
         let mut statement = connection.prepare(&format!(
             "SELECT exchange_id,product_id,asset_category_id,symbol,signal_strategy_id,timeframe,
                     score_basis_json
                FROM signals.signal_screener_rows WHERE {}",
-            stockbit_signal_score_row_scope_sql()
+            scope
         ))?;
         let rows = statement
             .query_map([], |row| {
@@ -381,6 +460,9 @@ fn mark_stockbit_score_rows_stale(connection: &Connection) -> Result<(), rusqlit
         rows
     };
     for (exchange, product, category, symbol, strategy, timeframe, basis_json) in rows {
+        if instruments.is_some_and(|items| !items.contains(&(product.clone(), category.clone(), symbol.clone()))) {
+            continue;
+        }
         let Ok(mut basis) = serde_json::from_str::<Value>(&basis_json) else {
             continue;
         };
@@ -426,7 +508,7 @@ fn record_signal_screener_failure_attempt(
 ) -> Result<(), rusqlite::Error> {
     connection.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| {
-        mark_stockbit_score_rows_stale(connection)?;
+        mark_stockbit_score_rows_stale(connection, None, false)?;
         connection.execute(
             "INSERT INTO signals.signal_screener_status(id,last_attempt_at,last_success_at,last_attempt_status,last_error,signal_count,price_data_status,price_data_unavailable_count)
              VALUES(1,?1,NULL,'error',?2,0,'unknown',0)
