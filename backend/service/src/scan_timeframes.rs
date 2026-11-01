@@ -146,7 +146,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
         };
         // Re-evaluate higher-timeframe crypto setups from each fresh 15m scan.
         // The newest higher-timeframe candle is a forming rollup and its score is
-        // exposed with score_bar_is_forming; 15m signals still use closed bars.
+        // exposed with score_bar_is_forming; 15m crypto signals stay on closed bars.
         // Stockbit keeps its existing forming-candle behavior.
         if current_price.is_none() && timeframe != "1d" && !is_nwe_dss_signal_scope {
             continue;
