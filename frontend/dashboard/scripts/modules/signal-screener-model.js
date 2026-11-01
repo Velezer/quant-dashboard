@@ -17,7 +17,7 @@ export function signalIdentity(signal) {
         signal.symbol, signal.signal_strategy_id, signal.timeframe].join('|');
 }
 
-export function signalScoreState(signal) {
+export function signalScoreState(signal, nowEpochMs = Date.now()) {
     if (signal?.persistent_score === true) {
         if (signal.score_status === 'stale') {
             return { label: 'STALE · NO MARKET ENTRY · HELD', tone: 'stale', current: false };
@@ -30,7 +30,7 @@ export function signalScoreState(signal) {
             ? { label: `MARKET ENTRY NOW · PROVISIONAL ${timeframe}`, tone: 'provisional', current: true }
             : { label: `MARKET ENTRY NOW · LATEST CLOSED ${timeframe}`, tone: 'current', current: true };
     }
-    if (!signalPriceIsFresh(signal)) {
+    if (!signalPriceIsFresh(signal, nowEpochMs)) {
         return { label: 'SETUP RETAINED · STALE PRICE · NOT A MARKET ENTRY', tone: 'stale', current: false };
     }
     return { label: 'MARKET ENTRY NOW · FRESH PRICE', tone: 'current', current: true };
@@ -40,7 +40,7 @@ export function signalScoreState(signal) {
 // The dashboard has no position state, so this remains conditional.
 export function oppositeEntryExitCue(signal, nowEpochMs = Date.now()) {
     if (!signal || signal.score_status !== 'qualifying'
-        || signal.price_is_fresh === false || !signalScoreState(signal)?.current
+        || signal.price_is_fresh === false || !signalScoreState(signal, nowEpochMs)?.current
         || !signalPriceIsFresh(signal, nowEpochMs)) return null;
     const freshUntil = Number(signal.price_fresh_until_ms);
     if (Number.isFinite(freshUntil) && freshUntil > 0 && nowEpochMs > freshUntil) return null;
