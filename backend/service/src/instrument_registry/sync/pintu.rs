@@ -1,8 +1,25 @@
 use super::*;
 
 pub(crate) fn sync_pintu(conn: &Connection) -> SyncResult {
+    sync_pintu_with_fetch(conn, crate::pintu_listing::fetch_all)
+}
+
+pub(crate) fn sync_pintu_with_fetch(
+    conn: &Connection,
+    fetch: impl FnOnce() -> Result<Vec<crate::pintu_listing::Listing>, String>,
+) -> SyncResult {
     let exchange_id = "pintu".to_string();
-    let listings = match crate::pintu_listing::fetch_all() {
+    // Published delistings remain valid even when a live feed is unavailable.
+    let announced_delisted = match apply_announced_futures_delistings(conn) {
+        Ok(count) => count,
+        Err(error) => return SyncResult {
+            exchange_id,
+            inserted: 0,
+            deactivated: 0,
+            error: Some(format!("Failed to apply Pintu's announced futures delistings: {error}")),
+        },
+    };
+    let listings = match fetch() {
         Ok(list) => list,
         Err(error) => {
             let _ = conn.execute("INSERT INTO instrument_registry_meta(key,value)
@@ -23,14 +40,71 @@ pub(crate) fn sync_pintu(conn: &Connection) -> SyncResult {
             return SyncResult {
                 exchange_id,
                 inserted: 0,
-                deactivated: 0,
+                deactivated: announced_delisted,
                 error: Some(format!(
-                    "Pintu listing refresh failed; previous listing retained: {error}"
+                    "Pintu listing refresh failed; other previous listings retained: {error}"
                 )),
             };
         }
     };
-    reconcile_pintu(conn, &listings)
+    let mut result = reconcile_pintu(conn, &listings);
+    result.deactivated = result.deactivated.saturating_add(announced_delisted);
+    result
+}
+
+/// Apply known first-party notices independently of the live ticker feed.
+/// Keep unrelated registrations and candle history intact.
+fn apply_announced_futures_delistings(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    let rows = {
+        let mut stmt = conn.prepare(
+            "SELECT instrument_id,symbol,venue_symbol FROM instruments
+              WHERE exchange_id='pintu' AND product_id='pintu_pro_futures' AND is_active=1
+                AND (listing_status<>'venue_delisted' OR venue_verified<>0)",
+        )?;
+        stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+        })?.collect::<Result<Vec<_>, _>>()?
+    };
+    let ids = rows.into_iter().filter_map(|(id, symbol, venue)| {
+        let venue = venue.trim().to_ascii_uppercase();
+        let contract = if venue.is_empty() {
+            format!("{}USDT-PERP", symbol.trim().to_ascii_uppercase())
+        } else {
+            venue
+        };
+        crate::pintu_listing::is_announced_delisted_pintu_future(&contract).then_some(id)
+    }).collect::<Vec<_>>();
+    if ids.is_empty() {
+        return Ok(0);
+    }
+
+    conn.execute_batch("SAVEPOINT pintu_announced_delistings")?;
+    let updated = (|| {
+        let mut count = 0usize;
+        for id in ids {
+            count += conn.execute(
+                "UPDATE instruments SET listing_status='venue_delisted',venue_verified=0,
+                        execution_supported=0,updated_at=unixepoch()
+                  WHERE instrument_id=?1 AND exchange_id='pintu'
+                    AND product_id='pintu_pro_futures'",
+                [&id],
+            )?;
+        }
+        Ok::<usize, rusqlite::Error>(count)
+    })();
+    match updated {
+        Ok(count) => {
+            if let Err(error) = conn.execute_batch("RELEASE SAVEPOINT pintu_announced_delistings") {
+                let _ = conn.execute_batch("ROLLBACK TO SAVEPOINT pintu_announced_delistings; RELEASE SAVEPOINT pintu_announced_delistings");
+                return Err(error);
+            }
+            Ok(count)
+        }
+        Err(error) => {
+            let _ = conn.execute_batch("ROLLBACK TO SAVEPOINT pintu_announced_delistings; RELEASE SAVEPOINT pintu_announced_delistings");
+            Err(error)
+        }
+    }
 }
 
 pub(crate) fn reconcile_pintu(
@@ -58,6 +132,11 @@ pub(crate) fn reconcile_pintu(
         .map_err(|e| e.to_string())?;
         let mut inserted = 0;
         for listing in listings {
+            if listing.product_id == "pintu_pro_futures"
+                && crate::pintu_listing::is_announced_delisted_pintu_future(&listing.venue_symbol)
+            {
+                continue;
+            }
             let instrument_id = format!(
                 "pintu.{}.{}",
                 listing.product_id,
@@ -140,6 +219,11 @@ pub(crate) fn reconcile_pintu(
         .map_err(|e| e.to_string())?;
         let mut counts = std::collections::BTreeMap::<(&str, &str), usize>::new();
         for listing in listings {
+            if listing.product_id == "pintu_pro_futures"
+                && crate::pintu_listing::is_announced_delisted_pintu_future(&listing.venue_symbol)
+            {
+                continue;
+            }
             *counts
                 .entry((listing.product_id, listing.source_url))
                 .or_default() += 1;
