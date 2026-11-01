@@ -488,7 +488,6 @@ pub(super) fn run_rust_scan_inner(
     Ok(payload)
 }
 
-#[derive(Default)]
 fn expected_stockbit_closed_session_day(now_seconds: i64) -> Option<i64> {
     let local_seconds = now_seconds.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
     let day = local_seconds.div_euclid(quant_core::SECONDS_PER_DAY);
@@ -668,6 +667,7 @@ fn save_stockbit_close_scan_checkpoint(
 #[path = "run/stockbit_close_tests.rs"]
 mod stockbit_close_tests;
 
+#[derive(Default)]
 struct AppScanResult {
     fresh_price_count: usize,
     unavailable_price_count: usize,
