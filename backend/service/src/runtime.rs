@@ -893,3 +893,22 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
 #[cfg(test)]
 #[path = "runtime_tests.rs"]
 mod tests;
+
+
+#[cfg(test)]
+mod active_scan_progress_tests {
+    use super::AppState;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn progress_label_lists_both_concurrent_ticker_scans() {
+        let active = BTreeSet::from([
+            "pintu · pintu_pro_spot · BTC-USD".to_string(),
+            "tokocrypto · tokocrypto_spot · BTCUSDT".to_string(),
+        ]);
+        let label = AppState::active_scan_display(&active);
+        assert!(label.starts_with("2 parallel · "));
+        assert!(label.contains("BTC-USD"));
+        assert!(label.contains("BTCUSDT"));
+    }
+}
