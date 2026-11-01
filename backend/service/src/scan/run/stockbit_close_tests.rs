@@ -1,7 +1,7 @@
 use super::*;
 
 fn local_day(year: i32, month: u32, day: u32) -> i64 {
-    let year = i64::from(year) - i64::from(month <= 2);
+    let year = i64::from(year) - if month <= 2 { 1 } else { 0 };
     let era = if year >= 0 { year } else { year - 399 }.div_euclid(400);
     let year_of_era = year - era * 400;
     let month = i64::from(month);
