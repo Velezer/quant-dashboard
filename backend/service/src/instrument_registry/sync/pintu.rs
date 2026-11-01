@@ -61,9 +61,10 @@ fn apply_announced_futures_delistings(conn: &Connection) -> Result<usize, rusqli
               WHERE exchange_id='pintu' AND product_id='pintu_pro_futures' AND is_active=1
                 AND (listing_status<>'venue_delisted' OR venue_verified<>0)",
         )?;
-        stmt.query_map([], |row| {
+        let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
-        })?.collect::<Result<Vec<_>, _>>()?
+        })?.collect::<Result<Vec<_>, _>>()?;
+        rows
     };
     let ids = rows.into_iter().filter_map(|(id, symbol, venue)| {
         let venue = venue.trim().to_ascii_uppercase();
