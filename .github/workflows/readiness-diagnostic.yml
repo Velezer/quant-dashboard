@@ -1,0 +1,22 @@
+name: Readiness diagnostic
+on:
+  pull_request:
+    paths:
+      - .github/workflows/readiness-diagnostic.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 254616d9e8f32290b7bc87c731f2e14a34bb6026
+          persist-credentials: false
+      - name: Rust versions
+        run: rustc --version && cargo --version
+      - name: Readiness tests
+        run: cargo test --locked -p rust_chart_api signal_alerts::readiness::tests
+      - name: Check service
+        run: cargo check --locked -p rust_chart_api
