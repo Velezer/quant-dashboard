@@ -291,6 +291,26 @@ const PINTU_PRO_FUTURES_MARCH_26_2026_DELISTED_SYMBOLS: &[&str] = &[
 /// Source: <https://pintu.co.id/blog/futures-delisting-token-omusdt-perp>.
 const PINTU_PRO_FUTURES_OM_DELISTED_SYMBOLS: &[&str] = &["OMUSDT-PERP"];
 
+/// Pintu's 2025 single and small-batch futures delisting notices:
+/// <https://pintu.co.id/blog/delisting-token-alpha-di-pintu-futures>
+/// <https://pintu.co.id/blog/pintu-futures-delisting-hifi-dan-bake-3okt25>
+/// <https://pintu.co.id/blog/futures-delisting-flm-perp-november-2025>
+/// <https://pintu.co.id/blog/delisting-beamxusdt-ghstusdt-perp-pintu-november-2025>
+/// <https://pintu.co.id/blog/futures-delisting-token-quickusdt-perp-desember-2025>
+/// <https://pintu.co.id/blog/pengumuman-delisting-token-voxelusdt-perp-di-pintu-futures>
+const PINTU_PRO_FUTURES_2025_DELISTED_SYMBOLS: &[&str] = &[
+    "ALPHAUSDT-PERP",
+    "HIFIUSDT-PERP",
+    "BAKEUSDT-PERP",
+    "FLMUSDT-PERP",
+    "PERPUSDT-PERP",
+    "BEAMXUSDT-PERP",
+    "GHSTUSDT-PERP",
+    "QUICKUSDT-PERP",
+    "SXPUSDT-PERP",
+    "VOXELUSDT-PERP",
+];
+
 /// Known official delistings are excluded until Pintu confirms a relisting.
 /// These notices do not establish that every other ticker is tradable.
 pub(crate) fn is_announced_delisted_pintu_future(symbol: &str) -> bool {
@@ -298,6 +318,7 @@ pub(crate) fn is_announced_delisted_pintu_future(symbol: &str) -> bool {
         || PINTU_PRO_FUTURES_MARCH_2_2026_DELISTED_SYMBOLS.contains(&symbol)
         || PINTU_PRO_FUTURES_MARCH_26_2026_DELISTED_SYMBOLS.contains(&symbol)
         || PINTU_PRO_FUTURES_OM_DELISTED_SYMBOLS.contains(&symbol)
+        || PINTU_PRO_FUTURES_2025_DELISTED_SYMBOLS.contains(&symbol)
 }
 
 pub fn parse_pro_futures(body: &[u8]) -> Result<Vec<Listing>, String> {
