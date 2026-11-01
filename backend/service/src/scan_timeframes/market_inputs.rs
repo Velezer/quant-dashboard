@@ -22,7 +22,7 @@ pub(super) fn load_15m_rolled_signal_candles(
         source,
     )
     .unwrap_or_default();
-    let Some(timeframe_duration_ns) = timeframe_duration_ns(timeframe) else {
+    let Some(target_duration_ns) = timeframe_duration_ns(timeframe) else {
         return Vec::new();
     };
     if timeframe == "15m" {
@@ -30,7 +30,7 @@ pub(super) fn load_15m_rolled_signal_candles(
             return Vec::new();
         };
         return if latest_15m_bar_time >= latest_bar_time
-            && latest_15m_bar_time < latest_bar_time.saturating_add(timeframe_duration_ns)
+            && latest_15m_bar_time < latest_bar_time.saturating_add(target_duration_ns)
         {
             stored_history
         } else {
@@ -38,7 +38,7 @@ pub(super) fn load_15m_rolled_signal_candles(
         };
     }
     let fifteen_minutes = timeframe_duration_ns("15m").unwrap_or_default();
-    let timeframe_duration = timeframe_duration_ns(timeframe).unwrap_or_default();
+    let timeframe_duration = target_duration_ns;
     let completed_15m_end = latest_15m_bar_time.saturating_add(fifteen_minutes);
     // Only rebuild the recent higher-timeframe buckets from 15m bars. Older
     // history stays in its stored interval, avoiding a full 15m resample on
