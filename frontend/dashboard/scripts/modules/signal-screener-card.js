@@ -1,4 +1,4 @@
-import { hasFourIndicatorScores, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength } from './signal-screener-model.js';
+import { hasFourIndicatorScores, oppositeEntryExitCue, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength } from './signal-screener-model.js';
 /** Builds one accessible signal row from normalized screener data. */
 export function createSignalScreenerCard({
     escape,
@@ -15,6 +15,11 @@ export function createSignalScreenerCard({
 }) {
     return function renderSignalCard(signal, rank, selected) {
         const scoreState = signalScoreState(signal);
+        const exitCue = oppositeEntryExitCue(signal);
+        const exitText = exitCue
+            ? `If holding ${exitCue.positionSide}: ${exitCue.provisional ? 'exit watch · wait for bar close' : 'exit cue'} · opposite ${exitCue.signalDirection}`
+            : '';
+        const exitExplanation = 'Applies to a position using the same app, product, model and timeframe. No order is placed.';
         const directionClass = signal.direction === 'SHORT' ? 'signal-direction-short' : 'signal-direction-long';
         const directionLabel = scoreState && !scoreState.current ? `LAST ${signal.direction}` : signal.direction;
         const evidence = String(signal.evidence_status || 'VALIDATION_PENDING').replaceAll('_', ' ');
@@ -39,7 +44,7 @@ export function createSignalScreenerCard({
         const accessibleScore = fourIndicators ? signalIndicatorSummary(signal, scoreModel) : Number.isFinite(displayScore)
             ? `${scoreValue} out of ${scoreScaleMax}`
             : 'unavailable';
-        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${fourIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}Setup strength is not win probability or execution availability. Select to inspect chart.`;
+        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${fourIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}Setup strength is not win probability or execution availability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
         const productLabel = signal.product_id === 'stockbit_regular'
             ? ''
             : signal.product_id.replaceAll('_', ' ');
@@ -56,6 +61,7 @@ export function createSignalScreenerCard({
                 <span class="signal-row-meta">${escape(rowContext)}</span>
                 ${scoreState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}" role="status">${escape(scoreState.label)} · ${signal.persistent_score === true ? 'strategy' : 'price'} bar ${escape(signalPriceBarAgeLabel(signal.persistent_score === true ? signal.score_bar_time : signal.price_bar_time))}</span>` : ''}
                 <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${fourIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded indicators' : '4 indicator scores'} · 25% each</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}</span>
+                ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
                 ${totalStrength ? `<span class="signal-total-strength signal-total-strength-${totalStrength.tone}" title="${escape(totalStrength.description)}">${escape(totalStrength.label)}<small>${escape(totalStrength.description)}</small></span>` : ''}
                 ${renderScoreBasis(signal)}
                 <span class="signal-row-footer"><span>${escape(evidence)}</span><span>Price ${escape(signalPriceBarAgeLabel(signal.price_bar_time))}</span><span>Scanned ${escape(ageLabel(signal.last_updated_at))}</span></span>
