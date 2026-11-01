@@ -28,7 +28,7 @@ pub(crate) fn sync_from_live_sources(conn: &Connection) -> Vec<SyncResult> {
 #[path = "sync/pintu.rs"]
 mod pintu;
 #[cfg(test)]
-pub(crate) use pintu::reconcile_pintu;
+pub(crate) use pintu::{reconcile_pintu, sync_pintu_with_fetch};
 pub(crate) use pintu::sync_pintu;
 
 #[cfg(test)]
