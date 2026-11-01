@@ -43,7 +43,7 @@ export function oppositeEntryExitCue(signal, nowEpochMs = Date.now()) {
         || signal.price_is_fresh === false || !signalScoreState(signal, nowEpochMs)?.current
         || !signalPriceIsFresh(signal, nowEpochMs)) return null;
     const freshUntil = Number(signal.price_fresh_until_ms);
-    if (Number.isFinite(freshUntil) && freshUntil > 0 && nowEpochMs > freshUntil) return null;
+    if (!Number.isFinite(freshUntil) || freshUntil <= 0 || !Number.isFinite(nowEpochMs) || nowEpochMs > freshUntil) return null;
     const direction = String(signal.direction || '').toUpperCase();
     if (direction !== 'LONG' && direction !== 'SHORT') return null;
     return {
