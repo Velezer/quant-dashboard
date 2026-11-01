@@ -27,7 +27,8 @@
             <a href="#example"><span>03</span> Worked example</a>
             <a href="#status"><span>04</span> Score states</a>
             <a href="#other-models"><span>05</span> Other models</a>
-            <a href="#catalog"><span>06</span> Model reference</a>
+            <a href="#exit-model"><span>06</span> Exit model</a>
+            <a href="#catalog"><span>07</span> Model reference</a>
             <p class="contents-note">Read the number with its model, timeframe, and source.</p>
         </nav>
 
@@ -106,8 +107,17 @@
                 <div class="plain-note"><strong>Compare like with like.</strong> Use the same model version, app, product/category, timeframe, and data-source basis. Proxy candles remain research data; a higher score does not turn them into venue-native execution evidence.</div>
             </section>
 
+            <section id="exit-model" class="guide-section" aria-labelledby="exit-title">
+                <div class="section-heading"><p class="eyebrow">06 / EXIT MODEL</p><h2 id="exit-title">Watch for an opposite entry signal.</h2><p>A qualifying signal can also be an exit cue for a position in the opposite direction.</p></div>
+                <div class="other-models">
+                    <article class="model-explainer"><span class="pill">HOLDING LONG</span><h3>Opposite SHORT signal</h3><p>Consider an exit when the same app, product, ticker, model and timeframe produce a qualifying SHORT signal. Its indicator scores describe that opposite signal.</p></article>
+                    <article class="model-explainer"><span class="pill">HOLDING SHORT</span><h3>Opposite LONG signal</h3><p>Consider an exit when the matching model and timeframe produce a qualifying LONG signal. The cue closes a hypothetical position; it does not open the other side.</p></article>
+                </div>
+                <div class="plain-note"><strong>Check your position.</strong> The dashboard does not track your holdings or place orders. A forming bar is an exit watch until it closes. Stale and non-qualifying signals do not generate a cue. The live cue has no holding-time limit because entry time is not tracked. <a href="/entry-validation">Backtest entry and exit policies per ticker</a>.</div>
+            </section>
+
             <section id="catalog" class="guide-section" aria-labelledby="catalog-title">
-                <div class="section-heading"><p class="eyebrow">06 / YOUR DEPLOYMENT</p><h2 id="catalog-title">Current model reference.</h2><p>Model identities, scales, minimum scores, and history requirements are read from this deployment’s catalog.</p></div>
+                <div class="section-heading"><p class="eyebrow">07 / YOUR DEPLOYMENT</p><h2 id="catalog-title">Current model reference.</h2><p>Model identities, scales, minimum scores, and history requirements are read from this deployment’s catalog.</p></div>
                 <div class="catalog-panel"><div class="catalog-toolbar"><label for="catalog-app">App<select id="catalog-app" disabled><option value="stockbit">Stockbit</option></select></label><label for="catalog-timeframe">Timeframe<select id="catalog-timeframe" disabled><option value="4h">4h</option></select></label><button id="catalog-retry" class="secondary-button" type="button" disabled>Loading catalog…</button></div><p id="catalog-status" class="catalog-status" role="status" aria-live="polite">Loading the model catalog. The guide and example remain available.</p><div id="catalog-models" class="catalog-models" role="region" aria-label="Registered score models" aria-busy="true"></div><noscript><p class="small-text">Enable JavaScript to load your deployment’s model catalog. You can still read every explanation above.</p></noscript></div>
             </section>
             <footer class="guide-footer"><p>Keep the model, timeframe, source, and freshness beside the score.</p><a class="back-link" href="/">Back to screener <span aria-hidden="true">→</span></a></footer>
