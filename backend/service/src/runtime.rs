@@ -549,6 +549,8 @@ impl AppState {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clear();
+        self.last_scan_progress_broadcast_millis
+            .store(0, Ordering::Relaxed);
         *self
             .scan_progress_pct
             .lock()
