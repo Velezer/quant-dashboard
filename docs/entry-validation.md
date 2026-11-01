@@ -19,9 +19,10 @@ and profit factor. Scores rank signals; they are not win probabilities.
 
 The protocol replays the live lead signal and shared score calculation using
 only candles available at that signal. A qualifying signal enters at the next
-bar open and exits at the close after one of the fixed 4, 8, or 12-bar horizons.
-The horizon is selected by mean return on validation data; the final chronological
-20% holdout does not select it. Trades do not overlap or cross a split boundary.
+bar open. The exit-selection window compares fixed 4, 8, and 12-bar timeouts
+with an exit on the first qualifying opposite entry signal, capped by the same
+timeout. The selected policy is evaluated on the final chronological 20% holdout;
+the holdout does not select the policy. Trades do not overlap or cross a split boundary.
 This gives a consistent per-ticker comparison, but manually changing the model,
 score floor, or rules after inspecting the holdout makes that holdout no longer
 independent evidence.
@@ -54,3 +55,18 @@ For pending app verification, resolve listing readiness first. A failed request
 can be retried from the page; completed ticker snapshots remain available after
 reload. An old protocol snapshot stays visible but must be rerun before current
 comparison.
+
+## Conditional exit cues on the screener
+
+A qualifying SHORT entry signal is also an exit cue for a LONG position; a
+qualifying LONG entry signal is an exit cue for a SHORT position. This assumes
+the position uses the same app, product, ticker, entry model, and timeframe as
+the signal. The cue uses the existing entry signal and its indicator scores; it
+does not open a reverse position or place an order.
+
+The dashboard does not know whether a position exists, its entry time, or its
+entry model. A cue therefore asks the user to check that match. A forming bar is
+an exit watch until it closes. Stale or non-qualifying signals produce no exit
+cue. The live cue does not enforce the backtest's selected timeout because that
+requires a recorded position and entry bar. A ticker's validation report must be
+read separately; an exit cue is not evidence that the policy is validated.
