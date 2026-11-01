@@ -12,17 +12,18 @@ lesson only when it will improve future tasks.
   based on queued tickers, not the number of nonempty apps, or one large app
   silently scans serially. The progress API previously exposed one
   `current_scan_symbol`; show all active ticker labels to make concurrency
-  observable.
+  observable. The dashboard's status poll is coarse, so emit a bounded,
+  throttled SSE progress event when parallel workers are active.
 - A market provider's successful request or `last_success` timestamp does not
   prove the final candle was received. For IDX, the observed final 15m bar
   starts at 16:00 WIB and closes at 16:15. Check that stored bar's timestamp
   and OHLCV, then checkpoint only after its scan batch publishes. Keep missing
   final data retryable.
-- Stockbit's higher-timeframe signal path already rolls intraday candles up
-  from 15-minute source bars. Crypto higher-timeframe scores can use a forming
-  rollup when marked as forming; 15m crypto signals remain on completed bars.
-  General chart reads select a stored interval when available, so rollups must
-  preserve source consistency and IDX session boundaries.
+- The smallest signal timeframe is 15m. Roll higher timeframes from stored
+  15m bars for recent buckets so they can be rescored on every scan, and mark a
+  still-forming bucket explicitly. Keep older higher-timeframe history coarse
+  to bound scan work. Preserve source consistency and anchor IDX buckets to its
+  trading session rather than UTC.
 - A scan's global snapshot publication can remove rows for instruments that
   were intentionally skipped. Carry the preserved instrument identities into
   final publication and mark closed-market rows historical.
