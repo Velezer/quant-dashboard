@@ -23,7 +23,7 @@ jobs:
       - name: Crypto 4h rollup tests
         run: cargo test --locked -p rust_chart_api scan_timeframe_crypto_4h_tests
       - name: Parallel scan progress tests
-        run: cargo test --locked -p rust_chart_api active_scan_progress_tests
+        run: cargo test --locked -p rust_chart_api parallel_scan_progress_event_lists_both_active_tickers
       - name: Readiness tests
         run: cargo test --locked -p rust_chart_api signal_alerts::readiness::tests
       - name: Check service
