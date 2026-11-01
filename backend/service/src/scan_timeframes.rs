@@ -5,7 +5,7 @@ use crate::signal_alerts::{InstrumentReadiness, ReadinessIssue, TimeframeReadine
 mod market_inputs;
 use market_inputs::{
     annotate_current_price_provenance, completed_bars, current_time_ns, fresh_current_price,
-    latest_current_price_reference, load_stockbit_signal_candles, CurrentPrice,
+    latest_current_price_reference, load_15m_rolled_signal_candles, CurrentPrice,
 };
 
 #[path = "scan_timeframes/nwe_dss_models.rs"]
@@ -249,27 +249,45 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
                 .as_ref()
                 .map(|metadata| (metadata.source.clone(), metadata.data_provider.clone()))
         };
-        let candles = if is_stockbit_signal_scope {
-            match (source_metadata.as_ref(), current_price.as_ref()) {
-                (Some((source, _)), Some(current_price)) => load_stockbit_signal_candles(
-                    &input,
-                    timeframe,
-                    history_limit,
-                    source,
-                    current_price.signal_bar_time,
-                ),
-                (Some((source, _)), None) => load_series_candles_from_source(
-                    input.market_connection,
-                    input.symbol,
-                    timeframe,
-                    history_limit,
-                    source,
-                )
-                .unwrap_or_default(),
-                _ => Vec::new(),
-            }
-        } else {
-            if let Some((source, _)) = source_metadata.as_ref() {
+        let use_15m_rollup = is_stockbit_signal_scope
+            || (is_crypto_signal_scope && timeframe != "15m");
+        let candles = if let Some((source, _)) = source_metadata.as_ref() {
+            if use_15m_rollup {
+                if let Some(price) = current_price
+                    .as_ref()
+                    .filter(|price| is_stockbit_signal_scope || price.source == *source)
+                {
+                    load_15m_rolled_signal_candles(
+                        &input,
+                        timeframe,
+                        history_limit,
+                        source,
+                        price.signal_bar_time,
+                    )
+                } else {
+                    match load_series_candles_from_source(
+                        input.market_connection,
+                        input.symbol,
+                        timeframe,
+                        history_limit,
+                        source,
+                    ) {
+                        Ok(candles) => candles,
+                        Err(error) => {
+                            readiness.timeframes[diagnosis_index].data_error_count += 1;
+                            readiness.issue(ReadinessIssue {
+                                symbol: input.asset.into(),
+                                reason: "data_error".into(),
+                                timeframe: timeframe.into(),
+                                source: Some(source.to_string()),
+                                error: Some(error.to_string()),
+                                ..ReadinessIssue::default()
+                            });
+                            continue;
+                        }
+                    }
+                }
+            } else {
                 match load_series_candles_from_source(
                     input.market_connection,
                     input.symbol,
@@ -291,9 +309,9 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
                         continue;
                     }
                 }
-            } else {
-                Vec::new()
             }
+        } else {
+            Vec::new()
         };
         let completed_strategy_bars = completed_bars(&candles, duration_ns, now_ns);
         let use_forming_rollup = is_stockbit_signal_scope
