@@ -277,6 +277,7 @@ pub(super) struct AppState {
     /// countdown after a page refresh without restarting the interval.
     pub(super) next_scan_epoch: AtomicU64,
     pub(super) current_scan_symbol: Mutex<String>,
+    pub(super) active_scan_symbols: Mutex<std::collections::BTreeSet<String>>,
     pub(super) scan_progress_pct: Mutex<f64>,
     /// Most recently viewed chart symbol gets first place in the next bounded
     /// hourly history-sync batch.
@@ -303,6 +304,7 @@ impl AppState {
             next_scan_time: Mutex::new(String::new()),
             next_scan_epoch: AtomicU64::new(now_secs().saturating_add(scan_interval_sec)),
             current_scan_symbol: Mutex::new(String::new()),
+            active_scan_symbols: Mutex::new(std::collections::BTreeSet::new()),
             scan_progress_pct: Mutex::new(0.0),
             chart_sync_priority: Mutex::new(None),
             stale_intraday_sync_priority: Mutex::new(StaleSignalSyncPriorityQueue::default()),
@@ -415,6 +417,56 @@ impl AppState {
         }
     }
 
+    fn active_scan_display(active: &std::collections::BTreeSet<String>) -> String {
+        let labels = active.iter().cloned().collect::<Vec<_>>();
+        match labels.len() {
+            0 => String::new(),
+            1 => labels[0].clone(),
+            count => format!("{count} parallel · {}", labels.join(" + ")),
+        }
+    }
+
+    pub(super) fn begin_scan_symbol(&self, symbol: &str) {
+        let mut active = self
+            .active_scan_symbols
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        active.insert(symbol.to_string());
+        *self
+            .current_scan_symbol
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Self::active_scan_display(&active);
+    }
+
+    pub(super) fn finish_scan_symbol(
+        &self,
+        symbol: &str,
+        completed: usize,
+        total: usize,
+    ) {
+        let progress = if total == 0 {
+            0.0
+        } else {
+            (completed.min(total) as f64 / total as f64 * 100.0).clamp(0.0, 100.0)
+        };
+        let mut active = self
+            .active_scan_symbols
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        active.remove(symbol);
+        let mut progress_pct = self
+            .scan_progress_pct
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if progress >= *progress_pct {
+            *progress_pct = progress;
+        }
+        *self
+            .current_scan_symbol
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Self::active_scan_display(&active);
+    }
+
     pub(super) fn update_scan_progress(&self, symbol: &str, completed: usize, total: usize) {
         let progress = if total == 0 {
             0.0
@@ -427,14 +479,20 @@ impl AppState {
             .unwrap_or_else(|error| error.into_inner());
         if progress >= *progress_pct {
             *progress_pct = progress;
-            *self
-                .current_scan_symbol
-                .lock()
-                .unwrap_or_else(|error| error.into_inner()) = symbol.to_string();
+            if symbol.is_empty() {
+                *self
+                    .current_scan_symbol
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = String::new();
+            }
         }
     }
 
     pub(super) fn reset_scan_progress(&self) {
+        self.active_scan_symbols
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
         *self
             .scan_progress_pct
             .lock()
@@ -446,6 +504,7 @@ impl AppState {
     }
 
     pub(super) fn complete_scan_progress(&self) {
+        self.reset_scan_progress();
         self.update_scan_progress("", 1, 1);
     }
 
