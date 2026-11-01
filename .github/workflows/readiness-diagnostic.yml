@@ -1,4 +1,4 @@
-name: Readiness diagnostic
+name: Chart overlay diagnostic
 on:
   pull_request:
     paths:
@@ -12,19 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 4c92136dc84f48d4284f77a71a7a9073e005adaf
+          ref: 833f6728fa00e5dca7466c8864b4efdab460f45c
           persist-credentials: false
       - name: Rust versions
         run: rustc --version && cargo --version
-      - name: Stockbit close and pause tests
-        run: cargo test --locked -p rust_chart_api stockbit_close_tests
-      - name: IDX intraday bucket tests
-        run: cargo test --locked -p rust_chart_api intraday_bucket_tests
-      - name: Crypto 4h rollup tests
-        run: cargo test --locked -p rust_chart_api scan_timeframe_crypto_4h_tests
-      - name: Parallel scan progress tests
-        run: cargo test --locked -p rust_chart_api parallel_scan_progress_event_lists_both_active_tickers
-      - name: Readiness tests
-        run: cargo test --locked -p rust_chart_api signal_alerts::readiness::tests
-      - name: Check service
+      - name: Chart pane clipping test
+        run: node --test frontend/dashboard/scripts/modules/chart-renderer.test.mjs
+      - name: Chart renderer syntax
+        run: node --check frontend/dashboard/scripts/modules/chart-renderer.js
         run: cargo check --locked -p rust_chart_api
