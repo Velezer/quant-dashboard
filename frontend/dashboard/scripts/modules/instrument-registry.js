@@ -50,8 +50,8 @@ export function installInstrumentRegistry() {
                 stockbit_public_symbol_sitemap: ['Legacy Stockbit symbol sitemap', 'Imported from the earlier public Stockbit symbol sitemap; the current refresh uses the IDX listed-company directory.'],
                 pintu_retail_market_app_listing: ['Pintu Retail market listing', 'Discovered from Pintu Retail’s public market listing.'],
                 pintu_pro_spot_app_listing: ['Pintu Pro Spot market listing', 'Discovered from Pintu Pro Spot’s public market listing.'],
-                pintu_pro_futures_app_listing: ['Pintu Pro Futures market listing', 'Discovered from Pintu Pro Futures’ public market listing.'],
-                'pintu_regulator_approved_code_list+app_listing': ['Pintu code list + app listing', 'The ticker began in the saved regulator-approved Pintu code list and was later seen in the Pintu app listing.'],
+                pintu_pro_futures_app_listing: ['Pintu Futures ticker feed', 'Seen in Pintu’s public ticker feed. The feed can retain unavailable contracts; app availability is not independently confirmed.'],
+                'pintu_regulator_approved_code_list+app_listing': ['Pintu code list + ticker feed', 'Seen in the saved regulator-approved code list and Pintu’s ticker feed. Neither establishes current app availability.'],
                 pintu_regulator_approved_code_list: ['Saved Pintu futures code list', 'Present in the saved regulator-approved futures code list. This alone does not confirm a current Pintu app listing.'],
                 tokocrypto_live_symbols_api: ['Tokocrypto public symbols API', 'Imported from Tokocrypto’s public symbols API.'],
                 pluang_public_spot_market_snapshot: ['Pluang public Spot snapshot', 'Imported from the saved public Pluang Spot listing snapshot.'],
@@ -124,10 +124,17 @@ export function installInstrumentRegistry() {
                     const category = instrumentRegistryCategoryLabels[row.asset_category_id] || row.asset_category_id || 'Asset type not recorded';
                     const source = instrumentRegistrySourceDetails(row);
                     const sourceUrl = instrumentRegistrySafeSourceUrl(row.source_url);
-                    const listing = instrumentRegistryStatusLabels[row.listing_status] || row.listing_status || 'Status not recorded';
-                    const verification = row.venue_verified
-                        ? '<span class="registry-secondary registry-verified">Venue listing verified</span>'
-                        : '<span class="registry-secondary registry-unverified">Venue listing unverified</span>';
+                    const isPintuFuturesFeed = row.exchange_id === 'pintu'
+                        && row.product_id === 'pintu_pro_futures'
+                        && source.source.includes('app_listing');
+                    const listing = isPintuFuturesFeed && row.listing_status === 'venue_active'
+                        ? 'Ticker feed reported'
+                        : instrumentRegistryStatusLabels[row.listing_status] || row.listing_status || 'Status not recorded';
+                    const verification = isPintuFuturesFeed && row.venue_verified
+                        ? '<span class="registry-secondary registry-unverified">Current app availability unconfirmed</span>'
+                        : row.venue_verified
+                            ? '<span class="registry-secondary registry-verified">Venue listing verified</span>'
+                            : '<span class="registry-secondary registry-unverified">Venue listing unverified</span>';
                     const execution = row.execution_supported
                         ? 'Execution support configured'
                         : 'Execution support not configured';
