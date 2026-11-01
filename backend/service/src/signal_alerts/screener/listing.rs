@@ -259,6 +259,7 @@ pub(crate) fn list_signal_screener_page(
     let mut query_rows = statement.query(rusqlite::params_from_iter(query_values.iter()))?;
     let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
     let mut stale_price_signal_count = 0usize;
+    let mut stale_score_signal_count = 0usize;
     let mut matching_rows = 0usize;
     let mut signals = Vec::with_capacity(page_size);
     while let Some(row) = query_rows.next()? {
