@@ -20,4 +20,3 @@ jobs:
         run: node --test frontend/dashboard/scripts/modules/chart-renderer.test.mjs
       - name: Chart renderer syntax
         run: node --check frontend/dashboard/scripts/modules/chart-renderer.js
-        run: cargo check --locked -p rust_chart_api
