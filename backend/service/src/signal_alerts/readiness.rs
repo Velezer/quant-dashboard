@@ -181,7 +181,8 @@ impl SignalReadiness {
                 ..ProductReadiness::default()
             });
         product.instrument_count += 1;
-        product.checked_at = now;
+        product.first_checked_at = earliest_nonzero(product.first_checked_at, now);
+        product.checked_at = product.checked_at.max(now);
         match instrument.price_status {
             "fresh" => product.fresh_price_count += 1,
             "stale" => product.stale_price_count += 1,
