@@ -1,6 +1,21 @@
 use super::*;
 use rusqlite::OptionalExtension;
 
+/// Saved Pintu futures signals must still belong to an active verified app
+/// contract. The registry may change between scans, so check it at read time.
+const PINTU_FUTURES_REGISTRY_GUARD: &str = "(signal_screener_rows.exchange_id <> 'pintu'
+    OR signal_screener_rows.product_id <> 'pintu_pro_futures'
+    OR EXISTS (
+        SELECT 1 FROM app.instruments AS registered
+         WHERE registered.exchange_id = signal_screener_rows.exchange_id
+           AND registered.product_id = signal_screener_rows.product_id
+           AND registered.asset_category_id = signal_screener_rows.asset_category_id
+           AND registered.symbol = signal_screener_rows.symbol
+           AND registered.is_active = 1
+           AND registered.venue_verified = 1
+           AND registered.listing_status IN ('venue_active', 'public_listed_snapshot')
+    ))";
+
 fn score_model_by_strategy() -> std::collections::HashMap<&'static str, &'static str> {
     crate::master_data::master_data_records("signal_strategies")
         .iter()
@@ -171,6 +186,7 @@ pub(crate) fn list_signal_screener_page(
                 score_basis_json,current_price,price_timeframe,price_bar_time,signal_bar_time,
                 data_source,data_provider,data_quality,evidence_status,evidence_source,last_updated_at
            FROM signals.signal_screener_rows WHERE 1=1{where_clause}
+            AND {PINTU_FUTURES_REGISTRY_GUARD}
           ORDER BY {display_order}"
     );
     let mut statement = connection.prepare(&query)?;
@@ -325,12 +341,13 @@ pub(crate) fn count_current_signal_screener_rows(
     let master_data = crate::master_data::signal_screener_master_data_for_connection(&transaction)?;
     let mut signal_count = 0usize;
     {
-        let mut statement = transaction.prepare(
+        let mut statement = transaction.prepare(&format!(
             "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,
                     signal_strategy_id,timeframe,score,score_basis_json,price_timeframe,
                     price_bar_time,last_updated_at
-               FROM signals.signal_screener_rows",
-        )?;
+               FROM signals.signal_screener_rows
+              WHERE {PINTU_FUTURES_REGISTRY_GUARD}",
+        ))?;
         let mut rows = statement.query([])?;
         while let Some(row) = rows.next()? {
             let strategy = row.get::<_, String>(5)?;
