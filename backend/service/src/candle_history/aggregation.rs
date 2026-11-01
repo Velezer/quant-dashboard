@@ -109,8 +109,7 @@ pub(crate) fn aggregate_candles_from_base_source_with_cap_and_range(
     for bar in source {
         let local_ts = bar.time.saturating_add(offset);
         let local_bucket = if is_intraday {
-            let day_start = local_ts.div_euclid(day_ns) * day_ns;
-            day_start + (local_ts - day_start).div_euclid(duration_ns) * duration_ns
+            intraday_aggregation_bucket_start(local_ts, duration_ns, symbol)
         } else if timeframe == "1d" || timeframe == "1w" {
             let day_index = local_ts.div_euclid(day_ns);
             if timeframe == "1w" {
@@ -182,6 +181,40 @@ pub(crate) fn required_aggregation_source_candles(
             MAX_AGGREGATION_SOURCE_CANDLES,
         )
     })
+}
+
+fn intraday_aggregation_bucket_start(local_time_ns: i64, duration_ns: i64, symbol: &str) -> i64 {
+    let day_ns = NANOS_PER_DAY;
+    let day_start = local_time_ns.div_euclid(day_ns) * day_ns;
+    let session_anchored = symbol.ends_with(".JK")
+        && duration_ns >= 2 * quant_core::SECONDS_PER_HOUR * NANOS_PER_SECOND;
+    let anchor = if session_anchored {
+        day_start + 9 * quant_core::SECONDS_PER_HOUR * NANOS_PER_SECOND
+    } else {
+        day_start
+    };
+    anchor + (local_time_ns - anchor).div_euclid(duration_ns) * duration_ns
+}
+
+#[cfg(test)]
+mod intraday_bucket_tests {
+    use super::*;
+
+    #[test]
+    fn idx_higher_timeframes_start_at_the_opening_session() {
+        let hour = quant_core::SECONDS_PER_HOUR * NANOS_PER_SECOND;
+        let four_hours = 4 * hour;
+        assert_eq!(intraday_aggregation_bucket_start(9 * hour, four_hours, "BBCA.JK"), 9 * hour);
+        assert_eq!(intraday_aggregation_bucket_start(13 * hour, four_hours, "BBCA.JK"), 13 * hour);
+        assert_eq!(intraday_aggregation_bucket_start(16 * hour, four_hours, "BBCA.JK"), 13 * hour);
+    }
+
+    #[test]
+    fn crypto_higher_timeframes_remain_utc_anchored() {
+        let hour = quant_core::SECONDS_PER_HOUR * NANOS_PER_SECOND;
+        let fifteen_minutes = 15 * quant_core::SECONDS_PER_MINUTE * NANOS_PER_SECOND;
+        assert_eq!(intraday_aggregation_bucket_start(fifteen_minutes, 4 * hour, "BTCUSDT"), 0);
+    }
 }
 
 fn aggregation_source_candle_limit_with_cap(
