@@ -5,6 +5,18 @@ use super::*;
 mod shared_market_history_tests;
 
 type RegisteredInstrument = (String, String, String, String, String, String);
+
+#[derive(Clone)]
+struct StockbitCloseScanCheckpoint {
+    product_id: String,
+    asset_category_id: String,
+    symbol: String,
+    session_day: i64,
+    final_bar_time: i64,
+    source: String,
+    input_fingerprint: String,
+}
+
 const SIGNAL_SCAN_APP_ORDER: [&str; 4] = ["pintu", "pluang", "tokocrypto", "stockbit"];
 const SIGNAL_SCAN_PUBLISH_BATCH_SIZE: usize = 25;
 #[cfg(not(test))]
@@ -22,6 +34,8 @@ struct ScanCycleOutput {
     readiness: signal_alerts::SignalReadiness,
     score_updates: Vec<signal_alerts::StockbitSignalScoreUpdate>,
     scanned_instruments: Vec<(String, String, String)>,
+    preserved_stockbit: std::collections::BTreeSet<(String, String, String)>,
+    close_checkpoints: Vec<StockbitCloseScanCheckpoint>,
     generated_plan_count: usize,
     price_data_unavailable_count: usize,
     app_workers: Vec<Value>,
@@ -37,6 +51,8 @@ impl ScanCycleOutput {
             readiness: signal_alerts::SignalReadiness::new(),
             score_updates: Vec::new(),
             scanned_instruments: Vec::new(),
+            preserved_stockbit: std::collections::BTreeSet::new(),
+            close_checkpoints: Vec::new(),
             generated_plan_count: 0,
             price_data_unavailable_count: 0,
             app_workers: Vec::new(),
@@ -57,6 +73,8 @@ impl ScanCycleOutput {
         self.score_updates.append(&mut other.score_updates);
         self.scanned_instruments
             .append(&mut other.scanned_instruments);
+        self.preserved_stockbit.extend(other.preserved_stockbit);
+        self.close_checkpoints.append(&mut other.close_checkpoints);
         self.generated_plan_count += other.generated_plan_count;
         self.price_data_unavailable_count += other.price_data_unavailable_count;
         self.app_workers.append(&mut other.app_workers);
@@ -123,6 +141,8 @@ pub(super) fn run_rust_scan_inner(
     for (exchange_id, instruments) in app_registrations {
         workers.push(ScanWorker::new(exchange_id, instruments));
     }
+    #[cfg(not(test))]
+    ensure_stockbit_close_checkpoint_schema(app_connection)?;
     let mut output = ScanCycleOutput::new();
     let scan_started = std::time::Instant::now();
     let completed_count = std::sync::atomic::AtomicUsize::new(0);
@@ -174,6 +194,7 @@ pub(super) fn run_rust_scan_inner(
                 "unavailable_price_instruments": worker.result.unavailable_price_count,
                 "generated_plans": worker.result.generated_plan_count,
                 "signal_rows": worker.result.signal_row_count,
+                "paused_market_closed_count": worker.result.paused_market_closed_count,
             }));
         }
     }
@@ -264,6 +285,7 @@ pub(super) fn run_rust_scan_inner(
                         app_result.0.unavailable_price_count += result.unavailable_price_count;
                         app_result.0.generated_plan_count += result.generated_plan_count;
                         app_result.0.signal_row_count += result.signal_row_count;
+                        app_result.0.paused_market_closed_count += result.paused_market_closed_count;
                         app_result.1 = Some(
                             app_result
                                 .1
@@ -312,6 +334,10 @@ pub(super) fn run_rust_scan_inner(
                                 &batch.standalone_signal_rows,
                                 &batch.score_updates,
                             )?;
+                            #[cfg(not(test))]
+                            for checkpoint in &batch.close_checkpoints {
+                                save_stockbit_close_scan_checkpoint(&app_connection, checkpoint)?;
+                            }
                             eprintln!(
                                 "[ScanWorker] Published {exchange_id} batch: {} instruments, {batch_signal_count} signal rows.",
                                 batch.scanned_instruments.len()
@@ -334,6 +360,7 @@ pub(super) fn run_rust_scan_inner(
                             aggregate.0.unavailable_price_count += result.unavailable_price_count;
                             aggregate.0.generated_plan_count += result.generated_plan_count;
                             aggregate.0.signal_row_count += result.signal_row_count;
+                            aggregate.0.paused_market_closed_count += result.paused_market_closed_count;
                             if let Some(started_at) = started_at {
                                 aggregate.1 = Some(
                                     aggregate.1.map_or(started_at, |first| first.min(started_at)),
@@ -378,6 +405,7 @@ pub(super) fn run_rust_scan_inner(
                 "unavailable_price_instruments": result.unavailable_price_count,
                 "generated_plans": result.generated_plan_count,
                 "signal_rows": result.signal_row_count,
+                "paused_market_closed_count": result.paused_market_closed_count,
                 "elapsed_ms": elapsed.as_millis(),
             }));
         }
@@ -411,6 +439,7 @@ pub(super) fn run_rust_scan_inner(
         output.price_data_unavailable_count,
         registered_count,
         Some(&readiness),
+        &output.preserved_stockbit,
     )?;
     let total_signals = signals.len();
     let signal_master_data = signal_screener_master_data_for_connection(app_connection)?;
@@ -461,11 +490,172 @@ pub(super) fn run_rust_scan_inner(
 }
 
 #[derive(Default)]
+fn expected_stockbit_closed_session_day(now_seconds: i64) -> Option<i64> {
+    let local_seconds = now_seconds.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
+    let day = local_seconds.div_euclid(quant_core::SECONDS_PER_DAY);
+    let weekday = (day + 4).rem_euclid(7); // Sunday = 0, Monday = 1.
+    let second_of_day = local_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
+    if (1..=5).contains(&weekday) {
+        (second_of_day >= 16 * 60 * 60 + 15 * 60).then_some(day)
+    } else if weekday == 6 {
+        Some(day - 1)
+    } else if weekday == 0 {
+        Some(day - 2)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(test))]
+fn ensure_stockbit_close_checkpoint_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS signals.stockbit_close_scan_checkpoints (
+             product_id TEXT NOT NULL,
+             asset_category_id TEXT NOT NULL,
+             symbol TEXT NOT NULL,
+             session_day INTEGER NOT NULL,
+             final_bar_time INTEGER NOT NULL,
+             source TEXT NOT NULL,
+             input_fingerprint TEXT NOT NULL,
+             scanned_at INTEGER NOT NULL,
+             PRIMARY KEY(product_id,asset_category_id,symbol)
+         ) WITHOUT ROWID;",
+    )
+}
+
+#[cfg(not(test))]
+fn stockbit_closed_session_checkpoint(
+    connection: &Connection,
+    storage_symbol: &str,
+    exchange_id: &str,
+    product_id: &str,
+    asset_category_id: &str,
+    symbol: &str,
+    now_seconds: i64,
+) -> Result<Option<StockbitCloseScanCheckpoint>, rusqlite::Error> {
+    let Some(session_day) = expected_stockbit_closed_session_day(now_seconds) else {
+        return Ok(None);
+    };
+    let Some(state) = product_candle_scan_state_at(
+        connection, storage_symbol, exchange_id, product_id, "15m", now_seconds,
+    )? else {
+        return Ok(None);
+    };
+    let Some(final_bar_time) = state.latest_bar_time else {
+        return Ok(None);
+    };
+    let bar_seconds = final_bar_time.div_euclid(NANOS_PER_SECOND);
+    let local_bar_seconds = bar_seconds.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
+    let bar_day = local_bar_seconds.div_euclid(quant_core::SECONDS_PER_DAY);
+    let bar_second_of_day = local_bar_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
+    if bar_day != session_day
+        || bar_second_of_day != 16 * 60 * 60
+        || bar_seconds.saturating_add(15 * 60) > now_seconds
+    {
+        return Ok(None);
+    }
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&state.source, &mut hasher);
+    std::hash::Hash::hash(&state.data_provider, &mut hasher);
+    let mut statement = connection.prepare(
+        "SELECT ts,open,high,low,close,volume FROM bars
+          WHERE symbol=?1 AND interval='15m' AND source=?2 ORDER BY ts",
+    )?;
+    let mut rows = statement.query(params![storage_symbol, state.source])?;
+    let mut found_latest = false;
+    while let Some(row) = rows.next()? {
+        let timestamp = row.get::<_, i64>(0)?;
+        let open = row.get::<_, f64>(1)?;
+        let high = row.get::<_, f64>(2)?;
+        let low = row.get::<_, f64>(3)?;
+        let close = row.get::<_, f64>(4)?;
+        let volume = row.get::<_, f64>(5)?;
+        std::hash::Hash::hash(&timestamp, &mut hasher);
+        std::hash::Hash::hash(&open.to_bits(), &mut hasher);
+        std::hash::Hash::hash(&high.to_bits(), &mut hasher);
+        std::hash::Hash::hash(&low.to_bits(), &mut hasher);
+        std::hash::Hash::hash(&close.to_bits(), &mut hasher);
+        std::hash::Hash::hash(&volume.to_bits(), &mut hasher);
+        found_latest |= timestamp == final_bar_time;
+    }
+    if !found_latest {
+        return Ok(None);
+    }
+    Ok(Some(StockbitCloseScanCheckpoint {
+        product_id: product_id.to_string(),
+        asset_category_id: asset_category_id.to_string(),
+        symbol: symbol.to_string(),
+        session_day,
+        final_bar_time,
+        source: state.source,
+        input_fingerprint: format!("{:016x}", std::hash::Hasher::finish(&hasher)),
+    }))
+}
+
+#[cfg(not(test))]
+fn stockbit_close_checkpoint_is_saved(
+    connection: &Connection,
+    checkpoint: &StockbitCloseScanCheckpoint,
+) -> Result<bool, rusqlite::Error> {
+    connection.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM signals.stockbit_close_scan_checkpoints
+              WHERE product_id=?1 AND asset_category_id=?2 AND symbol=?3
+                AND session_day=?4 AND final_bar_time=?5 AND source=?6
+                AND input_fingerprint=?7
+         )",
+        params![
+            checkpoint.product_id,
+            checkpoint.asset_category_id,
+            checkpoint.symbol,
+            checkpoint.session_day,
+            checkpoint.final_bar_time,
+            checkpoint.source,
+            checkpoint.input_fingerprint,
+        ],
+        |row| row.get(0),
+    )
+}
+
+#[cfg(not(test))]
+fn save_stockbit_close_scan_checkpoint(
+    connection: &Connection,
+    checkpoint: &StockbitCloseScanCheckpoint,
+) -> Result<(), rusqlite::Error> {
+    connection.execute(
+        "INSERT INTO signals.stockbit_close_scan_checkpoints(
+             product_id,asset_category_id,symbol,session_day,final_bar_time,source,
+             input_fingerprint,scanned_at
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+         ON CONFLICT(product_id,asset_category_id,symbol) DO UPDATE SET
+             session_day=excluded.session_day, final_bar_time=excluded.final_bar_time,
+             source=excluded.source, input_fingerprint=excluded.input_fingerprint,
+             scanned_at=excluded.scanned_at",
+        params![
+            checkpoint.product_id,
+            checkpoint.asset_category_id,
+            checkpoint.symbol,
+            checkpoint.session_day,
+            checkpoint.final_bar_time,
+            checkpoint.source,
+            checkpoint.input_fingerprint,
+            now_secs() as i64,
+        ],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "run/stockbit_close_tests.rs"]
+mod stockbit_close_tests;
+
 struct AppScanResult {
     fresh_price_count: usize,
     unavailable_price_count: usize,
     generated_plan_count: usize,
     signal_row_count: usize,
+    paused_market_closed_count: usize,
 }
 
 struct ScanWorker {
@@ -699,6 +889,7 @@ fn scan_registered_app(
         unavailable_price_count: 0,
         generated_plan_count: 0,
         signal_row_count: 0,
+        paused_market_closed_count: 0,
     };
     for (instrument_exchange, product_id, category_id, sym, asset, underlying) in instruments {
         if instrument_exchange != exchange_id {
@@ -776,6 +967,30 @@ fn scan_registered_app(
         let (market_connection, market_symbol) = market_selection;
         let connection = &market_connection;
         let is_idx = instrument_exchange == "stockbit" && category_id == "idx_stock";
+        #[cfg(not(test))]
+        if is_idx {
+            if let Some(checkpoint) = stockbit_closed_session_checkpoint(
+                connection,
+                &market_symbol,
+                &instrument_exchange,
+                &product_id,
+                &category_id,
+                &asset,
+                now_secs().min(i64::MAX as u64) as i64,
+            )? {
+                if stockbit_close_checkpoint_is_saved(app_connection, &checkpoint)? {
+                    output.scanned_instruments.pop();
+                    output.preserved_stockbit.insert((
+                        product_id.clone(),
+                        category_id.clone(),
+                        asset.clone(),
+                    ));
+                    app_result.paused_market_closed_count += 1;
+                    continue;
+                }
+                output.close_checkpoints.push(checkpoint);
+            }
+        }
         let is_tokenized = instrument_exchange == "tokocrypto" && category_id == "tokenized_stock";
         let retained_stockbit_signal_rows = if is_idx {
             signal_alerts::stockbit_signal_score_rows_for_symbol(app_connection, &asset)?
