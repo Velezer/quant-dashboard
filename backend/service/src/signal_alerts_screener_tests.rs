@@ -505,13 +505,14 @@ fn pintu_futures_screener_and_count_require_current_verified_product_listing() {
         ("AAA", "pintu_pro_futures", "crypto_perpetual", "venue_active", 1, 1),
         ("BBB", "pintu_pro_futures", "crypto_perpetual", "venue_delisted", 0, 1),
         ("CCC", "pintu_pro_futures", "crypto_perpetual", "venue_active", 1, 1),
+        ("GALA", "pintu_pro_futures", "crypto_perpetual", "venue_active", 1, 1),
         ("INACTIVE", "pintu_pro_futures", "crypto_perpetual", "venue_active", 1, 0),
         ("UNVERIFIED", "pintu_pro_futures", "crypto_perpetual", "venue_active", 0, 1),
         ("WRONG", "pintu_pro_spot", "crypto_spot", "venue_active", 1, 1),
     ] {
         insert_pintu_registry_fixture(&connection, symbol, product, category, status, verified, active);
     }
-    let mut rows = ["AAA", "BBB", "CCC", "INACTIVE", "UNVERIFIED", "WRONG", "MISSING"]
+    let mut rows = ["AAA", "BBB", "CCC", "GALA", "INACTIVE", "UNVERIFIED", "WRONG", "MISSING"]
         .into_iter()
         .map(|symbol| {
             let mut row = stored_screener_row(symbol, fresh_bar);
