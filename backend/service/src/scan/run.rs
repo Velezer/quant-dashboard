@@ -919,7 +919,7 @@ fn scan_registered_app(
             asset.clone(),
         ));
         let instrument_started = std::time::Instant::now();
-        let scan_label = format!("{exchange_id} · {sym}");
+        let scan_label = format!("{exchange_id} · {product_id} · {sym}");
         if let Some(state) = sync_state {
             state.begin_scan_symbol(&scan_label);
         }
