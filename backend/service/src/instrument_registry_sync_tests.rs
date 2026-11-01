@@ -341,3 +341,65 @@ fn tokocrypto_next_rows_and_duplicate_stock_markets_reconcile_to_app_tickers() {
         ]
     );
 }
+
+#[test]
+fn pintu_announced_delistings_apply_even_during_feed_failure() {
+    let connection = fixture_database();
+    for (id, exchange, product, category, symbol, venue, source) in [
+        ("pintu.pintu_pro_futures.1inch", "pintu", "pintu_pro_futures", "crypto_perpetual", "1INCH", "1INCHUSDT-PERP", "pintu_pro_futures_app_listing"),
+        ("pintu.pintu_pro_futures.gala", "pintu", "pintu_pro_futures", "crypto_perpetual", "GALA", "", "pintu_pro_futures_app_listing"),
+        ("pintu.pintu_pro_futures.btc", "pintu", "pintu_pro_futures", "crypto_perpetual", "BTC", "BTCUSDT-PERP", "pintu_pro_futures_app_listing"),
+        ("pintu.pintu_retail_spot.1inch", "pintu", "pintu_retail_spot", "crypto_spot", "1INCH", "1INCH/IDR", "fixture"),
+        ("pluang.pluang_perpetual.1inch", "pluang", "pluang_perpetual", "crypto_perpetual", "1INCH", "1INCHUSDT", "fixture"),
+    ] {
+        connection.execute(
+            "INSERT INTO instruments(instrument_id,exchange_id,product_id,asset_category_id,
+                symbol,venue_symbol,underlying_symbol,storage_symbol,quote_currency,listing_status,
+                venue_verified,execution_supported,registration_source,price_source_policy,
+                contract_metadata_json,registered_at,updated_at,is_active)
+             VALUES(?1,?2,?3,?4,?5,?6,?5,?5,'USDT','venue_active',1,1,?7,'proxy','{}',1,1,1)",
+            rusqlite::params![id, exchange, product, category, symbol, venue, source],
+        ).unwrap();
+    }
+    connection.execute(
+        "INSERT INTO bars(symbol,interval,source,ts,open,high,low,close,volume)
+         VALUES('1INCH-USD','1d','proxy',1,10,12,9,11,100)",
+        [],
+    ).unwrap();
+
+    let failed = super::sync::sync_pintu_with_fetch(&connection, || Err("synthetic feed outage".into()));
+    assert_eq!(failed.deactivated, 2);
+    assert!(failed.error.as_deref().unwrap().contains("synthetic feed outage"));
+    for id in ["pintu.pintu_pro_futures.1inch", "pintu.pintu_pro_futures.gala"] {
+        let state: (String, i64, i64) = connection.query_row(
+            "SELECT listing_status,venue_verified,execution_supported FROM instruments WHERE instrument_id=?1",
+            [id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(state, ("venue_delisted".into(), 0, 0), "{id}");
+    }
+    for id in ["pintu.pintu_pro_futures.btc", "pintu.pintu_retail_spot.1inch", "pluang.pluang_perpetual.1inch"] {
+        let state: (String, i64, i64) = connection.query_row(
+            "SELECT listing_status,venue_verified,execution_supported FROM instruments WHERE instrument_id=?1",
+            [id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(state, ("venue_active".into(), 1, 1), "{id}");
+    }
+    assert_eq!(connection.query_row("SELECT COUNT(*) FROM bars WHERE symbol='1INCH-USD'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+
+    let repeat = super::sync::sync_pintu_with_fetch(&connection, || Err("still unavailable".into()));
+    assert_eq!(repeat.deactivated, 0);
+
+    // Even if a provider again reports the old ticker, reconciliation cannot
+    // reactivate it; an unaffected futures contract remains active.
+    let reported = vec![
+        crate::pintu_listing::Listing { product_id: "pintu_pro_futures", base: "1INCH".into(), venue_symbol: "1INCHUSDT-PERP".into(), quote: "USDT", category: "crypto_perpetual", source_url: crate::pintu_listing::PRO_FUTURES_URL },
+        crate::pintu_listing::Listing { product_id: "pintu_pro_futures", base: "BTC".into(), venue_symbol: "BTCUSDT-PERP".into(), quote: "USDT", category: "crypto_perpetual", source_url: crate::pintu_listing::PRO_FUTURES_URL },
+    ];
+    let refreshed = super::sync::sync_pintu_with_fetch(&connection, || Ok(reported));
+    assert!(refreshed.error.is_none(), "{:?}", refreshed.error);
+    let state: (String, i64) = connection.query_row(
+        "SELECT listing_status,venue_verified FROM instruments WHERE instrument_id='pintu.pintu_pro_futures.1inch'",
+        [], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).unwrap();
+    assert_eq!(state, ("venue_delisted".into(), 0));
+}

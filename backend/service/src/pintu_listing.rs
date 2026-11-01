@@ -190,10 +190,136 @@ const PINTU_PRO_FUTURES_DELISTED_SYMBOLS: &[&str] = &[
     "GTCUSDT-PERP",
 ];
 
-/// Pintu's February 23, 2026 notice delisted ARUSDT-PERP effective March 2,
-/// 2026. The public ticker response may retain it after the contract delists.
-/// Source: https://pintu.co.id/blog/pengumuman-delisting-50-kontrak-futures-march26.
-const PINTU_PRO_FUTURES_MARCH_2026_DELISTED_SYMBOLS: &[&str] = &["ARUSDT-PERP"];
+/// Pintu delisted these 50 contracts effective March 2, 2026.
+/// Source: <https://pintu.co.id/blog/pengumuman-delisting-50-kontrak-futures-march26>.
+const PINTU_PRO_FUTURES_MARCH_2_2026_DELISTED_SYMBOLS: &[&str] = &[
+    "MBOXUSDT-PERP",
+    "BICOUSDT-PERP",
+    "GRTUSDT-PERP",
+    "SYSUSDT-PERP",
+    "GALAUSDT-PERP",
+    "THETAUSDT-PERP",
+    "IOTXUSDT-PERP",
+    "VANRYUSDT-PERP",
+    "HIGHUSDT-PERP",
+    "JOEUSDT-PERP",
+    "SANDUSDT-PERP",
+    "ASTRUSDT-PERP",
+    "DIAUSDT-PERP",
+    "ARKMUSDT-PERP",
+    "AXSUSDT-PERP",
+    "ATAUSDT-PERP",
+    "KSMUSDT-PERP",
+    "COTIUSDT-PERP",
+    "DYDXUSDT-PERP",
+    "FIDAUSDT-PERP",
+    "ACHUSDT-PERP",
+    "TLMUSDT-PERP",
+    "SKLUSDT-PERP",
+    "EDUUSDT-PERP",
+    "ENSUSDT-PERP",
+    "API3USDT-PERP",
+    "LPTUSDT-PERP",
+    "BELUSDT-PERP",
+    "TRUUSDT-PERP",
+    "RPLUSDT-PERP",
+    "NEOUSDT-PERP",
+    "XVSUSDT-PERP",
+    "NMRUSDT-PERP",
+    "KAVAUSDT-PERP",
+    "AUCTIONUSDT-PERP",
+    "IMXUSDT-PERP",
+    "ARUSDT-PERP",
+    "QTUMUSDT-PERP",
+    "CELOUSDT-PERP",
+    "YGGUSDT-PERP",
+    "SUSHIUSDT-PERP",
+    "DENTUSDT-PERP",
+    "IOTAUSDT-PERP",
+    "BSVUSDT-PERP",
+    "MINAUSDT-PERP",
+    "ENJUSDT-PERP",
+    "DUSKUSDT-PERP",
+    "ALICEUSDT-PERP",
+    "TRBUSDT-PERP",
+    "JASMYUSDT-PERP",
+];
+
+/// Pintu delisted these 37 contracts effective March 26, 2026.
+/// Source: <https://pintu.co.id/blog/pintu-futures-delisting-26-maret-2026>.
+const PINTU_PRO_FUTURES_MARCH_26_2026_DELISTED_SYMBOLS: &[&str] = &[
+    "ALTUSDT-PERP",
+    "ROSEUSDT-PERP",
+    "CHZUSDT-PERP",
+    "CAKEUSDT-PERP",
+    "SUPERUSDT-PERP",
+    "COMPUSDT-PERP",
+    "LDOUSDT-PERP",
+    "SEIUSDT-PERP",
+    "RSRUSDT-PERP",
+    "LSKUSDT-PERP",
+    "XTZUSDT-PERP",
+    "1INCHUSDT-PERP",
+    "SANTOSUSDT-PERP",
+    "APEUSDT-PERP",
+    "SUNUSDT-PERP",
+    "ETCUSDT-PERP",
+    "AERGOUSDT-PERP",
+    "SPELLUSDT-PERP",
+    "RAREUSDT-PERP",
+    "CFXUSDT-PERP",
+    "TWTUSDT-PERP",
+    "ALGOUSDT-PERP",
+    "VETUSDT-PERP",
+    "STXUSDT-PERP",
+    "CRVUSDT-PERP",
+    "FLUXUSDT-PERP",
+    "STORJUSDT-PERP",
+    "WOOUSDT-PERP",
+    "MAVUSDT-PERP",
+    "HOTUSDT-PERP",
+    "ORDIUSDT-PERP",
+    "GMTUSDT-PERP",
+    "GLMUSDT-PERP",
+    "RDNTUSDT-PERP",
+    "SSVUSDT-PERP",
+    "IOSTUSDT-PERP",
+    "USTCUSDT-PERP",
+];
+
+/// Pintu delisted OM effective February 23, 2026.
+/// Source: <https://pintu.co.id/blog/futures-delisting-token-omusdt-perp>.
+const PINTU_PRO_FUTURES_OM_DELISTED_SYMBOLS: &[&str] = &["OMUSDT-PERP"];
+
+/// Pintu's 2025 single and small-batch futures delisting notices:
+/// <https://pintu.co.id/blog/delisting-token-alpha-di-pintu-futures>
+/// <https://pintu.co.id/blog/pintu-futures-delisting-hifi-dan-bake-3okt25>
+/// <https://pintu.co.id/blog/futures-delisting-flm-perp-november-2025>
+/// <https://pintu.co.id/blog/delisting-beamxusdt-ghstusdt-perp-pintu-november-2025>
+/// <https://pintu.co.id/blog/futures-delisting-token-quickusdt-perp-desember-2025>
+/// <https://pintu.co.id/blog/pengumuman-delisting-token-voxelusdt-perp-di-pintu-futures>
+const PINTU_PRO_FUTURES_2025_DELISTED_SYMBOLS: &[&str] = &[
+    "ALPHAUSDT-PERP",
+    "HIFIUSDT-PERP",
+    "BAKEUSDT-PERP",
+    "FLMUSDT-PERP",
+    "PERPUSDT-PERP",
+    "BEAMXUSDT-PERP",
+    "GHSTUSDT-PERP",
+    "QUICKUSDT-PERP",
+    "SXPUSDT-PERP",
+    "VOXELUSDT-PERP",
+];
+
+/// Known official delistings are excluded until Pintu confirms a relisting.
+/// These notices do not establish that every other ticker is tradable.
+pub(crate) fn is_announced_delisted_pintu_future(symbol: &str) -> bool {
+    PINTU_PRO_FUTURES_DELISTED_SYMBOLS.contains(&symbol)
+        || PINTU_PRO_FUTURES_MARCH_2_2026_DELISTED_SYMBOLS.contains(&symbol)
+        || PINTU_PRO_FUTURES_MARCH_26_2026_DELISTED_SYMBOLS.contains(&symbol)
+        || PINTU_PRO_FUTURES_OM_DELISTED_SYMBOLS.contains(&symbol)
+        || PINTU_PRO_FUTURES_2025_DELISTED_SYMBOLS.contains(&symbol)
+}
 
 pub fn parse_pro_futures(body: &[u8]) -> Result<Vec<Listing>, String> {
     let value: Value = serde_json::from_slice(body).map_err(|e| e.to_string())?;
@@ -213,9 +339,7 @@ pub fn parse_pro_futures(body: &[u8]) -> Result<Vec<Listing>, String> {
         if key != symbol {
             return Err("Pintu Pro Futures key mismatch".into());
         }
-        if PINTU_PRO_FUTURES_DELISTED_SYMBOLS.contains(&symbol)
-            || PINTU_PRO_FUTURES_MARCH_2026_DELISTED_SYMBOLS.contains(&symbol)
-        {
+        if is_announced_delisted_pintu_future(symbol) {
             continue;
         }
         if let Some(base) = symbol.strip_suffix("USDT-PX") {

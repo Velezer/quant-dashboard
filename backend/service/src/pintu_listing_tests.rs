@@ -13,19 +13,46 @@ fn partial_or_malformed_listing_is_rejected_before_reconciliation() {
 }
 
 #[test]
-fn delisted_ar_futures_contract_is_excluded_even_if_public_ticker_remains() {
+fn official_delistings_do_not_reenter_registry_from_the_ticker_feed() {
+    // First, middle, and last examples from the two March notices, plus OM
+    // and a contract from the February notice.
+    let delisted = [
+        "MBOXUSDT-PERP", "DYDXUSDT-PERP", "JASMYUSDT-PERP", "ARUSDT-PERP",
+        "ALTUSDT-PERP", "1INCHUSDT-PERP", "USTCUSDT-PERP", "OMUSDT-PERP",
+        "OXTUSDT-PERP", "ALPHAUSDT-PERP", "HIFIUSDT-PERP", "BAKEUSDT-PERP",
+        "FLMUSDT-PERP", "PERPUSDT-PERP", "BEAMXUSDT-PERP", "GHSTUSDT-PERP",
+        "QUICKUSDT-PERP", "SXPUSDT-PERP", "VOXELUSDT-PERP",
+    ];
     let mut tickers = Map::new();
-    tickers.insert("ARUSDT-PERP".to_string(), json!({"symbol": "ARUSDT-PERP"}));
+    for symbol in delisted {
+        tickers.insert(symbol.to_string(), json!({"symbol": symbol}));
+    }
+    tickers.insert("BTCUSDT-PERP".to_string(), json!({"symbol":"BTCUSDT-PERP"}));
     for index in 0..20 {
         let symbol = format!("COIN{index}USDT-PERP");
         tickers.insert(symbol.clone(), json!({"symbol": symbol}));
     }
     let response = json!({"code": 0, "data": {"tickers": tickers}});
     let listings = parse_pro_futures(response.to_string().as_bytes())
-        .expect("the otherwise complete Pintu futures listing should parse");
+        .expect("an otherwise complete ticker feed should parse");
 
-    assert_eq!(listings.len(), 20);
-    assert!(listings
+    assert_eq!(listings.len(), 21);
+    assert!(listings.iter().any(|listing| listing.venue_symbol == "BTCUSDT-PERP"));
+    for symbol in delisted {
+        assert!(!listings.iter().any(|listing| listing.venue_symbol == symbol), "{symbol}");
+    }
+}
+
+#[test]
+fn march_notice_exclusions_cover_all_published_contracts() {
+    assert_eq!(PINTU_PRO_FUTURES_MARCH_2_2026_DELISTED_SYMBOLS.len(), 50);
+    assert_eq!(PINTU_PRO_FUTURES_MARCH_26_2026_DELISTED_SYMBOLS.len(), 37);
+    assert_eq!(PINTU_PRO_FUTURES_2025_DELISTED_SYMBOLS.len(), 10);
+    for symbol in PINTU_PRO_FUTURES_MARCH_2_2026_DELISTED_SYMBOLS
         .iter()
-        .all(|listing| listing.venue_symbol != "ARUSDT-PERP"));
+        .chain(PINTU_PRO_FUTURES_MARCH_26_2026_DELISTED_SYMBOLS)
+        .chain(PINTU_PRO_FUTURES_2025_DELISTED_SYMBOLS)
+    {
+        assert!(is_announced_delisted_pintu_future(symbol), "{symbol}");
+    }
 }
