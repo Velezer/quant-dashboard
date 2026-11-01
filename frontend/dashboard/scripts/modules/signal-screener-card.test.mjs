@@ -111,6 +111,9 @@ test('opposite entry produces only conditional and fresh exit cues', () => {
     assert.equal(oppositeEntryExitCue({ ...shortSignal, score_status: 'stale' }, 1_000), null);
     assert.equal(oppositeEntryExitCue({ ...shortSignal, score_status: 'not_qualifying' }, 1_000), null);
     assert.equal(oppositeEntryExitCue({ ...shortSignal, price_is_fresh: false }, 1_000), null);
+    const cryptoSignal = { ...shortSignal, persistent_score: false };
+    assert.equal(oppositeEntryExitCue(cryptoSignal, 1_000)?.positionSide, 'LONG');
+    assert.equal(oppositeEntryExitCue(cryptoSignal, 2_001), null);
     assert.equal(oppositeEntryExitCue(shortSignal, 2_001), null);
     assert.equal(oppositeEntryExitCue({ ...shortSignal, direction: 'UNKNOWN' }, 1_000), null);
 });
