@@ -19,7 +19,9 @@ fn official_delistings_do_not_reenter_registry_from_the_ticker_feed() {
     let delisted = [
         "MBOXUSDT-PERP", "DYDXUSDT-PERP", "JASMYUSDT-PERP", "ARUSDT-PERP",
         "ALTUSDT-PERP", "1INCHUSDT-PERP", "USTCUSDT-PERP", "OMUSDT-PERP",
-        "OXTUSDT-PERP",
+        "OXTUSDT-PERP", "ALPHAUSDT-PERP", "HIFIUSDT-PERP", "BAKEUSDT-PERP",
+        "FLMUSDT-PERP", "PERPUSDT-PERP", "BEAMXUSDT-PERP", "GHSTUSDT-PERP",
+        "QUICKUSDT-PERP", "SXPUSDT-PERP", "VOXELUSDT-PERP",
     ];
     let mut tickers = Map::new();
     for symbol in delisted {
@@ -45,9 +47,11 @@ fn official_delistings_do_not_reenter_registry_from_the_ticker_feed() {
 fn march_notice_exclusions_cover_all_published_contracts() {
     assert_eq!(PINTU_PRO_FUTURES_MARCH_2_2026_DELISTED_SYMBOLS.len(), 50);
     assert_eq!(PINTU_PRO_FUTURES_MARCH_26_2026_DELISTED_SYMBOLS.len(), 37);
+    assert_eq!(PINTU_PRO_FUTURES_2025_DELISTED_SYMBOLS.len(), 10);
     for symbol in PINTU_PRO_FUTURES_MARCH_2_2026_DELISTED_SYMBOLS
         .iter()
         .chain(PINTU_PRO_FUTURES_MARCH_26_2026_DELISTED_SYMBOLS)
+        .chain(PINTU_PRO_FUTURES_2025_DELISTED_SYMBOLS)
     {
         assert!(is_announced_delisted_pintu_future(symbol), "{symbol}");
     }
