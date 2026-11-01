@@ -215,7 +215,7 @@ fn merged_readiness_examples_and_timeframes_are_bounded_and_order_independent() 
     let key = ("stockbit".to_string(), "stockbit_regular".to_string());
     let cases = [
         ("b_stale", "ZZZ"), ("a_error", "BBB"), ("b_stale", "AAA"),
-        ("d_other", "DDD"), ("c_missing", "CCC"),
+        ("d_other", "DDD"), ("c_missing", "CCC"), ("b_stale", "AAA"),
     ];
     let fragment = |index: usize| {
         let (reason, symbol) = cases[index];
@@ -230,6 +230,7 @@ fn merged_readiness_examples_and_timeframes_are_bounded_and_order_independent() 
                     checked_at: 300 + index as i64,
                     examples: vec![ReadinessIssue {
                         symbol: symbol.into(), reason: reason.into(), timeframe: "15m".into(),
+                        error: (index == 5).then(|| "provider unavailable".into()),
                         ..ReadinessIssue::default()
                     }],
                     timeframes: vec![TimeframeReadiness {
@@ -243,19 +244,20 @@ fn merged_readiness_examples_and_timeframes_are_bounded_and_order_independent() 
         }
     };
     let mut expected = None;
-    for order in [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [2, 0, 4, 1, 3]] {
+    for order in [[0, 1, 2, 3, 4, 5], [5, 4, 3, 2, 1, 0], [2, 0, 4, 1, 5, 3]] {
         let mut merged = SignalReadiness { scan_started_at: 0, products: BTreeMap::new() };
         for index in order { merged.merge(fragment(index)); }
         assert_eq!(merged.scan_started_at, 100);
         let product = merged.products.get(&key).unwrap();
-        assert_eq!(product.instrument_count, 5);
-        assert_eq!((product.first_checked_at, product.checked_at), (200, 304));
+        assert_eq!(product.instrument_count, 6);
+        assert_eq!((product.first_checked_at, product.checked_at), (200, 305));
         assert_eq!(product.examples.len(), MAX_PRODUCT_ISSUE_EXAMPLES);
         assert_eq!(product.examples.iter().map(|issue| issue.reason.as_str()).collect::<Vec<_>>(),
             vec!["a_error", "b_stale", "c_missing"]);
         assert_eq!(product.examples[1].symbol, "AAA");
+        assert_eq!(product.examples[1].error.as_deref(), Some("provider unavailable"));
         assert_eq!(product.timeframes.iter().find(|frame| frame.timeframe == "15m").unwrap().evaluated_count, 3);
-        assert_eq!(product.timeframes.iter().find(|frame| frame.timeframe == "1h").unwrap().evaluated_count, 2);
+        assert_eq!(product.timeframes.iter().find(|frame| frame.timeframe == "1h").unwrap().evaluated_count, 3);
         let value = serde_json::to_value(product).unwrap();
         if let Some(previous) = &expected { assert_eq!(&value, previous); }
         expected = Some(value);
