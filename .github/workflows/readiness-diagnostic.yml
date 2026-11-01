@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ed75ed149360e6399b860d69545af187b4a385e6
+          ref: 09f5ea7136329ee46b0da01ebf4da36efdb52ba4
           persist-credentials: false
       - name: Rust versions
         run: rustc --version && cargo --version
