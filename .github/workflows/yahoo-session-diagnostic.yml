@@ -1,0 +1,37 @@
+name: Yahoo IDX session diagnostic
+on:
+  pull_request:
+    paths:
+      - .github/workflows/yahoo-session-diagnostic.yml
+permissions: {}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Inspect public chart data
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import datetime, json, urllib.request, urllib.parse
+          from zoneinfo import ZoneInfo
+          jakarta = ZoneInfo("Asia/Jakarta")
+          print("runner UTC:", datetime.datetime.now(datetime.timezone.utc).isoformat())
+          for interval, window in [("15m","5d"), ("1h","5d"), ("1d","1mo")]:
+              url = "https://query1.finance.yahoo.com/v8/finance/chart/BBCA.JK?" + urllib.parse.urlencode({"interval":interval,"range":window})
+              print("\nINTERVAL", interval, flush=True)
+              try:
+                  req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"})
+                  with urllib.request.urlopen(req, timeout=20) as response:
+                      root = json.load(response)
+                  result = root["chart"]["result"][0]
+                  meta = result.get("meta", {})
+                  print("meta:", json.dumps({k:meta.get(k) for k in ["symbol","exchangeTimezoneName","regularMarketTime","regularMarketPrice","currentTradingPeriod","tradingPeriods","dataGranularity","range"]}, ensure_ascii=False))
+                  quote = result["indicators"]["quote"][0]
+                  stamps = result.get("timestamp", [])
+                  for i in range(max(0,len(stamps)-12),len(stamps)):
+                      fields = {k:(v[i] if i < len(v) else None) for k,v in quote.items() if isinstance(v,list)}
+                      print(datetime.datetime.fromtimestamp(stamps[i],jakarta).isoformat(), json.dumps(fields, ensure_ascii=False))
+              except Exception as exc:
+                  print("ERROR", type(exc).__name__, str(exc), flush=True)
+          PY
