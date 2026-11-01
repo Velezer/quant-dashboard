@@ -378,6 +378,7 @@ fn crypto_indicator_signals_render_from_one_point_and_keep_indicator_timeframes_
     assert!(identities.contains(&("crypto_nwe_band_proximity_1h_v1", "1h")));
     assert!(identities.contains(&("crypto_dss_bressert_near_cross_15m_v1", "15m")));
 
+    insert_pintu_registry_fixture(&connection, "APT", "pintu_pro_futures", "crypto_perpetual", "venue_active", 1, 1);
     replace_signal_screener_snapshot(&connection, &rows)
         .expect("distinct indicator/timeframe rows for one ticker should persist");
     let payload = list_signal_screener(&connection, 900, None, None)
@@ -469,6 +470,85 @@ fn screener_connection() -> Connection {
         .expect("signal snapshot schema should initialize");
     crate::master_data::initialize(&connection).expect("master-data catalog should initialize");
     connection
+}
+
+fn insert_pintu_registry_fixture(
+    connection: &Connection,
+    symbol: &str,
+    product: &str,
+    category: &str,
+    status: &str,
+    verified: i64,
+    active: i64,
+) {
+    connection.execute(
+        "INSERT INTO app.instruments (
+             instrument_id,exchange_id,product_id,asset_category_id,symbol,venue_symbol,
+             underlying_symbol,storage_symbol,quote_currency,listing_status,venue_verified,
+             execution_supported,registration_source,price_source_policy,registered_at,updated_at,is_active
+         ) VALUES (?1,'pintu',?2,?3,?4,?5,?6,?7,'USDT',?8,?9,0,'test','test',0,0,?10)",
+        rusqlite::params![
+            format!("test.{product}.{symbol}"), product, category, symbol,
+            format!("{symbol}USDT-PERP"), format!("{symbol}USDT"),
+            format!("{symbol}-USD"), status, verified, active,
+        ],
+    ).expect("Pintu registry fixture should save");
+}
+
+#[test]
+fn pintu_futures_screener_and_count_require_current_verified_product_listing() {
+    let mut connection = screener_connection();
+    let fresh_bar = (crate::now_secs() as i64)
+        .saturating_mul(crate::NANOS_PER_SECOND)
+        .saturating_sub(16 * 60 * crate::NANOS_PER_SECOND);
+    for (symbol, product, category, status, verified, active) in [
+        ("AAA", "pintu_pro_futures", "crypto_perpetual", "venue_active", 1, 1),
+        ("BBB", "pintu_pro_futures", "crypto_perpetual", "venue_delisted", 0, 1),
+        ("CCC", "pintu_pro_futures", "crypto_perpetual", "venue_active", 1, 1),
+        ("INACTIVE", "pintu_pro_futures", "crypto_perpetual", "venue_active", 1, 0),
+        ("UNVERIFIED", "pintu_pro_futures", "crypto_perpetual", "venue_active", 0, 1),
+        ("WRONG", "pintu_pro_spot", "crypto_spot", "venue_active", 1, 1),
+    ] {
+        insert_pintu_registry_fixture(&connection, symbol, product, category, status, verified, active);
+    }
+    let mut rows = ["AAA", "BBB", "CCC", "INACTIVE", "UNVERIFIED", "WRONG", "MISSING"]
+        .into_iter()
+        .map(|symbol| {
+            let mut row = stored_screener_row(symbol, fresh_bar);
+            row["exchange_id"] = json!("pintu");
+            row["product_id"] = json!("pintu_pro_futures");
+            row["asset_category_id"] = json!("crypto_perpetual");
+            row["storage_symbol"] = json!(format!("{symbol}-USD"));
+            row["signal_strategy_id"] = json!("test_strategy");
+            row
+        })
+        .collect::<Vec<_>>();
+    let mut other_app = stored_screener_row("OTHER.JK", fresh_bar);
+    other_app["signal_strategy_id"] = json!("test_strategy");
+    rows.push(other_app);
+    replace_signal_screener_snapshot(&connection, &rows).expect("signal fixtures should save");
+
+    let first = list_signal_screener_page(&connection, 900, Some("pintu"), None,
+        Some("pintu_pro_futures"), None, 0, 1).unwrap();
+    let second = list_signal_screener_page(&connection, 900, Some("pintu"), None,
+        Some("pintu_pro_futures"), None, 1, 1).unwrap();
+    assert_eq!(first["summary"]["matching_rows"], 2);
+    assert_eq!(first["signals"][0]["symbol"], "AAA");
+    assert_eq!(first["summary"]["has_more"], true);
+    assert_eq!(second["signals"][0]["symbol"], "CCC");
+    assert_eq!(second["summary"]["has_more"], false);
+    assert_eq!(super::count_current_signal_screener_rows(&mut connection, 900).unwrap()["signal_count"], 3);
+
+    connection.execute(
+        "UPDATE app.instruments SET listing_status='venue_delisted', venue_verified=0
+          WHERE exchange_id='pintu' AND product_id='pintu_pro_futures' AND symbol='AAA'",
+        [],
+    ).unwrap();
+    let after = list_signal_screener_page(&connection, 900, Some("pintu"), None,
+        Some("pintu_pro_futures"), None, 0, 1).unwrap();
+    assert_eq!(after["summary"]["matching_rows"], 1);
+    assert_eq!(after["signals"][0]["symbol"], "CCC");
+    assert_eq!(super::count_current_signal_screener_rows(&mut connection, 900).unwrap()["signal_count"], 2);
 }
 
 #[test]
