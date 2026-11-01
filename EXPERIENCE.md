@@ -29,5 +29,8 @@ lesson only when it will improve future tasks.
   final publication and mark closed-market rows historical.
 - Check aggregate readiness merges: replacing a product entry with a worker
   fragment undercounts instruments. Add counts and keep examples bounded.
+- The candlestick canvas separates its price plot from the volume pane.
+  Clip price overlays to the visible plot bounds: vertical zoom can move an
+  indicator band out of view, and an unclipped band can bleed into volume.
 - Use GitHub Actions to compile and test changes when the workspace cannot run
   commands. Inspect the exact failing step and rerun after the fix.
