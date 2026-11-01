@@ -523,6 +523,14 @@ fn ensure_stockbit_close_checkpoint_schema(connection: &Connection) -> Result<()
     )
 }
 
+fn is_final_stockbit_close_bar(final_bar_time: i64, session_day: i64, now_seconds: i64) -> bool {
+    let bar_seconds = final_bar_time.div_euclid(NANOS_PER_SECOND);
+    let local_bar_seconds = bar_seconds.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
+    local_bar_seconds.div_euclid(quant_core::SECONDS_PER_DAY) == session_day
+        && local_bar_seconds.rem_euclid(quant_core::SECONDS_PER_DAY) == 16 * 60 * 60
+        && bar_seconds.saturating_add(15 * 60) <= now_seconds
+}
+
 #[cfg(not(test))]
 fn stockbit_closed_session_checkpoint(
     connection: &Connection,
@@ -544,14 +552,7 @@ fn stockbit_closed_session_checkpoint(
     let Some(final_bar_time) = state.latest_bar_time else {
         return Ok(None);
     };
-    let bar_seconds = final_bar_time.div_euclid(NANOS_PER_SECOND);
-    let local_bar_seconds = bar_seconds.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
-    let bar_day = local_bar_seconds.div_euclid(quant_core::SECONDS_PER_DAY);
-    let bar_second_of_day = local_bar_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
-    if bar_day != session_day
-        || bar_second_of_day != 16 * 60 * 60
-        || bar_seconds.saturating_add(15 * 60) > now_seconds
-    {
+    if !is_final_stockbit_close_bar(final_bar_time, session_day, now_seconds) {
         return Ok(None);
     }
 
