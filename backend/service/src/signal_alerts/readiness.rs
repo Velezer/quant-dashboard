@@ -90,11 +90,17 @@ fn compare_issues(a: &ReadinessIssue, b: &ReadinessIssue) -> std::cmp::Ordering 
         .then_with(|| a.symbol.cmp(&b.symbol))
         .then_with(|| a.timeframe.cmp(&b.timeframe))
         .then_with(|| a.source.cmp(&b.source))
+        .then_with(|| b.data_provider.is_some().cmp(&a.data_provider.is_some()))
         .then_with(|| a.data_provider.cmp(&b.data_provider))
+        .then_with(|| b.last_bar_time.is_some().cmp(&a.last_bar_time.is_some()))
         .then_with(|| a.last_bar_time.cmp(&b.last_bar_time))
+        .then_with(|| b.last_success_at.is_some().cmp(&a.last_success_at.is_some()))
         .then_with(|| a.last_success_at.cmp(&b.last_success_at))
+        .then_with(|| b.error.is_some().cmp(&a.error.is_some()))
         .then_with(|| a.error.cmp(&b.error))
+        .then_with(|| b.available_bars.is_some().cmp(&a.available_bars.is_some()))
         .then_with(|| a.available_bars.cmp(&b.available_bars))
+        .then_with(|| b.required_bars.is_some().cmp(&a.required_bars.is_some()))
         .then_with(|| a.required_bars.cmp(&b.required_bars))
 }
 
