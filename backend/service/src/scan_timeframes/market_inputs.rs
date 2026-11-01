@@ -7,7 +7,7 @@ pub(super) struct CurrentPrice {
     pub(super) provider: String,
 }
 
-pub(super) fn load_stockbit_signal_candles(
+pub(super) fn load_15m_rolled_signal_candles(
     input: &TimeframeScanInput<'_>,
     timeframe: &str,
     limit: i64,
@@ -37,13 +37,18 @@ pub(super) fn load_stockbit_signal_candles(
             Vec::new()
         };
     }
-    let intraday_rollup = aggregate_candles_from_base_source(
+    let completed_15m_end = latest_15m_bar_time.saturating_add(
+        timeframe_duration_ns("15m").unwrap_or_default(),
+    );
+    let intraday_rollup = aggregate_candles_from_base_source_with_cap_and_range(
         input.market_connection,
         input.symbol,
         timeframe,
         "15m",
         limit,
         source,
+        MAX_AGGREGATION_SOURCE_CANDLES,
+        Some((i64::MIN, completed_15m_end)),
     )
     .unwrap_or_default();
     let stored_history_is_newer = stored_history.last().map(|bar| bar.time);
