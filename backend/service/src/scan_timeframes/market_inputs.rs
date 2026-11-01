@@ -37,9 +37,14 @@ pub(super) fn load_15m_rolled_signal_candles(
             Vec::new()
         };
     }
-    let completed_15m_end = latest_15m_bar_time.saturating_add(
-        timeframe_duration_ns("15m").unwrap_or_default(),
-    );
+    let fifteen_minutes = timeframe_duration_ns("15m").unwrap_or_default();
+    let timeframe_duration = timeframe_duration_ns(timeframe).unwrap_or_default();
+    let completed_15m_end = latest_15m_bar_time.saturating_add(fifteen_minutes);
+    // Only rebuild the recent higher-timeframe buckets from 15m bars. Older
+    // history stays in its stored interval, avoiding a full 15m resample on
+    // every 15-minute scan.
+    let rollup_from = latest_15m_bar_time
+        .saturating_sub(timeframe_duration.saturating_mul(2));
     let intraday_rollup = aggregate_candles_from_base_source_with_cap_and_range(
         input.market_connection,
         input.symbol,
@@ -48,7 +53,7 @@ pub(super) fn load_15m_rolled_signal_candles(
         limit,
         source,
         MAX_AGGREGATION_SOURCE_CANDLES,
-        Some((i64::MIN, completed_15m_end)),
+        Some((rollup_from, completed_15m_end)),
     )
     .unwrap_or_default();
     let stored_history_is_newer = stored_history.last().map(|bar| bar.time);
