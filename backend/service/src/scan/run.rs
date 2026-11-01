@@ -203,11 +203,10 @@ pub(super) fn run_rust_scan_inner(
     {
         use std::sync::Mutex;
 
-        let active_app_worker_count = workers
-            .iter()
-            .filter(|worker| worker.total > 0)
-            .count();
-        let worker_count = active_app_worker_count.min(SIGNAL_SCAN_DATABASE_RESERVE);
+        // Worker concurrency is per registered ticker, not per app. This
+        // keeps a single large app parallel while the shared queue still
+        // rotates fairly across apps.
+        let worker_count = registered_count.min(SIGNAL_SCAN_DATABASE_RESERVE);
         let mut app_connections = Vec::with_capacity(worker_count);
         for _ in 0..worker_count {
             app_connections.push(open_app_db_for_market_directory(market_database)?);
