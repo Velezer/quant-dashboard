@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSignalScoreBasisMarkup } from './signal-score-basis.js';
 import { createSignalScreenerCard } from './signal-screener-card.js';
-import { signalDisplayScore, signalScoreState } from './signal-screener-model.js';
+import { oppositeEntryExitCue, signalDisplayScore, signalScoreState } from './signal-screener-model.js';
 
 function escapeHtml(value) {
     return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
@@ -51,6 +51,7 @@ test('signal card presenter preserves stale labels, score basis, provenance, and
     assert.match(markup, /&lt;BBCA&gt;/);
     assert.match(markup, /LAST LONG/);
     assert.match(markup, /STALE · NO MARKET ENTRY · HELD/);
+    assert.doesNotMatch(markup, /If holding/);
     assert.match(markup, /Last recorded indicators · 25% each/);
     assert.equal((markup.match(/class="signal-indicator-score"/g) || []).length, 4);
     assert.equal((markup.match(/class="signal-indicator-weight">25% weight/g) || []).length, 4);
@@ -92,4 +93,28 @@ test('signal cards distinguish a fresh non-qualifying zero from an unavailable s
     assert.match(unavailable, /Last recorded score <strong>—<\/strong>/);
     assert.match(unavailable, /no current market-entry signal, last recorded score unavailable/);
     assert.doesNotMatch(unavailable, /<strong>0\.0<\/strong>/);
+
+    const current = { ...signal, direction: 'SHORT', score_status: 'qualifying', score: 12, price_is_fresh: true, price_fresh_until_ms: Date.now() + 60_000 };
+    assert.match(renderSignalCard(current, 1, false), /If holding LONG: exit cue/);
+    assert.match(renderSignalCard({ ...current, score_bar_is_forming: true }, 1, false), /If holding LONG: exit watch/);
+});
+
+test('opposite entry produces only conditional and fresh exit cues', () => {
+    const shortSignal = {
+        direction: 'SHORT', score_status: 'qualifying', persistent_score: true,
+        price_is_fresh: true, price_fresh_until_ms: 2_000, score_bar_is_forming: false,
+    };
+    assert.deepEqual(oppositeEntryExitCue(shortSignal, 1_000),
+        { positionSide: 'LONG', signalDirection: 'SHORT', provisional: false });
+    assert.deepEqual(oppositeEntryExitCue({ ...shortSignal, direction: 'LONG', score_bar_is_forming: true }, 1_000),
+        { positionSide: 'SHORT', signalDirection: 'LONG', provisional: true });
+    assert.equal(oppositeEntryExitCue({ ...shortSignal, score_status: 'stale' }, 1_000), null);
+    assert.equal(oppositeEntryExitCue({ ...shortSignal, score_status: 'not_qualifying' }, 1_000), null);
+    assert.equal(oppositeEntryExitCue({ ...shortSignal, price_is_fresh: false }, 1_000), null);
+    const cryptoSignal = { ...shortSignal, persistent_score: false };
+    assert.equal(oppositeEntryExitCue(cryptoSignal, 1_000)?.positionSide, 'LONG');
+    assert.equal(oppositeEntryExitCue(cryptoSignal, 2_001), null);
+    assert.equal(oppositeEntryExitCue(shortSignal, 2_001), null);
+    assert.equal(oppositeEntryExitCue({ ...shortSignal, price_fresh_until_ms: null }, 1_000), null);
+    assert.equal(oppositeEntryExitCue({ ...shortSignal, direction: 'UNKNOWN' }, 1_000), null);
 });

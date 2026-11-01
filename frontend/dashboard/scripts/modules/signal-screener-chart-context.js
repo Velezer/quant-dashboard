@@ -3,6 +3,7 @@ import { QuantChart } from './chart-math.js';
 import { marketSymbolForSignal } from './chart-market-identity.js';
 import {
     APP_LABELS,
+    oppositeEntryExitCue,
     signalPriceBarAgeLabel,
     signalScoreState,
     signalScoreSummary,
@@ -105,7 +106,11 @@ export function createSignalScreenerChartContext({
         const category = String(signal.asset_category_id || 'asset').replaceAll('_', ' ');
         const scoreState = signalScoreState(signal);
         const directionLabel = scoreState && !scoreState.current ? `last ${signal.direction}` : signal.direction;
-        if (summaryNode) summaryNode.textContent = `${venue.title} · ${product || category} · ${marketSymbol} · ${signal.timeframe.toUpperCase()} · ${directionLabel}`;
+        const exitCue = oppositeEntryExitCue(signal);
+        const exitText = exitCue
+            ? ` · If holding ${exitCue.positionSide}: ${exitCue.provisional ? 'exit watch, wait for bar close' : 'exit cue'} (same model and timeframe)`
+            : '';
+        if (summaryNode) summaryNode.textContent = `${venue.title} · ${product || category} · ${marketSymbol} · ${signal.timeframe.toUpperCase()} · ${directionLabel}${exitText}`;
         if (updatedNode) updatedNode.textContent = `Price ${formatPrice(signal.current_price)} · ${signalPriceBarAgeLabel(signal.price_bar_time)}${scoreState ? ` · score bar ${signalPriceBarAgeLabel(signal.score_bar_time)}` : ''}`;
         if (symbolBadge) symbolBadge.textContent = marketSymbol;
         if (timeframeBadge) timeframeBadge.textContent = `${signal.timeframe.toUpperCase()} SIGNAL`;
