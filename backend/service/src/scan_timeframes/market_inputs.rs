@@ -71,7 +71,7 @@ pub(super) fn load_15m_rolled_signal_candles(
         return Vec::new();
     };
     if latest_15m_bar_time < latest_intraday_time
-        || latest_15m_bar_time >= latest_intraday_time.saturating_add(timeframe_duration_ns)
+        || latest_15m_bar_time >= latest_intraday_time.saturating_add(target_duration_ns)
     {
         return Vec::new();
     }
