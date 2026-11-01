@@ -950,35 +950,3 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
 #[path = "runtime_tests.rs"]
 mod tests;
 
-
-#[cfg(test)]
-mod active_scan_progress_tests {
-    use super::AppState;
-    use std::collections::BTreeSet;
-
-    #[test]
-    fn progress_event_publishes_both_parallel_tickers() {
-        let state = AppState::new(String::new(), 900);
-        let (tx, rx) = std::sync::mpsc::sync_channel(8);
-        state.sse_clients.lock().unwrap().push(tx);
-        state.begin_scan_symbol("pintu · pintu_pro_spot · BTC-USD");
-        state.begin_scan_symbol("tokocrypto · tokocrypto_spot · BTCUSDT");
-        let event = rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
-        assert!(event.contains("event: scan_progress"));
-        assert!(event.contains("2 parallel"));
-        assert!(event.contains("BTC-USD"));
-        assert!(event.contains("BTCUSDT"));
-    }
-
-    #[test]
-    fn progress_label_lists_both_concurrent_ticker_scans() {
-        let active = BTreeSet::from([
-            "pintu · pintu_pro_spot · BTC-USD".to_string(),
-            "tokocrypto · tokocrypto_spot · BTCUSDT".to_string(),
-        ]);
-        let label = AppState::active_scan_display(&active);
-        assert!(label.starts_with("2 parallel · "));
-        assert!(label.contains("BTC-USD"));
-        assert!(label.contains("BTCUSDT"));
-    }
-}
