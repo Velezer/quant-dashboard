@@ -1,21 +1,24 @@
 use super::*;
 
-fn wib_timestamp(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
-    let local = chrono::NaiveDate::from_ymd_opt(year, month, day)
-        .unwrap()
-        .and_hms_opt(hour, minute, 0)
-        .unwrap();
-    local.and_utc().timestamp() - quant_core::JAKARTA_UTC_OFFSET_SECONDS
+fn local_day(year: i32, month: u32, day: u32) -> i64 {
+    let year = i64::from(year) - i64::from(month <= 2);
+    let era = if year >= 0 { year } else { year - 399 }.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let month = i64::from(month);
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5
+        + i64::from(day)
+        - 1;
+    let day_of_era =
+        year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
-fn local_day(year: i32, month: u32, day: u32) -> i64 {
-    let midnight = chrono::NaiveDate::from_ymd_opt(year, month, day)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    (midnight.and_utc().timestamp() - quant_core::JAKARTA_UTC_OFFSET_SECONDS)
-        .saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS)
-        .div_euclid(quant_core::SECONDS_PER_DAY)
+fn wib_timestamp(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
+    local_day(year, month, day)
+        .saturating_mul(quant_core::SECONDS_PER_DAY)
+        .saturating_add(i64::from(hour) * 60 * 60)
+        .saturating_add(i64::from(minute) * 60)
+        .saturating_sub(quant_core::JAKARTA_UTC_OFFSET_SECONDS)
 }
 
 #[test]
