@@ -23,6 +23,75 @@ fn mark_legacy_score(signal: &mut Value, models: &std::collections::HashMap<&str
     }
 }
 
+fn update_signal_market_entry_freshness(
+    signal: &mut Value,
+    now: i64,
+    now_ns: i64,
+    scan_interval_seconds: i64,
+    strategies: &std::collections::HashMap<&str, &str>,
+) -> (bool, bool, bool) {
+    let symbol = signal["storage_symbol"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let timeframe = signal["price_timeframe"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let price_bar_time = signal["price_bar_time"].as_i64().unwrap_or_default();
+    let signal_timeframe = signal["timeframe"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let is_stockbit_persistent = is_stockbit_signal_score_row(
+        signal["exchange_id"].as_str().unwrap_or_default(),
+        signal["product_id"].as_str().unwrap_or_default(),
+        signal["asset_category_id"].as_str().unwrap_or_default(),
+        signal["signal_strategy_id"].as_str().unwrap_or_default(),
+        &signal_timeframe,
+    );
+    signal["persistent_score"] = json!(is_stockbit_persistent);
+    mark_legacy_score(signal, strategies);
+    let score_bar_is_forming = signal["score_bar_is_forming"].as_bool().unwrap_or(false);
+    let score_bar_time = signal["score_bar_time"].as_i64().unwrap_or(price_bar_time);
+    let score_updated_at = signal["last_updated_at"].as_i64().unwrap_or_default();
+    let score_is_recently_updated = now.saturating_sub(score_updated_at) < scan_interval_seconds;
+    let score_bar_duration_ns =
+        crate::timeframe_duration_ns(&signal_timeframe).unwrap_or_default();
+    let score_bar_is_current = score_bar_duration_ns > 0
+        && score_bar_time <= now_ns
+        && score_bar_time.saturating_add(score_bar_duration_ns) > now_ns;
+    let is_current_price_fresh = if is_stockbit_persistent {
+        score_is_recently_updated
+            && crate::completed_bar_is_fresh_at(&symbol, &timeframe, price_bar_time, now_ns)
+            && if score_bar_is_forming {
+                score_bar_is_current
+            } else {
+                crate::completed_bar_is_fresh_at(
+                    &symbol,
+                    &signal_timeframe,
+                    score_bar_time,
+                    now_ns,
+                )
+            }
+    } else {
+        crate::completed_bar_is_fresh_at(&symbol, &timeframe, price_bar_time, now_ns)
+    };
+    if is_stockbit_persistent && !is_current_price_fresh {
+        signal["score_status"] = json!("stale");
+        if let Some(score_basis) = signal["score_basis"].as_object_mut() {
+            score_basis.insert("status".into(), json!("stale"));
+        }
+    }
+    signal["price_is_fresh"] = json!(is_current_price_fresh);
+    let score_is_current = signal["score_status"].as_str() != Some("stale");
+    (
+        is_current_price_fresh && score_is_current,
+        !is_current_price_fresh && !is_stockbit_persistent,
+        !score_is_current,
+    )
+}
+
 fn score_meets_render_minimum(
     strategy: String,
     score: f64,
@@ -156,89 +225,47 @@ pub(crate) fn list_signal_screener_page(
         }))
     };
     let mut query_rows = statement.query(rusqlite::params_from_iter(query_values.iter()))?;
+    let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
+    let mut stale_price_signal_count = 0usize;
     let mut matching_rows = 0usize;
-    let mut rows = Vec::with_capacity(page_size);
+    let mut signals = Vec::with_capacity(page_size);
     while let Some(row) = query_rows.next()? {
+        let strategy = row.get::<_, String>(5)?;
+        let score = row.get::<_, f64>(9)?;
+        let score_basis_json = row.get::<_, String>(12)?;
         if !score_meets_render_minimum(
-            row.get(5)?, row.get(9)?, &row.get::<_, String>(12)?,
-            &score_model_by_strategy, &master_data["signal_score_models"],
+            strategy,
+            score,
+            &score_basis_json,
+            &score_model_by_strategy,
+            &master_data["signal_score_models"],
         ) {
             continue;
         }
-        if matching_rows >= offset && rows.len() < page_size {
-            rows.push(row_mapper(row)?);
+        let mut signal = row_mapper(row)?;
+        let (is_current, is_stale_price, is_stale_score) = update_signal_market_entry_freshness(
+            &mut signal,
+            now,
+            now_ns,
+            scan_interval_seconds,
+            &score_model_by_strategy,
+        );
+        if is_stale_price {
+            stale_price_signal_count = stale_price_signal_count.saturating_add(1);
+        }
+        if is_stale_score {
+            stale_score_signal_count = stale_score_signal_count.saturating_add(1);
+        }
+        if !is_current {
+            continue;
+        }
+        if matching_rows >= offset && signals.len() < page_size {
+            signals.push(signal);
         }
         matching_rows = matching_rows.saturating_add(1);
     }
     let page_offset = offset.min(matching_rows);
-    let fetched_rows = rows.len();
-    let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
-    let mut stale_price_signal_count = 0;
-    let signals = rows
-        .into_iter()
-        .filter_map(|mut signal| {
-            let symbol = signal["storage_symbol"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string();
-            let timeframe = signal["price_timeframe"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string();
-            let price_bar_time = signal["price_bar_time"].as_i64().unwrap_or_default();
-            let signal_timeframe = signal["timeframe"].as_str().unwrap_or_default().to_string();
-            let is_stockbit_persistent = is_stockbit_signal_score_row(
-                signal["exchange_id"].as_str().unwrap_or_default(),
-                signal["product_id"].as_str().unwrap_or_default(),
-                signal["asset_category_id"].as_str().unwrap_or_default(),
-                signal["signal_strategy_id"].as_str().unwrap_or_default(),
-                &signal_timeframe,
-            );
-            signal["persistent_score"] = json!(is_stockbit_persistent);
-            mark_legacy_score(&mut signal, &score_model_by_strategy);
-            let score_bar_is_forming = signal["score_bar_is_forming"].as_bool().unwrap_or(false);
-            let score_bar_time = signal["score_bar_time"].as_i64().unwrap_or(price_bar_time);
-            let score_updated_at = signal["last_updated_at"].as_i64().unwrap_or_default();
-            let score_is_recently_updated =
-                now.saturating_sub(score_updated_at) < scan_interval_seconds;
-            let score_bar_duration_ns =
-                crate::timeframe_duration_ns(&signal_timeframe).unwrap_or_default();
-            let score_bar_is_current = score_bar_duration_ns > 0
-                && score_bar_time <= now_ns
-                && score_bar_time.saturating_add(score_bar_duration_ns) > now_ns;
-            let is_current_price_fresh = if is_stockbit_persistent {
-                score_is_recently_updated
-                    && crate::completed_bar_is_fresh_at(&symbol, &timeframe, price_bar_time, now_ns)
-                    && if score_bar_is_forming {
-                        score_bar_is_current
-                    } else {
-                        crate::completed_bar_is_fresh_at(
-                            &symbol,
-                            &signal_timeframe,
-                            score_bar_time,
-                            now_ns,
-                        )
-                    }
-            } else {
-                crate::completed_bar_is_fresh_at(&symbol, &timeframe, price_bar_time, now_ns)
-            };
-            if is_stockbit_persistent && !is_current_price_fresh {
-                signal["score_status"] = json!("stale");
-                if let Some(score_basis) = signal["score_basis"].as_object_mut() {
-                    score_basis.insert("status".into(), json!("stale"));
-                }
-            }
-            signal["price_is_fresh"] = json!(is_current_price_fresh);
-            if !is_current_price_fresh && !is_stockbit_persistent {
-                stale_price_signal_count += 1;
-            }
-            // A stale reference price makes a setup ineligible as a current
-            // market entry, but it does not erase the setup emitted by the
-            // latest successful scan. Keep its freshness metadata so users can
-            // inspect why it is not actionable while the market feed recovers.
-            Some(signal)
-        })
-        .collect::<Vec<_>>();
+    let fetched_rows = signals.len();
     let signal_count = signals.len();
     let status = connection
         .query_row(
@@ -280,6 +307,7 @@ pub(crate) fn list_signal_screener_page(
             "interval_minutes": scan_interval_seconds / 60,
             "stale": stale,
             "stale_price_signal_count": stale_price_signal_count,
+            "stale_score_signal_count": stale_score_signal_count,
             "readiness": load_scan_readiness(connection)?,
             "status": status,
         }
@@ -292,21 +320,65 @@ pub(crate) fn count_current_signal_screener_rows(
 ) -> Result<Value, rusqlite::Error> {
     let transaction = connection.transaction()?;
     let now = now_secs() as i64;
-    let mut signal_count = 0usize;
-    let master_data = crate::master_data::signal_screener_master_data_for_connection(&transaction)?;
+    let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
     let score_models = score_model_by_strategy();
+    let master_data = crate::master_data::signal_screener_master_data_for_connection(&transaction)?;
+    let mut signal_count = 0usize;
     {
         let mut statement = transaction.prepare(
-            "SELECT signal_strategy_id,score,score_basis_json
+            "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,
+                    signal_strategy_id,timeframe,score,score_basis_json,price_timeframe,
+                    price_bar_time,last_updated_at
                FROM signals.signal_screener_rows",
         )?;
         let mut rows = statement.query([])?;
         while let Some(row) = rows.next()? {
-            let strategy = row.get::<_, String>(0)?;
-            if score_meets_render_minimum(
-                strategy, row.get(1)?, &row.get::<_, String>(2)?,
-                &score_models, &master_data["signal_score_models"],
+            let strategy = row.get::<_, String>(5)?;
+            let score = row.get::<_, f64>(7)?;
+            let score_basis_json = row.get::<_, String>(8)?;
+            if !score_meets_render_minimum(
+                strategy.clone(),
+                score,
+                &score_basis_json,
+                &score_models,
+                &master_data["signal_score_models"],
             ) {
+                continue;
+            }
+            let score_basis =
+                serde_json::from_str::<Value>(&score_basis_json).unwrap_or(Value::Null);
+            let score_status = score_basis["status"].as_str().unwrap_or("stale");
+            let score_bar_time = score_basis["score_bar_time"]
+                .as_i64()
+                .unwrap_or(row.get::<_, i64>(10)?);
+            let score_bar_is_forming = score_basis["score_bar_is_forming"]
+                .as_bool()
+                .unwrap_or(false);
+            let mut signal = json!({
+                "exchange_id": row.get::<_, String>(0)?,
+                "product_id": row.get::<_, String>(1)?,
+                "asset_category_id": row.get::<_, String>(2)?,
+                "symbol": row.get::<_, String>(3)?,
+                "storage_symbol": row.get::<_, String>(4)?,
+                "signal_strategy_id": strategy,
+                "timeframe": row.get::<_, String>(6)?,
+                "score": score,
+                "score_basis": score_basis,
+                "score_status": score_status,
+                "score_bar_time": score_bar_time,
+                "score_bar_is_forming": score_bar_is_forming,
+                "price_timeframe": row.get::<_, String>(9)?,
+                "price_bar_time": row.get::<_, i64>(10)?,
+                "last_updated_at": row.get::<_, i64>(11)?,
+            });
+            let (is_current, _, _) = update_signal_market_entry_freshness(
+                &mut signal,
+                now,
+                now_ns,
+                scan_interval_seconds,
+                &score_models,
+            );
+            if is_current {
                 signal_count = signal_count.saturating_add(1);
             }
         }
@@ -325,6 +397,7 @@ pub(crate) fn count_current_signal_screener_rows(
         "generated_at": generated_at,
     }))
 }
+
 
 fn signal_meets_render_minimum(signal: &Value, models: &Value) -> bool {
     let basis = &signal["score_basis"];
