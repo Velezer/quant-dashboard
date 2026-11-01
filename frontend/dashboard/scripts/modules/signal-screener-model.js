@@ -36,6 +36,23 @@ export function signalScoreState(signal) {
     return { label: 'MARKET ENTRY NOW · FRESH PRICE', tone: 'current', current: true };
 }
 
+// An opposite entry is an exit cue only for a matching open position.
+// The dashboard has no position state, so this remains conditional.
+export function oppositeEntryExitCue(signal, nowEpochMs = Date.now()) {
+    if (!signal || signal.score_status !== 'qualifying'
+        || signal.price_is_fresh === false || !signalScoreState(signal)?.current
+        || !signalPriceIsFresh(signal, nowEpochMs)) return null;
+    const freshUntil = Number(signal.price_fresh_until_ms);
+    if (Number.isFinite(freshUntil) && freshUntil > 0 && nowEpochMs > freshUntil) return null;
+    const direction = String(signal.direction || '').toUpperCase();
+    if (direction !== 'LONG' && direction !== 'SHORT') return null;
+    return {
+        positionSide: direction === 'SHORT' ? 'LONG' : 'SHORT',
+        signalDirection: direction,
+        provisional: signal.score_bar_is_forming === true,
+    };
+}
+
 export function signalStrategyLabel(signal, strategies) {
     const strategy = (Array.isArray(strategies) ? strategies : []).find(item =>
         String(item.id || '') === String(signal?.signal_strategy_id || ''),
