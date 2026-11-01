@@ -683,7 +683,7 @@ impl Drop for ScanProgressStep<'_> {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .saturating_add(1);
         if let Some(state) = self.sync_state {
-            state.update_scan_progress(&self.label, completed, self.total);
+            state.finish_scan_symbol(&self.label, completed, self.total);
         }
     }
 }
@@ -902,10 +902,14 @@ fn scan_registered_app(
             asset.clone(),
         ));
         let instrument_started = std::time::Instant::now();
+        let scan_label = format!("{exchange_id} · {sym}");
+        if let Some(state) = sync_state {
+            state.begin_scan_symbol(&scan_label);
+        }
         let _progress_step = ScanProgressStep {
             completed_count,
             sync_state,
-            label: format!("{exchange_id} · {sym}"),
+            label: scan_label,
             total: total_instruments,
         };
         let mut cagr_stats = HashMap::new();
