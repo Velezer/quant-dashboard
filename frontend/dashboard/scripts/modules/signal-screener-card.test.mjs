@@ -94,7 +94,7 @@ test('signal cards distinguish a fresh non-qualifying zero from an unavailable s
     assert.match(unavailable, /no current market-entry signal, last recorded score unavailable/);
     assert.doesNotMatch(unavailable, /<strong>0\.0<\/strong>/);
 
-    const current = { ...signal, direction: 'SHORT', score_status: 'qualifying', score: 12, price_is_fresh: true };
+    const current = { ...signal, direction: 'SHORT', score_status: 'qualifying', score: 12, price_is_fresh: true, price_fresh_until_ms: Date.now() + 60_000 };
     assert.match(renderSignalCard(current, 1, false), /If holding LONG: exit cue/);
     assert.match(renderSignalCard({ ...current, score_bar_is_forming: true }, 1, false), /If holding LONG: exit watch/);
 });
@@ -115,5 +115,6 @@ test('opposite entry produces only conditional and fresh exit cues', () => {
     assert.equal(oppositeEntryExitCue(cryptoSignal, 1_000)?.positionSide, 'LONG');
     assert.equal(oppositeEntryExitCue(cryptoSignal, 2_001), null);
     assert.equal(oppositeEntryExitCue(shortSignal, 2_001), null);
+    assert.equal(oppositeEntryExitCue({ ...shortSignal, price_fresh_until_ms: null }, 1_000), null);
     assert.equal(oppositeEntryExitCue({ ...shortSignal, direction: 'UNKNOWN' }, 1_000), null);
 });
