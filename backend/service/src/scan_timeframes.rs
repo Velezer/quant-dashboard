@@ -144,10 +144,10 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
         } else {
             required_history_bars
         };
-        // Most strategies use the latest fresh 15m price. Stockbit NWE/DSS scores
-        // the matching timeframe bar, using a forming bar when fresh 15m input is
-        // available and the latest stored bar otherwise; crypto uses closed bars.
-        // Keep the daily recovery check without loading unused daily history.
+        // Re-evaluate higher-timeframe crypto setups from each fresh 15m scan.
+        // The newest higher-timeframe candle is a forming rollup and its score is
+        // exposed with score_bar_is_forming; 15m signals still use closed bars.
+        // Stockbit keeps its existing forming-candle behavior.
         if current_price.is_none() && timeframe != "1d" && !is_nwe_dss_signal_scope {
             continue;
         }
@@ -296,7 +296,9 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
             }
         };
         let completed_strategy_bars = completed_bars(&candles, duration_ns, now_ns);
-        let stockbit_bars = is_stockbit_signal_scope.then(|| {
+        let use_forming_rollup = is_stockbit_signal_scope
+            || (is_crypto_signal_scope && timeframe != "15m");
+        let forming_strategy_bars = use_forming_rollup.then(|| {
             candles
                 .iter()
                 .map(|bar| StrategyBar {
@@ -309,7 +311,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
                 })
                 .collect::<Vec<_>>()
         });
-        let bars = stockbit_bars
+        let bars = forming_strategy_bars
             .as_deref()
             .unwrap_or(completed_strategy_bars.as_slice());
         let minimum_available_history_bars = if is_stockbit_signal_scope || is_crypto_signal_scope {
