@@ -577,7 +577,19 @@ fn stockbit_closed_session_checkpoint(
     let Some((timestamp, open, high, low, close, volume)) = latest else {
         return Ok(None);
     };
-    if timestamp != final_bar_time {
+    if timestamp != final_bar_time
+        || !open.is_finite()
+        || !high.is_finite()
+        || !low.is_finite()
+        || !close.is_finite()
+        || !volume.is_finite()
+        || open <= 0.0
+        || high <= 0.0
+        || low <= 0.0
+        || close <= 0.0
+        || volume < 0.0
+        || high < low
+    {
         return Ok(None);
     }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -980,7 +992,7 @@ fn scan_registered_app(
         let is_idx = instrument_exchange == "stockbit" && category_id == "idx_stock";
         #[cfg(not(test))]
         if is_idx {
-            if let Some(checkpoint) = stockbit_closed_session_checkpoint(
+            match stockbit_closed_session_checkpoint(
                 connection,
                 &market_symbol,
                 &instrument_exchange,
@@ -988,18 +1000,31 @@ fn scan_registered_app(
                 &category_id,
                 &asset,
                 now_secs().min(i64::MAX as u64) as i64,
-            )? {
-                if stockbit_close_checkpoint_is_saved(app_connection, &checkpoint)? {
-                    output.scanned_instruments.pop();
-                    output.preserved_stockbit.insert((
-                        product_id.clone(),
-                        category_id.clone(),
-                        asset.clone(),
-                    ));
-                    app_result.paused_market_closed_count += 1;
-                    continue;
+            ) {
+                Ok(Some(checkpoint)) => {
+                    let already_scanned = match stockbit_close_checkpoint_is_saved(app_connection, &checkpoint) {
+                        Ok(saved) => saved,
+                        Err(error) => {
+                            eprintln!("[ScanWorker] Could not read closed-market checkpoint for {sym}: {error}");
+                            false
+                        }
+                    };
+                    if already_scanned {
+                        output.scanned_instruments.pop();
+                        output.preserved_stockbit.insert((
+                            product_id.clone(),
+                            category_id.clone(),
+                            asset.clone(),
+                        ));
+                        app_result.paused_market_closed_count += 1;
+                        continue;
+                    }
+                    output.close_checkpoints.push(checkpoint);
                 }
-                output.close_checkpoints.push(checkpoint);
+                Ok(None) => {}
+                Err(error) => {
+                    eprintln!("[ScanWorker] Could not verify final Stockbit candle for {sym}: {error}");
+                }
             }
         }
         let is_tokenized = instrument_exchange == "tokocrypto" && category_id == "tokenized_stock";
