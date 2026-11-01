@@ -63,6 +63,87 @@ struct ProductReadiness {
     timeframes: Vec<TimeframeReadiness>,
 }
 
+fn merge_timeframe(timeframes: &mut Vec<TimeframeReadiness>, frame: TimeframeReadiness) {
+    if let Some(existing) = timeframes.iter_mut().find(|item| item.timeframe == frame.timeframe) {
+        existing.missing_history_count = existing.missing_history_count.saturating_add(frame.missing_history_count);
+        existing.stale_history_count = existing.stale_history_count.saturating_add(frame.stale_history_count);
+        existing.insufficient_history_count = existing.insufficient_history_count.saturating_add(frame.insufficient_history_count);
+        existing.nwe_insufficient_history_count = existing.nwe_insufficient_history_count.saturating_add(frame.nwe_insufficient_history_count);
+        existing.source_mismatch_count = existing.source_mismatch_count.saturating_add(frame.source_mismatch_count);
+        existing.data_error_count = existing.data_error_count.saturating_add(frame.data_error_count);
+        existing.evaluated_count = existing.evaluated_count.saturating_add(frame.evaluated_count);
+        existing.evaluated_model_count = existing.evaluated_model_count.saturating_add(frame.evaluated_model_count);
+        existing.qualifying_signal_count = existing.qualifying_signal_count.saturating_add(frame.qualifying_signal_count);
+    } else {
+        timeframes.push(frame);
+    }
+    // Preserve the catalog order, with unknown intervals ordered by name.
+    timeframes.sort_by(|a, b| {
+        let rank = |value: &str| quant_core::SIGNAL_SCREENER_TIMEFRAMES
+            .iter().position(|candidate| *candidate == value).unwrap_or(usize::MAX);
+        rank(&a.timeframe).cmp(&rank(&b.timeframe)).then_with(|| a.timeframe.cmp(&b.timeframe))
+    });
+}
+
+fn compare_issues(a: &ReadinessIssue, b: &ReadinessIssue) -> std::cmp::Ordering {
+    a.reason.cmp(&b.reason)
+        .then_with(|| a.symbol.cmp(&b.symbol))
+        .then_with(|| a.timeframe.cmp(&b.timeframe))
+        .then_with(|| a.source.cmp(&b.source))
+        .then_with(|| b.data_provider.is_some().cmp(&a.data_provider.is_some()))
+        .then_with(|| a.data_provider.cmp(&b.data_provider))
+        .then_with(|| b.last_bar_time.is_some().cmp(&a.last_bar_time.is_some()))
+        .then_with(|| a.last_bar_time.cmp(&b.last_bar_time))
+        .then_with(|| b.last_success_at.is_some().cmp(&a.last_success_at.is_some()))
+        .then_with(|| a.last_success_at.cmp(&b.last_success_at))
+        .then_with(|| b.error.is_some().cmp(&a.error.is_some()))
+        .then_with(|| a.error.cmp(&b.error))
+        .then_with(|| b.available_bars.is_some().cmp(&a.available_bars.is_some()))
+        .then_with(|| a.available_bars.cmp(&b.available_bars))
+        .then_with(|| b.required_bars.is_some().cmp(&a.required_bars.is_some()))
+        .then_with(|| a.required_bars.cmp(&b.required_bars))
+}
+
+fn merge_examples(examples: &mut Vec<ReadinessIssue>, incoming: impl IntoIterator<Item = ReadinessIssue>) {
+    examples.extend(incoming);
+    examples.sort_by(compare_issues);
+    examples.dedup_by(|a, b| a.reason == b.reason);
+    examples.truncate(MAX_PRODUCT_ISSUE_EXAMPLES);
+}
+
+// Avoid reading issue metadata for candidates that cannot become an example.
+fn issue_may_improve(examples: &[ReadinessIssue], issue: &ReadinessIssue) -> bool {
+    if let Some(existing) = examples.iter().find(|existing| existing.reason == issue.reason) {
+        return (&issue.symbol, &issue.timeframe, &issue.source)
+            <= (&existing.symbol, &existing.timeframe, &existing.source);
+    }
+    examples.len() < MAX_PRODUCT_ISSUE_EXAMPLES
+        || examples.last().is_some_and(|last| issue.reason < last.reason)
+}
+
+fn earliest_nonzero(a: i64, b: i64) -> i64 {
+    match (a, b) {
+        (0, other) | (other, 0) => other,
+        _ => a.min(b),
+    }
+}
+
+impl ProductReadiness {
+    fn merge(&mut self, other: Self) {
+        self.instrument_count = self.instrument_count.saturating_add(other.instrument_count);
+        self.fresh_price_count = self.fresh_price_count.saturating_add(other.fresh_price_count);
+        self.missing_price_count = self.missing_price_count.saturating_add(other.missing_price_count);
+        self.stale_price_count = self.stale_price_count.saturating_add(other.stale_price_count);
+        self.data_error_count = self.data_error_count.saturating_add(other.data_error_count);
+        self.first_checked_at = earliest_nonzero(self.first_checked_at, other.first_checked_at);
+        self.checked_at = self.checked_at.max(other.checked_at);
+        for frame in other.timeframes {
+            merge_timeframe(&mut self.timeframes, frame);
+        }
+        merge_examples(&mut self.examples, other.examples);
+    }
+}
+
 pub(crate) struct SignalReadiness {
     scan_started_at: i64,
     products: BTreeMap<(String, String), ProductReadiness>,
@@ -76,10 +157,14 @@ impl SignalReadiness {
         }
     }
 
-    #[cfg(not(test))]
-    pub(crate) fn merge(&mut self, mut other: Self) {
-        self.scan_started_at = self.scan_started_at.min(other.scan_started_at);
-        self.products.append(&mut other.products);
+    pub(crate) fn merge(&mut self, other: Self) {
+        self.scan_started_at = earliest_nonzero(self.scan_started_at, other.scan_started_at);
+        for (key, product) in other.products {
+            match self.products.entry(key) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => entry.get_mut().merge(product),
+                std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(product); }
+            }
+        }
     }
 
     pub(crate) fn record(
@@ -102,7 +187,8 @@ impl SignalReadiness {
                 ..ProductReadiness::default()
             });
         product.instrument_count += 1;
-        product.checked_at = now;
+        product.first_checked_at = earliest_nonzero(product.first_checked_at, now);
+        product.checked_at = product.checked_at.max(now);
         match instrument.price_status {
             "fresh" => product.fresh_price_count += 1,
             "stale" => product.stale_price_count += 1,
@@ -114,34 +200,10 @@ impl SignalReadiness {
                 accepted_signals.get(&frame.timeframe).copied().unwrap_or(0);
         }
         for frame in instrument.timeframes {
-            let index = product
-                .timeframes
-                .iter()
-                .position(|item| item.timeframe == frame.timeframe);
-            if let Some(index) = index {
-                let existing = &mut product.timeframes[index];
-                existing.missing_history_count += frame.missing_history_count;
-                existing.stale_history_count += frame.stale_history_count;
-                existing.insufficient_history_count += frame.insufficient_history_count;
-                existing.nwe_insufficient_history_count += frame.nwe_insufficient_history_count;
-                existing.source_mismatch_count += frame.source_mismatch_count;
-                existing.data_error_count += frame.data_error_count;
-                existing.evaluated_count += frame.evaluated_count;
-                existing.evaluated_model_count += frame.evaluated_model_count;
-                existing.qualifying_signal_count += frame.qualifying_signal_count;
-            } else {
-                product.timeframes.push(frame);
-            }
+            merge_timeframe(&mut product.timeframes, frame);
         }
         for mut issue in instrument.issues {
-            if product.examples.len() >= MAX_PRODUCT_ISSUE_EXAMPLES {
-                break;
-            }
-            if product
-                .examples
-                .iter()
-                .any(|example| example.reason == issue.reason)
-            {
+            if !issue_may_improve(&product.examples, &issue) {
                 continue;
             }
             if let (Some(connection), Some(source)) = (market_connection, issue.source.as_deref()) {
@@ -166,7 +228,7 @@ impl SignalReadiness {
                 }
             }
             issue.error = issue.error.map(|error| error.chars().take(250).collect());
-            product.examples.push(issue);
+            merge_examples(&mut product.examples, std::iter::once(issue));
         }
     }
 

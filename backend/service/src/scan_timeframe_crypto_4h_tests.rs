@@ -288,6 +288,7 @@ fn crypto_4h_dss_near_cross_uses_the_shared_rank_and_its_own_completed_price() {
     assert_eq!(row["asset_category_id"], "crypto_spot");
     assert_eq!(row["timeframe"], "4h");
     assert_eq!(row["price_timeframe"], "15m");
+    assert_eq!(row["score_bar_is_forming"], true);
     assert!(matches!(row["direction"].as_str(), Some("LONG" | "SHORT")));
     assert_eq!(
         row["signal_strategy_id"],

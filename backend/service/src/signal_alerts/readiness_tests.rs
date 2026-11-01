@@ -119,6 +119,7 @@ fn readiness_is_unknown_before_a_scan_and_commits_with_the_snapshot() {
         0,
         0,
         Some(&readiness),
+        &std::collections::BTreeSet::new(),
     )
     .unwrap();
     assert_eq!(load_scan_readiness(&connection).unwrap(), readiness);
@@ -139,8 +140,128 @@ fn readiness_is_unknown_before_a_scan_and_commits_with_the_snapshot() {
             0,
             0,
             Some(&next),
+            &std::collections::BTreeSet::new(),
         )
         .is_err()
     );
     assert_eq!(load_scan_readiness(&connection).unwrap(), readiness);
+}
+
+#[test]
+fn merged_readiness_sums_product_and_timeframe_counts_and_preserves_time_bounds() {
+    let key = ("stockbit".to_string(), "stockbit_regular".to_string());
+    let other_key = ("pintu".to_string(), "pintu_pro_spot".to_string());
+    let frame = |name: &str, count: usize| TimeframeReadiness {
+        timeframe: name.into(),
+        missing_history_count: count,
+        stale_history_count: count,
+        insufficient_history_count: count,
+        nwe_insufficient_history_count: count,
+        source_mismatch_count: count,
+        data_error_count: count,
+        evaluated_count: count,
+        evaluated_model_count: count,
+        qualifying_signal_count: count,
+    };
+    let mut left = SignalReadiness {
+        scan_started_at: 90,
+        products: BTreeMap::from([(
+            key.clone(),
+            ProductReadiness {
+                exchange_id: key.0.clone(), product_id: key.1.clone(),
+                instrument_count: 1, fresh_price_count: 1,
+                first_checked_at: 100, checked_at: 120,
+                timeframes: vec![frame("15m", 1)],
+                ..ProductReadiness::default()
+            },
+        )]),
+    };
+    let right = SignalReadiness {
+        scan_started_at: 80,
+        products: BTreeMap::from([
+            (key.clone(), ProductReadiness {
+                exchange_id: key.0.clone(), product_id: key.1.clone(),
+                instrument_count: 2, missing_price_count: 1, stale_price_count: 1,
+                first_checked_at: 95, checked_at: 140,
+                timeframes: vec![frame("15m", 2), frame("1h", 4)],
+                ..ProductReadiness::default()
+            }),
+            (other_key.clone(), ProductReadiness {
+                exchange_id: other_key.0.clone(), product_id: other_key.1.clone(),
+                instrument_count: 1, data_error_count: 1,
+                first_checked_at: 110, checked_at: 130,
+                ..ProductReadiness::default()
+            }),
+        ]),
+    };
+    left.merge(right);
+    assert_eq!(left.scan_started_at, 80);
+    let stockbit = left.products.get(&key).unwrap();
+    assert_eq!((stockbit.instrument_count, stockbit.fresh_price_count,
+        stockbit.missing_price_count, stockbit.stale_price_count, stockbit.data_error_count),
+        (3, 1, 1, 1, 0));
+    assert_eq!((stockbit.first_checked_at, stockbit.checked_at), (95, 140));
+    let fifteen = stockbit.timeframes.iter().find(|frame| frame.timeframe == "15m").unwrap();
+    assert_eq!((fifteen.missing_history_count, fifteen.stale_history_count,
+        fifteen.insufficient_history_count, fifteen.nwe_insufficient_history_count,
+        fifteen.source_mismatch_count, fifteen.data_error_count, fifteen.evaluated_count,
+        fifteen.evaluated_model_count, fifteen.qualifying_signal_count),
+        (3, 3, 3, 3, 3, 3, 3, 3, 3));
+    let hourly = stockbit.timeframes.iter().find(|frame| frame.timeframe == "1h").unwrap();
+    assert_eq!(hourly.evaluated_count, 4);
+    assert_eq!(left.products.get(&other_key).unwrap().data_error_count, 1);
+}
+
+#[test]
+fn merged_readiness_examples_and_timeframes_are_bounded_and_order_independent() {
+    let key = ("stockbit".to_string(), "stockbit_regular".to_string());
+    let cases = [
+        ("b_stale", "ZZZ"), ("a_error", "BBB"), ("b_stale", "AAA"),
+        ("d_other", "DDD"), ("c_missing", "CCC"), ("b_stale", "AAA"),
+    ];
+    let fragment = |index: usize| {
+        let (reason, symbol) = cases[index];
+        SignalReadiness {
+            scan_started_at: 100 + index as i64,
+            products: BTreeMap::from([(
+                key.clone(),
+                ProductReadiness {
+                    exchange_id: key.0.clone(), product_id: key.1.clone(),
+                    instrument_count: 1, fresh_price_count: 1,
+                    first_checked_at: 200 + index as i64,
+                    checked_at: 300 + index as i64,
+                    examples: vec![ReadinessIssue {
+                        symbol: symbol.into(), reason: reason.into(), timeframe: "15m".into(),
+                        error: (index == 5).then(|| "provider unavailable".into()),
+                        ..ReadinessIssue::default()
+                    }],
+                    timeframes: vec![TimeframeReadiness {
+                        timeframe: if index % 2 == 0 { "15m" } else { "1h" }.into(),
+                        evaluated_count: 1,
+                        ..TimeframeReadiness::default()
+                    }],
+                    ..ProductReadiness::default()
+                },
+            )]),
+        }
+    };
+    let mut expected = None;
+    for order in [[0, 1, 2, 3, 4, 5], [5, 4, 3, 2, 1, 0], [2, 0, 4, 1, 5, 3]] {
+        let mut merged = SignalReadiness { scan_started_at: 0, products: BTreeMap::new() };
+        for index in order { merged.merge(fragment(index)); }
+        assert_eq!(merged.scan_started_at, 100);
+        let product = merged.products.get(&key).unwrap();
+        assert_eq!(product.instrument_count, 6);
+        assert_eq!((product.first_checked_at, product.checked_at), (200, 305));
+        assert_eq!(product.examples.len(), MAX_PRODUCT_ISSUE_EXAMPLES);
+        assert_eq!(product.examples.iter().map(|issue| issue.reason.as_str()).collect::<Vec<_>>(),
+            vec!["a_error", "b_stale", "c_missing"]);
+        assert_eq!(product.examples[1].symbol, "AAA");
+        assert_eq!(product.examples[1].error.as_deref(), Some("provider unavailable"));
+        assert_eq!(product.timeframes.iter().find(|frame| frame.timeframe == "15m").unwrap().evaluated_count, 3);
+        assert_eq!(product.timeframes.iter().find(|frame| frame.timeframe == "1h").unwrap().evaluated_count, 3);
+        let value = serde_json::to_value(product).unwrap();
+        if let Some(previous) = &expected { assert_eq!(&value, previous); }
+        expected = Some(value);
+    }
 }

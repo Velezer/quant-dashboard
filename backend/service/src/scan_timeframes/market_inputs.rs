@@ -7,7 +7,7 @@ pub(super) struct CurrentPrice {
     pub(super) provider: String,
 }
 
-pub(super) fn load_stockbit_signal_candles(
+pub(super) fn load_15m_rolled_signal_candles(
     input: &TimeframeScanInput<'_>,
     timeframe: &str,
     limit: i64,
@@ -22,7 +22,7 @@ pub(super) fn load_stockbit_signal_candles(
         source,
     )
     .unwrap_or_default();
-    let Some(timeframe_duration_ns) = timeframe_duration_ns(timeframe) else {
+    let Some(target_duration_ns) = timeframe_duration_ns(timeframe) else {
         return Vec::new();
     };
     if timeframe == "15m" {
@@ -30,20 +30,30 @@ pub(super) fn load_stockbit_signal_candles(
             return Vec::new();
         };
         return if latest_15m_bar_time >= latest_bar_time
-            && latest_15m_bar_time < latest_bar_time.saturating_add(timeframe_duration_ns)
+            && latest_15m_bar_time < latest_bar_time.saturating_add(target_duration_ns)
         {
             stored_history
         } else {
             Vec::new()
         };
     }
-    let intraday_rollup = aggregate_candles_from_base_source(
+    let fifteen_minutes = timeframe_duration_ns("15m").unwrap_or_default();
+    let timeframe_duration = target_duration_ns;
+    let completed_15m_end = latest_15m_bar_time.saturating_add(fifteen_minutes);
+    // Only rebuild the recent higher-timeframe buckets from 15m bars. Older
+    // history stays in its stored interval, avoiding a full 15m resample on
+    // every 15-minute scan.
+    let rollup_from = latest_15m_bar_time
+        .saturating_sub(timeframe_duration.saturating_mul(2));
+    let intraday_rollup = aggregate_candles_from_base_source_with_cap_and_range(
         input.market_connection,
         input.symbol,
         timeframe,
         "15m",
         limit,
         source,
+        MAX_AGGREGATION_SOURCE_CANDLES,
+        Some((rollup_from, completed_15m_end)),
     )
     .unwrap_or_default();
     let stored_history_is_newer = stored_history.last().map(|bar| bar.time);
@@ -61,7 +71,7 @@ pub(super) fn load_stockbit_signal_candles(
         return Vec::new();
     };
     if latest_15m_bar_time < latest_intraday_time
-        || latest_15m_bar_time >= latest_intraday_time.saturating_add(timeframe_duration_ns)
+        || latest_15m_bar_time >= latest_intraday_time.saturating_add(target_duration_ns)
     {
         return Vec::new();
     }

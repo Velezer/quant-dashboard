@@ -163,3 +163,26 @@ fn failed_scan_retries_after_one_minute() {
 
     assert_eq!(next_scan_epoch, completed_epoch + 60);
 }
+
+
+#[test]
+fn parallel_scan_progress_event_lists_both_active_tickers() {
+    let state = AppState::new("unused.sqlite3".into(), 900);
+    let (sender, receiver) = std::sync::mpsc::sync_channel(8);
+    state
+        .sse_clients
+        .lock()
+        .expect("SSE client lock should be available")
+        .push(sender);
+
+    state.begin_scan_symbol("pintu · pintu_pro_spot · BTC-USD");
+    state.begin_scan_symbol("tokocrypto · tokocrypto_spot · BTCUSDT");
+
+    let event = receiver
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .expect("the parallel worker update should be broadcast");
+    assert!(event.contains("event: scan_progress"));
+    assert!(event.contains("2 parallel"));
+    assert!(event.contains("BTC-USD"));
+    assert!(event.contains("BTCUSDT"));
+}
