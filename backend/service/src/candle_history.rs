@@ -40,10 +40,10 @@ pub(super) fn derived_spec(timeframe: &str) -> Option<(&'static str, i64)> {
     let day = NANOS_PER_DAY;
     match timeframe {
         "30m" => Some(("15m", 30 * minute)),
-        "2h" => Some(("15m", 2 * hour)),
-        "4h" => Some(("15m", 4 * hour)),
-        "6h" => Some(("15m", 6 * hour)),
-        "12h" => Some(("15m", 12 * hour)),
+        "2h" => Some(("1h", 2 * hour)),
+        "4h" => Some(("1h", 4 * hour)),
+        "6h" => Some(("1h", 6 * hour)),
+        "12h" => Some(("1h", 12 * hour)),
         "2d" => Some(("1d", 2 * day)),
         "3d" => Some(("1d", 3 * day)),
         "4d" => Some(("1d", 4 * day)),
@@ -82,14 +82,14 @@ pub(super) fn is_removed_candle_timeframe(timeframe: &str) -> bool {
     timeframe.trim().eq_ignore_ascii_case("5m")
 }
 
-/// Stored intervals that can construct the requested timeframe. Intraday
-/// higher timeframes are rolled up from 15m bars when available. Daily and
-/// weekly histories retain coarser sources to bound backfill work.
+/// Stored intervals that can construct the requested timeframe. The 4H
+/// loader prefers 1H before consulting this list; other loaders choose the
+/// listed source with more history unless a finer source is materially fresher.
 pub(super) fn lower_timeframe_candidates(timeframe: &str) -> &'static [&'static str] {
     match timeframe {
         "1h" => &["15m"],
         "30m" => &["15m"],
-        "2h" | "4h" | "6h" | "12h" => &["15m"],
+        "2h" | "4h" | "6h" | "12h" => &["1h", "15m"],
         "1d" => &["1h", "15m"],
         "1w" => &["1d", "1h", "15m"],
         "2d" | "3d" | "4d" | "5d" | "6d" | "2w" => &["1d", "1h", "15m"],
@@ -110,9 +110,9 @@ pub(super) fn latest_stored_bar_time_from_source(
     )
 }
 
-/// Pick the stored series that should supply a derived chart. Intraday higher
-/// timeframe rollups prefer 15m candles so scans can use the latest completed
-/// base candle. Other native higher intervals remain authoritative. A
+/// Pick the stored series that should supply a derived chart. The 4H chart
+/// prefers stored 1H candles whenever they exist so its OHLC values are built
+/// from hourly bars. Other native higher intervals remain authoritative. A
 /// fallback-backed higher interval may be replaced or extended when a finer
 /// stored series is materially newer, so a failed provider retry cannot pin
 /// the chart to an old direct series.
@@ -134,11 +134,6 @@ pub(super) fn preferred_storage_timeframe_from_source(
     requested_timeframe: &str,
     source: &str,
 ) -> Result<String, rusqlite::Error> {
-    if matches!(requested_timeframe, "2h" | "4h" | "6h" | "12h")
-        && latest_stored_bar_time_from_source(connection, symbol, "15m", source)?.is_some()
-    {
-        return Ok("15m".to_string());
-    }
     if requested_timeframe == "4h"
         && latest_stored_bar_time_from_source(connection, symbol, "1h", source)?.is_some()
     {
