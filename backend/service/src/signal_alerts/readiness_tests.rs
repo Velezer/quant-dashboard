@@ -119,6 +119,7 @@ fn readiness_is_unknown_before_a_scan_and_commits_with_the_snapshot() {
         0,
         0,
         Some(&readiness),
+        &std::collections::BTreeSet::new(),
     )
     .unwrap();
     assert_eq!(load_scan_readiness(&connection).unwrap(), readiness);
@@ -139,6 +140,7 @@ fn readiness_is_unknown_before_a_scan_and_commits_with_the_snapshot() {
             0,
             0,
             Some(&next),
+            &std::collections::BTreeSet::new(),
         )
         .is_err()
     );
