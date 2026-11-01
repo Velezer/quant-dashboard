@@ -12,10 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 9ad136df1589527b73b1a5c2c2794eac6c423b83
+          ref: eaee811f37023bd82fc73da63d1b4dd9033ba5d4
           persist-credentials: false
       - name: Rust versions
         run: rustc --version && cargo --version
+      - name: Stockbit close and pause tests
+        run: cargo test --locked -p rust_chart_api stockbit_close_tests
+      - name: IDX intraday bucket tests
+        run: cargo test --locked -p rust_chart_api intraday_bucket_tests
+      - name: Crypto 4h rollup tests
+        run: cargo test --locked -p rust_chart_api scan_timeframe_crypto_4h_tests
+      - name: Parallel scan progress tests
+        run: cargo test --locked -p rust_chart_api active_scan_progress_tests
       - name: Readiness tests
         run: cargo test --locked -p rust_chart_api signal_alerts::readiness::tests
       - name: Check service
