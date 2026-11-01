@@ -278,6 +278,8 @@ pub(super) struct AppState {
     pub(super) next_scan_epoch: AtomicU64,
     pub(super) current_scan_symbol: Mutex<String>,
     pub(super) active_scan_symbols: Mutex<std::collections::BTreeSet<String>>,
+    /// Unix-millisecond timestamp of the last live worker progress SSE update.
+    pub(super) last_scan_progress_broadcast_millis: AtomicI64,
     pub(super) scan_progress_pct: Mutex<f64>,
     /// Most recently viewed chart symbol gets first place in the next bounded
     /// hourly history-sync batch.
@@ -305,6 +307,7 @@ impl AppState {
             next_scan_epoch: AtomicU64::new(now_secs().saturating_add(scan_interval_sec)),
             current_scan_symbol: Mutex::new(String::new()),
             active_scan_symbols: Mutex::new(std::collections::BTreeSet::new()),
+            last_scan_progress_broadcast_millis: AtomicI64::new(0),
             scan_progress_pct: Mutex::new(0.0),
             chart_sync_priority: Mutex::new(None),
             stale_intraday_sync_priority: Mutex::new(StaleSignalSyncPriorityQueue::default()),
@@ -426,16 +429,61 @@ impl AppState {
         }
     }
 
-    pub(super) fn begin_scan_symbol(&self, symbol: &str) {
-        let mut active = self
-            .active_scan_symbols
+    fn broadcast_active_scan_progress(&self, display: &str, active_count: usize) {
+        // Status polling is intentionally coarse. Push a compact live update at
+        // most once per second while the parallel workers are actually active.
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis().min(i64::MAX as u128) as i64)
+            .unwrap_or_default();
+        let previous = self
+            .last_scan_progress_broadcast_millis
+            .load(Ordering::Relaxed);
+        if previous != 0 && now_millis.saturating_sub(previous) < 1_000 {
+            return;
+        }
+        if self
+            .last_scan_progress_broadcast_millis
+            .compare_exchange(previous, now_millis, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+        let progress_pct = *self
+            .scan_progress_pct
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        active.insert(symbol.to_string());
-        *self
-            .current_scan_symbol
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Self::active_scan_display(&active);
+        self.broadcast(
+            "scan_progress",
+            &serde_json::json!({
+                "symbol": display,
+                "current_symbol": display,
+                "active_scan_count": active_count,
+                "progress_pct": progress_pct,
+                "scan_progress_pct": progress_pct,
+            }),
+        );
+    }
+
+    pub(super) fn begin_scan_symbol(&self, symbol: &str) {
+        let (display, active_count) = {
+            let mut active = self
+                .active_scan_symbols
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            active.insert(symbol.to_string());
+            let display = Self::active_scan_display(&active);
+            *self
+                .current_scan_symbol
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = display.clone();
+            (display, active.len())
+        };
+        // A single ticker label adds no useful live detail; wait until the
+        // second worker is running, then show both identities in the banner.
+        if active_count >= 2 {
+            self.broadcast_active_scan_progress(&display, active_count);
+        }
     }
 
     pub(super) fn finish_scan_symbol(
@@ -449,22 +497,30 @@ impl AppState {
         } else {
             (completed.min(total) as f64 / total as f64 * 100.0).clamp(0.0, 100.0)
         };
-        let mut active = self
-            .active_scan_symbols
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        active.remove(symbol);
-        let mut progress_pct = self
-            .scan_progress_pct
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if progress >= *progress_pct {
-            *progress_pct = progress;
+        let (display, active_count) = {
+            let mut active = self
+                .active_scan_symbols
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            active.remove(symbol);
+            let mut progress_pct = self
+                .scan_progress_pct
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if progress >= *progress_pct {
+                *progress_pct = progress;
+            }
+            drop(progress_pct);
+            let display = Self::active_scan_display(&active);
+            *self
+                .current_scan_symbol
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = display.clone();
+            (display, active.len())
+        };
+        if active_count >= 2 || active_count == 1 {
+            self.broadcast_active_scan_progress(&display, active_count);
         }
-        *self
-            .current_scan_symbol
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Self::active_scan_display(&active);
     }
 
     pub(super) fn update_scan_progress(&self, symbol: &str, completed: usize, total: usize) {
@@ -899,6 +955,20 @@ mod tests;
 mod active_scan_progress_tests {
     use super::AppState;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn progress_event_publishes_both_parallel_tickers() {
+        let state = AppState::new(String::new(), 900);
+        let (tx, rx) = std::sync::mpsc::sync_channel(8);
+        state.sse_clients.lock().unwrap().push(tx);
+        state.begin_scan_symbol("pintu · pintu_pro_spot · BTC-USD");
+        state.begin_scan_symbol("tokocrypto · tokocrypto_spot · BTCUSDT");
+        let event = rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+        assert!(event.contains("event: scan_progress"));
+        assert!(event.contains("2 parallel"));
+        assert!(event.contains("BTC-USD"));
+        assert!(event.contains("BTCUSDT"));
+    }
 
     #[test]
     fn progress_label_lists_both_concurrent_ticker_scans() {
