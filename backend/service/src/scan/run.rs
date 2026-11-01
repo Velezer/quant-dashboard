@@ -556,33 +556,39 @@ fn stockbit_closed_session_checkpoint(
         return Ok(None);
     }
 
+    let latest = connection
+        .query_row(
+            "SELECT ts,open,high,low,close,volume FROM bars
+              WHERE symbol=?1 AND interval='15m' AND source=?2
+              ORDER BY ts DESC LIMIT 1",
+            params![storage_symbol, state.source],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, f64>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, f64>(3)?,
+                    row.get::<_, f64>(4)?,
+                    row.get::<_, f64>(5)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((timestamp, open, high, low, close, volume)) = latest else {
+        return Ok(None);
+    };
+    if timestamp != final_bar_time {
+        return Ok(None);
+    }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     std::hash::Hash::hash(&state.source, &mut hasher);
     std::hash::Hash::hash(&state.data_provider, &mut hasher);
-    let mut statement = connection.prepare(
-        "SELECT ts,open,high,low,close,volume FROM bars
-          WHERE symbol=?1 AND interval='15m' AND source=?2 ORDER BY ts",
-    )?;
-    let mut rows = statement.query(params![storage_symbol, state.source])?;
-    let mut found_latest = false;
-    while let Some(row) = rows.next()? {
-        let timestamp = row.get::<_, i64>(0)?;
-        let open = row.get::<_, f64>(1)?;
-        let high = row.get::<_, f64>(2)?;
-        let low = row.get::<_, f64>(3)?;
-        let close = row.get::<_, f64>(4)?;
-        let volume = row.get::<_, f64>(5)?;
-        std::hash::Hash::hash(&timestamp, &mut hasher);
-        std::hash::Hash::hash(&open.to_bits(), &mut hasher);
-        std::hash::Hash::hash(&high.to_bits(), &mut hasher);
-        std::hash::Hash::hash(&low.to_bits(), &mut hasher);
-        std::hash::Hash::hash(&close.to_bits(), &mut hasher);
-        std::hash::Hash::hash(&volume.to_bits(), &mut hasher);
-        found_latest |= timestamp == final_bar_time;
-    }
-    if !found_latest {
-        return Ok(None);
-    }
+    std::hash::Hash::hash(&timestamp, &mut hasher);
+    std::hash::Hash::hash(&open.to_bits(), &mut hasher);
+    std::hash::Hash::hash(&high.to_bits(), &mut hasher);
+    std::hash::Hash::hash(&low.to_bits(), &mut hasher);
+    std::hash::Hash::hash(&close.to_bits(), &mut hasher);
+    std::hash::Hash::hash(&volume.to_bits(), &mut hasher);
     Ok(Some(StockbitCloseScanCheckpoint {
         product_id: product_id.to_string(),
         asset_category_id: asset_category_id.to_string(),
