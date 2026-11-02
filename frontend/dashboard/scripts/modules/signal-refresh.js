@@ -196,9 +196,26 @@ export function installSignalRefresh() {
         const fallback = appName ? `${appName} registered instruments` : 'Scanning registered instruments';
         const current = String(symbol || fallback);
         const scopedPrefix = exchange ? `${exchange} · ` : '';
-        if (currentSymbol) currentSymbol.textContent = scopedPrefix && current.toLowerCase().startsWith(scopedPrefix)
-            ? current.slice(scopedPrefix.length)
-            : current;
+        const formatSymbol = value => scopedPrefix && value.toLowerCase().startsWith(scopedPrefix)
+            ? value.slice(scopedPrefix.length)
+            : value;
+        if (currentSymbol) {
+            const parallel = current.match(/^(\d+) parallel · (.+)$/);
+            if (parallel) {
+                const activeSymbols = parallel[2].split(' + ').map(formatSymbol);
+                currentSymbol.textContent = `${parallel[1]} parallel workers\n${activeSymbols.map(value => `• ${value}`).join('\n')}`;
+                currentSymbol.style.whiteSpace = 'pre-line';
+                currentSymbol.style.maxHeight = '6rem';
+                currentSymbol.style.overflowY = 'auto';
+                currentSymbol.style.lineHeight = '1.3';
+            } else {
+                currentSymbol.textContent = formatSymbol(current);
+                currentSymbol.style.whiteSpace = '';
+                currentSymbol.style.maxHeight = '';
+                currentSymbol.style.overflowY = '';
+                currentSymbol.style.lineHeight = '';
+            }
+        }
         if (bar) bar.style.width = `${pct}%`;
         const percentage = document.getElementById('scan-progress-pct');
         if (percentage) percentage.textContent = `${Math.round(pct)}%`;
