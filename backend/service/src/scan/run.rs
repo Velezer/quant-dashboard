@@ -1014,9 +1014,13 @@ fn scan_registered_app(
         let (market_connection, market_symbol) = market_selection;
         let connection = &market_connection;
         let is_idx = instrument_exchange == "stockbit" && category_id == "idx_stock";
-        // Keep evaluating from the latest completed close when a fresh intraday
-        // price is unavailable; the close checkpoint below only skips unchanged input.
-        let allow_stockbit_reference_price = is_idx;
+        // After the IDX session closes, keep evaluating the latest completed
+        // close when the provider's final intraday price is stale or missing.
+        let allow_stockbit_reference_price = is_idx
+            && expected_stockbit_closed_session_day(
+                now_secs().min(i64::MAX as u64) as i64,
+            )
+            .is_some();
         #[cfg(not(test))]
         if is_idx {
             match stockbit_closed_session_checkpoint(
