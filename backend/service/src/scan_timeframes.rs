@@ -64,6 +64,30 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
     standalone_score_updates: &mut Vec<Value>,
     readiness: &mut InstrumentReadiness,
 ) -> Result<bool, rusqlite::Error> {
+    append_timeframe_signal_plans_with_closed_market_reference(
+        input,
+        running_plans,
+        potential_plans,
+        cagr_stats,
+        user_indicator_alerts,
+        standalone_indicator_signals,
+        standalone_score_updates,
+        readiness,
+        false,
+    )
+}
+
+pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
+    input: TimeframeScanInput<'_>,
+    running_plans: &mut Vec<Value>,
+    potential_plans: &mut Vec<Value>,
+    cagr_stats: &mut HashMap<String, Value>,
+    user_indicator_alerts: &mut Vec<Value>,
+    standalone_indicator_signals: &mut Vec<Value>,
+    standalone_score_updates: &mut Vec<Value>,
+    readiness: &mut InstrumentReadiness,
+    stockbit_closed_market_reference: bool,
+) -> Result<bool, rusqlite::Error> {
     let now_ns = current_time_ns();
     let is_stockbit_signal_scope = input.exchange_id == quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID
         && input.product_id == quant_core::STOCKBIT_NWE_4H_PRODUCT_ID
@@ -81,6 +105,15 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
     let stockbit_intraday_state = intraday_state.filter(|_| is_stockbit_signal_scope);
     let current_price =
         intraday_state.and_then(|state| fresh_current_price(&input, Some(state), now_ns));
+    let stockbit_closed_reference_price =
+        if is_stockbit_signal_scope && stockbit_closed_market_reference {
+            intraday_state.and_then(|state| {
+                latest_current_price_reference(&input, Some(state), now_ns)
+            })
+        } else {
+            None
+        };
+    let has_stockbit_closed_reference = stockbit_closed_reference_price.is_some();
     let stale_reference_price = if current_price.is_none() && is_crypto_signal_scope {
         intraday_state.and_then(|state| {
             latest_current_price_reference(&input, Some(state), now_ns)
@@ -88,7 +121,10 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
     } else {
         None
     };
-    let signal_reference_price = current_price.as_ref().or(stale_reference_price.as_ref());
+    let signal_reference_price = current_price
+        .as_ref()
+        .or(stale_reference_price.as_ref())
+        .or(stockbit_closed_reference_price.as_ref());
     readiness.price_status = if current_price.is_some() {
         "fresh"
     } else if intraday_result.is_err() {
@@ -116,7 +152,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
             ..ReadinessIssue::default()
         });
     }
-    if current_price.is_none() {
+    if current_price.is_none() && !has_stockbit_closed_reference {
         if let Some(state) = input.sync_state {
             state.prioritize_stale_signal_sync(
                 input.symbol,
@@ -198,7 +234,9 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
         }
         let duration_ns = timeframe_duration_ns(timeframe).unwrap_or_default();
         let use_stockbit_timeframe_history = is_stockbit_signal_scope && !stale;
-        if (stale && !stockbit_intraday_is_fresh) || duration_ns <= 0 {
+        if (stale && !stockbit_intraday_is_fresh && !has_stockbit_closed_reference)
+            || duration_ns <= 0
+        {
             let missing = timeframe_state
                 .as_ref()
                 .is_none_or(|state| state.latest_bar_time.is_none());
@@ -231,10 +269,11 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
             match (
                 timeframe_state.as_ref(),
                 stockbit_intraday_state,
-                current_price.as_ref(),
+                signal_reference_price,
             ) {
                 (Some(timeframe_source), Some(intraday), Some(_))
-                    if timeframe_source.source == intraday.source && stockbit_intraday_is_fresh =>
+                    if timeframe_source.source == intraday.source
+                        && (stockbit_intraday_is_fresh || has_stockbit_closed_reference) =>
                 {
                     Some((intraday.source.clone(), intraday.data_provider.clone()))
                 }
@@ -253,8 +292,7 @@ pub(super) fn append_timeframe_signal_plans_with_readiness(
             || (is_crypto_signal_scope && timeframe != "15m");
         let candles = if let Some((source, _)) = source_metadata.as_ref() {
             if use_15m_rollup {
-                if let Some(price) = current_price
-                    .as_ref()
+                if let Some(price) = signal_reference_price
                     .filter(|price| is_stockbit_signal_scope || price.source == *source)
                 {
                     load_15m_rolled_signal_candles(
