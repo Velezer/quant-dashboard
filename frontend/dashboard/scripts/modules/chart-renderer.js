@@ -6,6 +6,18 @@ import { pineChartPlots } from './pine-chart-output.js';
 import { isIntradayChartTimeframe } from './chart-candle-time.js';
 import { estimateVolumeDeltaBars, volumeDeltaExtent } from './volume-delta.js';
 
+export function withChartPricePaneClip(ctx, bounds, render) {
+    ctx.save();
+    try {
+        ctx.beginPath();
+        ctx.rect(bounds.left, bounds.top, bounds.width, bounds.height);
+        ctx.clip();
+        render();
+    } finally {
+        ctx.restore();
+    }
+}
+
 /** Draws the selected signal's candles, current price, and indicator pane. */
 export function installChartRenderer() {
             function drawCandleChartNow(signal) {
@@ -139,6 +151,12 @@ export function installChartRenderer() {
                 const padding = { top: 20, bottom: 30 + volumeBandH, left: 15, right: 96 };
                 const plotW = width - padding.left - padding.right;
                 const pricePanelH = Math.max(120, height - padding.top - padding.bottom);
+                const pricePlotBounds = {
+                    left: padding.left,
+                    top: padding.top,
+                    width: plotW,
+                    height: pricePanelH,
+                };
                 const volumeTop = padding.top + pricePanelH + 5;
                 const volumeBottom = height - 24;
 
@@ -234,60 +252,62 @@ export function installChartRenderer() {
                 const indicatorX = index => padding.left + (index - barFraction) * stepX + stepX / 2;
 
                 function drawChartIndicatorLine(valueForCandle, colorForCandle, lineWidth, dashPattern = []) {
-                    let activeColor = null;
-                    let points = [];
-                    const flush = () => {
-                        if (points.length > 1) {
-                            ctx.save();
-                            ctx.strokeStyle = activeColor;
-                            ctx.lineWidth = lineWidth;
-                            ctx.setLineDash(dashPattern);
-                            ctx.beginPath();
-                            ctx.moveTo(points[0].x, points[0].y);
-                            points.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
-                            ctx.stroke();
-                            ctx.restore();
-                        }
-                        points = [];
-                        activeColor = null;
-                    };
-                    candles.forEach((candle, index) => {
-                        const value = valueForCandle(candle, index);
-                        const color = colorForCandle(candle, index);
-                        if (!Number.isFinite(value) || !color) {
-                            flush();
-                            return;
-                        }
-                        if (activeColor !== null && color !== activeColor) flush();
-                        activeColor = color;
-                        points.push({ x: indicatorX(index), y: getY(value) });
+                    withChartPricePaneClip(ctx, pricePlotBounds, () => {
+                        let activeColor = null;
+                        let points = [];
+                        const flush = () => {
+                            if (points.length > 1) {
+                                ctx.save();
+                                ctx.strokeStyle = activeColor;
+                                ctx.lineWidth = lineWidth;
+                                ctx.setLineDash(dashPattern);
+                                ctx.beginPath();
+                                ctx.moveTo(points[0].x, points[0].y);
+                                points.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+                                ctx.stroke();
+                                ctx.restore();
+                            }
+                            points = [];
+                            activeColor = null;
+                        };
+                        candles.forEach((candle, index) => {
+                            const value = valueForCandle(candle, index);
+                            const color = colorForCandle(candle, index);
+                            if (!Number.isFinite(value) || !color) {
+                                flush();
+                                return;
+                            }
+                            if (activeColor !== null && color !== activeColor) flush();
+                            activeColor = color;
+                            points.push({ x: indicatorX(index), y: getY(value) });
+                        });
+                        flush();
                     });
-                    flush();
                 }
 
                 function drawChartIndicatorMarkers(markersForCandle) {
-                    ctx.save();
-                    candles.forEach((candle, index) => {
-                        for (const marker of markersForCandle(candle)) {
-                            if (!Number.isFinite(marker.value)) continue;
-                            const x = indicatorX(index);
-                            const y = getY(marker.value) + (marker.direction === 'up' ? -8 : 8);
-                            ctx.fillStyle = marker.color;
-                            ctx.beginPath();
-                            if (marker.direction === 'up') {
-                                ctx.moveTo(x, y - 4);
-                                ctx.lineTo(x - 4, y + 3);
-                                ctx.lineTo(x + 4, y + 3);
-                            } else {
-                                ctx.moveTo(x, y + 4);
-                                ctx.lineTo(x - 4, y - 3);
-                                ctx.lineTo(x + 4, y - 3);
+                    withChartPricePaneClip(ctx, pricePlotBounds, () => {
+                        candles.forEach((candle, index) => {
+                            for (const marker of markersForCandle(candle)) {
+                                if (!Number.isFinite(marker.value)) continue;
+                                const x = indicatorX(index);
+                                const y = getY(marker.value) + (marker.direction === 'up' ? -8 : 8);
+                                ctx.fillStyle = marker.color;
+                                ctx.beginPath();
+                                if (marker.direction === 'up') {
+                                    ctx.moveTo(x, y - 4);
+                                    ctx.lineTo(x - 4, y + 3);
+                                    ctx.lineTo(x + 4, y + 3);
+                                } else {
+                                    ctx.moveTo(x, y + 4);
+                                    ctx.lineTo(x - 4, y - 3);
+                                    ctx.lineTo(x + 4, y - 3);
+                                }
+                                ctx.closePath();
+                                ctx.fill();
                             }
-                            ctx.closePath();
-                            ctx.fill();
-                        }
+                        });
                     });
-                    ctx.restore();
                 }
 
                 chartViewport = { ...view, key: QuantChart.key(signal), timeframe: activeTimeframe, allCandles, candles, startIndex, endIndex, stepX, minP, maxP, finalRange, useLogScale, logMaxP, logRange, padding, pricePanelH, volumeTop, volumeBottom };
@@ -313,30 +333,30 @@ export function installChartRenderer() {
                 for (const plot of pinePlots.overlayPlots) {
                     const valueAt = (_candle, index) => plot.values[startIndex + index];
                     if (plot.kind === 'shape' || plot.kind === 'shape_up' || plot.kind === 'shape_down') {
-                        ctx.save();
-                        candles.forEach((_candle, index) => {
-                            const value = valueAt(null, index);
-                            if (!Number.isFinite(value)) return;
-                            ctx.fillStyle = plot.color || '#2962ff';
-                            ctx.beginPath();
-                            const x = indicatorX(index);
-                            const y = getY(value);
-                            if (plot.kind === 'shape_up') {
-                                ctx.moveTo(x, y - 4);
-                                ctx.lineTo(x - 4, y + 3);
-                                ctx.lineTo(x + 4, y + 3);
-                                ctx.closePath();
-                            } else if (plot.kind === 'shape_down') {
-                                ctx.moveTo(x, y + 4);
-                                ctx.lineTo(x - 4, y - 3);
-                                ctx.lineTo(x + 4, y - 3);
-                                ctx.closePath();
-                            } else {
-                                ctx.arc(x, y, 3, 0, Math.PI * 2);
-                            }
-                            ctx.fill();
+                        withChartPricePaneClip(ctx, pricePlotBounds, () => {
+                            candles.forEach((_candle, index) => {
+                                const value = valueAt(null, index);
+                                if (!Number.isFinite(value)) return;
+                                ctx.fillStyle = plot.color || '#2962ff';
+                                ctx.beginPath();
+                                const x = indicatorX(index);
+                                const y = getY(value);
+                                if (plot.kind === 'shape_up') {
+                                    ctx.moveTo(x, y - 4);
+                                    ctx.lineTo(x - 4, y + 3);
+                                    ctx.lineTo(x + 4, y + 3);
+                                    ctx.closePath();
+                                } else if (plot.kind === 'shape_down') {
+                                    ctx.moveTo(x, y + 4);
+                                    ctx.lineTo(x - 4, y - 3);
+                                    ctx.lineTo(x + 4, y - 3);
+                                    ctx.closePath();
+                                } else {
+                                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                                }
+                                ctx.fill();
+                            });
                         });
-                        ctx.restore();
                     } else {
                         drawChartIndicatorLine(valueAt, () => plot.color || '#2962ff', 1.6, plot.kind === 'dashed' ? [4, 3] : []);
                     }
