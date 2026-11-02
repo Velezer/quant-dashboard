@@ -183,7 +183,7 @@ fn update_signal_market_entry_freshness(
             score_basis.insert("status".into(), json!("stale"));
         }
     }
-    signal["price_is_fresh"] = json!(is_current_price_fresh);
+    signal["price_is_fresh"] = json!(is_current_price_fresh && !is_verified_closed_reference);
     if is_verified_closed_reference {
         signal["market_entry_status"] = json!("NO_MARKET_ENTRY");
         signal["price_reference_status"] = json!("market_closed_reference");
@@ -197,7 +197,8 @@ fn update_signal_market_entry_freshness(
     let score_is_current = signal["score_status"].as_str() != Some("stale");
     (
         (is_current_price_fresh || is_verified_closed_reference) && score_is_current,
-        !is_current_price_fresh && (!is_stockbit_persistent || is_verified_closed_reference),
+        is_verified_closed_reference
+            || (!is_current_price_fresh && !is_stockbit_persistent),
         !score_is_current,
     )
 }
