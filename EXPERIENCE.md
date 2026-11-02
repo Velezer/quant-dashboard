@@ -19,6 +19,9 @@ lesson only when it will improve future tasks.
   starts at 16:00 WIB and closes at 16:15. Check that stored bar's timestamp
   and OHLCV, then checkpoint only after its scan batch publishes. Keep missing
   final data retryable.
+- An exact IDX close checkpoint is a deduplication aid, not a prerequisite for
+  displaying scores. If the provider omits the final bar, rescore the latest
+  completed stored 15m close after hours and mark it no-market-entry.
 - The smallest signal timeframe is 15m. Roll higher timeframes from stored
   15m bars for recent buckets so they can be rescored on every scan, and mark a
   still-forming bucket explicitly. Keep older higher-timeframe history coarse
