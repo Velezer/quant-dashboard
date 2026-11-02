@@ -1,4 +1,5 @@
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
+import { readApiResponse } from './api.js';
 import { createSignalScoreBasisMarkup } from './signal-score-basis.js';
 import { createSignalScreenerChartContext } from './signal-screener-chart-context.js';
 import { createSignalScreenerSummary } from './signal-screener-summary.js';
@@ -70,6 +71,7 @@ export function installSignalScreener() {
     let pendingAlertNavigation = null;
     let searchRefreshTimer = null;
     let priceExpiryTimer = null;
+    let pendingSelectedRefresh = null;
     const renderScoreBasis = createSignalScoreBasisMarkup({ escape, scoreModelFor });
     const renderSignalCard = createSignalScreenerCard({
         escape,
@@ -125,6 +127,94 @@ export function installSignalScreener() {
             offset: append ? nextSignalOffset : 0,
         });
     }
+
+    function selectedSignalRefreshTarget(signal) {
+        return {
+            exchange_id: String(signal?.exchange_id || '').trim().toLowerCase(),
+            product_id: String(signal?.product_id || '').trim().toLowerCase(),
+            asset_category_id: String(signal?.asset_category_id || '').trim().toLowerCase(),
+            symbol: String(signal?.symbol || '').trim().toUpperCase(),
+            storage_symbol: String(signal?.storage_symbol || signal?.symbol || '').trim().toUpperCase(),
+        };
+    }
+
+    function sameSelectedSignalTarget(left, right) {
+        return !!left && !!right
+            && left.exchange_id === right.exchange_id
+            && left.product_id === right.product_id
+            && left.asset_category_id === right.asset_category_id
+            && left.symbol === right.symbol
+            && left.storage_symbol === right.storage_symbol;
+    }
+
+    function setSelectedRefreshPending(pending) {
+        const button = document.getElementById('refreshSelectedSignal');
+        if (!button) return;
+        button.dataset.refreshPending = pending ? 'true' : 'false';
+        button.disabled = !!pending || !globalThis.selectedSignal;
+        button.textContent = pending ? 'Refreshing…' : 'Refresh selected';
+    }
+
+    async function refreshSelectedSignal() {
+        if (pendingSelectedRefresh) return;
+        const signal = globalThis.selectedSignal;
+        if (!signal) return;
+        const target = selectedSignalRefreshTarget(signal);
+        if (!target.exchange_id || !target.product_id || !target.asset_category_id
+            || !target.symbol || !target.storage_symbol) {
+            getDashboardBinding('showToast')?.('This signal is missing its registered ticker identity.', 'error');
+            return;
+        }
+        pendingSelectedRefresh = target;
+        setSelectedRefreshPending(true);
+        try {
+            const response = await fetch('/api/refresh-selected-signal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(target),
+            });
+            const payload = await readApiResponse(response).catch(() => ({}));
+            if (response.status !== 202) {
+                throw new Error(payload?.error || payload?.message || ('HTTP ' + response.status));
+            }
+            getDashboardBinding('showToast')?.(
+                String(signal.symbol) + ' selected-signal refresh queued. Other tickers are unchanged.',
+            );
+            getDashboardBinding('showScanBanner')?.(
+                0,
+                target.product_id + ' · ' + target.storage_symbol,
+                target.exchange_id,
+            );
+        } catch (error) {
+            pendingSelectedRefresh = null;
+            setSelectedRefreshPending(false);
+            getDashboardBinding('showToast')?.(
+                'Could not refresh selected signal: ' + String(error?.message || error).slice(0, 160),
+                'error',
+            );
+        }
+    }
+
+    function finishSelectedSignalRefresh(eventName, event) {
+        if (!pendingSelectedRefresh) return;
+        const target = event?.detail?.selected_signal;
+        if (!sameSelectedSignalTarget(pendingSelectedRefresh, target)) return;
+        pendingSelectedRefresh = null;
+        setSelectedRefreshPending(false);
+        if (eventName === 'dashboard:scan-completed') {
+            getDashboardBinding('showToast')?.('Selected signal refreshed from its stored market data.');
+        } else {
+            getDashboardBinding('showToast')?.(
+                'Selected signal refresh failed: ' + String(event?.detail?.error || 'scan failed').slice(0, 160),
+                'error',
+            );
+        }
+    }
+
+    window.addEventListener('dashboard:scan-completed', event =>
+        finishSelectedSignalRefresh('dashboard:scan-completed', event));
+    window.addEventListener('dashboard:scan-failed', event =>
+        finishSelectedSignalRefresh('dashboard:scan-failed', event));
 
     function schedulePriceExpiry() {
         if (priceExpiryTimer !== null) clearTimeout(priceExpiryTimer);
@@ -608,6 +698,9 @@ export function installSignalScreener() {
         finishAlertNavigation('unavailable');
     }
 
+    document.getElementById('refreshSelectedSignal')?.addEventListener('click', () => {
+        void refreshSelectedSignal();
+    });
     document.getElementById('signalsList')?.addEventListener('click', event => {
         const loadMore = event.target.closest('[data-load-more-signals]');
         if (loadMore) {

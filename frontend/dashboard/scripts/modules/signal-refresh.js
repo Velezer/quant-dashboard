@@ -360,6 +360,7 @@ export function installSignalRefresh() {
             void fetchCurrentSignalCount(true);
             try {
                 const data = JSON.parse(event.data);
+                window.dispatchEvent(new CustomEvent('dashboard:scan-completed', { detail: data }));
                 nextScanEpoch = Number(data.next_scan_epoch) || nextScanEpoch;
                 getDashboardBinding('setNextScanEpoch')?.(nextScanEpoch);
                 if (Array.isArray(data.new_signal_alerts) && data.new_signal_alerts.length) {
@@ -369,10 +370,17 @@ export function installSignalRefresh() {
             lastRequestAt = 0;
             void fetchFreshSignals({ quiet: true });
         });
-        eventSource.addEventListener('scan_failed', () => {
+        eventSource.addEventListener('scan_failed', event => {
             pendingScanAt = 0;
             pendingScanScope = '';
             hideScanBanner();
+            try {
+                window.dispatchEvent(new CustomEvent('dashboard:scan-failed', {
+                    detail: JSON.parse(event.data),
+                }));
+            } catch (_) {
+                window.dispatchEvent(new CustomEvent('dashboard:scan-failed', { detail: {} }));
+            }
             void fetchCurrentSignalCount(true);
             lastRequestAt = 0;
             void fetchFreshSignals({ quiet: true });

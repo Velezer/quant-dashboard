@@ -93,6 +93,7 @@ pub(super) fn run_rust_scan_inner(
     interval_min: u64,
     sync_state: Option<&AppState>,
     exchange_scope: Option<&str>,
+    selected_signal_scope: Option<&SelectedSignalScanTarget>,
 ) -> Result<Value, rusqlite::Error> {
     // Signal rows belong to an app registration. Stored candles only supply
     // prices; they cannot create a ticker or choose an app.
@@ -118,10 +119,24 @@ pub(super) fn run_rust_scan_inner(
         rows.collect::<Result<Vec<_>, _>>()?
     }
     .into_iter()
-    .filter(|instrument| exchange_scope.is_none_or(|exchange| instrument.0 == exchange))
+    .filter(|instrument| {
+        exchange_scope.is_none_or(|exchange| instrument.0 == exchange)
+            && selected_signal_scope.is_none_or(|target| {
+                instrument.0 == target.exchange_id
+                    && instrument.1 == target.product_id
+                    && instrument.2 == target.asset_category_id
+                    && instrument.3 == target.storage_symbol
+                    && instrument.4 == target.symbol
+            })
+    })
     .collect::<Vec<_>>();
 
     let registered_count = registered.len();
+    if selected_signal_scope.is_some() && registered_count != 1 {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "selected signal is no longer a verified registered instrument".into(),
+        ));
+    }
     let mut app_registrations =
         std::collections::BTreeMap::<String, Vec<RegisteredInstrument>>::new();
     for exchange_id in SIGNAL_SCAN_APP_ORDER {
@@ -175,6 +190,7 @@ pub(super) fn run_rust_scan_inner(
                 std::iter::once(instrument),
                 &completed_count,
                 registered_count,
+                selected_signal_scope.is_some(),
                 &mut output,
             )?;
             worker.elapsed += started.elapsed();
@@ -244,8 +260,10 @@ pub(super) fn run_rust_scan_inner(
                 )
             })
             .collect::<std::collections::BTreeMap<String, AppScanMetrics>>();
-        for exchange_id in app_instrument_counts.keys() {
-            signal_alerts::mark_signal_screener_app_scanning(app_connection, exchange_id)?;
+        if selected_signal_scope.is_none() {
+            for exchange_id in app_instrument_counts.keys() {
+                signal_alerts::mark_signal_screener_app_scanning(app_connection, exchange_id)?;
+            }
         }
         let app_scan_progress = Mutex::new(AppScanProgress {
             remaining: app_instrument_counts.clone(),
@@ -283,6 +301,7 @@ pub(super) fn run_rust_scan_inner(
                             std::iter::once(instrument),
                             progress,
                             registered_count,
+                            selected_signal_scope.is_some(),
                             &mut instrument_output,
                         )?;
                         let elapsed = started.elapsed();
@@ -331,28 +350,31 @@ pub(super) fn run_rust_scan_inner(
                             }
                         };
                         if let Some(batch) = completed_batch {
-                            let batch_signal_count = batch.running_signal_rows.len()
-                                + batch.potential_signal_rows.len()
-                                + batch.standalone_signal_rows.len();
-                            signal_alerts::publish_signal_screener_app_batch(
-                                &app_connection,
-                                &exchange_id,
-                                &batch.scanned_instruments,
-                                false,
-                                &batch.running_signal_rows,
-                                &batch.potential_signal_rows,
-                                &batch.standalone_signal_rows,
-                                &batch.score_updates,
-                            )?;
-                            #[cfg(not(test))]
-                            for checkpoint in &batch.close_checkpoints {
-                                save_stockbit_close_scan_checkpoint(&app_connection, checkpoint)?;
+                            if selected_signal_scope.is_some() {
+                                worker_output.merge(batch);
+                            } else {
+                                let batch_signal_count = batch.running_signal_rows.len()
+                                    + batch.potential_signal_rows.len()
+                                    + batch.standalone_signal_rows.len();
+                                signal_alerts::publish_signal_screener_app_batch(
+                                    &app_connection,
+                                    &exchange_id,
+                                    &batch.scanned_instruments,
+                                    false,
+                                    &batch.running_signal_rows,
+                                    &batch.potential_signal_rows,
+                                    &batch.standalone_signal_rows,
+                                    &batch.score_updates,
+                                )?;
+                                for checkpoint in &batch.close_checkpoints {
+                                    save_stockbit_close_scan_checkpoint(&app_connection, checkpoint)?;
+                                }
+                                eprintln!(
+                                    "[ScanWorker] Published {exchange_id} batch: {} instruments, {batch_signal_count} signal rows.",
+                                    batch.scanned_instruments.len()
+                                );
+                                worker_output.merge(batch);
                             }
-                            eprintln!(
-                                "[ScanWorker] Published {exchange_id} batch: {} instruments, {batch_signal_count} signal rows.",
-                                batch.scanned_instruments.len()
-                            );
-                            worker_output.merge(batch);
                         }
                     }
                     Ok((worker_output, worker_app_results))
@@ -442,7 +464,21 @@ pub(super) fn run_rust_scan_inner(
         signals.len(),
         output.score_updates.len()
     );
-    if let Some(exchange_id) = exchange_scope {
+    if let Some(target) = selected_signal_scope {
+        signal_alerts::replace_signal_screener_instrument_snapshot(
+            app_connection,
+            &target.exchange_id,
+            &target.product_id,
+            &target.asset_category_id,
+            &target.symbol,
+            &signals,
+            &output.score_updates,
+        )?;
+        #[cfg(not(test))]
+        for checkpoint in &output.close_checkpoints {
+            save_stockbit_close_scan_checkpoint(app_connection, checkpoint)?;
+        }
+    } else if let Some(exchange_id) = exchange_scope {
         signal_alerts::replace_signal_screener_app_snapshot_with_readiness(
             app_connection,
             exchange_id,
@@ -925,6 +961,7 @@ fn scan_registered_app(
     instruments: impl IntoIterator<Item = RegisteredInstrument>,
     completed_count: &std::sync::atomic::AtomicUsize,
     total_instruments: usize,
+    force_selected_refresh: bool,
     output: &mut ScanCycleOutput,
 ) -> Result<AppScanResult, rusqlite::Error> {
     let mut app_result = AppScanResult {
@@ -1040,7 +1077,7 @@ fn scan_registered_app(
                             false
                         }
                     };
-                    if already_scanned {
+                    if already_scanned && !force_selected_refresh {
                         output.scanned_instruments.pop();
                         output.preserved_stockbit.insert((
                             product_id.clone(),

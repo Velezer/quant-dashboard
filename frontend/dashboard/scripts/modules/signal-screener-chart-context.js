@@ -78,6 +78,7 @@ export function createSignalScreenerChartContext({
         document.querySelector?.('.tv-terminal')?.classList.toggle('signal-chart-selected', !!signal);
         const summaryNode = document.getElementById('signal-selection-summary');
         const updatedNode = document.getElementById('signal-selection-updated');
+        const refreshButton = document.getElementById('refreshSelectedSignal');
         const markovButton = document.getElementById('openSelectedSignalMarkov');
         const symbolBadge = document.getElementById('chart-symbol-badge');
         const timeframeBadge = document.getElementById('chart-signal-timeframe-badge');
@@ -85,6 +86,9 @@ export function createSignalScreenerChartContext({
         const evidenceBadge = document.getElementById('chart-evidence-badge');
         const scoreSummary = document.getElementById('chart-score-summary');
         if (!signal) {
+            if (refreshButton && refreshButton.dataset.refreshPending !== 'true') {
+                refreshButton.disabled = true;
+            }
             if (markovButton) markovButton.disabled = true;
             if (summaryNode) summaryNode.textContent = 'Select a screener row to inspect its timeframe and stored candles.';
             if (updatedNode) updatedNode.textContent = '';
@@ -98,6 +102,9 @@ export function createSignalScreenerChartContext({
             }
             updateAppContextChip(null);
             return;
+        }
+        if (refreshButton && refreshButton.dataset.refreshPending !== 'true') {
+            refreshButton.disabled = false;
         }
         if (markovButton) markovButton.disabled = false;
         const venue = executionVenueMeta(signal);

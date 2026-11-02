@@ -165,7 +165,8 @@ pub(super) use screener::{
     initialize_screener_schema, list_signal_screener_page, mark_signal_screener_app_scanning,
     publish_signal_screener_app_batch, record_signal_screener_app_failure,
     record_signal_screener_failure, replace_signal_screener_app_snapshot_with_readiness,
-    replace_signal_screener_snapshot_with_readiness, signal_screener_row,
+    replace_signal_screener_instrument_snapshot, replace_signal_screener_snapshot_with_readiness,
+    signal_screener_row,
     stockbit_signal_score_rows_for_symbol, StockbitSignalScoreUpdate,
 };
 

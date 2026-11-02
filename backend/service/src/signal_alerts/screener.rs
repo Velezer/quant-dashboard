@@ -558,7 +558,7 @@ pub(crate) use snapshot::{
     mark_signal_screener_app_scanning, publish_signal_screener_app_batch,
     record_signal_screener_app_failure, record_signal_screener_failure,
     replace_signal_screener_app_snapshot_with_readiness,
-    replace_signal_screener_snapshot_with_readiness,
+    replace_signal_screener_instrument_snapshot, replace_signal_screener_snapshot_with_readiness,
 };
 #[cfg(test)]
 pub(crate) use snapshot::{

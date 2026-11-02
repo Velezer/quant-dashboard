@@ -1,4 +1,4 @@
-use super::{api_error, query_values, read_post_body, respond, respond_status, RequestContext};
+use super::{api_error, query_values, read_post_body, respond, respond_status, same_origin_request, RequestContext};
 use crate::*;
 
 pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestContext<'a>> {
@@ -12,6 +12,149 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         path,
         route,
     } = request;
+    if route == "/api/refresh-selected-signal" && method == "POST" {
+        if !same_origin_request(request_text) {
+            api_error(
+                stream,
+                "403 Forbidden",
+                "selected signal refresh requires a same-origin dashboard request",
+            );
+            return Ok(());
+        }
+        if state.is_scanning.load(Ordering::Relaxed) {
+            let pct = *state
+                .scan_progress_pct
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let current_symbol = state
+                .current_scan_symbol
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone();
+            respond_status(
+                stream,
+                crate::wire::encode(&serde_json::json!({
+                    "status": "already_scanning",
+                    "message": "Wait for the current scan to finish before refreshing one signal.",
+                    "current_symbol": current_symbol,
+                    "exchange_id": state.current_scan_scope(),
+                    "progress_pct": pct,
+                }))
+                .unwrap_or_default(),
+                "409 Conflict",
+            );
+            return Ok(());
+        }
+        let body = match crate::wire::decode::<Value>(&read_post_body(request_text)) {
+            Ok(body) => body,
+            Err(error) => {
+                api_error(stream, "400 Bad Request", error);
+                return Ok(());
+            }
+        };
+        let required_string = |key: &str| {
+            body.get(key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty() && value.len() <= 160)
+                .map(str::to_string)
+        };
+        let Some(exchange) = required_string("exchange_id")
+            .map(|value| normalize_exchange_id(&value))
+            .filter(|value| !value.is_empty())
+        else {
+            api_error(stream, "400 Bad Request", "exchange_id is required");
+            return Ok(());
+        };
+        let Some(exchange_id) = master_data::exchange_by_alias(&exchange)
+            .and_then(|record| master_data::catalog_string(record, "id"))
+            .map(str::to_string)
+        else {
+            api_error(stream, "400 Bad Request", "exchange_id must identify an app");
+            return Ok(());
+        };
+        let Some(product_id) = required_string("product_id") else {
+            api_error(stream, "400 Bad Request", "product_id is required");
+            return Ok(());
+        };
+        let Some(asset_category_id) = required_string("asset_category_id") else {
+            api_error(stream, "400 Bad Request", "asset_category_id is required");
+            return Ok(());
+        };
+        let Some(symbol) = required_string("symbol").map(|value| value.to_ascii_uppercase()) else {
+            api_error(stream, "400 Bad Request", "symbol is required");
+            return Ok(());
+        };
+        let Some(storage_symbol) = required_string("storage_symbol")
+            .map(|value| value.to_ascii_uppercase())
+        else {
+            api_error(stream, "400 Bad Request", "storage_symbol is required");
+            return Ok(());
+        };
+        let connection = match open_db_minimal(db) {
+            Ok(connection) => connection,
+            Err(error) => {
+                api_error(stream, "500 Internal Server Error", error);
+                return Ok(());
+            }
+        };
+        let registered = match connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM app.instruments
+                  WHERE exchange_id=?1 AND product_id=?2 AND asset_category_id=?3
+                    AND symbol=?4 AND storage_symbol=?5
+                    AND is_active=1 AND venue_verified=1
+                    AND listing_status IN ('venue_active','public_listed_snapshot')
+             )",
+            rusqlite::params![
+                exchange_id,
+                product_id,
+                asset_category_id,
+                symbol,
+                storage_symbol
+            ],
+            |row| row.get::<_, bool>(0),
+        ) {
+            Ok(registered) => registered,
+            Err(error) => {
+                api_error(stream, "500 Internal Server Error", error);
+                return Ok(());
+            }
+        };
+        if !registered {
+            api_error(
+                stream,
+                "404 Not Found",
+                "selected signal is no longer a verified registered instrument",
+            );
+            return Ok(());
+        }
+        state.request_scan_for_selected_signal(SelectedSignalScanTarget {
+            exchange_id: exchange_id.clone(),
+            product_id: product_id.clone(),
+            asset_category_id: asset_category_id.clone(),
+            symbol: symbol.clone(),
+            storage_symbol: storage_symbol.clone(),
+        });
+        respond_status(
+            stream,
+            crate::wire::encode(&serde_json::json!({
+                "status": "queued",
+                "message": "Selected signal refresh queued.",
+                "selected_signal": {
+                    "exchange_id": exchange_id,
+                    "product_id": product_id,
+                    "asset_category_id": asset_category_id,
+                    "symbol": symbol,
+                    "storage_symbol": storage_symbol,
+                },
+            }))
+            .unwrap_or_default(),
+            "202 Accepted",
+        );
+        return Ok(());
+    }
+
     // POST /api/refresh or /api/scan — trigger background scan immediately
     if (route == "/api/refresh" || route == "/api/scan" || route == "/api/scan-cycle")
         && method == "POST"
