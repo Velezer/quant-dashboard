@@ -207,6 +207,87 @@ fn publish_signal_screener_app_batch_attempt(
     }
 }
 
+pub(crate) fn replace_signal_screener_instrument_snapshot(
+    connection: &Connection,
+    exchange_id: &str,
+    product_id: &str,
+    asset_category_id: &str,
+    symbol: &str,
+    signals: &[Value],
+    score_updates: &[StockbitSignalScoreUpdate],
+) -> Result<(), rusqlite::Error> {
+    crate::database::retry_sqlite_busy(|| {
+        connection.execute_batch("BEGIN IMMEDIATE")?;
+        let result = (|| {
+            let persistent_row_scope = stockbit_signal_score_row_scope_sql();
+            connection.execute(
+                &format!(
+                    "DELETE FROM signals.signal_screener_rows
+                      WHERE exchange_id=?1 AND product_id=?2 AND asset_category_id=?3
+                        AND symbol=?4 AND NOT ({persistent_row_scope})"
+                ),
+                params![exchange_id, product_id, asset_category_id, symbol],
+            )?;
+            if exchange_id == quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID {
+                let scanned = std::collections::BTreeSet::from([(
+                    product_id.to_string(),
+                    asset_category_id.to_string(),
+                    symbol.to_string(),
+                )]);
+                mark_stockbit_score_rows_stale(connection, Some(&scanned), false)?;
+            }
+            insert_signal_screener_rows(
+                connection,
+                signals.iter().filter(|signal| {
+                    signal["exchange_id"].as_str() == Some(exchange_id)
+                        && signal["product_id"].as_str() == Some(product_id)
+                        && signal["asset_category_id"].as_str() == Some(asset_category_id)
+                        && signal["symbol"].as_str() == Some(symbol)
+                }),
+                now_secs() as i64,
+            )?;
+            apply_signal_score_updates(
+                connection,
+                score_updates.iter().filter(|update| {
+                    update.exchange_id == exchange_id
+                        && update.product_id == product_id
+                        && update.asset_category_id == asset_category_id
+                        && update.symbol == symbol
+                }),
+                now_secs() as i64,
+            )?;
+            connection.execute(
+                "UPDATE signals.signal_screener_status
+                    SET signal_count=(SELECT COUNT(*) FROM signals.signal_screener_rows)
+                  WHERE id=1",
+                [],
+            )?;
+            connection.execute(
+                "UPDATE signals.signal_screener_app_status
+                    SET signal_count=(
+                        SELECT COUNT(*) FROM signals.signal_screener_rows WHERE exchange_id=?1
+                    )
+                  WHERE exchange_id=?1",
+                [exchange_id],
+            )?;
+            Ok::<(), rusqlite::Error>(())
+        })();
+        match result {
+            Ok(()) => match connection.execute_batch("COMMIT") {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    let _ = connection.execute_batch("ROLLBACK");
+                    Err(error)
+                }
+            },
+            Err(error) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    })
+}
+
 pub(crate) fn replace_signal_screener_app_snapshot_with_readiness(
     connection: &Connection,
     exchange_id: &str,
