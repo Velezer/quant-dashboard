@@ -918,9 +918,11 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
         // Publish a provisional target while this scan is running. Completion
         // replaces it using the measured duration; this loop never launches a
         // second scan before the current one returns.
-        next_scan_epoch = scan_started_epoch.saturating_add(
-            interval_sec.saturating_sub(SCAN_COMPLETION_SAFETY_MARGIN_SECS),
-        );
+        if selected_signal_scan.is_none() {
+            next_scan_epoch = scan_started_epoch.saturating_add(
+                interval_sec.saturating_sub(SCAN_COMPLETION_SAFETY_MARGIN_SECS),
+            );
+        }
         publish_next_scan_time(&state, next_scan_epoch);
         eprintln!(
             "\n[Daemon] Scan event received ({trigger_mode}). Running exchange-specific Rust scan workers..."
@@ -978,11 +980,13 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                     let measured_scan_duration_secs = completed_epoch
                         .saturating_sub(scan_started_epoch)
                         .max(1);
-                    next_scan_epoch = next_scan_epoch_after_completion(
-                        completed_epoch,
-                        interval_sec,
-                        Some(measured_scan_duration_secs),
-                    );
+                    if selected_signal_scan.is_none() {
+                        next_scan_epoch = next_scan_epoch_after_completion(
+                            completed_epoch,
+                            interval_sec,
+                            Some(measured_scan_duration_secs),
+                        );
+                    }
                     publish_next_scan_time(&state, next_scan_epoch);
                     let next_str2 = format_timestamp(next_scan_epoch);
                     *state
@@ -1042,11 +1046,13 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                         eprintln!("[Daemon] Could not record screener error: {storage_error}");
                     }
                     let completed_epoch = now_secs();
-                    next_scan_epoch = next_scan_epoch_after_completion(
-                        completed_epoch,
-                        interval_sec,
-                        None,
-                    );
+                    if selected_signal_scan.is_none() {
+                        next_scan_epoch = next_scan_epoch_after_completion(
+                            completed_epoch,
+                            interval_sec,
+                            None,
+                        );
+                    }
                     publish_next_scan_time(&state, next_scan_epoch);
                     state.is_scanning.store(false, Ordering::Relaxed);
                     state.fail_scan_progress();
@@ -1077,11 +1083,13 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                 eprintln!("[Daemon] Cannot open DB: {e}");
                 state.set_current_scan_scope(None);
                 let completed_epoch = now_secs();
-                next_scan_epoch = next_scan_epoch_after_completion(
-                    completed_epoch,
-                    interval_sec,
-                    None,
-                );
+                if selected_signal_scan.is_none() {
+                    next_scan_epoch = next_scan_epoch_after_completion(
+                        completed_epoch,
+                        interval_sec,
+                        None,
+                    );
+                }
                 publish_next_scan_time(&state, next_scan_epoch);
                 state.is_scanning.store(false, Ordering::Relaxed);
                 state.fail_scan_progress();
