@@ -133,7 +133,7 @@ fn has_verified_stockbit_close_reference(
     let Some(bar_time) = signal["price_bar_time"].as_i64() else {
         return false;
     };
-    if price <= 0.0 || bar_time <= 0 || signal["price_timeframe"].as_str() != Some("15m") {
+    if bar_time <= 0 || signal["price_timeframe"].as_str() != Some("15m") {
         return false;
     }
     let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
