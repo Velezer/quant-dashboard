@@ -54,7 +54,73 @@ fn mark_legacy_score(signal: &mut Value, models: &std::collections::HashMap<&str
     }
 }
 
+fn expected_stockbit_closed_session_day(now: i64) -> Option<i64> {
+    let local_seconds = now.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
+    let day = local_seconds.div_euclid(quant_core::SECONDS_PER_DAY);
+    let weekday = (day + 4).rem_euclid(7); // Sunday = 0, Monday = 1.
+    let second_of_day = local_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
+    if (1..=5).contains(&weekday) {
+        (second_of_day >= 16 * 60 * 60 + 15 * 60).then_some(day)
+    } else if weekday == 6 {
+        Some(day - 1)
+    } else if weekday == 0 {
+        Some(day - 2)
+    } else {
+        None
+    }
+}
+
+fn has_verified_stockbit_close_reference(
+    connection: &Connection,
+    signal: &Value,
+    now: i64,
+) -> bool {
+    let Some(session_day) = expected_stockbit_closed_session_day(now) else {
+        return false;
+    };
+    let Some(product_id) = signal["product_id"].as_str() else {
+        return false;
+    };
+    let Some(category_id) = signal["asset_category_id"].as_str() else {
+        return false;
+    };
+    let Some(symbol) = signal["symbol"].as_str() else {
+        return false;
+    };
+    let Some(price_bar_time) = signal["price_bar_time"].as_i64() else {
+        return false;
+    };
+    let Some(source) = signal["data_source"].as_str() else {
+        return false;
+    };
+    if source.is_empty() {
+        return false;
+    }
+
+    connection
+        .query_row(
+            "SELECT 1 FROM signals.stockbit_close_scan_checkpoints
+              WHERE product_id=?1 AND asset_category_id=?2 AND symbol=?3
+                AND session_day=?4 AND final_bar_time=?5 AND source=?6
+              LIMIT 1",
+            rusqlite::params![
+                product_id,
+                category_id,
+                symbol,
+                session_day,
+                price_bar_time,
+                source
+            ],
+            |_| Ok(()),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .is_some()
+}
+
 fn update_signal_market_entry_freshness(
+    connection: &Connection,
     signal: &mut Value,
     now: i64,
     now_ns: i64,
@@ -83,6 +149,8 @@ fn update_signal_market_entry_freshness(
     );
     signal["persistent_score"] = json!(is_stockbit_persistent);
     mark_legacy_score(signal, strategies);
+    let is_verified_closed_reference = is_stockbit_persistent
+        && has_verified_stockbit_close_reference(connection, signal, now);
     let score_bar_is_forming = signal["score_bar_is_forming"].as_bool().unwrap_or(false);
     let score_bar_time = signal["score_bar_time"].as_i64().unwrap_or(price_bar_time);
     let score_updated_at = signal["last_updated_at"].as_i64().unwrap_or_default();
@@ -108,17 +176,21 @@ fn update_signal_market_entry_freshness(
     } else {
         crate::completed_bar_is_fresh_at(&symbol, &timeframe, price_bar_time, now_ns)
     };
-    if is_stockbit_persistent && !is_current_price_fresh {
+    if is_stockbit_persistent && !is_current_price_fresh && !is_verified_closed_reference {
         signal["score_status"] = json!("stale");
         if let Some(score_basis) = signal["score_basis"].as_object_mut() {
             score_basis.insert("status".into(), json!("stale"));
         }
     }
     signal["price_is_fresh"] = json!(is_current_price_fresh);
+    if is_verified_closed_reference {
+        signal["market_entry_status"] = json!("NO_MARKET_ENTRY");
+        signal["price_reference_status"] = json!("market_closed_reference");
+    }
     let score_is_current = signal["score_status"].as_str() != Some("stale");
     (
-        is_current_price_fresh && score_is_current,
-        !is_current_price_fresh && !is_stockbit_persistent,
+        (is_current_price_fresh || is_verified_closed_reference) && score_is_current,
+        !is_current_price_fresh && (!is_stockbit_persistent || is_verified_closed_reference),
         !score_is_current,
     )
 }
@@ -333,6 +405,7 @@ pub(crate) fn list_signal_screener_page(
         }
         let mut signal = row_mapper(row)?;
         let (is_current, is_stale_price, is_stale_score) = update_signal_market_entry_freshness(
+            connection,
             &mut signal,
             now,
             now_ns,
@@ -440,7 +513,7 @@ pub(crate) fn count_current_signal_screener_rows(
         let mut statement = transaction.prepare(&format!(
             "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,
                     signal_strategy_id,timeframe,score,score_basis_json,price_timeframe,
-                    price_bar_time,last_updated_at
+                    price_bar_time,last_updated_at,data_source
                FROM signals.signal_screener_rows
               WHERE {PINTU_FUTURES_REGISTRY_GUARD}",
         ))?;
@@ -484,8 +557,10 @@ pub(crate) fn count_current_signal_screener_rows(
                 "price_timeframe": row.get::<_, String>(9)?,
                 "price_bar_time": row.get::<_, i64>(10)?,
                 "last_updated_at": row.get::<_, i64>(11)?,
+                "data_source": row.get::<_, String>(12)?,
             });
             let (is_current, _, _) = update_signal_market_entry_freshness(
+                &transaction,
                 &mut signal,
                 now,
                 now_ns,
