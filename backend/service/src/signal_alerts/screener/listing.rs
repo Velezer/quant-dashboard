@@ -97,7 +97,7 @@ fn has_verified_stockbit_close_reference(
         return false;
     }
 
-    connection
+    let has_exact_close_checkpoint = connection
         .query_row(
             "SELECT 1 FROM signals.stockbit_close_scan_checkpoints
               WHERE product_id=?1 AND asset_category_id=?2 AND symbol=?3
@@ -116,7 +116,35 @@ fn has_verified_stockbit_close_reference(
         .optional()
         .ok()
         .flatten()
-        .is_some()
+        .is_some();
+    if has_exact_close_checkpoint {
+        return true;
+    }
+
+    // When a provider omits the exchange's final candle, an older completed
+    // Stockbit bar is still a valid score reference after the session closes.
+    // It can keep a signal visible, but the caller marks it as non-executable.
+    let Some(price) = signal["current_price"]
+        .as_f64()
+        .filter(|price| price.is_finite() && *price > 0.0)
+    else {
+        return false;
+    };
+    let Some(bar_time) = signal["price_bar_time"].as_i64() else {
+        return false;
+    };
+    if bar_time <= 0 || signal["price_timeframe"].as_str() != Some("15m") {
+        return false;
+    }
+    let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
+    let bar_interval_ns = crate::timeframe_duration_ns("15m").unwrap_or_default();
+    let bar_local_day = bar_time
+        .div_euclid(crate::NANOS_PER_SECOND)
+        .saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS)
+        .div_euclid(quant_core::SECONDS_PER_DAY);
+    bar_interval_ns > 0
+        && bar_time.saturating_add(bar_interval_ns) <= now_ns
+        && bar_local_day <= session_day
 }
 
 fn update_signal_market_entry_freshness(
@@ -521,7 +549,7 @@ pub(crate) fn count_current_signal_screener_rows(
         let mut statement = transaction.prepare(&format!(
             "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,
                     signal_strategy_id,timeframe,score,score_basis_json,price_timeframe,
-                    price_bar_time,last_updated_at,data_source
+                    price_bar_time,last_updated_at,data_source,current_price
                FROM signals.signal_screener_rows
               WHERE {PINTU_FUTURES_REGISTRY_GUARD}",
         ))?;
@@ -566,6 +594,7 @@ pub(crate) fn count_current_signal_screener_rows(
                 "price_bar_time": row.get::<_, i64>(10)?,
                 "last_updated_at": row.get::<_, i64>(11)?,
                 "data_source": row.get::<_, String>(12)?,
+                "current_price": row.get::<_, f64>(13)?,
             });
             let (is_current, _, _) = update_signal_market_entry_freshness(
                 &transaction,

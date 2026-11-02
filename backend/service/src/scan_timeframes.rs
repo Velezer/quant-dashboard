@@ -86,7 +86,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
     standalone_indicator_signals: &mut Vec<Value>,
     standalone_score_updates: &mut Vec<Value>,
     readiness: &mut InstrumentReadiness,
-    stockbit_closed_market_reference: bool,
+    allow_stockbit_reference_price: bool,
 ) -> Result<bool, rusqlite::Error> {
     let now_ns = current_time_ns();
     let is_stockbit_signal_scope = input.exchange_id == quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID
@@ -105,15 +105,17 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
     let stockbit_intraday_state = intraday_state.filter(|_| is_stockbit_signal_scope);
     let current_price =
         intraday_state.and_then(|state| fresh_current_price(&input, Some(state), now_ns));
-    let stockbit_closed_reference_price =
-        if is_stockbit_signal_scope && stockbit_closed_market_reference {
-            intraday_state.and_then(|state| {
-                latest_current_price_reference(&input, Some(state), now_ns)
-            })
-        } else {
-            None
-        };
-    let has_stockbit_closed_reference = stockbit_closed_reference_price.is_some();
+    let stockbit_closed_reference_price = if is_stockbit_signal_scope
+        && allow_stockbit_reference_price
+        && current_price.is_none()
+    {
+        intraday_state.and_then(|state| {
+            latest_current_price_reference(&input, Some(state), now_ns)
+        })
+    } else {
+        None
+    };
+    let has_stockbit_reference_price = stockbit_closed_reference_price.is_some();
     let stale_reference_price = if current_price.is_none() && is_crypto_signal_scope {
         intraday_state.and_then(|state| {
             latest_current_price_reference(&input, Some(state), now_ns)
@@ -152,7 +154,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
             ..ReadinessIssue::default()
         });
     }
-    if current_price.is_none() && !has_stockbit_closed_reference {
+    if current_price.is_none() && !has_stockbit_reference_price {
         if let Some(state) = input.sync_state {
             state.prioritize_stale_signal_sync(
                 input.symbol,
@@ -234,7 +236,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         }
         let duration_ns = timeframe_duration_ns(timeframe).unwrap_or_default();
         let use_stockbit_timeframe_history = is_stockbit_signal_scope && !stale;
-        if (stale && !stockbit_intraday_is_fresh && !has_stockbit_closed_reference)
+        if (stale && !stockbit_intraday_is_fresh && !has_stockbit_reference_price)
             || duration_ns <= 0
         {
             let missing = timeframe_state
@@ -277,7 +279,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                     Some((intraday.source.clone(), intraday.data_provider.clone()))
                 }
                 (Some(timeframe_source), _, _)
-                    if use_stockbit_timeframe_history && !has_stockbit_closed_reference =>
+                    if use_stockbit_timeframe_history && !has_stockbit_reference_price =>
                 {
                     Some((
                         timeframe_source.source.clone(),
@@ -285,10 +287,10 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                     ))
                 }
                 (_, Some(intraday), Some(price))
-                    if has_stockbit_closed_reference && price.source == intraday.source =>
+                    if has_stockbit_reference_price && price.source == intraday.source =>
                 {
-                    // A verified closing 15m bar is enough to rebuild the
-                    // signal timeframes even when their stored series is absent.
+                    // The latest completed 15m close can rebuild the signal
+                    // timeframes even when stored interval history is stale.
                     Some((intraday.source.clone(), intraday.data_provider.clone()))
                 }
                 _ => None,
