@@ -260,7 +260,12 @@ export function signalScoreWeightSummary(signal, model) {
     return `${strategyLabel} ${share(weights.strategy)}, ${confluenceLabel} ${share(weights.confluence)}`;
 }
 
+export function isPersistentNoEntryScore(signal) {
+    return signal?.persistent_score === true && signal?.score_status === 'not_qualifying';
+}
+
 export function signalMeetsRenderMinimum(signal, model) {
+    if (isPersistentNoEntryScore(signal)) return true;
     const { minimumScore } = signalScorePresentation(signal, model);
     const score = Number(signal?.score);
     return !Number.isFinite(minimumScore)

@@ -16,6 +16,7 @@ import {
     signalIdentity,
     normalizeSignalRecord,
     signalIndicatorScoreForFilter,
+    isPersistentNoEntryScore,
     SIGNAL_SCORE_INDICATORS,
     signalDisplayScore,
     signalMeetsRenderMinimum,
@@ -428,7 +429,8 @@ export function installSignalScreener() {
         const signals = filteredSignals();
         const selectedApp = getDashboardBinding('activeExchangeFilter') || 'stockbit';
         const readinessScope = { product: getDashboardBinding('activeProductFilter') || 'all',
-            timeframe: timeframeFilter, search: searchQuery, visibleCount: signals.length };
+            timeframe: timeframeFilter, search: searchQuery,
+            visibleCount: signals.filter(signal => !isPersistentNoEntryScore(signal)).length };
         const appReadiness = appSignalReadiness(selectedApp, null, summary, readinessScope);
         getDashboardBinding('showAppSignalReadiness')?.(selectedApp, summary, readinessScope);
         const selectedId = globalThis.selectedSignal?.signal_id || '';

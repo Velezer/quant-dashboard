@@ -41,3 +41,6 @@ lesson only when it will improve future tasks.
 - Apply screener filters before pagination and compute filtered match counts on
   the server; a browser-only filter can make a matching signal appear absent
   from the first page.
+- Keep fresh Stockbit score snapshots with `not_qualifying` visible as
+  zero-score, no-entry rows, while excluding them from current-entry and
+  notification counts. The server and browser must use the same rule.

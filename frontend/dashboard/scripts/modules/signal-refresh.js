@@ -1,5 +1,6 @@
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
 import { readApiResponse } from './api.js';
+import { isPersistentNoEntryScore } from './signal-screener-model.js';
 
 const SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS = 30_000;
 const SIGNAL_REQUEST_TIMEOUT_MS = 60_000;
@@ -91,8 +92,12 @@ export function installSignalRefresh() {
                 getDashboardBinding('applyMasterData')?.(payload.master_data);
             }
             getDashboardBinding('applySignalSnapshot')?.(payload, { append });
+            const visibleSignals = getDashboardBinding('getFilteredSignals')?.();
+            const visibleEntryCount = Array.isArray(visibleSignals)
+                ? visibleSignals.filter(signal => !isPersistentNoEntryScore(signal)).length
+                : payload.signals.filter(signal => !isPersistentNoEntryScore(signal)).length;
             void getDashboardBinding('refreshAppSignalReadiness')?.(String(query.exchange || 'stockbit'), payload.summary,
-                { ...query, visibleCount: getDashboardBinding('getFilteredSignals')?.().length ?? payload.signals.length });
+                { ...query, visibleCount: visibleEntryCount });
             if (!append) void fetchCurrentSignalCount();
             lastRequestAt = Date.now();
         } catch (error) {

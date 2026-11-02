@@ -310,14 +310,25 @@ pub(crate) fn list_signal_screener_page(
         if is_known_delisted_pintu_signal(row)? { continue; }
         let strategy = row.get::<_, String>(5)?;
         let score = row.get::<_, f64>(9)?;
+        let timeframe = row.get::<_, String>(7)?;
         let score_basis_json = row.get::<_, String>(12)?;
-        if !score_meets_render_minimum(
-            strategy,
-            score,
-            &score_basis_json,
-            &score_model_by_strategy,
-            &master_data["signal_score_models"],
-        ) {
+        let score_basis = serde_json::from_str::<Value>(&score_basis_json).unwrap_or(Value::Null);
+        let is_stockbit_no_entry = is_stockbit_signal_score_row(
+            &row.get::<_, String>(0)?,
+            &row.get::<_, String>(1)?,
+            &row.get::<_, String>(2)?,
+            &strategy,
+            &timeframe,
+        ) && score_basis["status"].as_str() == Some("not_qualifying");
+        if !is_stockbit_no_entry
+            && !score_meets_render_minimum(
+                strategy,
+                score,
+                &score_basis_json,
+                &score_model_by_strategy,
+                &master_data["signal_score_models"],
+            )
+        {
             continue;
         }
         let mut signal = row_mapper(row)?;
