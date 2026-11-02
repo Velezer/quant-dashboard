@@ -150,6 +150,7 @@ fn update_signal_market_entry_freshness(
     signal["persistent_score"] = json!(is_stockbit_persistent);
     mark_legacy_score(signal, strategies);
     let is_verified_closed_reference = is_stockbit_persistent
+        && signal["score_basis"]["score_model_status"].as_str() != Some("legacy")
         && has_verified_stockbit_close_reference(connection, signal, now);
     let score_bar_is_forming = signal["score_bar_is_forming"].as_bool().unwrap_or(false);
     let score_bar_time = signal["score_bar_time"].as_i64().unwrap_or(price_bar_time);
@@ -186,6 +187,12 @@ fn update_signal_market_entry_freshness(
     if is_verified_closed_reference {
         signal["market_entry_status"] = json!("NO_MARKET_ENTRY");
         signal["price_reference_status"] = json!("market_closed_reference");
+        if signal["score_status"].as_str() == Some("stale") {
+            signal["score_status"] = json!("current");
+            if signal["score_basis"]["status"].as_str() == Some("stale") {
+                signal["score_basis"]["status"] = json!("current");
+            }
+        }
     }
     let score_is_current = signal["score_status"].as_str() != Some("stale");
     (
