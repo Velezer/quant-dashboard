@@ -162,8 +162,9 @@ pub(crate) use screener::create_signal_screener_rows_table;
 pub(super) use screener::signal_screener_score_update;
 pub(super) use screener::{
     compact_stockbit_signal_score_update, count_current_signal_screener_rows,
-    initialize_screener_schema, list_signal_screener_page, publish_signal_screener_app_batch,
-    record_signal_screener_app_failure, record_signal_screener_failure,
+    initialize_screener_schema, list_signal_screener_page, mark_signal_screener_app_scanning,
+    publish_signal_screener_app_batch, record_signal_screener_app_failure,
+    record_signal_screener_failure, replace_signal_screener_app_snapshot_with_readiness,
     replace_signal_screener_snapshot_with_readiness, signal_screener_row,
     stockbit_signal_score_rows_for_symbol, StockbitSignalScoreUpdate,
 };
