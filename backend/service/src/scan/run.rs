@@ -1014,7 +1014,9 @@ fn scan_registered_app(
         let (market_connection, market_symbol) = market_selection;
         let connection = &market_connection;
         let is_idx = instrument_exchange == "stockbit" && category_id == "idx_stock";
-        let mut stockbit_closed_market_reference = false;
+        // Keep evaluating from the latest completed close when a fresh intraday
+        // price is unavailable; the close checkpoint below only skips unchanged input.
+        let allow_stockbit_reference_price = is_idx;
         #[cfg(not(test))]
         if is_idx {
             match stockbit_closed_session_checkpoint(
@@ -1044,7 +1046,6 @@ fn scan_registered_app(
                         app_result.paused_market_closed_count += 1;
                         continue;
                     }
-                    stockbit_closed_market_reference = true;
                     output.close_checkpoints.push(checkpoint);
                 }
                 Ok(None) => {}
@@ -1119,7 +1120,7 @@ fn scan_registered_app(
             &mut standalone_screener_signals,
             &mut symbol_score_updates,
             &mut instrument_readiness,
-            stockbit_closed_market_reference,
+            allow_stockbit_reference_price,
         )?;
         if has_fresh_price {
             app_result.fresh_price_count += 1;
