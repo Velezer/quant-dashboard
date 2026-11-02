@@ -36,5 +36,9 @@ lesson only when it will improve future tasks.
   but they are not current market entries. Keep the API and browser filters aligned
   with the crypto strategy catalog, preserve the stale-price label, and keep
   stale setups out of current-entry notification counts.
+- Calculate chart overlays from the exact candle source rendered on screen.
+  Shared Spot reference charts for Futures must not receive index-aligned
+  indicators calculated from Futures-specific candles; return overlays with
+  the chart bundle and preserve them during later indicator hydration.
 - Use GitHub Actions to compile and test changes when the workspace cannot run
   commands. Inspect the exact failing step and rerun after the fix.

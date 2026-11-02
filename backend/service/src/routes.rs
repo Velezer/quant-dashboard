@@ -61,6 +61,7 @@ fn chart_market_bars(candles: &[Candle]) -> Vec<serde_json::Value> {
                 "low": candle.low,
                 "close": candle.close,
                 "volume": candle.volume,
+                "indicators": &candle.indicators,
             })
         })
         .collect()
