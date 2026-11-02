@@ -200,20 +200,30 @@ export function hasFourIndicatorScores(signal, model) {
     return presentation.scoreScaleMax === 40 && !presentation.legacy;
 }
 
+export const SIGNAL_SCORE_INDICATORS = Object.freeze([
+    { id: 'nwe', indicator: 'Nadaraya-Watson Envelope', label: 'NWE' },
+    { id: 'dss_bressert', indicator: 'DSS Bressert', label: 'DSS Bressert' },
+    { id: 'relative_volume', indicator: 'Relative Volume', label: 'Relative volume' },
+    { id: 'delta_proxy', indicator: 'Estimated Volume Delta (OHLCV proxy)', label: 'Delta proxy' },
+]);
+
 export function signalIndicatorScores(signal, model) {
     if (!hasFourIndicatorScores(signal, model)) return [];
-    const names = [
-        ['Nadaraya-Watson Envelope', 'NWE'], ['DSS Bressert', 'DSS Bressert'],
-        ['Relative Volume', 'Relative volume'], ['Estimated Volume Delta (OHLCV proxy)', 'Delta proxy'],
-    ];
     const components = Array.isArray(signal?.score_basis?.components) ? signal.score_basis.components : [];
-    return names.map(([indicator, label]) => {
+    return SIGNAL_SCORE_INDICATORS.map(({ id, indicator, label }) => {
         const component = components.find(item => item?.indicator === indicator);
         const value = component?.points;
         const points = typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 10 ? value : null;
-        return { indicator, label, points, scale: 10, weight: 1 / names.length,
+        return { id, indicator, label, points, scale: 10, weight: 1 / SIGNAL_SCORE_INDICATORS.length,
             state: String(component?.state || 'UNAVAILABLE'), value: component?.value };
     });
+}
+
+export function signalIndicatorScoreForFilter(signal, model, indicatorId) {
+    const indicator = SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorId);
+    if (!indicator) return null;
+    const score = signalIndicatorScores(signal, model).find(item => item.id === indicator.id);
+    return score && score.state.toUpperCase() !== 'UNAVAILABLE' ? score.points : null;
 }
 
 // A presentation threshold only; registered model eligibility owns its own floor.
@@ -250,7 +260,12 @@ export function signalScoreWeightSummary(signal, model) {
     return `${strategyLabel} ${share(weights.strategy)}, ${confluenceLabel} ${share(weights.confluence)}`;
 }
 
+export function isPersistentNoEntryScore(signal) {
+    return signal?.persistent_score === true && signal?.score_status === 'not_qualifying';
+}
+
 export function signalMeetsRenderMinimum(signal, model) {
+    if (isPersistentNoEntryScore(signal)) return true;
     const { minimumScore } = signalScorePresentation(signal, model);
     const score = Number(signal?.score);
     return !Number.isFinite(minimumScore)

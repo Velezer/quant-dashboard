@@ -38,3 +38,9 @@ lesson only when it will improve future tasks.
   stale setups out of current-entry notification counts.
 - Use GitHub Actions to compile and test changes when the workspace cannot run
   commands. Inspect the exact failing step and rerun after the fix.
+- Apply screener filters before pagination and compute filtered match counts on
+  the server; a browser-only filter can make a matching signal appear absent
+  from the first page.
+- Keep fresh Stockbit score snapshots with `not_qualifying` visible as
+  zero-score, no-entry rows, while excluding them from current-entry and
+  notification counts. The server and browser must use the same rule.
