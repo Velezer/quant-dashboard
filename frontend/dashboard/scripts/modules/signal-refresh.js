@@ -203,7 +203,7 @@ export function installSignalRefresh() {
             const parallel = current.match(/^(\d+) parallel · (.+)$/);
             if (parallel) {
                 const activeSymbols = parallel[2].split(' + ').map(formatSymbol);
-                currentSymbol.textContent = `${parallel[1]} parallel workers\n${activeSymbols.map(value => `• ${value}`).join('\n')`;
+                currentSymbol.textContent = `${parallel[1]} parallel workers\n${activeSymbols.map(value => `• ${value}`).join('\n')}`;
                 currentSymbol.style.whiteSpace = 'pre-line';
                 currentSymbol.style.maxHeight = '6rem';
                 currentSymbol.style.overflowY = 'auto';
