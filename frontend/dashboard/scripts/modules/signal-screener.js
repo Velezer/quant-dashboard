@@ -33,6 +33,7 @@ import {
 } from './signal-screener-model.js';
 
 const MAX_BROWSER_TIMER_DELAY_MS = 2_147_483_647;
+const DEFAULT_INDICATOR_FILTER_MIN_SCORE_OUT_OF_10 = 5;
 
 export {
     SIGNAL_LIST_PAGE_SIZE,
@@ -647,7 +648,14 @@ export function installSignalScreener() {
         refreshSignalRows();
     });
     document.getElementById('screenerIndicatorSelect')?.addEventListener('change', event => {
-        indicatorFilter = String(event.currentTarget.value || 'all');
+        const nextFilter = String(event.currentTarget.value || 'all');
+        const enteringIndicatorFilter = indicatorFilter === 'all' && nextFilter !== 'all';
+        indicatorFilter = nextFilter;
+        if (indicatorFilter === 'all') {
+            indicatorMinimumScore = 0;
+        } else if (enteringIndicatorFilter) {
+            indicatorMinimumScore = DEFAULT_INDICATOR_FILTER_MIN_SCORE_OUT_OF_10;
+        }
         visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
         updateIndicatorFilterControls();
         renderSignalsList();

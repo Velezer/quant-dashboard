@@ -44,3 +44,6 @@ lesson only when it will improve future tasks.
 - Keep fresh Stockbit score snapshots with `not_qualifying` visible as
   zero-score, no-entry rows, while excluding them from current-entry and
   notification counts. The server and browser must use the same rule.
+- Give a selected score-indicator filter a useful default threshold; `Any /10`
+  is a no-op when every signal row has a score for that indicator. Explain how
+  users can widen the results again.
