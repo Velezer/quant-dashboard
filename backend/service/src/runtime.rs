@@ -257,6 +257,15 @@ impl PineBacktestJob {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct SelectedSignalScanTarget {
+    pub(super) exchange_id: String,
+    pub(super) product_id: String,
+    pub(super) asset_category_id: String,
+    pub(super) symbol: String,
+    pub(super) storage_symbol: String,
+}
+
 /// Shared application state — passed as Arc into every handler and background thread.
 pub(super) struct AppState {
     pub(super) market_database: String,
@@ -279,6 +288,7 @@ pub(super) struct AppState {
     pub(super) current_scan_symbol: Mutex<String>,
     pub(super) current_scan_scope: Mutex<Option<String>>,
     requested_scan_scope: Mutex<Option<String>>,
+    requested_signal_scan: Mutex<Option<SelectedSignalScanTarget>>,
     pub(super) active_scan_symbols: Mutex<std::collections::BTreeSet<String>>,
     /// Unix-millisecond timestamp of the last live worker progress SSE update.
     pub(super) last_scan_progress_broadcast_millis: AtomicI64,
@@ -310,6 +320,7 @@ impl AppState {
             current_scan_symbol: Mutex::new(String::new()),
             current_scan_scope: Mutex::new(None),
             requested_scan_scope: Mutex::new(None),
+            requested_signal_scan: Mutex::new(None),
             active_scan_symbols: Mutex::new(std::collections::BTreeSet::new()),
             last_scan_progress_broadcast_millis: AtomicI64::new(0),
             scan_progress_pct: Mutex::new(0.0),
@@ -588,11 +599,36 @@ impl AppState {
         self.queue_scan(Some(exchange_id.to_string()));
     }
 
+    pub(super) fn request_scan_for_selected_signal(&self, target: SelectedSignalScanTarget) {
+        *self
+            .requested_scan_scope
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(target.exchange_id.clone());
+        *self
+            .requested_signal_scan
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(target);
+        let (lock, cvar) = &self.scan_trigger;
+        *lock.lock().unwrap_or_else(|error| error.into_inner()) = true;
+        cvar.notify_one();
+    }
+
+    pub(super) fn take_requested_signal_scan(&self) -> Option<SelectedSignalScanTarget> {
+        self.requested_signal_scan
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+    }
+
     fn queue_scan(&self, exchange_id: Option<String>) {
         *self
             .requested_scan_scope
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = exchange_id;
+        *self
+            .requested_signal_scan
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = None;
         let (lock, cvar) = &self.scan_trigger;
         *lock.lock().unwrap_or_else(|error| error.into_inner()) = true;
         cvar.notify_one();
@@ -858,8 +894,17 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
             }
         };
 
+        let selected_signal_scan = if triggered {
+            state.take_requested_signal_scan()
+        } else {
+            None
+        };
         let scan_scope = if triggered {
-            state.take_requested_scan_scope()
+            state.take_requested_scan_scope().or_else(|| {
+                selected_signal_scan
+                    .as_ref()
+                    .map(|target| target.exchange_id.clone())
+            })
         } else {
             None
         };
@@ -888,27 +933,44 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
             "timestamp": format_timestamp(scan_started_epoch),
             "triggered_by": trigger_mode,
             "exchange_id": scan_scope.clone(),
+            "selected_signal": selected_signal_scan.as_ref().map(|target| serde_json::json!({
+                "exchange_id": target.exchange_id,
+                "product_id": target.product_id,
+                "asset_category_id": target.asset_category_id,
+                "symbol": target.symbol,
+                "storage_symbol": target.storage_symbol,
+            })),
         });
         state.broadcast("scan_started", &started_data);
 
         let conn = open_app_db_for_market_directory(&state.market_database);
         match conn {
             Ok(connection) => {
-                let scan_result = match scan_scope.as_deref() {
-                Some(exchange_id) => run_rust_scan_for_app_with_state(
-                    &connection,
-                    &state.market_database,
-                    state.scan_interval_sec.load(Ordering::Relaxed) / 60,
-                    &state,
-                    exchange_id,
-                ),
-                None => run_rust_scan_with_state(
-                    &connection,
-                    &state.market_database,
-                    state.scan_interval_sec.load(Ordering::Relaxed) / 60,
-                    &state,
-                ),
-            };
+                let scan_result = if let Some(target) = selected_signal_scan.as_ref() {
+                    run_rust_scan_for_selected_signal_with_state(
+                        &connection,
+                        &state.market_database,
+                        state.scan_interval_sec.load(Ordering::Relaxed) / 60,
+                        &state,
+                        target,
+                    )
+                } else {
+                    match scan_scope.as_deref() {
+                        Some(exchange_id) => run_rust_scan_for_app_with_state(
+                            &connection,
+                            &state.market_database,
+                            state.scan_interval_sec.load(Ordering::Relaxed) / 60,
+                            &state,
+                            exchange_id,
+                        ),
+                        None => run_rust_scan_with_state(
+                            &connection,
+                            &state.market_database,
+                            state.scan_interval_sec.load(Ordering::Relaxed) / 60,
+                            &state,
+                        ),
+                    }
+                };
                 match scan_result {
                 Ok(payload) => {
                     let completed_epoch = now_secs();
@@ -943,6 +1005,13 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                     let completed_data = serde_json::json!({
                         "generated_at": now_str,
                         "exchange_id": scan_scope,
+                        "selected_signal": selected_signal_scan.as_ref().map(|target| serde_json::json!({
+                            "exchange_id": target.exchange_id,
+                            "product_id": target.product_id,
+                            "asset_category_id": target.asset_category_id,
+                            "symbol": target.symbol,
+                            "storage_symbol": target.storage_symbol,
+                        })),
                         "next_scan_time": next_str2,
                         "next_scan_epoch": next_scan_epoch,
                         "signal_count": signal_count,
@@ -958,7 +1027,9 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                 }
                 Err(e) => {
                     eprintln!("[Daemon] Scan cycle error: {e}");
-                    let failure_result = if let Some(exchange_id) = scan_scope.as_deref() {
+                    let failure_result = if selected_signal_scan.is_some() {
+                        Ok(())
+                    } else if let Some(exchange_id) = scan_scope.as_deref() {
                         signal_alerts::record_signal_screener_app_failure(
                             &connection,
                             exchange_id,
@@ -982,6 +1053,13 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                     let failed_data = serde_json::json!({
                         "error": e.to_string(),
                         "exchange_id": scan_scope,
+                        "selected_signal": selected_signal_scan.as_ref().map(|target| serde_json::json!({
+                            "exchange_id": target.exchange_id,
+                            "product_id": target.product_id,
+                            "asset_category_id": target.asset_category_id,
+                            "symbol": target.symbol,
+                            "storage_symbol": target.storage_symbol,
+                        })),
                         "state": "stale",
                         "next_scan_time": format_timestamp(next_scan_epoch),
                         "next_scan_epoch": next_scan_epoch,
