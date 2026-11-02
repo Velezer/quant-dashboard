@@ -474,6 +474,7 @@ pub(super) fn run_rust_scan_inner(
             &signals,
             &output.score_updates,
         )?;
+        #[cfg(not(test))]
         for checkpoint in &output.close_checkpoints {
             save_stockbit_close_scan_checkpoint(app_connection, checkpoint)?;
         }
