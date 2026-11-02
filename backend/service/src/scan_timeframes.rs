@@ -272,15 +272,25 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                 signal_reference_price,
             ) {
                 (Some(timeframe_source), Some(intraday), Some(_))
-                    if timeframe_source.source == intraday.source
-                        && (stockbit_intraday_is_fresh || has_stockbit_closed_reference) =>
+                    if timeframe_source.source == intraday.source && stockbit_intraday_is_fresh =>
                 {
                     Some((intraday.source.clone(), intraday.data_provider.clone()))
                 }
-                (Some(timeframe_source), _, _) if use_stockbit_timeframe_history => Some((
-                    timeframe_source.source.clone(),
-                    timeframe_source.data_provider.clone(),
-                )),
+                (Some(timeframe_source), _, _)
+                    if use_stockbit_timeframe_history && !has_stockbit_closed_reference =>
+                {
+                    Some((
+                        timeframe_source.source.clone(),
+                        timeframe_source.data_provider.clone(),
+                    ))
+                }
+                (_, Some(intraday), Some(price))
+                    if has_stockbit_closed_reference && price.source == intraday.source =>
+                {
+                    // A verified closing 15m bar is enough to rebuild the
+                    // signal timeframes even when their stored series is absent.
+                    Some((intraday.source.clone(), intraday.data_provider.clone()))
+                }
                 _ => None,
             }
         } else {
