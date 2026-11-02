@@ -277,6 +277,8 @@ pub(super) struct AppState {
     /// countdown after a page refresh without restarting the interval.
     pub(super) next_scan_epoch: AtomicU64,
     pub(super) current_scan_symbol: Mutex<String>,
+    pub(super) current_scan_scope: Mutex<Option<String>>,
+    requested_scan_scope: Mutex<Option<String>>,
     pub(super) active_scan_symbols: Mutex<std::collections::BTreeSet<String>>,
     /// Unix-millisecond timestamp of the last live worker progress SSE update.
     pub(super) last_scan_progress_broadcast_millis: AtomicI64,
@@ -306,6 +308,8 @@ impl AppState {
             next_scan_time: Mutex::new(String::new()),
             next_scan_epoch: AtomicU64::new(now_secs().saturating_add(scan_interval_sec)),
             current_scan_symbol: Mutex::new(String::new()),
+            current_scan_scope: Mutex::new(None),
+            requested_scan_scope: Mutex::new(None),
             active_scan_symbols: Mutex::new(std::collections::BTreeSet::new()),
             last_scan_progress_broadcast_millis: AtomicI64::new(0),
             scan_progress_pct: Mutex::new(0.0),
@@ -453,11 +457,17 @@ impl AppState {
             .scan_progress_pct
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+        let exchange_id = self
+            .current_scan_scope
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
         self.broadcast(
             "scan_progress",
             &serde_json::json!({
                 "symbol": display,
                 "current_symbol": display,
+                "exchange_id": exchange_id,
                 "active_scan_count": active_count,
                 "progress_pct": progress_pct,
                 "scan_progress_pct": progress_pct,
@@ -479,9 +489,9 @@ impl AppState {
                 .unwrap_or_else(|error| error.into_inner()) = display.clone();
             (display, active.len())
         };
-        // A single ticker label adds no useful live detail; wait until the
-        // second worker is running, then show both identities in the banner.
-        if active_count >= 2 {
+        // Publish the app and ticker as soon as the first worker starts so
+        // the dashboard never shows a blank global scan label.
+        if active_count >= 1 {
             self.broadcast_active_scan_progress(&display, active_count);
         }
     }
@@ -571,9 +581,42 @@ impl AppState {
     }
 
     pub(super) fn request_scan(&self) {
+        self.queue_scan(None);
+    }
+
+    pub(super) fn request_scan_for_app(&self, exchange_id: &str) {
+        self.queue_scan(Some(exchange_id.to_string()));
+    }
+
+    fn queue_scan(&self, exchange_id: Option<String>) {
+        *self
+            .requested_scan_scope
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = exchange_id;
         let (lock, cvar) = &self.scan_trigger;
         *lock.lock().unwrap_or_else(|error| error.into_inner()) = true;
         cvar.notify_one();
+    }
+
+    pub(super) fn take_requested_scan_scope(&self) -> Option<String> {
+        self.requested_scan_scope
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+    }
+
+    pub(super) fn set_current_scan_scope(&self, exchange_id: Option<String>) {
+        *self
+            .current_scan_scope
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = exchange_id;
+    }
+
+    pub(super) fn current_scan_scope(&self) -> Option<String> {
+        self.current_scan_scope
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
     }
 }
 
@@ -607,6 +650,7 @@ pub(super) fn handle_sse(mut stream: TcpStream, state: Arc<AppState>) {
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     let is_scanning = state.is_scanning.load(Ordering::Relaxed);
+    let scan_scope = state.current_scan_scope();
     let secs = now_secs();
     let server_time = format_timestamp(secs);
 
@@ -615,6 +659,7 @@ pub(super) fn handle_sse(mut stream: TcpStream, state: Arc<AppState>) {
         "server_time": server_time,
         "is_scanning": is_scanning,
         "current_scan_symbol": current_sym,
+        "scan_scope": scan_scope,
         "scan_progress_pct": pct,
         "last_scan_time": last_scan,
         "next_scan_time": next_scan,
@@ -813,6 +858,12 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
             }
         };
 
+        let scan_scope = if triggered {
+            state.take_requested_scan_scope()
+        } else {
+            None
+        };
+        state.set_current_scan_scope(scan_scope.clone());
         let trigger_mode = if triggered {
             "manual_event"
         } else {
@@ -836,17 +887,29 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
         let started_data = serde_json::json!({
             "timestamp": format_timestamp(scan_started_epoch),
             "triggered_by": trigger_mode,
+            "exchange_id": scan_scope.clone(),
         });
         state.broadcast("scan_started", &started_data);
 
         let conn = open_app_db_for_market_directory(&state.market_database);
         match conn {
-            Ok(connection) => match run_rust_scan_with_state(
-                &connection,
-                &state.market_database,
-                state.scan_interval_sec.load(Ordering::Relaxed) / 60,
-                &state,
-            ) {
+            Ok(connection) => {
+                let scan_result = match scan_scope.as_deref() {
+                Some(exchange_id) => run_rust_scan_for_app_with_state(
+                    &connection,
+                    &state.market_database,
+                    state.scan_interval_sec.load(Ordering::Relaxed) / 60,
+                    &state,
+                    exchange_id,
+                ),
+                None => run_rust_scan_with_state(
+                    &connection,
+                    &state.market_database,
+                    state.scan_interval_sec.load(Ordering::Relaxed) / 60,
+                    &state,
+                ),
+            };
+                match scan_result {
                 Ok(payload) => {
                     let completed_epoch = now_secs();
                     let now_str = format_timestamp(completed_epoch);
@@ -879,6 +942,7 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
 
                     let completed_data = serde_json::json!({
                         "generated_at": now_str,
+                        "exchange_id": scan_scope,
                         "next_scan_time": next_str2,
                         "next_scan_epoch": next_scan_epoch,
                         "signal_count": signal_count,
@@ -888,14 +952,22 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                         "sync": serde_json::Value::Null,
                     });
                     state.broadcast("scan_completed", &completed_data);
+                    state.set_current_scan_scope(None);
                     let _ = connection.execute_batch("PRAGMA shrink_memory;");
                     eprintln!("[Daemon] Scan cycle completed. Next run at {next_str2}.\n");
                 }
                 Err(e) => {
                     eprintln!("[Daemon] Scan cycle error: {e}");
-                    if let Err(storage_error) =
+                    let failure_result = if let Some(exchange_id) = scan_scope.as_deref() {
+                        signal_alerts::record_signal_screener_app_failure(
+                            &connection,
+                            exchange_id,
+                            &e.to_string(),
+                        )
+                    } else {
                         signal_alerts::record_signal_screener_failure(&connection, &e.to_string())
-                    {
+                    };
+                    if let Err(storage_error) = failure_result {
                         eprintln!("[Daemon] Could not record screener error: {storage_error}");
                     }
                     let completed_epoch = now_secs();
@@ -909,19 +981,23 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                     state.fail_scan_progress();
                     let failed_data = serde_json::json!({
                         "error": e.to_string(),
+                        "exchange_id": scan_scope,
                         "state": "stale",
                         "next_scan_time": format_timestamp(next_scan_epoch),
                         "next_scan_epoch": next_scan_epoch,
                     });
                     state.broadcast("scan_failed", &failed_data);
+                    state.set_current_scan_scope(None);
                     eprintln!(
                         "[Daemon] Retrying failed scan at {}.",
                         format_timestamp(next_scan_epoch)
                     );
                 }
+            }
             },
             Err(e) => {
                 eprintln!("[Daemon] Cannot open DB: {e}");
+                state.set_current_scan_scope(None);
                 let completed_epoch = now_secs();
                 next_scan_epoch = next_scan_epoch_after_completion(
                     completed_epoch,

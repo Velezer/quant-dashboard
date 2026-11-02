@@ -110,6 +110,18 @@ pub(crate) fn initialize_screener_schema(connection: &Connection) -> Result<(), 
              signal_count INTEGER NOT NULL DEFAULT 0,
              price_data_status TEXT NOT NULL DEFAULT 'ready',
              price_data_unavailable_count INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS signals.signal_screener_app_status (
+             exchange_id TEXT PRIMARY KEY,
+             last_attempt_at INTEGER NOT NULL,
+             last_success_at INTEGER,
+             last_attempt_status TEXT NOT NULL,
+             last_error TEXT NOT NULL DEFAULT '',
+             signal_count INTEGER NOT NULL DEFAULT 0,
+             price_data_status TEXT NOT NULL DEFAULT 'unknown',
+             price_data_unavailable_count INTEGER NOT NULL DEFAULT 0,
+             registered_count INTEGER NOT NULL DEFAULT 0,
+             readiness_json TEXT NOT NULL DEFAULT 'null'
          );",
     )?;
     create_signal_screener_rows_table(
@@ -142,6 +154,35 @@ pub(crate) fn initialize_screener_schema(connection: &Connection) -> Result<(), 
         )?;
     }
     Ok(())
+}
+
+pub(crate) fn app_signal_screener_status(
+    connection: &Connection,
+    exchange_id: &str,
+) -> Result<Option<Value>, rusqlite::Error> {
+    connection
+        .query_row(
+            "SELECT last_attempt_at,last_success_at,last_attempt_status,last_error,signal_count,
+                    price_data_status,price_data_unavailable_count,registered_count,readiness_json
+               FROM signals.signal_screener_app_status WHERE exchange_id=?1",
+            [exchange_id],
+            |row| {
+                let readiness_json = row.get::<_, String>(8)?;
+                Ok(json!({
+                    "exchange_id": exchange_id,
+                    "last_attempt_at": row.get::<_, i64>(0)?,
+                    "last_success_at": row.get::<_, Option<i64>>(1)?,
+                    "last_attempt_status": row.get::<_, String>(2)?,
+                    "last_error": row.get::<_, String>(3)?,
+                    "signal_count": row.get::<_, i64>(4)?,
+                    "price_data_status": row.get::<_, String>(5)?,
+                    "price_data_unavailable_count": row.get::<_, i64>(6)?,
+                    "registered_count": row.get::<_, i64>(7)?,
+                    "readiness": serde_json::from_str::<Value>(&readiness_json).unwrap_or(Value::Null),
+                }))
+            },
+        )
+        .optional()
 }
 
 pub(crate) fn create_signal_screener_rows_table(
@@ -514,7 +555,9 @@ mod freshness_tests;
 #[path = "screener/snapshot.rs"]
 mod snapshot;
 pub(crate) use snapshot::{
-    publish_signal_screener_app_batch, record_signal_screener_failure,
+    mark_signal_screener_app_scanning, publish_signal_screener_app_batch,
+    record_signal_screener_app_failure, record_signal_screener_failure,
+    replace_signal_screener_app_snapshot_with_readiness,
     replace_signal_screener_snapshot_with_readiness,
 };
 #[cfg(test)]

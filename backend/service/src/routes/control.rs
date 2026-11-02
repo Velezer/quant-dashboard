@@ -418,6 +418,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
+        let scan_scope = state.current_scan_scope();
         let interval_min = state.scan_interval_sec.load(Ordering::Relaxed) / 60;
         let info = serde_json::json!({
             "version": SERVICE_VERSION,
@@ -426,6 +427,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             "tab_active": tab_active,
             "is_scanning": is_scanning,
             "current_scan_symbol": current_sym,
+            "scan_scope": scan_scope,
             "scan_progress_pct": pct,
             "last_scan_time": last_scan,
             "next_scan_time": next_scan,
