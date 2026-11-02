@@ -32,5 +32,9 @@ lesson only when it will improve future tasks.
 - The candlestick canvas separates its price plot from the volume pane.
   Clip price overlays to the visible plot bounds: vertical zoom can move an
   indicator band out of view, and an unclipped band can bleed into volume.
+- Crypto NWE/DSS setups can remain visible after their reference price expires,
+  but they are not current market entries. Keep the API and browser filters aligned
+  with the crypto strategy catalog, preserve the stale-price label, and keep
+  stale setups out of current-entry notification counts.
 - Use GitHub Actions to compile and test changes when the workspace cannot run
   commands. Inspect the exact failing step and rerun after the fix.
