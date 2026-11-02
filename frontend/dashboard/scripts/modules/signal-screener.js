@@ -15,6 +15,8 @@ import {
     stockbitSignalModelsForSelection,
     signalIdentity,
     normalizeSignalRecord,
+    signalIndicatorScoreForFilter,
+    SIGNAL_SCORE_INDICATORS,
     signalDisplayScore,
     signalMeetsRenderMinimum,
     signalPriceBarAgeLabel,
@@ -56,6 +58,8 @@ export function installSignalScreener() {
     let requestState = 'loading';
     let requestError = '';
     let timeframeFilter = 'all';
+    let indicatorFilter = 'all';
+    let indicatorMinimumScore = 0;
     let availableTimeframes = [];
     let searchQuery = '';
     let visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
@@ -193,6 +197,9 @@ export function installSignalScreener() {
         globalThis.activeExchangeFilter = exchange;
         globalThis.activeProductFilter = product;
         timeframeFilter = availableTimeframes.includes(timeframe) ? timeframe : 'all';
+        indicatorFilter = 'all';
+        indicatorMinimumScore = 0;
+        updateIndicatorFilterControls();
         updateAppButtons();
         updateProductFilters();
         updateSignalTimeframeButtons();
@@ -290,6 +297,14 @@ export function installSignalScreener() {
             if (signal.exchange_id !== exchange) return false;
             if (product !== 'all' && signal.product_id !== product) return false;
             if (timeframeFilter !== 'all' && signal.timeframe !== timeframeFilter) return false;
+            if (indicatorFilter !== 'all') {
+                const points = signalIndicatorScoreForFilter(
+                    signal,
+                    scoreModelFor(signal),
+                    indicatorFilter,
+                );
+                if (points === null || points < indicatorMinimumScore) return false;
+            }
             if (!query) return true;
             return signal.symbol.toLowerCase().includes(query)
                 || signal.signal_strategy_name.toLowerCase().includes(query)
@@ -357,6 +372,16 @@ export function installSignalScreener() {
         });
     }
 
+    function updateIndicatorFilterControls() {
+        const indicatorSelect = document.getElementById('screenerIndicatorSelect');
+        const minimumSelect = document.getElementById('screenerIndicatorMinScore');
+        if (indicatorSelect) indicatorSelect.value = indicatorFilter;
+        if (minimumSelect) {
+            minimumSelect.value = String(indicatorMinimumScore);
+            minimumSelect.disabled = indicatorFilter === 'all';
+        }
+    }
+
     function renderTimeframeControls() {
         const chartControls = document.getElementById('chartTimeframeButtons');
         if (chartControls) {
@@ -399,6 +424,7 @@ export function installSignalScreener() {
         updateAppButtons();
         updateProductFilters();
         updateSignalTimeframeButtons();
+        updateIndicatorFilterControls();
         const signals = filteredSignals();
         const selectedApp = getDashboardBinding('activeExchangeFilter') || 'stockbit';
         const readinessScope = { product: getDashboardBinding('activeProductFilter') || 'all',
@@ -421,8 +447,9 @@ export function installSignalScreener() {
         const renderedSignals = signalRowsForDisplay(signals, visibleSignalLimit);
         if (countBadge) {
             const storedMatches = Number(summary.matching_rows);
+            const matchLabel = indicatorFilter === 'all' ? 'stored matches' : 'indicator matches';
             const countText = Number.isFinite(storedMatches)
-                ? `${signals.length} loaded · ${storedMatches} stored matches`
+                ? `${signals.length} loaded · ${storedMatches} ${matchLabel}`
                 : `${signals.length} ${summary.stale ? 'saved ' : ''}signal${signals.length === 1 ? '' : 's'}`;
             const visibleText = renderedSignals.length < signals.length
                 ? `${renderedSignals.length} shown`
@@ -440,6 +467,8 @@ export function installSignalScreener() {
         if (signals.length === 0) {
             const emptyText = requestState === 'error' && rows.length === 0
                 ? 'Signal data could not be loaded. Retry after checking the service connection.'
+                : indicatorFilter !== 'all'
+                    ? `No current signal rows match ${SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorFilter)?.label || 'the selected indicator'} at ${indicatorMinimumScore > 0 ? `${indicatorMinimumScore}/10 or higher` : 'any available /10 score'}. This filter only narrows existing signals; it does not change the total score or model qualification rules.${summary.stale ? ' The saved snapshot may be outdated.' : ''}`
                 : summary.stale && rows.length === 0
                     ? 'The saved snapshot is stale and has no current signals. Retry the scan or wait for the running scan to complete.'
                 : staleScoreSignalCount > 0
@@ -464,6 +493,8 @@ export function installSignalScreener() {
                 .join(' ');
             const emptyHeading = requestState === 'error'
                 ? 'Signal data unavailable'
+                : indicatorFilter !== 'all'
+                    ? `No ${SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorFilter)?.label || 'indicator'} matches`
                 : appReadiness.hasScanDetails
                     ? `${appLabel(selectedApp)}: ${appReadiness.title}`
                 : searchQuery.trim()
@@ -473,7 +504,7 @@ export function installSignalScreener() {
                     : stockbitSignalSelected
                         ? 'No current Stockbit signal'
                     : 'No matching signals';
-            list.innerHTML = `<div class="signal-empty-state" role="status"><strong>${escape(emptyHeading)}</strong><p>${escape(emptyStateText)}</p>${rows.length > 0 && (searchQuery || timeframeFilter !== 'all' || getDashboardBinding('activeProductFilter') !== 'all') ? '<button type="button" data-clear-signal-filters>Clear filters</button>' : ''}${hasMoreSignalRows ? '<button type="button" data-load-more-signals>Continue loading matching signals</button>' : ''}</div>`;
+            list.innerHTML = `<div class="signal-empty-state" role="status"><strong>${escape(emptyHeading)}</strong><p>${escape(emptyStateText)}</p>${searchQuery || timeframeFilter !== 'all' || getDashboardBinding('activeProductFilter') !== 'all' || indicatorFilter !== 'all' ? '<button type="button" data-clear-signal-filters>Clear filters</button>' : ''}${hasMoreSignalRows ? '<button type="button" data-load-more-signals>Continue loading matching signals</button>' : ''}</div>`;
             const chartText = requestState === 'error' ? 'Signal data is unavailable. Retry to restore the screener.' : 'No matching signal is selected.';
             if (selectedId && !signals.some(signal => signal.signal_id === selectedId)) clearSelectedSignalChart(chartText);
             return;
@@ -585,6 +616,8 @@ export function installSignalScreener() {
         if (clear) {
             searchQuery = '';
             timeframeFilter = 'all';
+            indicatorFilter = 'all';
+            indicatorMinimumScore = 0;
             globalThis.activeProductFilter = 'all';
             const search = document.getElementById('searchInput');
             if (search) search.value = '';
@@ -607,6 +640,20 @@ export function installSignalScreener() {
         const button = event.target.closest('.screener-timeframe-btn');
         if (!button) return;
         timeframeFilter = button.dataset.screenerTimeframe || 'all';
+        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        renderSignalsList();
+        refreshSignalRows();
+    });
+    document.getElementById('screenerIndicatorSelect')?.addEventListener('change', event => {
+        indicatorFilter = String(event.currentTarget.value || 'all');
+        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        updateIndicatorFilterControls();
+        renderSignalsList();
+        refreshSignalRows();
+    });
+    document.getElementById('screenerIndicatorMinScore')?.addEventListener('change', event => {
+        const parsed = Number(event.currentTarget.value);
+        indicatorMinimumScore = Number.isFinite(parsed) ? Math.max(0, Math.min(10, parsed)) : 0;
         visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
         renderSignalsList();
         refreshSignalRows();
@@ -643,6 +690,8 @@ export function installSignalScreener() {
             product: getDashboardBinding('activeProductFilter') || 'all',
             timeframe: timeframeFilter,
             search: searchQuery,
+            indicator: indicatorFilter,
+            indicatorMinimumScore,
             limit: SIGNAL_LIST_PAGE_SIZE,
         }) },
         setScreenerLoading: { get: () => setLoading },

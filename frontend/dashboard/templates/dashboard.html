@@ -553,6 +553,25 @@
                 <div id="screenerTimeframeButtons" class="flex flex-wrap items-center gap-1.5 border-t border-gray-800/60 pt-2" role="group" aria-label="Filter by signal timeframe" aria-live="polite">
                     <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Timeframe</span>
                 </div>
+                <div id="signalIndicatorFilterPanel" class="signal-search-panel" aria-label="Filter signals by score indicator">
+                    <label for="screenerIndicatorSelect" class="signal-search-label">Scoring indicator</label>
+                    <div class="signal-indicator-filter-controls">
+                        <select id="screenerIndicatorSelect" aria-label="Choose a scoring indicator">
+                            <option value="all">All indicators</option>
+                            <option value="nwe">NWE</option>
+                            <option value="dss_bressert">DSS Bressert</option>
+                            <option value="relative_volume">Relative volume</option>
+                            <option value="delta_proxy">Delta proxy</option>
+                        </select>
+                        <select id="screenerIndicatorMinScore" aria-label="Minimum selected indicator score" disabled>
+                            <option value="0">Any /10</option>
+                            <option value="5">5+/10</option>
+                            <option value="7">7+/10</option>
+                            <option value="9">9+/10</option>
+                        </select>
+                    </div>
+                    <p class="signal-indicator-filter-help">Filters existing signal rows by this indicator’s /10 score. Total scores and model qualification rules stay unchanged.</p>
+                </div>
                 <div id="signalSearch" class="signal-search-panel" role="search" aria-label="Search screener signals">
                     <label for="searchInput" class="signal-search-label">Search signals</label>
                     <div class="signal-search-row">

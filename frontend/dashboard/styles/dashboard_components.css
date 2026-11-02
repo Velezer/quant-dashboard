@@ -375,6 +375,37 @@
     border-radius: 8px;
     background: rgba(17, 24, 39, .72);
 }
+.tv-terminal .signal-indicator-filter-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr);
+    gap: 6px;
+    min-width: 0;
+}
+.tv-terminal .signal-indicator-filter-controls select {
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    padding: 7px 8px;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    background: #111827;
+    color: #e2e8f0;
+    font: 600 11px/1.2 -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
+}
+.tv-terminal .signal-indicator-filter-controls select:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+}
+.tv-terminal .signal-indicator-filter-controls select:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+.tv-terminal .signal-indicator-filter-help {
+    margin: 0;
+    color: #94a3b8;
+    font-size: 10px;
+    line-height: 1.35;
+}
 .tv-terminal .signal-search-header,
 .tv-terminal .signal-search-row {
     display: flex;
@@ -626,8 +657,9 @@
 .tv-terminal.signals-workspace-active #screener-product-filters { order: 2; }
 .tv-terminal.signals-workspace-active #app-listing-status-row,
 .tv-terminal.signals-workspace-active #stockbitPriceFilterNote { order: 3; }
-.tv-terminal.signals-workspace-active #signalSearch { order: 4; }
-.tv-terminal.signals-workspace-active #registryRefineDetails { order: 5; }
+.tv-terminal.signals-workspace-active #signalIndicatorFilterPanel { order: 4; }
+.tv-terminal.signals-workspace-active #signalSearch { order: 5; }
+.tv-terminal.signals-workspace-active #registryRefineDetails { order: 6; }
 
 .screener-timeframe-btn {
     min-width: 2rem;

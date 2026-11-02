@@ -32,6 +32,17 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
             .map(|value| value.chars().take(80).collect::<String>());
+        let indicator_filter = optional_filter("indicator").filter(|value| {
+            matches!(
+                *value,
+                "nwe" | "dss_bressert" | "relative_volume" | "delta_proxy"
+            )
+        });
+        let indicator_min_score = values
+            .get("indicator_min_score")
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite())
+            .map(|value| value.clamp(0.0, 10.0));
         let offset = values
             .get("offset")
             .and_then(|value| value.parse::<usize>().ok())
@@ -70,6 +81,8 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             timeframe_filter,
             product_filter,
             search_filter.as_deref(),
+            indicator_filter,
+            indicator_min_score,
             offset,
             limit,
         ) {

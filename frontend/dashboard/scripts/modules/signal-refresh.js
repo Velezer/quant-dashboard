@@ -61,6 +61,8 @@ export function installSignalRefresh() {
                 product: String(query.product || 'all'),
                 timeframe: String(query.timeframe || 'all'),
                 search: String(query.search || ''),
+                indicator: String(query.indicator || 'all'),
+                indicator_min_score: String(query.indicatorMinimumScore ?? 0),
                 offset: String(offset),
                 limit: String(query.limit || 100),
             });

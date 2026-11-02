@@ -123,6 +123,46 @@ fn update_signal_market_entry_freshness(
     )
 }
 
+fn score_indicator_name(filter: &str) -> Option<&'static str> {
+    match filter {
+        "nwe" => Some("Nadaraya-Watson Envelope"),
+        "dss_bressert" => Some("DSS Bressert"),
+        "relative_volume" => Some("Relative Volume"),
+        "delta_proxy" => Some("Estimated Volume Delta (OHLCV proxy)"),
+        _ => None,
+    }
+}
+
+fn score_basis_matches_indicator_filter(
+    score_basis: &Value,
+    indicator_filter: Option<&str>,
+    minimum_score: Option<f64>,
+) -> bool {
+    let Some(indicator) = indicator_filter.and_then(score_indicator_name) else {
+        return true;
+    };
+    if score_basis["score_model_status"].as_str() == Some("legacy") {
+        return false;
+    }
+    let Some(component) = score_basis["components"]
+        .as_array()
+        .and_then(|components| components.iter().find(|item| item["indicator"].as_str() == Some(indicator)))
+    else {
+        return false;
+    };
+    let state = component["state"].as_str().unwrap_or_default();
+    if state.is_empty() || state.eq_ignore_ascii_case("UNAVAILABLE") {
+        return false;
+    }
+    let Some(points) = component["points"]
+        .as_f64()
+        .filter(|points| points.is_finite() && (0.0..=10.0).contains(points))
+    else {
+        return false;
+    };
+    points >= minimum_score.unwrap_or(0.0).clamp(0.0, 10.0)
+}
+
 fn score_meets_render_minimum(
     strategy: String,
     score: f64,
@@ -150,6 +190,8 @@ pub(super) fn list_signal_screener(
         timeframe_filter,
         None,
         None,
+        None,
+        None,
         0,
         MAX_SIGNAL_SCREENER_ROWS,
     )
@@ -162,6 +204,8 @@ pub(crate) fn list_signal_screener_page(
     timeframe_filter: Option<&str>,
     product_filter: Option<&str>,
     search_filter: Option<&str>,
+    indicator_filter: Option<&str>,
+    indicator_min_score: Option<f64>,
     offset: usize,
     limit: usize,
 ) -> Result<Value, rusqlite::Error> {
@@ -284,6 +328,13 @@ pub(crate) fn list_signal_screener_page(
             scan_interval_seconds,
             &score_model_by_strategy,
         );
+        if !score_basis_matches_indicator_filter(
+            &signal["score_basis"],
+            indicator_filter,
+            indicator_min_score,
+        ) {
+            continue;
+        }
         if is_stale_price {
             stale_price_signal_count = stale_price_signal_count.saturating_add(1);
         }
