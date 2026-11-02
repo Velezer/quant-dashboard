@@ -1087,6 +1087,13 @@ pub(super) fn background_scan_loop(state: Arc<AppState>) {
                 state.fail_scan_progress();
                 let failed_data = serde_json::json!({
                     "error": e.to_string(),
+                    "selected_signal": selected_signal_scan.as_ref().map(|target| serde_json::json!({
+                        "exchange_id": target.exchange_id,
+                        "product_id": target.product_id,
+                        "asset_category_id": target.asset_category_id,
+                        "symbol": target.symbol,
+                        "storage_symbol": target.storage_symbol,
+                    })),
                     "next_scan_time": format_timestamp(next_scan_epoch),
                     "next_scan_epoch": next_scan_epoch,
                 });
