@@ -65,8 +65,27 @@ pub(crate) fn replace_signal_screener_snapshot_with_readiness(
     })
 }
 
-/// Publish a completed app batch while the full scan is still running. The
-/// previous global success timestamp is kept until the complete scan commits.
+pub(crate) fn mark_signal_screener_app_scanning(
+    connection: &Connection,
+    exchange_id: &str,
+) -> Result<(), rusqlite::Error> {
+    crate::database::retry_sqlite_busy(|| {
+        let now = now_secs() as i64;
+        connection.execute(
+            "INSERT INTO signals.signal_screener_app_status(
+                 exchange_id,last_attempt_at,last_success_at,last_attempt_status,last_error,
+                 signal_count,price_data_status,price_data_unavailable_count,registered_count,readiness_json
+             ) VALUES(?1,?2,NULL,'scanning','',0,'unknown',0,0,'null')
+             ON CONFLICT(exchange_id) DO UPDATE SET
+                 last_attempt_at=excluded.last_attempt_at,
+                 last_attempt_status='scanning',last_error=''",
+            params![exchange_id, now],
+        )?;
+        Ok(())
+    })
+}
+
+/// Publish an app batch while this scan cycle is running.
 pub(crate) fn publish_signal_screener_app_batch(
     connection: &Connection,
     exchange_id: &str,
@@ -156,6 +175,21 @@ fn publish_signal_screener_app_batch_attempt(
                 last_attempt_status='scanning',last_error='',signal_count=excluded.signal_count",
             params![now, stored_signal_count],
         )?;
+        let app_stored_signal_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM signals.signal_screener_rows WHERE exchange_id=?1",
+            [exchange_id],
+            |row| row.get(0),
+        )?;
+        connection.execute(
+            "INSERT INTO signals.signal_screener_app_status(
+                 exchange_id,last_attempt_at,last_success_at,last_attempt_status,last_error,
+                 signal_count,price_data_status,price_data_unavailable_count,registered_count,readiness_json
+             ) VALUES(?1,?2,NULL,'scanning','',?3,'unknown',0,0,'null')
+             ON CONFLICT(exchange_id) DO UPDATE SET
+                 last_attempt_at=excluded.last_attempt_at,
+                 last_attempt_status='scanning',last_error=''",
+            params![exchange_id, now, app_stored_signal_count],
+        )?;
         Ok::<(), rusqlite::Error>(())
     })();
     match result {
@@ -171,6 +205,192 @@ fn publish_signal_screener_app_batch_attempt(
             Err(error)
         }
     }
+}
+
+pub(crate) fn replace_signal_screener_app_snapshot_with_readiness(
+    connection: &Connection,
+    exchange_id: &str,
+    signals: &[Value],
+    score_updates: &[StockbitSignalScoreUpdate],
+    price_data_unavailable_count: usize,
+    registered_count: usize,
+    readiness: Option<&Value>,
+    preserved_stockbit: &std::collections::BTreeSet<(String, String, String)>,
+) -> Result<(), rusqlite::Error> {
+    crate::database::retry_sqlite_busy(|| {
+        replace_signal_screener_app_snapshot_attempt(
+            connection,
+            exchange_id,
+            signals,
+            score_updates,
+            price_data_unavailable_count,
+            registered_count,
+            readiness,
+            preserved_stockbit,
+        )
+    })
+}
+
+fn replace_signal_screener_app_snapshot_attempt(
+    connection: &Connection,
+    exchange_id: &str,
+    signals: &[Value],
+    score_updates: &[StockbitSignalScoreUpdate],
+    price_data_unavailable_count: usize,
+    registered_count: usize,
+    readiness: Option<&Value>,
+    preserved_stockbit: &std::collections::BTreeSet<(String, String, String)>,
+) -> Result<(), rusqlite::Error> {
+    let now = now_secs() as i64;
+    let price_data_status = if price_data_unavailable_count == 0 {
+        "ready"
+    } else if registered_count > 0 && price_data_unavailable_count >= registered_count {
+        "unavailable"
+    } else {
+        "partial_stale"
+    };
+    connection.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| {
+        let persistent_row_scope = stockbit_signal_score_row_scope_sql();
+        connection.execute(
+            &format!(
+                "DELETE FROM signals.signal_screener_rows
+                  WHERE exchange_id=?1 AND NOT ({persistent_row_scope})"
+            ),
+            [exchange_id],
+        )?;
+        if exchange_id == quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID {
+            mark_stockbit_score_rows_stale(connection, None, false)?;
+            if !preserved_stockbit.is_empty() {
+                mark_stockbit_score_rows_stale(connection, Some(preserved_stockbit), true)?;
+            }
+        }
+        insert_signal_screener_rows(connection, signals.iter(), now)?;
+        apply_signal_score_updates(
+            connection,
+            score_updates.iter().filter(|update| update.exchange_id == exchange_id),
+            now,
+        )?;
+        let app_signal_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM signals.signal_screener_rows WHERE exchange_id=?1",
+            [exchange_id],
+            |row| row.get(0),
+        )?;
+        let readiness_value = readiness.cloned().unwrap_or(Value::Null);
+        let readiness_json = serde_json::to_string(&readiness_value)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        connection.execute(
+            "INSERT INTO signals.signal_screener_app_status(
+                 exchange_id,last_attempt_at,last_success_at,last_attempt_status,last_error,
+                 signal_count,price_data_status,price_data_unavailable_count,registered_count,readiness_json
+             ) VALUES(?1,?2,?2,'ready','',?3,?4,?5,?6,?7)
+             ON CONFLICT(exchange_id) DO UPDATE SET
+                 last_attempt_at=excluded.last_attempt_at,
+                 last_success_at=excluded.last_success_at,
+                 last_attempt_status='ready',last_error='',
+                 signal_count=excluded.signal_count,
+                 price_data_status=excluded.price_data_status,
+                 price_data_unavailable_count=excluded.price_data_unavailable_count,
+                 registered_count=excluded.registered_count,
+                 readiness_json=excluded.readiness_json",
+            params![
+                exchange_id,
+                now,
+                app_signal_count,
+                price_data_status,
+                price_data_unavailable_count as i64,
+                registered_count as i64,
+                readiness_json
+            ],
+        )?;
+        connection.execute(
+            "UPDATE signals.signal_screener_status
+                SET signal_count=(SELECT COUNT(*) FROM signals.signal_screener_rows)
+              WHERE id=1",
+            [],
+        )?;
+        Ok::<(), rusqlite::Error>(())
+    })();
+    match result {
+        Ok(()) => match connection.execute_batch("COMMIT") {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        },
+        Err(error) => {
+            let _ = connection.execute_batch("ROLLBACK");
+            Err(error)
+        }
+    }
+}
+
+fn save_completed_app_scan_statuses(
+    connection: &Connection,
+    readiness: Option<&Value>,
+    now: i64,
+) -> Result<(), rusqlite::Error> {
+    let Some(workers) = readiness.and_then(|value| value["workers"].as_array()) else {
+        return Ok(());
+    };
+    for worker in workers {
+        let Some(exchange_id) = worker["exchange_id"].as_str() else {
+            continue;
+        };
+        let registered = worker["registered_instruments"].as_u64().unwrap_or(0) as usize;
+        let fresh = worker["fresh_price_instruments"].as_u64().unwrap_or(0) as usize;
+        let unavailable = registered.saturating_sub(fresh);
+        let price_status = if unavailable == 0 {
+            "ready"
+        } else if registered > 0 && unavailable >= registered {
+            "unavailable"
+        } else {
+            "partial_stale"
+        };
+        let signal_count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM signals.signal_screener_rows WHERE exchange_id=?1",
+            [exchange_id],
+            |row| row.get(0),
+        )?;
+        let mut scoped = readiness.cloned().unwrap_or(Value::Null);
+        if let Some(products) = scoped["products"].as_array_mut() {
+            products.retain(|product| product["exchange_id"].as_str() == Some(exchange_id));
+        }
+        if let Some(app_workers) = scoped["workers"].as_array_mut() {
+            app_workers.retain(|app_worker| app_worker["exchange_id"].as_str() == Some(exchange_id));
+        }
+        if exchange_id != quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID {
+            scoped.as_object_mut().map(|object| object.remove("retained_stockbit_readiness"));
+        }
+        let readiness_json = serde_json::to_string(&scoped)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        connection.execute(
+            "INSERT INTO signals.signal_screener_app_status(
+                 exchange_id,last_attempt_at,last_success_at,last_attempt_status,last_error,
+                 signal_count,price_data_status,price_data_unavailable_count,registered_count,readiness_json
+             ) VALUES(?1,?2,?2,'ready','',?3,?4,?5,?6,?7)
+             ON CONFLICT(exchange_id) DO UPDATE SET
+                 last_attempt_at=excluded.last_attempt_at,
+                 last_success_at=excluded.last_success_at,
+                 last_attempt_status='ready',last_error='',
+                 signal_count=excluded.signal_count,
+                 price_data_status=excluded.price_data_status,
+                 price_data_unavailable_count=excluded.price_data_unavailable_count,
+                 registered_count=excluded.registered_count,
+                 readiness_json=excluded.readiness_json",
+            params![
+                exchange_id,
+                now,
+                signal_count,
+                price_status,
+                unavailable as i64,
+                registered as i64,
+                readiness_json
+            ],
+        )?;
+    }
+    Ok(())
 }
 
 fn replace_signal_screener_snapshot_attempt(
@@ -254,6 +474,7 @@ fn replace_signal_screener_snapshot_attempt(
         )?;
         let merged_readiness = readiness_with_historical_stockbit(connection, readiness, preserved_stockbit)?;
         save_scan_readiness(connection, merged_readiness.as_ref())?;
+        save_completed_app_scan_statuses(connection, merged_readiness.as_ref(), now)?;
         Ok::<(), rusqlite::Error>(())
     })();
     match result {
@@ -495,6 +716,27 @@ fn mark_stockbit_score_rows_stale(
     Ok(())
 }
 
+pub(crate) fn record_signal_screener_app_failure(
+    connection: &Connection,
+    exchange_id: &str,
+    error: &str,
+) -> Result<(), rusqlite::Error> {
+    crate::database::retry_sqlite_busy(|| {
+        let now = now_secs() as i64;
+        connection.execute(
+            "INSERT INTO signals.signal_screener_app_status(
+                 exchange_id,last_attempt_at,last_success_at,last_attempt_status,last_error,
+                 signal_count,price_data_status,price_data_unavailable_count,registered_count,readiness_json
+             ) VALUES(?1,?2,NULL,'error',?3,0,'unknown',0,0,'null')
+             ON CONFLICT(exchange_id) DO UPDATE SET
+                 last_attempt_at=excluded.last_attempt_at,
+                 last_attempt_status='error',last_error=excluded.last_error",
+            params![exchange_id, now, error.chars().take(500).collect::<String>()],
+        )?;
+        Ok(())
+    })
+}
+
 pub(crate) fn record_signal_screener_failure(
     connection: &Connection,
     error: &str,
@@ -509,12 +751,18 @@ fn record_signal_screener_failure_attempt(
     connection.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| {
         mark_stockbit_score_rows_stale(connection, None, false)?;
+        let now = now_secs() as i64;
         connection.execute(
             "INSERT INTO signals.signal_screener_status(id,last_attempt_at,last_success_at,last_attempt_status,last_error,signal_count,price_data_status,price_data_unavailable_count)
              VALUES(1,?1,NULL,'error',?2,0,'unknown',0)
              ON CONFLICT(id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,
                 last_attempt_status='error',last_error=excluded.last_error",
-            params![now_secs() as i64, error.chars().take(500).collect::<String>()],
+            params![now, error.chars().take(500).collect::<String>()],
+        )?;
+        connection.execute(
+            "UPDATE signals.signal_screener_app_status
+                SET last_attempt_at=?1,last_attempt_status='error',last_error=?2",
+            params![now, error.chars().take(500).collect::<String>()],
         )?;
         Ok::<(), rusqlite::Error>(())
     })();

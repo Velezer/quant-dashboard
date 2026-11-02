@@ -449,7 +449,7 @@ pub(super) fn run_rust_scan(
     market_database: &str,
     interval_min: u64,
 ) -> Result<Value, rusqlite::Error> {
-    run_rust_scan_inner(app_connection, market_database, interval_min, None)
+    run_rust_scan_inner(app_connection, market_database, interval_min, None, None)
 }
 
 pub(super) fn run_rust_scan_with_state(
@@ -458,7 +458,23 @@ pub(super) fn run_rust_scan_with_state(
     interval_min: u64,
     state: &AppState,
 ) -> Result<Value, rusqlite::Error> {
-    run_rust_scan_inner(app_connection, market_database, interval_min, Some(state))
+    run_rust_scan_inner(app_connection, market_database, interval_min, Some(state), None)
+}
+
+pub(super) fn run_rust_scan_for_app_with_state(
+    app_connection: &Connection,
+    market_database: &str,
+    interval_min: u64,
+    state: &AppState,
+    exchange_id: &str,
+) -> Result<Value, rusqlite::Error> {
+    run_rust_scan_inner(
+        app_connection,
+        market_database,
+        interval_min,
+        Some(state),
+        Some(exchange_id),
+    )
 }
 
 pub(super) fn chrono_or_simple_timestamp() -> String {

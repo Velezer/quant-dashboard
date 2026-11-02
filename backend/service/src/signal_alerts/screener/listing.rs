@@ -393,6 +393,15 @@ pub(crate) fn list_signal_screener_page(
             json!({"last_attempt_status":"waiting","last_error":"","signal_count":0,
                 "price_data_status":"unknown","price_data_unavailable_count":0})
         });
+    let status = if let Some(exchange_id) = exchange_filter {
+        super::app_signal_screener_status(connection, exchange_id)?.unwrap_or(status)
+    } else {
+        status
+    };
+    let readiness = match status.get("readiness").filter(|value| !value.is_null()) {
+        Some(readiness) => readiness.clone(),
+        None => load_scan_readiness(connection)?,
+    };
     let last_success = status["last_success_at"].as_i64();
     let stale =
         last_success.is_none_or(|timestamp| now.saturating_sub(timestamp) > scan_interval_seconds);
@@ -411,7 +420,7 @@ pub(crate) fn list_signal_screener_page(
             "stale": stale,
             "stale_price_signal_count": stale_price_signal_count,
             "stale_score_signal_count": stale_score_signal_count,
-            "readiness": load_scan_readiness(connection)?,
+            "readiness": readiness,
             "status": status,
         }
     }))

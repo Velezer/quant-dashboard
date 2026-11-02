@@ -16,6 +16,8 @@ export function installSignalRefresh() {
     let signalCountRequestInFlight = false;
     let signalCountRefreshPending = false;
     let lastSignalCountRequestAt = 0;
+    let pendingScanScope = '';
+    let pendingScanAt = 0;
 
     async function fetchCurrentSignalCount(force = false) {
         if (!force && Date.now() - lastSignalCountRequestAt < SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS) return;
@@ -119,8 +121,21 @@ export function installSignalRefresh() {
             if (!response.ok) throw new Error(status?.error || `HTTP ${response.status}`);
             nextScanEpoch = Number(status.next_scan_epoch) || 0;
             getDashboardBinding('setNextScanEpoch')?.(nextScanEpoch);
-            if (status.is_scanning) showScanBanner(status.scan_progress_pct || 0, status.current_scan_symbol || 'Scanning signals');
-            else hideScanBanner();
+            if (status.is_scanning) {
+                pendingScanAt = 0;
+                pendingScanScope = '';
+                showScanBanner(
+                    status.scan_progress_pct || 0,
+                    status.current_scan_symbol || 'Scanning registered instruments',
+                    status.scan_scope,
+                );
+            } else if (pendingScanAt && Date.now() - pendingScanAt < 90_000) {
+                showScanBanner(0, 'Starting scan', pendingScanScope);
+            } else {
+                pendingScanAt = 0;
+                pendingScanScope = '';
+                hideScanBanner();
+            }
             return status;
         } catch (error) {
             console.warn('[Screener] Runtime status unavailable:', error);
@@ -156,7 +171,7 @@ export function installSignalRefresh() {
         }, 30_000);
     }
 
-    function showScanBanner(progress, symbol) {
+    function showScanBanner(progress, symbol, exchangeId = '') {
         const banner = document.getElementById('scan-progress-banner');
         if (!banner) return;
         banner.classList.remove('hidden');
@@ -165,9 +180,25 @@ export function installSignalRefresh() {
         const currentSymbol = document.getElementById('scan-current-symbol');
         const bar = document.getElementById('scan-progress-bar');
         const pct = Math.max(0, Math.min(100, Number(progress) || 0));
-        if (title) title.textContent = 'Refreshing signal screener…';
-        if (subtitle) subtitle.firstChild.textContent = 'Scanning stored market data · ';
-        if (currentSymbol) currentSymbol.textContent = String(symbol || 'Scanning registered instruments');
+        const exchange = String(exchangeId || '').toLowerCase();
+        const appName = ({
+            stockbit: 'Stockbit',
+            pintu: 'Pintu',
+            pluang: 'Pluang',
+            tokocrypto: 'Tokocrypto',
+        })[exchange];
+        if (title) title.textContent = appName
+            ? `Refreshing ${appName} signals…`
+            : 'Refreshing signal screener…';
+        if (subtitle) subtitle.firstChild.textContent = appName
+            ? `Scanning ${appName} market data · `
+            : 'Scanning stored market data · ';
+        const fallback = appName ? `${appName} registered instruments` : 'Scanning registered instruments';
+        const current = String(symbol || fallback);
+        const scopedPrefix = exchange ? `${exchange} · ` : '';
+        if (currentSymbol) currentSymbol.textContent = scopedPrefix && current.toLowerCase().startsWith(scopedPrefix)
+            ? current.slice(scopedPrefix.length)
+            : current;
         if (bar) bar.style.width = `${pct}%`;
         const percentage = document.getElementById('scan-progress-pct');
         if (percentage) percentage.textContent = `${Math.round(pct)}%`;
@@ -216,21 +247,44 @@ export function installSignalRefresh() {
         const icon = document.getElementById('refreshIcon');
         icon?.classList.add('animate-spin');
         try {
-            const response = await fetch('/api/refresh', { method: 'POST' });
+            const query = getDashboardBinding('getSignalScreenerQuery')?.() || {};
+            const exchange = String(query.exchange || 'stockbit').toLowerCase();
+            const appNames = {
+                stockbit: 'Stockbit',
+                pintu: 'Pintu',
+                pluang: 'Pluang',
+                tokocrypto: 'Tokocrypto',
+            };
+            const scopedExchange = appNames[exchange] ? exchange : '';
+            const refreshUrl = scopedExchange
+                ? `/api/refresh?exchange=${encodeURIComponent(scopedExchange)}`
+                : '/api/refresh';
+            const response = await fetch(refreshUrl, { method: 'POST' });
             const payload = await readApiResponse(response).catch(() => ({}));
             if (response.status === 202) {
-                showToast('Signal scan queued. Market data refreshes in the background.');
-                showScanBanner(0, 'Starting scan');
-                void fetchRuntimeStatus();
+                pendingScanScope = scopedExchange;
+                pendingScanAt = Date.now();
+                showToast(scopedExchange
+                    ? `${appNames[scopedExchange]} signal scan queued. Other apps keep their own snapshot.`
+                    : 'Signal scan queued. Market data refreshes in the background.');
+                showScanBanner(0, 'Starting scan', scopedExchange);
                 return;
             }
             if (response.status === 409) {
+                pendingScanAt = 0;
+                pendingScanScope = '';
                 showToast('A signal scan is already running.');
-                showScanBanner(payload.progress_pct || 0, payload.current_symbol || 'Scanning registered instruments');
+                showScanBanner(
+                    payload.progress_pct || 0,
+                    payload.current_symbol || 'Scanning registered instruments',
+                    payload.exchange_id,
+                );
                 return;
             }
             throw new Error(payload?.error || `HTTP ${response.status}`);
         } catch (error) {
+            pendingScanAt = 0;
+            pendingScanScope = '';
             icon?.classList.remove('animate-spin');
             showToast(`Could not start a scan: ${String(error?.message || error).slice(0, 160)}`, 'error');
             await fetchFreshSignals();
@@ -256,20 +310,34 @@ export function installSignalRefresh() {
                     showScanBanner(
                         data.scan_progress_pct || 0,
                         data.current_scan_symbol || 'Scanning registered instruments',
+                        data.scan_scope,
                     );
                 } else if (data.is_scanning === false) {
                     hideScanBanner();
                 }
             } catch (_) { /* Keep the status stream alive if optional event metadata is malformed. */ }
         });
-        eventSource.addEventListener('scan_started', () => showScanBanner(0, 'Starting scan'));
+        eventSource.addEventListener('scan_started', event => {
+            pendingScanAt = 0;
+            pendingScanScope = '';
+            try {
+                const data = JSON.parse(event.data);
+                showScanBanner(0, 'Starting scan', data.exchange_id);
+            } catch (_) { showScanBanner(0, 'Starting scan'); }
+        });
         eventSource.addEventListener('scan_progress', event => {
             try {
                 const data = JSON.parse(event.data);
-                showScanBanner(data.progress_pct || 0, data.symbol || data.current_symbol || 'Scanning registered instruments');
+                showScanBanner(
+                    data.progress_pct || 0,
+                    data.symbol || data.current_symbol || 'Scanning registered instruments',
+                    data.exchange_id,
+                );
             } catch (_) { showScanBanner(0, 'Scanning registered instruments'); }
         });
         eventSource.addEventListener('scan_completed', event => {
+            pendingScanAt = 0;
+            pendingScanScope = '';
             hideScanBanner();
             window.dispatchEvent(new CustomEvent('dashboard:signal-inbox-refresh'));
             void fetchCurrentSignalCount(true);
@@ -285,6 +353,8 @@ export function installSignalRefresh() {
             void fetchFreshSignals({ quiet: true });
         });
         eventSource.addEventListener('scan_failed', () => {
+            pendingScanAt = 0;
+            pendingScanScope = '';
             hideScanBanner();
             void fetchCurrentSignalCount(true);
             lastRequestAt = 0;

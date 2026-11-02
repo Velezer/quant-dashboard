@@ -92,6 +92,7 @@ pub(super) fn run_rust_scan_inner(
     market_database: &str,
     interval_min: u64,
     sync_state: Option<&AppState>,
+    exchange_scope: Option<&str>,
 ) -> Result<Value, rusqlite::Error> {
     // Signal rows belong to an app registration. Stored candles only supply
     // prices; they cannot create a ticker or choose an app.
@@ -115,13 +116,18 @@ pub(super) fn run_rust_scan_inner(
             ))
         })?;
         rows.collect::<Result<Vec<_>, _>>()?
-    };
+    }
+    .into_iter()
+    .filter(|instrument| exchange_scope.is_none_or(|exchange| instrument.0 == exchange))
+    .collect::<Vec<_>>();
 
     let registered_count = registered.len();
     let mut app_registrations =
         std::collections::BTreeMap::<String, Vec<RegisteredInstrument>>::new();
     for exchange_id in SIGNAL_SCAN_APP_ORDER {
-        app_registrations.insert(exchange_id.to_string(), Vec::new());
+        if exchange_scope.is_none_or(|scope| scope == exchange_id) {
+            app_registrations.insert(exchange_id.to_string(), Vec::new());
+        }
     }
     for instrument in registered {
         app_registrations
@@ -139,7 +145,9 @@ pub(super) fn run_rust_scan_inner(
     // Preserve any additional registered apps without displacing the four
     // app rotation. Unsupported products still follow the existing scan rules.
     for (exchange_id, instruments) in app_registrations {
-        workers.push(ScanWorker::new(exchange_id, instruments));
+        if exchange_scope.is_none_or(|scope| scope == exchange_id) {
+            workers.push(ScanWorker::new(exchange_id, instruments));
+        }
     }
     #[cfg(not(test))]
     ensure_stockbit_close_checkpoint_schema(app_connection)?;
@@ -236,6 +244,9 @@ pub(super) fn run_rust_scan_inner(
                 )
             })
             .collect::<std::collections::BTreeMap<String, AppScanMetrics>>();
+        for exchange_id in app_instrument_counts.keys() {
+            signal_alerts::mark_signal_screener_app_scanning(app_connection, exchange_id)?;
+        }
         let app_scan_progress = Mutex::new(AppScanProgress {
             remaining: app_instrument_counts.clone(),
             pending: std::collections::BTreeMap::new(),
@@ -431,15 +442,28 @@ pub(super) fn run_rust_scan_inner(
         signals.len(),
         output.score_updates.len()
     );
-    signal_alerts::replace_signal_screener_snapshot_with_readiness(
-        app_connection,
-        &signals,
-        &output.score_updates,
-        output.price_data_unavailable_count,
-        registered_count,
-        Some(&readiness),
-        &output.preserved_stockbit,
-    )?;
+    if let Some(exchange_id) = exchange_scope {
+        signal_alerts::replace_signal_screener_app_snapshot_with_readiness(
+            app_connection,
+            exchange_id,
+            &signals,
+            &output.score_updates,
+            output.price_data_unavailable_count,
+            registered_count,
+            Some(&readiness),
+            &output.preserved_stockbit,
+        )?;
+    } else {
+        signal_alerts::replace_signal_screener_snapshot_with_readiness(
+            app_connection,
+            &signals,
+            &output.score_updates,
+            output.price_data_unavailable_count,
+            registered_count,
+            Some(&readiness),
+            &output.preserved_stockbit,
+        )?;
+    }
     let total_signals = signals.len();
     let signal_master_data = signal_screener_master_data_for_connection(app_connection)?;
     let mut payload = serde_json::json!({

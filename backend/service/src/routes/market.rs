@@ -26,11 +26,42 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
-            respond_status(stream, crate::wire::encode(&serde_json::json!({"status":"already_scanning","message":"Scan cycle is currently in progress","current_symbol":current_sym,"progress_pct":pct})).unwrap_or_default(), "409 Conflict");
+            let scan_scope = state.current_scan_scope();
+            respond_status(stream, crate::wire::encode(&serde_json::json!({
+                "status":"already_scanning",
+                "message":"Scan cycle is currently in progress",
+                "current_symbol":current_sym,
+                "exchange_id":scan_scope,
+                "progress_pct":pct
+            })).unwrap_or_default(), "409 Conflict");
             return Ok(());
         }
-        state.request_scan();
-        respond_status(stream, crate::wire::encode(&serde_json::json!({"status":"queued","message":"Asynchronous scan cycle event triggered successfully"})).unwrap_or_default(), "202 Accepted");
+        let requested_exchange = query_values(path)
+            .get("exchange")
+            .map(|value| normalize_exchange_id(value))
+            .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("all"));
+        let exchange_id = match requested_exchange {
+            Some(exchange) => match master_data::exchange_by_alias(&exchange)
+                .and_then(|record| master_data::catalog_string(record, "id"))
+            {
+                Some(exchange_id) => Some(exchange_id.to_string()),
+                None => {
+                    api_error(stream, "400 Bad Request", "exchange must identify an app in the canonical catalog");
+                    return Ok(());
+                }
+            },
+            None => None,
+        };
+        if let Some(exchange_id) = exchange_id.as_deref() {
+            state.request_scan_for_app(exchange_id);
+        } else {
+            state.request_scan();
+        }
+        respond_status(stream, crate::wire::encode(&serde_json::json!({
+            "status":"queued",
+            "message":"Asynchronous app signal scan triggered successfully",
+            "exchange_id":exchange_id
+        })).unwrap_or_default(), "202 Accepted");
         return Ok(());
     }
 
