@@ -290,7 +290,14 @@ pub(crate) fn list_signal_screener_page(
         if is_stale_score {
             stale_score_signal_count = stale_score_signal_count.saturating_add(1);
         }
-        if !is_current {
+        let retain_stale_crypto_setup = is_stale_price
+            && !is_stale_score
+            && is_crypto_nwe_dss_signal_score_row(
+                signal["asset_category_id"].as_str().unwrap_or_default(),
+                signal["signal_strategy_id"].as_str().unwrap_or_default(),
+                signal["timeframe"].as_str().unwrap_or_default(),
+            );
+        if !is_current && !retain_stale_crypto_setup {
             continue;
         }
         if matching_rows >= offset && signals.len() < page_size {

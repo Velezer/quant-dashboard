@@ -278,9 +278,14 @@ export function installSignalScreener() {
         const exchange = String(getDashboardBinding('activeExchangeFilter') || 'stockbit').toLowerCase();
         const product = String(getDashboardBinding('activeProductFilter') || 'all').toLowerCase();
         const query = searchQuery.trim().toLowerCase();
+        const cryptoStrategyIds = new Set(cryptoSignalModelsForView()
+            .map(model => String(model.id || '')));
         return rows.filter(signal => {
             const state = signalScoreState(signal);
-            if (state?.tone === 'stale' || signal.score_status === 'stale') return false;
+            const retainStaleCryptoSetup = String(signal.asset_category_id || '').startsWith('crypto_')
+                && cryptoStrategyIds.has(String(signal.signal_strategy_id || ''));
+            if ((state?.tone === 'stale' && !retainStaleCryptoSetup)
+                || signal.score_status === 'stale') return false;
             if (!signalMeetsRenderMinimum(signal, scoreModelFor(signal))) return false;
             if (signal.exchange_id !== exchange) return false;
             if (product !== 'all' && signal.product_id !== product) return false;
