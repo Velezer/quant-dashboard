@@ -548,8 +548,9 @@ fn ensure_stockbit_close_checkpoint_schema(connection: &Connection) -> Result<()
 fn is_final_stockbit_close_bar(final_bar_time: i64, session_day: i64, now_seconds: i64) -> bool {
     let bar_seconds = final_bar_time.div_euclid(NANOS_PER_SECOND);
     let local_bar_seconds = bar_seconds.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
+    let second_of_day = local_bar_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
     local_bar_seconds.div_euclid(quant_core::SECONDS_PER_DAY) == session_day
-        && local_bar_seconds.rem_euclid(quant_core::SECONDS_PER_DAY) == 16 * 60 * 60
+        && (second_of_day == 15 * 60 * 60 + 45 * 60 || second_of_day == 16 * 60 * 60)
         && bar_seconds.saturating_add(15 * 60) <= now_seconds
 }
 
@@ -1013,6 +1014,7 @@ fn scan_registered_app(
         let (market_connection, market_symbol) = market_selection;
         let connection = &market_connection;
         let is_idx = instrument_exchange == "stockbit" && category_id == "idx_stock";
+        let mut stockbit_closed_market_reference = false;
         #[cfg(not(test))]
         if is_idx {
             match stockbit_closed_session_checkpoint(
@@ -1042,6 +1044,7 @@ fn scan_registered_app(
                         app_result.paused_market_closed_count += 1;
                         continue;
                     }
+                    stockbit_closed_market_reference = true;
                     output.close_checkpoints.push(checkpoint);
                 }
                 Ok(None) => {}
@@ -1089,7 +1092,7 @@ fn scan_registered_app(
         let running_start = running_plans.len();
         let potential_start = potential_plans.len();
         let mut instrument_readiness = signal_alerts::InstrumentReadiness::default();
-        let has_fresh_price = scan_timeframes::append_timeframe_signal_plans_with_readiness(
+        let has_fresh_price = scan_timeframes::append_timeframe_signal_plans_with_closed_market_reference(
             scan_timeframes::TimeframeScanInput {
                 app_connection,
                 market_connection: connection,
@@ -1116,6 +1119,7 @@ fn scan_registered_app(
             &mut standalone_screener_signals,
             &mut symbol_score_updates,
             &mut instrument_readiness,
+            stockbit_closed_market_reference,
         )?;
         if has_fresh_price {
             app_result.fresh_price_count += 1;
