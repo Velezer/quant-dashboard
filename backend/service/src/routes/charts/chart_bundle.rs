@@ -142,7 +142,10 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             api_error(stream, "400 Bad Request", "unsupported chart timeframe");
             return Ok(());
         };
-        vec![(timeframe, 120_i64)]
+        // Load the full requested chart window so indicators such as the 500-bar
+        // NWE use their configured history instead of silently recalculating over
+        // the 120 bars needed only for the chart's prior default.
+        vec![(timeframe, limit)]
     } else {
         SIGNAL_SCREENER_TIMEFRAMES
             .iter()
