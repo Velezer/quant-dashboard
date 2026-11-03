@@ -10,7 +10,7 @@ on:
       - "Dockerfile"
       - ".github/workflows/rust-build.yml"
   push:
-    branches: [main]
+    branches: ["**"]
     paths:
       - "backend/**"
       - "quant/**"
