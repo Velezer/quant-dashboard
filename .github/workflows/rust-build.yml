@@ -1,0 +1,39 @@
+name: Rust build
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "quant/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Dockerfile"
+      - ".github/workflows/rust-build.yml"
+  push:
+    branches: ["**"]
+    paths:
+      - "backend/**"
+      - "quant/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Dockerfile"
+      - ".github/workflows/rust-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-build:
+    name: Build release artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Build Pine runtime WASM
+        run: cargo build --locked --release --target wasm32-unknown-unknown -p quant_pine_runtime
+      - name: Build service
+        run: cargo build --locked --release -p rust_chart_api

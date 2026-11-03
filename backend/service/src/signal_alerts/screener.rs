@@ -1,4 +1,5 @@
 use super::*;
+use rusqlite::OptionalExtension;
 
 const MAX_SIGNAL_SCREENER_ROWS: usize = 2_000;
 const MAX_SIGNAL_SCREENER_PAGE_SIZE: usize = MAX_SIGNAL_SCREENER_ROWS;
