@@ -21,6 +21,13 @@ boundaries, such as order placement or paper trading. Verify the complete flow
 in a fresh browser session, including applicable loading, empty, stale, error,
 and recovery states and the keyboard-accessible path.
 
+The fee-adjusted breakeven calculator takes an entry price, direction, and both
+buy/sell fee rates, then shows the favorable exit price and required move for
+estimated zero transaction P&L. Unknown fees remain unavailable until entered
+manually and are labeled unverified. Explain that stop fills are not guaranteed
+and exclude spread, slippage, tax, funding, and price-step rounding; never call
+the result risk-free.
+
 ## Working loop
 
 1. **State the user outcome.** Translate the request into one primary task, one

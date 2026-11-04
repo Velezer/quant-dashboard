@@ -3,6 +3,11 @@ import { readApiResponse, encodeWireValue } from './api.js';
 import { accountGrowthChartModel, formatUsdBalance } from './rule-simulator-growth-model.js';
 import { createRuleSimulatorGrowthChart } from './rule-simulator-growth-chart.js';
 import { parseGrowthProjectionInputs, parseRuleInputs } from './rule-simulator-inputs.js';
+import {
+    feeAdjustedBreakeven,
+    formatFeeBreakevenMove,
+    formatFeeBreakevenPrice,
+} from './rule-simulator-breakeven.js';
 
 export { accountGrowthChartModel, formatUsdBalance } from './rule-simulator-growth-model.js';
 
@@ -19,10 +24,11 @@ export function installRuleSimulator() {
     const trigger = document.createElement('button');
     trigger.type = 'button';
     trigger.id = 'openRuleSimulator';
-    trigger.textContent = 'Simulate R:R';
+    trigger.textContent = 'Risk + fees';
     trigger.className = 'rounded-md border border-cyan-800 bg-cyan-950/50 px-2 py-1 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-900 focus:outline focus:outline-2 focus:outline-cyan-400';
     trigger.setAttribute('aria-haspopup', 'dialog');
     trigger.setAttribute('aria-controls', 'ruleSimulatorDialog');
+    trigger.setAttribute('aria-label', 'Open risk and fee calculator');
     trigger.dataset.dashboardAction = 'openRuleSimulator';
     document.querySelector('.tv-watchlist-actions')?.append(trigger);
 
@@ -34,10 +40,10 @@ export function installRuleSimulator() {
         <section class="flex max-h-[92vh] flex-col">
             <header class="flex items-start justify-between gap-4 border-b border-gray-800 px-4 py-3 md:px-6">
                 <div>
-                    <h2 id="ruleSimulatorTitle" class="text-base font-semibold text-white">R:R rule simulator</h2>
-                    <p class="mt-1 text-[11px] leading-relaxed text-gray-400">Edit and save your setup, then review the projection using configured fee assumptions when available. Unknown fees stay excluded unless you enter both rates.</p>
+                    <h2 id="ruleSimulatorTitle" class="text-base font-semibold text-white">Risk and fee calculator</h2>
+                    <p class="mt-1 text-[11px] leading-relaxed text-gray-400">Model a saved R:R setup or calculate an estimated fee-adjusted breakeven price. Unknown fees stay unavailable unless you enter both rates.</p>
                 </div>
-                <button id="closeRuleSimulator" type="button" class="rounded-md border border-gray-700 px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-800 focus:outline focus:outline-2 focus:outline-cyan-400" aria-label="Close R:R rule simulator" data-dashboard-action="closeRuleSimulator">Close</button>
+                <button id="closeRuleSimulator" type="button" class="rounded-md border border-gray-700 px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-800 focus:outline focus:outline-2 focus:outline-cyan-400" aria-label="Close risk and fee calculator" data-dashboard-action="closeRuleSimulator">Close</button>
             </header>
             <div class="flex flex-col gap-4 overflow-y-auto p-4 md:px-6">
                 <div id="ruleSimulatorLoadState" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-[11px] text-gray-300" role="status" aria-live="polite">Loading saved rule…</div>
@@ -84,6 +90,26 @@ export function installRuleSimulator() {
                             <p id="ruleSimulatorFeeEditNote" class="text-[10px] leading-relaxed text-gray-500 sm:col-span-2">Venue values are starting assumptions. Editing them uses your manual fee assumptions for this simulation; fees are not saved with the R:R rule.</p>
                         </div>
                     </details>
+                    <section class="grid grid-cols-1 gap-3 rounded-lg border border-cyan-900/70 bg-cyan-950/20 p-3 sm:grid-cols-2" aria-labelledby="ruleSimulatorBreakevenTitle">
+                        <div class="sm:col-span-2">
+                            <h3 id="ruleSimulatorBreakevenTitle" class="text-xs font-semibold text-white">Fee-adjusted breakeven calculator</h3>
+                            <p class="mt-1 text-[10px] leading-relaxed text-gray-400">Enter an entry price to calculate the breakeven stop or exit price after estimated fees on both sides for the selected direction.</p>
+                        </div>
+                        <label class="flex flex-col gap-1 text-[10px] font-semibold text-gray-400" for="ruleSimulatorEntryPrice">Entry price per asset unit
+                            <input id="ruleSimulatorEntryPrice" name="breakeven_entry_price" type="number" min="0" step="any" inputmode="decimal" placeholder="Enter entry price" aria-describedby="ruleSimulatorBreakevenHelp" class="rounded-md border border-gray-700 bg-gray-950 px-2.5 py-2 text-sm font-mono text-white placeholder:text-gray-600 focus:border-cyan-600 focus:outline-none">
+                        </label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="rounded-md border border-gray-800 bg-gray-950/70 p-2">
+                                <span class="text-[9px] uppercase tracking-wide text-gray-500">Breakeven exit price</span>
+                                <output id="ruleSimulatorBreakevenPrice" class="mt-1 block break-all font-mono text-sm font-semibold text-cyan-200" aria-live="polite">Unavailable</output>
+                            </div>
+                            <div class="rounded-md border border-gray-800 bg-gray-950/70 p-2">
+                                <span class="text-[9px] uppercase tracking-wide text-gray-500">Required favorable move</span>
+                                <output id="ruleSimulatorBreakevenMove" class="mt-1 block font-mono text-sm font-semibold text-gray-100" aria-live="polite">Unavailable</output>
+                            </div>
+                        </div>
+                        <p id="ruleSimulatorBreakevenHelp" class="text-[10px] leading-relaxed text-gray-500 sm:col-span-2" role="status" aria-live="polite">Enter an entry price and both fee rates. Moving a stop to the output level aims for zero net transaction P&amp;L if filled exactly there; stop fills are not guaranteed. Spread, slippage, taxes, funding, and tick-size rounding are excluded. Entry price and manual fees are not saved.</p>
+                    </section>
                     <fieldset class="grid grid-cols-1 gap-3 rounded-lg border border-gray-800 bg-gray-900/40 p-3 sm:grid-cols-3">
                         <legend class="px-1 text-[11px] font-semibold text-gray-300">Account growth projection · this view only</legend>
                         <label class="flex flex-col gap-1 text-[10px] font-semibold text-gray-400" for="ruleSimulatorStartingBalance">Starting balance (USD)
@@ -147,6 +173,8 @@ export function installRuleSimulator() {
     const retryButton = dialog.querySelector('#retryRuleSimulatorLoad');
     const buyFeeInput = dialog.querySelector('#ruleSimulatorBuyFee');
     const sellFeeInput = dialog.querySelector('#ruleSimulatorSellFee');
+    const directionInput = dialog.querySelector('#ruleSimulatorDirection');
+    const entryPriceInput = dialog.querySelector('#ruleSimulatorEntryPrice');
     const growthFields = {
         starting_balance_units: dialog.querySelector('#ruleSimulatorStartingBalance'),
         trade_size_pct_of_equity: dialog.querySelector('#ruleSimulatorTradeSize'),
@@ -160,10 +188,17 @@ export function installRuleSimulator() {
     let ruleDirty = false;
     let simulationRevision = 0;
     let tradingDaysPerYear = null;
+    let loadedFeeContextKey = null;
     const saveButton = dialog.querySelector('#saveRuleSimulator');
 
     function setFormInputsDisabled(disabled) {
         form.querySelectorAll('input, select').forEach(input => {
+            input.disabled = disabled;
+        });
+    }
+
+    function setBreakevenInputsDisabled(disabled) {
+        [directionInput, buyFeeInput, sellFeeInput, entryPriceInput].forEach(input => {
             input.disabled = disabled;
         });
     }
@@ -284,13 +319,54 @@ export function installRuleSimulator() {
         };
     }
 
+    function updateFeeBreakeven() {
+        const priceOutput = dialog.querySelector('#ruleSimulatorBreakevenPrice');
+        const moveOutput = dialog.querySelector('#ruleSimulatorBreakevenMove');
+        const help = dialog.querySelector('#ruleSimulatorBreakevenHelp');
+        const entryPrice = Number(entryPriceInput.value);
+        const fees = feeInputs();
+        const direction = directionInput.value;
+
+        if (entryPriceInput.value.trim() === '' || !Number.isFinite(entryPrice) || entryPrice <= 0) {
+            priceOutput.textContent = 'Unavailable';
+            moveOutput.textContent = 'Unavailable';
+            help.textContent = 'Enter a positive entry price. If a stop fills at the calculated level, estimated transaction P&L is zero; stop fills are not guaranteed. Spread, slippage, taxes, funding, and tick-size rounding are excluded.';
+            return;
+        }
+        if (fees.buy_fee_pct === null || fees.sell_fee_pct === null) {
+            priceOutput.textContent = 'Unavailable';
+            moveOutput.textContent = 'Unavailable';
+            help.textContent = 'Enter both buy and sell fee rates under Fee assumptions. Unknown fees are never treated as zero; spread, slippage, taxes, funding, and tick-size rounding are also excluded.';
+            return;
+        }
+
+        const result = feeAdjustedBreakeven(
+            entryPrice,
+            fees.buy_fee_pct,
+            fees.sell_fee_pct,
+            direction,
+        );
+        if (!result) {
+            priceOutput.textContent = 'Unavailable';
+            moveOutput.textContent = 'Unavailable';
+            help.textContent = 'Buy and sell fees must each be below 100% to produce a finite positive breakeven price. A stop at this price is not guaranteed to fill there.';
+            return;
+        }
+        priceOutput.textContent = formatFeeBreakevenPrice(result.exitPrice);
+        moveOutput.textContent = formatFeeBreakevenMove(result.requiredMovePct);
+        help.textContent = `${direction} breakeven using the displayed fee assumptions. A stop filled exactly at this price has estimated zero transaction P&L; stop fills are not guaranteed. Spread, slippage, taxes, funding, and tick-size rounding are excluded.`;
+    }
+
     function updateFeeDescription() {
         const source = dialog.querySelector('#ruleSimulatorFeeSource');
         const rulesLink = dialog.querySelector('#ruleSimulatorFeeRulesLink');
         if (!feeContext) {
-            source.textContent = 'Fee policy unavailable. Retry loading, or enter both fee rates manually.';
+            source.textContent = feeEdited
+                ? 'Manual fee assumptions; venue policy is unavailable and these rates are unverified.'
+                : 'Fee policy unavailable. Retry loading, or enter both fee rates manually.';
             rulesLink.removeAttribute('href');
             rulesLink.classList.add('hidden');
+            updateFeeBreakeven();
             return;
         }
         const policy = feeContext.fee_policy;
@@ -320,6 +396,7 @@ export function installRuleSimulator() {
         dialog.querySelector('#ruleSimulatorDirectionHelp').textContent = isLongOnly
             ? 'This app product is long only. Fees are applied to the long entry and exit values.'
             : 'Fees are applied to entry and exit values for the selected direction.';
+        updateFeeBreakeven();
     }
 
     function updateSaveState(text) {
@@ -395,6 +472,15 @@ export function installRuleSimulator() {
         saveAvailable = false;
         updateSaveButton();
         const context = selectedContext();
+        const feeContextKey = `${context.exchange_id}:${context.product_id}`;
+        if (loadedFeeContextKey !== null && loadedFeeContextKey !== feeContextKey) {
+            entryPriceInput.value = '';
+            buyFeeInput.value = '';
+            sellFeeInput.value = '';
+            feeEdited = false;
+            feeContext = null;
+        }
+        loadedFeeContextKey = feeContextKey;
         const query = new URLSearchParams(context);
         clearSimulationOutputs('Waiting for the saved rule and fee policy…');
         try {
@@ -439,16 +525,22 @@ export function installRuleSimulator() {
                 : 'No rule is saved yet. The displayed starting values are an unsaved draft.';
             updateSaveState(saved ? 'Saved in app SQLite.' : 'This draft is not saved.');
             updateFeeDescription();
+            updateFeeBreakeven();
             await simulate();
         } catch (error) {
             if (loadRevision !== simulationRevision) return;
             feeContext = null;
+            if (!feeEdited) {
+                buyFeeInput.value = '';
+                sellFeeInput.value = '';
+            }
             saved = false;
             saveAvailable = false;
             ruleDirty = false;
             updateSaveButton();
+            setBreakevenInputsDisabled(false);
             retryButton.classList.remove('hidden');
-            loadState.textContent = `Could not load saved rule: ${error.message}. Retry before saving.`;
+            loadState.textContent = `Could not load saved rule: ${error.message}. Retry before saving. The breakeven calculator remains available with manual fees.`;
             updateFeeDescription();
             updateSaveState('Save is unavailable until the app database responds.');
             clearSimulationOutputs('No current calculation. Retry loading the rule and fee policy.');
@@ -481,6 +573,8 @@ export function installRuleSimulator() {
     }
 
     function scheduleSimulation(event) {
+        updateFeeBreakeven();
+        if (event.target === entryPriceInput || !saveAvailable) return;
         if (Object.values(fields).includes(event.target)) {
             ruleDirty = saved;
             updateSaveButton();
@@ -501,6 +595,15 @@ export function installRuleSimulator() {
         feeEdited = true;
         updateFeeDescription();
     });
+    entryPriceInput.addEventListener('input', event => {
+        event.stopPropagation();
+        updateFeeBreakeven();
+    });
+    entryPriceInput.addEventListener('change', event => {
+        event.stopPropagation();
+        updateFeeBreakeven();
+    });
+    directionInput.addEventListener('change', updateFeeBreakeven);
 
     function openRuleSimulator() {
         if (!dialog.open) dialog.showModal();
