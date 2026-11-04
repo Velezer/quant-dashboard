@@ -18,7 +18,9 @@ lesson only when it will improve future tasks.
   prove the final candle was received. For IDX, the observed final 15m bar
   starts at 16:00 WIB and closes at 16:15. Check that stored bar's timestamp
   and OHLCV, then checkpoint only after its scan batch publishes. Keep missing
-  final data retryable.
+  final data retryable. Include successful per-timeframe series refreshes in
+  the close-scan fingerprint too: an unchanged final 15m candle can have new
+  older or higher-timeframe history behind it, which changes NWE/DSS scoring.
 - An exact IDX close checkpoint is a deduplication aid, not a prerequisite for
   displaying scores. If the provider omits the final bar, rescore the latest
   completed stored 15m close after hours and mark it no-market-entry.
