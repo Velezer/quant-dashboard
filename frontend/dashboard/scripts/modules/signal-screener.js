@@ -35,6 +35,14 @@ import {
 
 const MAX_BROWSER_TIMER_DELAY_MS = 2_147_483_647;
 const DEFAULT_INDICATOR_FILTER_MIN_SCORE_OUT_OF_10 = 5;
+const MOBILE_SIGNAL_LIST_PAGE_SIZE = 12;
+const MOBILE_SIGNAL_LIST_BREAKPOINT_PX = 760;
+
+export function signalListPageSizeForViewport(viewportWidth) {
+    return Number.isFinite(viewportWidth) && viewportWidth <= MOBILE_SIGNAL_LIST_BREAKPOINT_PX
+        ? MOBILE_SIGNAL_LIST_PAGE_SIZE
+        : SIGNAL_LIST_PAGE_SIZE;
+}
 
 export {
     SIGNAL_LIST_PAGE_SIZE,
@@ -65,7 +73,8 @@ export function installSignalScreener() {
     let indicatorMinimumScore = 0;
     let availableTimeframes = [];
     let searchQuery = '';
-    let visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+    let visibleSignalLimit = signalListPageSizeForViewport(globalThis.innerWidth);
+    let visibleRowsExpanded = false;
     let nextSignalOffset = 0;
     let hasMoreSignalRows = false;
     let pendingAlertNavigation = null;
@@ -211,9 +220,9 @@ export function installSignalScreener() {
         }
     }
 
-    window.addEventListener('dashboard:scan-completed', event =>
+    globalThis.window?.addEventListener?.('dashboard:scan-completed', event =>
         finishSelectedSignalRefresh('dashboard:scan-completed', event));
-    window.addEventListener('dashboard:scan-failed', event =>
+    globalThis.window?.addEventListener?.('dashboard:scan-failed', event =>
         finishSelectedSignalRefresh('dashboard:scan-failed', event));
 
     function schedulePriceExpiry() {
@@ -266,7 +275,10 @@ export function installSignalScreener() {
 
     function focusSignal(signal) {
         const visibleIndex = filteredSignals().findIndex(row => row.signal_id === signal.signal_id);
-        if (visibleIndex >= 0) visibleSignalLimit = Math.max(visibleSignalLimit, visibleIndex + 1);
+        if (visibleIndex >= 0 && visibleIndex + 1 > visibleSignalLimit) {
+            visibleSignalLimit = visibleIndex + 1;
+            visibleRowsExpanded = true;
+        }
         selectSignal(signal);
         window.requestAnimationFrame(() => {
             document.getElementById('workspaceGrid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -317,7 +329,7 @@ export function installSignalScreener() {
 
     function setSearchQuery(value, { refresh = true } = {}) {
         searchQuery = String(value || '');
-        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        resetVisibleSignalLimit();
         renderSignalsList();
         clearTimeout(searchRefreshTimer);
         if (refresh) searchRefreshTimer = setTimeout(() => refreshSignalRows(), 250);
@@ -432,6 +444,19 @@ export function installSignalScreener() {
         return ageLabelFromSeconds(seconds);
     }
 
+    function resetVisibleSignalLimit() {
+        visibleSignalLimit = signalListPageSizeForViewport(globalThis.innerWidth);
+        visibleRowsExpanded = false;
+    }
+
+    globalThis.window?.addEventListener?.('resize', () => {
+        if (visibleRowsExpanded) return;
+        const nextLimit = signalListPageSizeForViewport(globalThis.innerWidth);
+        if (visibleSignalLimit === nextLimit) return;
+        visibleSignalLimit = nextLimit;
+        renderSignalsList();
+    });
+
     function updateProductFilters() {
         const app = String(getDashboardBinding('activeExchangeFilter') || 'stockbit').toLowerCase();
         const products = new Set(PRODUCTS_BY_APP[app] || []);
@@ -508,6 +533,24 @@ export function installSignalScreener() {
         }
         initChartTimeframeControls();
         updateSignalTimeframeButtons();
+    }
+
+    function setAvailableTimeframes(values) {
+        const timeframes = Array.isArray(values)
+            ? values.map(value => String(value || '').toLowerCase()).filter(value => /^\d+(m|h|d|w)$/.test(value))
+            : [];
+        if (!timeframes.length) return;
+        const nextTimeframes = [...new Set(timeframes)];
+        const activeTimeframe = String(getDashboardBinding('activeTimeframe') || '').toLowerCase();
+        const needsActiveTimeframe = !nextTimeframes.includes(activeTimeframe);
+        const needsSignalFilterReset = timeframeFilter !== 'all' && !nextTimeframes.includes(timeframeFilter);
+        const unchanged = nextTimeframes.length === availableTimeframes.length
+            && nextTimeframes.every((timeframe, index) => timeframe === availableTimeframes[index]);
+        if (unchanged && !needsActiveTimeframe && !needsSignalFilterReset) return;
+        availableTimeframes = nextTimeframes;
+        if (needsActiveTimeframe) globalThis.activeTimeframe = availableTimeframes[0];
+        if (needsSignalFilterReset) timeframeFilter = 'all';
+        renderTimeframeControls();
     }
 
     function renderSignalsList() {
@@ -608,14 +651,14 @@ export function installSignalScreener() {
         const cards = renderedSignals
             .map((signal, index) => renderSignalCard(signal, index + 1, signal.signal_id === selectedId))
             .join('');
-        const loadMore = hasMoreSignalRows
+        const loadMore = renderedSignals.length < signals.length || hasMoreSignalRows
             ? '<button type="button" class="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-xs font-semibold text-gray-300 hover:bg-gray-800" data-load-more-signals>Load more matching signals</button>'
             : '';
         list.innerHTML = `${cards}${loadMore}`;
     }
 
     function filterByUniverse(exchange) {
-        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        resetVisibleSignalLimit();
         globalThis.activeExchangeFilter = String(exchange || 'stockbit').toLowerCase();
         globalThis.activeProductFilter = 'all';
         updateAppButtons();
@@ -631,14 +674,7 @@ export function installSignalScreener() {
         signalScoreModels = Array.isArray(payload?.master_data?.signal_score_models)
             ? payload.master_data.signal_score_models
             : [];
-        const timeframes = Array.isArray(payload?.available_timeframes)
-            ? payload.available_timeframes.map(value => String(value || '').toLowerCase()).filter(value => /^\d+(m|h|d|w)$/.test(value))
-            : [];
-        availableTimeframes = [...new Set(timeframes)];
-        const activeTimeframe = String(getDashboardBinding('activeTimeframe') || '').toLowerCase();
-        if (!availableTimeframes.includes(activeTimeframe)) globalThis.activeTimeframe = availableTimeframes[0] || '';
-        if (!availableTimeframes.includes(timeframeFilter)) timeframeFilter = 'all';
-        renderTimeframeControls();
+        setAvailableTimeframes(payload?.available_timeframes);
         const previousSelection = globalThis.selectedSignal;
         const nextRows = (Array.isArray(payload?.signals) ? payload.signals : [])
             .map(raw => normalizeSignalRecord(raw, signalStrategies));
@@ -704,8 +740,12 @@ export function installSignalScreener() {
     document.getElementById('signalsList')?.addEventListener('click', event => {
         const loadMore = event.target.closest('[data-load-more-signals]');
         if (loadMore) {
-            visibleSignalLimit += SIGNAL_LIST_PAGE_SIZE;
-            refreshSignalRows({ append: true });
+            const signals = filteredSignals();
+            const hasLoadedRowsToReveal = signalRowsForDisplay(signals, visibleSignalLimit).length < signals.length;
+            visibleSignalLimit += signalListPageSizeForViewport(globalThis.innerWidth);
+            visibleRowsExpanded = true;
+            renderSignalsList();
+            if (!hasLoadedRowsToReveal && hasMoreSignalRows) refreshSignalRows({ append: true });
             return;
         }
         const clear = event.target.closest('[data-clear-signal-filters]');
@@ -736,7 +776,7 @@ export function installSignalScreener() {
         const button = event.target.closest('.screener-timeframe-btn');
         if (!button) return;
         timeframeFilter = button.dataset.screenerTimeframe || 'all';
-        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        resetVisibleSignalLimit();
         renderSignalsList();
         refreshSignalRows();
     });
@@ -749,7 +789,7 @@ export function installSignalScreener() {
         } else if (enteringIndicatorFilter) {
             indicatorMinimumScore = DEFAULT_INDICATOR_FILTER_MIN_SCORE_OUT_OF_10;
         }
-        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        resetVisibleSignalLimit();
         updateIndicatorFilterControls();
         renderSignalsList();
         refreshSignalRows();
@@ -757,7 +797,7 @@ export function installSignalScreener() {
     document.getElementById('screenerIndicatorMinScore')?.addEventListener('change', event => {
         const parsed = Number(event.currentTarget.value);
         indicatorMinimumScore = Number.isFinite(parsed) ? Math.max(0, Math.min(10, parsed)) : 0;
-        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        resetVisibleSignalLimit();
         renderSignalsList();
         refreshSignalRows();
     });
@@ -766,6 +806,7 @@ export function installSignalScreener() {
     });
     document.getElementById('clearSearchBtn')?.addEventListener('click', () => {
         searchQuery = '';
+        resetVisibleSignalLimit();
         const search = document.getElementById('searchInput');
         if (search) search.value = '';
         renderSignalsList();
@@ -774,7 +815,7 @@ export function installSignalScreener() {
     });
     document.addEventListener?.('click', event => {
         if (!event.target.closest?.('.product-btn[data-product]')) return;
-        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        resetVisibleSignalLimit();
         refreshSignalRows();
     });
     document.getElementById('screener-retry')?.addEventListener('click', () => {
@@ -788,6 +829,7 @@ export function installSignalScreener() {
 
     publishDashboardBindings('signal-screener', {
         applySignalSnapshot: { get: () => applySnapshot },
+        setScreenerAvailableTimeframes: { get: () => setAvailableTimeframes },
         getSignalScreenerQuery: { get: () => () => ({
             exchange: getDashboardBinding('activeExchangeFilter') || 'stockbit',
             product: getDashboardBinding('activeProductFilter') || 'all',
@@ -795,7 +837,7 @@ export function installSignalScreener() {
             search: searchQuery,
             indicator: indicatorFilter,
             indicatorMinimumScore,
-            limit: SIGNAL_LIST_PAGE_SIZE,
+            limit: signalListPageSizeForViewport(globalThis.innerWidth),
         }) },
         setScreenerLoading: { get: () => setLoading },
         setScreenerFetchError: { get: () => setFetchError },

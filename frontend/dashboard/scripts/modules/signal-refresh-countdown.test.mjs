@@ -28,7 +28,9 @@ test('automatic refresh waits for a slow request and backs off after a failure',
                 requests.push({ resolve, reject });
             });
         }
-        const data = url.startsWith('/api/signals/count') ? { signal_count: 0 } : {};
+        const data = url.startsWith('/api/signals/count')
+            ? { signal_count: 0 }
+            : url === '/api/status' ? { next_scan_epoch: 100, available_timeframes: ['15m'] } : {};
         return Promise.resolve({ ok: true, text: async () => JSON.stringify(data) });
     };
     publishDashboardBindings('countdown-test', {
@@ -41,6 +43,9 @@ test('automatic refresh waits for a slow request and backs off after a failure',
     try {
         installSignalRefresh();
         getDashboardBinding('startCountdown')();
+        await flush();
+        assert.equal(requests.length, 0, 'the countdown does not start a duplicate initial request');
+        void getDashboardBinding('fetchFreshSignals')();
         assert.equal(requests.length, 1);
         now += 40_000;
         intervals[0]();

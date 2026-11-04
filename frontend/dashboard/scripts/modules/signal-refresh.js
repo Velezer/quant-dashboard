@@ -10,6 +10,7 @@ export function installSignalRefresh() {
     let lastRequestAt = 0;
     let requestSerial = 0;
     let signalRequestsInFlight = 0;
+    let activeSignalRequestController = null;
     let nextScanEpoch = 0;
     let countdownPoll = null;
     let eventSource = null;
@@ -55,6 +56,8 @@ export function installSignalRefresh() {
         lastRequestAt = Date.now();
         signalRequestsInFlight += 1;
         const controller = new AbortController();
+        activeSignalRequestController?.abort();
+        activeSignalRequestController = controller;
         const requestTimeout = setTimeout(() => controller.abort(), SIGNAL_REQUEST_TIMEOUT_MS);
         if (!quiet && !getDashboardBinding('DATA')) getDashboardBinding('setScreenerLoading')?.();
         try {
@@ -111,6 +114,7 @@ export function installSignalRefresh() {
         } finally {
             clearTimeout(requestTimeout);
             signalRequestsInFlight -= 1;
+            if (activeSignalRequestController === controller) activeSignalRequestController = null;
         }
     }
 
@@ -119,6 +123,7 @@ export function installSignalRefresh() {
             const response = await fetch('/api/status', { cache: 'no-store' });
             const status = await readApiResponse(response);
             if (!response.ok) throw new Error(status?.error || `HTTP ${response.status}`);
+            getDashboardBinding('setScreenerAvailableTimeframes')?.(status.available_timeframes);
             nextScanEpoch = Number(status.next_scan_epoch) || 0;
             getDashboardBinding('setNextScanEpoch')?.(nextScanEpoch);
             if (status.is_scanning) {
@@ -152,13 +157,14 @@ export function installSignalRefresh() {
         const minutes = Math.floor(remaining / 60);
         const seconds = String(remaining % 60).padStart(2, '0');
         timer.textContent = `${minutes}m ${seconds}s`;
-        if (remaining === 0 && signalRequestsInFlight === 0 && Date.now() - lastRequestAt >= 20_000) {
+        if (nextScanEpoch > 0 && remaining === 0 && signalRequestsInFlight === 0 && Date.now() - lastRequestAt >= 20_000) {
             void fetchFreshSignals({ quiet: true });
             void fetchRuntimeStatus();
         }
     }
 
     function startCountdown() {
+        void fetchRuntimeStatus();
         renderCountdown();
         if (countdownPoll) clearInterval(countdownPoll);
         countdownPoll = setInterval(() => {

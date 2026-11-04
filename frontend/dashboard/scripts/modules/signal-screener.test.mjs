@@ -16,9 +16,17 @@ import {
     signalScoreSummary,
     signalScoreWeightSummary,
     SIGNAL_LIST_PAGE_SIZE,
+    signalListPageSizeForViewport,
 } from './signal-screener.js';
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
 import { normalizeSignalRecord, signalScoreState } from './signal-screener-model.js';
+
+test('mobile signal requests and rendered batches are smaller than desktop batches', () => {
+    assert.equal(signalListPageSizeForViewport(390), 12);
+    assert.equal(signalListPageSizeForViewport(760), 12);
+    assert.equal(signalListPageSizeForViewport(761), SIGNAL_LIST_PAGE_SIZE);
+    assert.equal(signalListPageSizeForViewport(Number.NaN), SIGNAL_LIST_PAGE_SIZE);
+});
 
 test('screener row normalization preserves app identity and product category', () => {
     const strategies = [{ id: 'nwe', short_label: 'NWE' }];

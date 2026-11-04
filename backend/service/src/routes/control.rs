@@ -423,6 +423,9 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         let info = serde_json::json!({
             "version": SERVICE_VERSION,
             "build_id": SERVICE_BUILD_ID,
+            "available_timeframes": serde_json::json!(
+                quant_core::SIGNAL_SCREENER_TIMEFRAMES.iter().copied().collect::<Vec<_>>()
+            ),
             "server_time": format_timestamp(now as u64),
             "tab_active": tab_active,
             "is_scanning": is_scanning,

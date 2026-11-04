@@ -52,3 +52,15 @@ lesson only when it will improve future tasks.
 - Give a selected score-indicator filter a useful default threshold; `Any /10`
   is a no-op when every signal row has a score for that indicator. Explain how
   users can widen the results again.
+- For production dashboard QA, use a fresh browser context and keep checks
+  read-only. Treat Blitz's cold-start 503 separately from app behavior, wait a
+  bounded time, and verify HTTP status plus content type before parsing API
+  responses; HTML returned for a JSON endpoint is a routing failure, not an
+  empty dataset. Prefer browser same-origin fetches when standalone API clients
+  cannot use the browser's configured network proxy.
+- Do not let the initial countdown treat an unknown `next_scan_epoch` as due:
+  bootstrap already requests the initial screener snapshot. Expose the
+  authoritative timeframe list through fast runtime status so mobile filters
+  remain usable while a locked or slow signal query is pending. Limit the
+  initial mobile API page and card rendering to a small batch, then reveal
+  already loaded rows before requesting the next server page.

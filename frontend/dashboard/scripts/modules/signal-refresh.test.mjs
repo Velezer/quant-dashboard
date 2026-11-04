@@ -47,3 +47,86 @@ test('completed scan events deliver new all-app alerts and refresh readiness; ma
         }
     }
 });
+
+test('startup status exposes timeframes without duplicating the initial signal request', async () => {
+    const previous = Object.fromEntries(['document', 'window', 'CustomEvent', 'fetch', 'DATA', 'setInterval', 'clearInterval'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+    const requests = [];
+    let availableTimeframes = [];
+    const timeframes = ['15m', '30m', '1h', '2h', '4h', '1d', '1w'];
+    const response = payload => ({ ok: true, status: 200, text: async () => JSON.stringify(payload) });
+    globalThis.document = {
+        getElementById: id => id === 'countdown-timer' ? { textContent: '' } : null,
+    };
+    globalThis.window = { dispatchEvent: () => {} };
+    globalThis.CustomEvent = class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } };
+    globalThis.setInterval = () => 1;
+    globalThis.clearInterval = () => {};
+    globalThis.fetch = async url => {
+        const path = String(url).split('?')[0];
+        requests.push(path);
+        if (path === '/api/status') {
+            return response({ next_scan_epoch: Math.floor(Date.now() / 1000) + 60, available_timeframes: timeframes });
+        }
+        if (path === '/api/signals/count') return response({ signal_count: 0, stale: false });
+        return response({ signals: [], summary: {}, available_timeframes: timeframes });
+    };
+    publishDashboardBindings('signal-refresh-startup-test', {
+        setScreenerAvailableTimeframes: { get: () => values => { availableTimeframes = values; } },
+    });
+    try {
+        installSignalRefresh();
+        getDashboardBinding('startCountdown')();
+        await getDashboardBinding('fetchFreshSignals')();
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(requests.filter(path => path === '/api/signals').length, 1);
+        assert.deepEqual(availableTimeframes, timeframes);
+    } finally {
+        for (const [key, descriptor] of Object.entries(previous)) {
+            if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+            else delete globalThis[key];
+        }
+    }
+});
+
+test('a new timeframe request aborts the pending query and only applies its snapshot', async () => {
+    const previous = Object.fromEntries(['window', 'CustomEvent', 'fetch', 'DATA'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+    const requests = [];
+    const applied = [];
+    let timeframe = 'all';
+    globalThis.window = { dispatchEvent: () => {} };
+    globalThis.CustomEvent = class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } };
+    globalThis.fetch = (url, options = {}) => {
+        if (url.startsWith('/api/signals?')) {
+            return new Promise((resolve, reject) => {
+                options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+                requests.push({ resolve, signal: options.signal, url });
+            });
+        }
+        return Promise.resolve({ ok: true, text: async () => JSON.stringify({ signal_count: 0 }) });
+    };
+    publishDashboardBindings('refresh-test', {
+        getSignalScreenerQuery: { get: () => () => ({ timeframe }) },
+        applySignalSnapshot: { get: () => payload => applied.push(payload) },
+    });
+    const response = () => ({ ok: true, text: async () => JSON.stringify({
+        signals: [], summary: {}, available_timeframes: ['15m', '30m'],
+    }) });
+    try {
+        installSignalRefresh();
+        const first = getDashboardBinding('fetchFreshSignals')();
+        timeframe = '30m';
+        const second = getDashboardBinding('fetchFreshSignals')();
+        assert.equal(requests.length, 2);
+        assert.equal(requests[0].signal.aborted, true);
+        assert.match(requests[0].url, /timeframe=all/);
+        assert.match(requests[1].url, /timeframe=30m/);
+        requests[1].resolve(response());
+        await Promise.all([first, second]);
+        assert.equal(applied.length, 1, 'the cancelled snapshot is not applied');
+    } finally {
+        for (const [key, descriptor] of Object.entries(previous)) {
+            if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+            else delete globalThis[key];
+        }
+    }
+});

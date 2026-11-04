@@ -26,7 +26,7 @@ For a small change, the coordinator performs the needed roles in sequence.
 
    | Change area | Playbook and required focus |
    | --- | --- |
-   | UI or chart | [UI/UX contract](uiux-driven-development.md); use [ux-reviewer](../.agents/skills/ux-reviewer/SKILL.md) for hierarchy and financial meaning and [ui-tester](../.agents/skills/ui-tester/SKILL.md) for browser behavior and accessibility |
+   | UI or chart | [UI/UX contract](uiux-driven-development.md); use [ux-reviewer](../.agents/skills/ux-reviewer/SKILL.md) for hierarchy and financial meaning and [ui-tester](../.agents/skills/ui-tester/SKILL.md) for browser behavior and accessibility. Use [quant-dashboard-qa](../.agents/skills/quant-dashboard-qa/SKILL.md) for read-only smoke checks of the deployed dashboard. |
    | Signals, risk, strategies, or evidence | [institutional-trading](../.agents/skills/institutional-trading/SKILL.md); preserve venue rules, source and validation labels, chronological evaluation, and explainable risk |
    | Python-to-Rust or service ownership | [python-to-rust-migration](../.agents/skills/python-to-rust-migration/SKILL.md) and its `references/project-boundaries.md`; migrate one path at a time and establish parity before cutover |
    | SQLite, API payloads, market history, or instruments | [root AGENTS.md](../AGENTS.md) storage invariant and [market storage contract](market-data-storage.md); use migratable SQLite schemas, JSON messages, bounded chronological reads, and labeled sources |
