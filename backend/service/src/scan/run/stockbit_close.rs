@@ -213,4 +213,3 @@ pub(super) fn save_stockbit_close_scan_checkpoint(
     )?;
     Ok(())
 }
-

@@ -66,4 +66,3 @@ pub(super) struct AppScanResult {
     pub(super) signal_row_count: usize,
     pub(super) paused_market_closed_count: usize,
 }
-
