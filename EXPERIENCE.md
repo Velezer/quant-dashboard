@@ -52,3 +52,8 @@ lesson only when it will improve future tasks.
 - Give a selected score-indicator filter a useful default threshold; `Any /10`
   is a no-op when every signal row has a score for that indicator. Explain how
   users can widen the results again.
+- Describe fee-adjusted breakeven as an estimated exit price, never as a
+  risk-free trade. Apply entry and exit fees to their directional transaction
+  sides, keep unknown fees unavailable until both are supplied, and disclose
+  excluded execution costs and price-step rounding. A stop moved to that level
+  still may not fill there.
