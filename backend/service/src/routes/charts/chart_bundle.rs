@@ -152,6 +152,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             .map(|timeframe| (*timeframe, 120_i64))
             .collect::<Vec<_>>()
     };
+    let chart_indicator_settings = ChartIndicatorSettings::default();
     let mut result = serde_json::Map::new();
     let mut markov_regimes = serde_json::Map::new();
     let mut freshness = serde_json::Map::new();
@@ -218,6 +219,8 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         };
         match candle_result {
             Ok(mut candles) => {
+                // Calculate overlays from the same source series that is rendered.
+                chart_indicator_settings.attach(&mut candles);
                 let chart_status = if candles.len() < MIN_CHART_CANDLES {
                     bundle_degraded = true;
                     "insufficient_data"
@@ -292,6 +295,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             "chart_status": if bundle_degraded { "degraded" } else { "ready" },
             "service": "rust_quant_engine",
             "version": SERVICE_VERSION,
+            "indicator_config": chart_indicator_settings.metadata(),
             "symbol": symbol,
             "storage_symbol": storage_symbol,
             "exchange": exchange,

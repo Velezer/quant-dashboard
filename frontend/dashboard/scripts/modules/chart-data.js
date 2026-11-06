@@ -582,7 +582,12 @@ export function installChartData() {
                         if (point.dss != null && Number.isFinite(Number(point.dss))) candle.dss = Number(point.dss);
                         if (point.trigger != null && Number.isFinite(Number(point.trigger))) candle.trigger = Number(point.trigger);
                         if (point.gradient != null && Number.isFinite(Number(point.gradient))) candle.gradient = Number(point.gradient);
-                        candle.indicators = normalizeChartIndicators(point.indicators);
+                        const hydratedIndicators = normalizeChartIndicators(point.indicators);
+                        const chartEnvelope = candle.indicators?.[CHART_INDICATOR_IDS.nadarayaWatsonEnvelope];
+                        if (chartEnvelope) {
+                            hydratedIndicators[CHART_INDICATOR_IDS.nadarayaWatsonEnvelope] = chartEnvelope;
+                        }
+                        candle.indicators = hydratedIndicators;
                     });
                     if (payload.indicator_config && typeof payload.indicator_config === 'object') {
                         signal.chart_indicator_config = payload.indicator_config;
