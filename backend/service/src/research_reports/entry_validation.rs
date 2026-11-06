@@ -292,6 +292,8 @@ fn build_report(
             let backtest = quant_core::evaluate_entry_score_backtest(
                 &bars,
                 kind,
+                crate::timeframe_duration_ns(timeframe)
+                    .ok_or_else(|| "Invalid timeframe".to_string())?,
                 buy,
                 sell,
                 fees_known,

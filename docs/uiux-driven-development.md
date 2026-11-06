@@ -158,13 +158,24 @@ uncertainty, and future sizing prerequisites; no sizing model is built here.
 
 Reuse the live causal lead generators and one shared four-factor mapping.
 Entries occur at the next bar open, with no overlapping trades and no trades
-crossing split boundaries. Use a fixed 60/20/20 chronology; compare the existing
-4/8/12-bar exits on validation data only and report the untouched final holdout.
-Score-band discrimination is a conservative exploratory screen, not independent
-proof: enough observed trades in at least two bands, better top-band mean
-return, and separated Wilson win-rate intervals. Existing sample, native-source,
-fee and full-cost requirements remain separate checks. Omitted slippage,
-funding/borrow, depth and impact prevent execution/sizing promotion.
+crossing split boundaries. Apply 60/20/20 chronological splits to bars after
+the model warm-up. Keep the equal-weight baseline, and fit one research-only
+candidate from 165 predeclared weight vectors (nonnegative, 5-point increments,
+sum /40) on training data using a fixed 8-bar timeout and known fees. Require 30
+training trades per candidate; missing factors contribute zero without
+redistribution. Validation selects 4/8/12-bar or opposite-qualifying-signal
+exits independently for the baseline and candidate. With the candidate weights
+fixed, validation also selects among all 24x24 WIB entry-open/exit-close hour
+pairs, with the existing maximum hold as a timeout. Require at least 10 trades
+for an hour pair and test the selected pair once on the untouched holdout. Show
+lag-1 autocorrelation for training weighted scores and fixed-8-bar trade returns
+with their pair counts. Weight fitting and the display never change live signal
+scores. Score-band discrimination is a conservative
+exploratory screen, not independent proof: enough observed trades in at least
+two bands, better top-band mean return, and separated Wilson win-rate intervals.
+Existing sample, native-source, fee and full-cost requirements remain separate
+checks. Omitted slippage, funding/borrow, spread, depth and impact prevent
+execution/sizing promotion.
 
 Only aggregate, versioned evidence snapshots are saved in the existing app
 SQLite database, with exact identity and a fingerprint of the used candles.
@@ -193,6 +204,44 @@ retention. Future sizing must recheck the exact model/protocol/data identity.
    later inform sizing; validation and uncertainty must precede that decision.
 10. **Decision:** Build exact per-ticker evidence and honest blocking states,
     test causality/identity/boundaries, and defer sizing until its inputs qualify.
+
+### Per-ticker training-only score-weight learning
+
+The page compares the existing equal-weight score with a candidate fit for the
+exact ticker, timeframe, entry-model version, source, and fee policy. The
+candidate is not a live signal model and cannot make that evidence sizing-ready.
+
+1. **Direct effect:** Show a candidate /40 indicator-weight vector learned from
+   training outcomes beside the equal-weight baseline.
+2. **Immediate consequence:** Candidate trade qualification may differ at the
+   unchanged /40 score floor; unavailable factor points remain zero.
+3. **Response:** The UI reports candidate status, weights, training sample,
+   validation-selected exit, WIB hour pair, holdout outcomes, autocorrelation,
+   and the equal-weight comparison.
+4. **Interactions:** Fit weights with a fixed 8-bar training exit; validation
+   chooses the fixed 4/8/12-bar or qualifying reverse-signal exit. Preserve
+   completed-bar entry, next-bar-open fill, fee basis, no-overlap rules, and
+   WIB hour boundaries. The hour rule exits at the first selected-hour bar close
+   or the existing maximum hold.
+5. **Accumulation:** Save only the bounded aggregate report in existing SQLite;
+   bump the protocol so earlier snapshots require a rerun.
+6. **Failure boundaries:** Unknown fees disable weight fitting; fewer than 30
+   training outcomes, an empty validation sample, missing source, or short
+   history leave an explicit unavailable reason. Daily/weekly bars do not claim
+   intraday hours. Autocorrelation is unavailable below 10 varying pairs. No
+   failed case calls equal weights a learned candidate.
+7. **Recovery:** The selected ticker can be rerun after candle sync or protocol
+   changes. Preserve completed ticker reports and current source metadata.
+8. **Governance:** Keep live screener weights unchanged. Do not create sizing,
+   position, account, order, or execution state from this research result.
+9. **Trajectory:** Hypothesis: future held-out results can show whether
+   indicator emphasis or time-of-day effects differ by ticker. The hour grid may
+   overfit validation; repeated changes after reading holdout outcomes require
+   a new independent sample.
+10. **Decision:** Use the bounded predeclared grid, fixed training objective,
+    validation-only exit/hour selection, explicit autocorrelation diagnostics,
+    and untouched holdout; reconsider the fit only if new independent data show
+    stable, cost-aware improvement.
 
 ## Candle retention and low total strength
 

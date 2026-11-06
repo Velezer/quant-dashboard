@@ -57,3 +57,8 @@ lesson only when it will improve future tasks.
   sides, keep unknown fees unavailable until both are supplied, and disclose
   excluded execution costs and price-step rounding. A stop moved to that level
   still may not fill there.
+- For entry-score research, retain raw causal factor observations before applying
+  the composite floor so alternate weights can change qualification. Fit bounded
+  weights on training data, select exits and WIB hour pairs on validation, and
+  keep the chronological holdout read-only. Report score and consecutive-trade
+  return autocorrelation with pair counts; it describes dependence, not accuracy.

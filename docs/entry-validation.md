@@ -12,32 +12,67 @@ retry-failed controls.
 
 Each saved report identifies its registered instrument, model and score version,
 timeframe, selected candle source, sample dates, candle fingerprint, and
-protocol version. It separates the training, exit-selection, and untouched
-holdout windows. The four total-score bands and each indicator's points out of
-10 show the observed holdout trades, win-rate interval, returns, wins/losses,
-and profit factor. Scores rank signals; they are not win probabilities.
+protocol version. It separates the strategy warm-up, training, exit-selection,
+and untouched holdout windows. The equal-weight baseline's four total-score
+bands and each indicator's points out of 10 show observed holdout trades,
+win-rate interval, returns, wins/losses, and profit factor. Scores rank signals;
+they are not win probabilities.
 
-The protocol replays the live lead signal and shared score calculation using
-only candles available at that signal. A qualifying signal enters at the next
-bar open. The exit-selection window compares fixed 4, 8, and 12-bar timeouts
-with an exit on the first qualifying opposite entry signal, capped by the same
-timeout. The selected policy is evaluated on the final chronological 20% holdout;
-the holdout does not select the policy. Trades do not overlap or cross a split boundary.
-This gives a consistent per-ticker comparison, but manually changing the model,
-score floor, or rules after inspecting the holdout makes that holdout no longer
-independent evidence.
+The protocol replays the live lead signal and shared four component scores using
+only candles available at that signal. The score floor remains unchanged at 20
+out of 40. A qualifying signal enters at the next bar open. The nominal 60/20/20
+chronological splits apply to bars after the model's indicator warm-up; no
+position crosses a split boundary.
+
+Weight learning tests 165 predeclared nonnegative weight vectors in steps of 5
+that sum to 40. Missing factor values contribute zero and their weight is not
+redistributed. Training selects the vector with the highest mean return after
+known transaction fees using a fixed 8-bar timeout, and requires at least 30
+non-overlapping training outcomes for each candidate. Equal weights are the
+baseline, and ties favor the vector closest to equal weights. Unknown fees or
+too few training outcomes disable weight fitting.
+
+For the fixed equal-weight baseline and the training-selected candidate,
+validation compares fixed 4, 8, and 12-bar timeouts with an exit on the first
+opposite-direction signal that qualifies under that model's weights and score
+floor. The opposite signal closes the position and does not open a reverse one.
+Validation selects the exit rule and maximum hold independently for each model.
+Each selected policy is evaluated once on the final chronological holdout; the
+holdout does not select weights or exits. This evidence remains exploratory and
+does not change live screener scores. Inspecting the holdout and then changing
+weights, floors, or rules contaminates it as independent evidence.
+
+After weights are fitted, an intraday-only rule searches 576 entry-hour/exit-hour
+pairs in validation using that fixed weight vector. Hours use WIB (Asia/Jakarta,
+UTC+07:00). Entry time is the next bar's open; exit time is the first bar close
+at the selected hour, capped by the longest configured fixed-exit horizon. If
+the exit hour does not occur before that cap, the rule exits at the cap. A pair
+needs at least 10 validation trades; ties favor more trades, then earlier entry
+and exit hours. The selected pair is evaluated once on holdout. Daily and weekly
+candles do not support intraday hour selection. One page shows the selected
+rule, top validation pairs, weights, data source, and holdout result.
+
+The report also shows lag-1 autocorrelation for the fitted weighted signal-score
+series and its fixed-8-bar training trade returns. Signal scores include every
+causal lead event, including events below the entry floor; trade returns are
+consecutive non-overlapping outcomes. At least 10 lagged pairs and non-constant
+values are required to report a coefficient. This describes linear dependence,
+not predictive accuracy; trade spacing is irregular and is not treated as an
+equal-time series.
 
 **Backtest complete** means the evaluator produced a report. **Validated
 holdout evidence** has additional minimum sample and calendar-span, positive
 holdout return and profit factor, separated score-band evidence, verified
 registered identity, venue-native candles, known product fees, and complete
-execution-cost checks. The indicator points and their weights remain descriptive;
-they do not stand in for these checks.
+execution-cost checks. A training-selected weight vector is a candidate, not a
+validated replacement for the live equal weights; it does not stand in for
+these checks.
 
 Research-proxy candles cannot qualify as venue-native evidence. Unknown fees are
-shown as unknown and returns remain gross. The current report does not model
-slippage, order-book depth, market impact, or applicable funding and borrow
-costs, so sizing eligibility is always blocked by this version of the report.
+shown as unknown and returns remain gross; weight fitting is disabled without
+known fees. The current report does not model slippage, order-book depth, market
+impact, spread, or applicable funding and borrow costs, so sizing eligibility is
+always blocked by this version of the report.
 Historical evidence can inform a later sizing review only after these gaps and
 the separate sizing rule and risk limits have been addressed.
 

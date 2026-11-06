@@ -1,4 +1,7 @@
-use super::{evaluate_nwe_dss_exit_selection, evaluate_window, NWE_DSS_EXIT_CANDIDATES_BARS};
+use super::{
+    evaluate_nwe_dss_exit_selection, evaluate_window, LagOneCorrelation,
+    NWE_DSS_EXIT_CANDIDATES_BARS,
+};
 use crate::strategies::{SignalConfluenceScore, StrategyBar, StrategySignal};
 
 fn bar(time: i64, open: f64, close: f64) -> StrategyBar {
@@ -142,4 +145,28 @@ fn short_history_never_emits_a_selected_rule() {
     let result = evaluate_nwe_dss_exit_selection(&bars, 0.15, 0.25, true, true, true, false);
     assert_eq!(result["status"], "INSUFFICIENT_HISTORY");
     assert!(result["rule_candidate"].is_null());
+}
+
+#[test]
+fn lag_one_autocorrelation_is_reported_only_with_enough_nonconstant_pairs() {
+    let mut correlation = LagOneCorrelation::default();
+    for value in 1..=12 {
+        correlation.add(value as f64);
+    }
+    let result = correlation.to_json("test series");
+    assert_eq!(result["lag"], 1);
+    assert_eq!(result["pairs"], 11);
+    assert!(result["coefficient"].as_f64().unwrap() > 0.99);
+
+    let mut constant = LagOneCorrelation::default();
+    for _ in 0..12 {
+        constant.add(1.0);
+    }
+    assert!(constant.to_json("constant series")["coefficient"].is_null());
+
+    let mut short = LagOneCorrelation::default();
+    for value in 1..=5 {
+        short.add(value as f64);
+    }
+    assert!(short.to_json("short series")["coefficient"].is_null());
 }
