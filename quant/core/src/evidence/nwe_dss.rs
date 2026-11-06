@@ -5,6 +5,53 @@ use serde_json::{json, Value};
 pub const NWE_DSS_EXIT_CANDIDATES_BARS: &[usize] = &[4, 8, 12];
 const TRAINING_FRACTION: f64 = 0.60;
 const VALIDATION_FRACTION: f64 = 0.20;
+const MIN_AUTOCORRELATION_PAIRS: usize = 10;
+
+#[derive(Clone, Copy, Default)]
+pub(super) struct LagOneCorrelation {
+    previous: Option<f64>,
+    pairs: usize,
+    left_sum: f64,
+    right_sum: f64,
+    left_square_sum: f64,
+    right_square_sum: f64,
+    product_sum: f64,
+}
+
+impl LagOneCorrelation {
+    pub(super) fn add(&mut self, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
+        if let Some(previous) = self.previous {
+            self.pairs += 1;
+            self.left_sum += previous;
+            self.right_sum += value;
+            self.left_square_sum += previous * previous;
+            self.right_square_sum += value * value;
+            self.product_sum += previous * value;
+        }
+        self.previous = Some(value);
+    }
+
+    fn coefficient(self) -> Option<f64> {
+        if self.pairs < MIN_AUTOCORRELATION_PAIRS {
+            return None;
+        }
+        let count = self.pairs as f64;
+        let left_variance = count * self.left_square_sum - self.left_sum * self.left_sum;
+        let right_variance = count * self.right_square_sum - self.right_sum * self.right_sum;
+        let denominator = (left_variance * right_variance).sqrt();
+        let coefficient = (count * self.product_sum - self.left_sum * self.right_sum) / denominator;
+        (denominator > 0.0 && coefficient.is_finite()).then(|| coefficient.clamp(-1.0, 1.0))
+    }
+
+    pub(super) fn to_json(self, basis: &str) -> Value {
+        json!({"lag":1,"pairs":self.pairs,"minimum_pairs":MIN_AUTOCORRELATION_PAIRS,
+            "coefficient":self.coefficient(),"basis":basis,
+            "interpretation":"Descriptive linear dependence only; it is not predictive accuracy."})
+    }
+}
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct TradeSummary {
@@ -18,6 +65,7 @@ pub(super) struct TradeSummary {
     gross_sum_pct: f64,
     positive_returns_pct: f64,
     negative_returns_pct: f64,
+    lag_one_returns: LagOneCorrelation,
     first_time: Option<i64>,
     last_time: Option<i64>,
 }
@@ -65,11 +113,14 @@ impl TradeSummary {
         if !net.is_finite() {
             return;
         }
+        self.lag_one_returns.add(net);
         self.trades += 1;
         self.losses += usize::from(net < 0.0);
         self.min_return_pct = Some(self.min_return_pct.map_or(net, |value| value.min(net)));
         self.max_return_pct = Some(self.max_return_pct.map_or(net, |value| value.max(net)));
-        if net < 0.0 { self.negative_squared_returns_pct += net * net; }
+        if net < 0.0 {
+            self.negative_squared_returns_pct += net * net;
+        }
         self.wins += usize::from(net > 0.0);
         self.net_sum_pct += net;
         self.gross_sum_pct += gross;
@@ -87,6 +138,10 @@ impl TradeSummary {
         (self.trades > 0).then(|| self.net_sum_pct / self.trades as f64)
     }
 
+    pub(super) fn return_autocorrelation_json(self) -> Value {
+        self.lag_one_returns.to_json("Consecutive non-overlapping trade returns in chronological order; equal time spacing is not assumed.")
+    }
+
     pub(super) fn to_json(self, fees_known: bool) -> Value {
         let sample_days = self
             .first_time
@@ -97,7 +152,8 @@ impl TradeSummary {
         let profit_factor_unbounded =
             self.positive_returns_pct > 0.0 && self.negative_returns_pct == 0.0;
         let average_win = (self.wins > 0).then(|| self.positive_returns_pct / self.wins as f64);
-        let average_loss = (self.losses > 0).then(|| self.negative_returns_pct / self.losses as f64);
+        let average_loss =
+            (self.losses > 0).then(|| self.negative_returns_pct / self.losses as f64);
         json!({
             "average_win_pct": average_win,
             "average_loss_pct": average_loss,
@@ -118,7 +174,10 @@ impl TradeSummary {
             "trade_span_days": sample_days,
             "first_entry_ts": self.first_time,
             "last_exit_ts": self.last_time,
-            "fees_applied": fees_known
+            "fees_applied": fees_known,
+            "trade_return_lag1_autocorrelation": self.lag_one_returns.coefficient(),
+            "trade_return_lag1_pairs": self.lag_one_returns.pairs,
+            "trade_return_lag1_minimum_pairs": MIN_AUTOCORRELATION_PAIRS
         })
     }
 }

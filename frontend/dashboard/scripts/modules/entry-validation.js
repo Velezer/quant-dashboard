@@ -304,6 +304,159 @@ export function initializeEntryValidation(doc = document) {
             body.append(row);
         }
     }
+    function weightVectorText(weights) {
+        if (!Array.isArray(weights) || weights.length !== 4) return 'Unavailable';
+        const labels = ['NWE', 'DSS', 'Relative volume', 'Delta proxy'];
+        return `${labels.map((label, index) => `${label} ${metric(weights[index], '', 0)}`).join(' · ')} = ${weights.reduce((sum, weight) => sum + (numeric(weight) || 0), 0)}`;
+    }
+    function exitLabel(rule, bars) {
+        if (numeric(bars) === null) return 'Not selected';
+        const name = rule === 'opposite_entry_signal_or_timeout' ? 'Opposite qualifying signal' : 'Fixed timeout';
+        return `${name} · ${metric(bars, ' bars', 0)}`;
+    }
+    function renderWeightExitCandidates(learning) {
+        const body = $('weight-exit-candidate-rows');
+        body.replaceChildren();
+        const candidate = learning?.candidate;
+        const candidates = Array.isArray(candidate?.validation_exit_candidates) ? candidate.validation_exit_candidates : [];
+        if (!candidates.length) {
+            const row = element('tr');
+            row.append(element('td', 'No learned-candidate exit choices are available until training selects weights and validation has enough trades.', 'empty-cell'));
+            row.firstChild.colSpan = 4; body.append(row); return;
+        }
+        for (const item of candidates) {
+            const row = element('tr');
+            const selected = item.exit_rule === candidate.selected_exit_rule
+                && numeric(item.exit_bars) === numeric(candidate.selected_exit_bars);
+            if (selected) row.className = 'selected-exit';
+            const rule = item.exit_rule === 'opposite_entry_signal_or_timeout'
+                ? 'Opposite qualifying signal, with timeout' : 'Fixed timeout';
+            row.append(
+                element('td', `${selected ? 'Selected · ' : ''}${rule}`),
+                element('td', metric(item.exit_bars, '', 0)),
+                element('td', metric(item.trades, '', 0)),
+                element('td', metric(item.mean_return_pct, '%')),
+            );
+            body.append(row);
+        }
+    }
+    function renderWeightLearning(backtest) {
+        const learning = backtest.weight_learning;
+        const body = $('weight-learning-rows');
+        body.replaceChildren();
+        const reasons = {
+            INVALID_HISTORY: 'Invalid candle history or fee inputs. The research candidate could not be fitted.',
+            INSUFFICIENT_HISTORY: 'The strategy warm-up is incomplete. The equal-weight baseline remains available when history allows.',
+            FEES_UNKNOWN: 'Fees are unknown, so weight fitting is disabled. The baseline result is gross-only.',
+            INSUFFICIENT_TRAINING_SAMPLE: 'No candidate had 30 or more non-overlapping training trades at the existing score floor.',
+            NO_VALIDATION_EXIT: 'Training selected a weight candidate, but no exit rule met the validation sample minimum.',
+            CANDIDATE_READY: 'Training selected weights; validation selected the exit. The untouched holdout reports both against the current equal-weight baseline.',
+        };
+        const statusText = learning?.reason || reasons[learning?.status] || 'This saved report predates weight learning. Rerun this ticker to calculate a training-only candidate.';
+        status('weight-learning-status', `${statusText}${learning?.live_weights_changed === false ? ' Live screener weights were not changed.' : ''}`, learning?.status === 'CANDIDATE_READY' ? '' : '');
+        const baseline = learning?.baseline;
+        if (baseline) {
+            body.append(weightComparisonRow('Current equal-weight baseline', baseline));
+        }
+        const candidate = learning?.candidate;
+        if (candidate) {
+            body.append(weightComparisonRow('Training-selected candidate', candidate));
+        } else {
+            const row = element('tr');
+            row.append(element('td', 'No trained candidate', 'metric-value'), element('td', learning?.selected_weights ? weightVectorText(learning.selected_weights) : 'Unavailable'));
+            row.append(element('td', '—'), element('td', '—'), element('td', '—'), element('td', learning?.reason || 'A candidate could not be fitted.'));
+            body.append(row);
+        }
+        if (!baseline && !candidate) {
+            const row = element('tr'); const cell = element('td', 'This saved report predates the current weight-learning protocol. Rerun the ticker to create comparable evidence.', 'empty-cell');
+            cell.colSpan = 6; row.append(cell); body.replaceChildren(row);
+        }
+        renderWeightExitCandidates(learning);
+        renderAutocorrelation(learning);
+        renderHourRule(learning?.hour_rule);
+    }
+    function autocorrelationCard(label, value) {
+        const coefficient = numeric(value?.coefficient);
+        const pairs = metric(value?.pairs, ' pairs', 0);
+        const minimum = numeric(value?.minimum_pairs);
+        const detail = coefficient === null
+            ? `${pairs} · coefficient unavailable${minimum === null ? '' : `; needs ${metric(minimum, ' pairs', 0)} and varying values`}`
+            : `${pairs} · r=${metric(coefficient, '', 3)} · ${value.basis || 'Consecutive observations'}`;
+        return metricCard(label, coefficient === null ? 'Unavailable' : metric(coefficient, '', 3), detail);
+    }
+    function renderAutocorrelation(learning) {
+        const cards = $('weight-autocorrelation-cards');
+        cards.replaceChildren(
+            autocorrelationCard('Weighted score · lag 1', learning?.weighted_score_autocorrelation),
+            autocorrelationCard('Trade return · lag 1', learning?.trade_return_autocorrelation),
+        );
+    }
+    function hourText(value) {
+        const hour = numeric(value);
+        return hour === null || hour < 0 || hour > 23 ? '—' : `${String(Math.trunc(hour)).padStart(2, '0')}:00 WIB`;
+    }
+    function renderHourRule(rule) {
+        const metrics = $('hour-rule-metrics');
+        const body = $('hour-rule-rows');
+        body.replaceChildren();
+        const statusMessages = {
+            HOUR_PAIR_SELECTED: 'A training-weighted hour pair was selected on validation data. The holdout evaluates that frozen pair once.',
+            WEIGHTS_UNAVAILABLE: 'Hourly search needs a fee-aware candidate weight vector fitted on training data.',
+            INVALID_BAR_INTERVAL: 'Candle interval metadata is missing, so local hours could not be evaluated.',
+            INTRADAY_HOURS_NOT_APPLICABLE: 'Daily and weekly bars do not contain intraday entry or exit timing.',
+            INSUFFICIENT_VALIDATION_SAMPLE: `No hour pair met the minimum ${metric(rule?.minimum_validation_trades, ' validation trades', 0)}. No best hour is reported.`,
+        };
+        const message = rule?.reason || statusMessages[rule?.status] || 'This saved report predates the hour analysis. Rerun the ticker to calculate entry and exit hours.';
+        status('hour-rule-status', `${message}${rule?.timezone ? ` Time basis: ${rule.timezone}.` : ''}`, rule?.status === 'HOUR_PAIR_SELECTED' ? '' : 'pending');
+        const candidate = rule?.candidate;
+        if (candidate) {
+            const validation = candidate.validation || {};
+            const holdout = candidate.holdout || {};
+            metrics.replaceChildren(
+                metricCard('Entry hour', hourText(candidate.entry_hour_wib), 'Next bar open · WIB'),
+                metricCard('Exit hour', hourText(candidate.exit_hour_wib), `First matching bar close · maximum ${metric(rule.maximum_hold_bars, ' bars', 0)}`),
+                metricCard('Validation', `${metric(validation.trades, '', 0)} trades · ${metric(validation.mean_return_pct, '%')}`, validation.return_basis || 'Validation result'),
+                metricCard('Untouched holdout', `${metric(holdout.trades, '', 0)} trades · ${metric(holdout.mean_return_pct, '%')}`, holdout.return_basis || 'Holdout result'),
+            );
+        } else {
+            metrics.replaceChildren(metricCard('Entry / exit hours', 'Unavailable', rule?.status || 'Insufficient data'));
+        }
+        const pairs = Array.isArray(rule?.top_validation_pairs) ? rule.top_validation_pairs : [];
+        if (!pairs.length) {
+            const row = element('tr'); const cell = element('td', 'No validation hour pair has enough evidence to compare.', 'empty-cell');
+            cell.colSpan = 5; row.append(cell); body.append(row); return;
+        }
+        for (const pair of pairs) {
+            const row = element('tr');
+            const selected = candidate
+                && numeric(pair.entry_hour_wib) === numeric(candidate.entry_hour_wib)
+                && numeric(pair.exit_hour_wib) === numeric(candidate.exit_hour_wib);
+            if (selected) row.className = 'selected-exit';
+            row.append(
+                element('td', hourText(pair.entry_hour_wib)),
+                element('td', hourText(pair.exit_hour_wib)),
+                element('td', metric(pair.trades, '', 0)),
+                element('td', metric(pair.mean_return_pct, '%')),
+                element('td', pair.trade_return_lag1_autocorrelation == null ? 'Unavailable' : metric(pair.trade_return_lag1_autocorrelation, '', 3)),
+            );
+            body.append(row);
+        }
+    }
+    function weightComparisonRow(label, result) {
+        const row = element('tr');
+        const training = result.training_fit || {};
+        const validation = result.validation || {};
+        const holdout = result.holdout || {};
+        row.append(
+            element('td', label, 'metric-value'),
+            element('td', weightVectorText(result.weights)),
+            element('td', `${metric(training.trades, '', 0)} trades · ${metric(training.mean_return_pct, '%')}`),
+            element('td', exitLabel(result.selected_exit_rule, result.selected_exit_bars)),
+            element('td', `${metric(validation.trades, '', 0)} trades · ${metric(validation.mean_return_pct, '%')}`),
+            element('td', `${metric(holdout.trades, '', 0)} trades · ${metric(holdout.mean_return_pct, '%')} · PF ${holdout.profit_factor_unbounded === true ? '∞' : metric(holdout.profit_factor)}`),
+        );
+        return row;
+    }
     function renderModel() {
         if (!report) return;
         const models = Array.isArray(report.models) ? report.models : [];
@@ -332,9 +485,11 @@ export function initializeEntryValidation(doc = document) {
             metricCard('Observed payoff', metric(holdout.payoff_ratio, '×'), `Avg win ${metric(holdout.average_win_pct, '%')} · avg loss ${metric(holdout.average_loss_pct, '%')}`),
         );
         renderChecks(model);
-        metadata('sample-dates', ['training', 'validation', 'holdout'].map(key => {
+        renderWeightLearning(backtest);
+        metadata('sample-dates', ['warmup', 'training', 'validation', 'holdout'].map(key => {
             const segment = backtest.splits?.[key] || {};
-            return [key === 'validation' ? 'Exit selection' : key[0].toUpperCase() + key.slice(1), `${dateText(segment.start_ts)} – ${dateText(segment.end_ts)} · ${metric(segment.bars, ' bars', 0)}`];
+            const label = key === 'warmup' ? 'Indicator warm-up' : key === 'validation' ? 'Exit selection' : key[0].toUpperCase() + key.slice(1);
+            return [label, `${dateText(segment.start_ts)} – ${dateText(segment.end_ts)} · ${metric(segment.bars, ' bars', 0)}`];
         }));
         if (backtest.selected_exit_bars == null) {
             text('exit-protocol', 'No exit could be selected from the validation sample. The holdout is not used to choose one.');
