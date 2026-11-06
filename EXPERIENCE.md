@@ -37,6 +37,10 @@ lesson only when it will improve future tasks.
 - The candlestick canvas separates its price plot from the volume pane.
   Clip price overlays to the visible plot bounds: vertical zoom can move an
   indicator band out of view, and an unclipped band can bleed into volume.
+- Separate-pane indicators need scales in their own units. In particular,
+  NWE excursion percentages are often below 1; using the DSS oscillator's
+  fixed 0–100 range makes 15m excursions look flat. Fit and label the percent
+  axis from the selected NWE output while keeping oscillator scales unchanged.
 - Crypto NWE/DSS setups can remain visible after their reference price expires,
   but they are not current market entries. Keep the API and browser filters aligned
   with the crypto strategy catalog, preserve the stale-price label, and keep

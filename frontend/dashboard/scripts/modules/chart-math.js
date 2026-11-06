@@ -34,6 +34,35 @@ export const QuantChart = (() => {
         }
         return { min: scaleMin, max: scaleMax, step, ticks };
     }
+    function fitValueScale(values, {
+        minimum = null,
+        maximum = null,
+        fallbackMin = 0,
+        fallbackMax = 100,
+        paddingFraction = 0.05,
+    } = {}) {
+        let min = Number.isFinite(minimum) ? minimum : Infinity;
+        let max = Number.isFinite(maximum) ? maximum : -Infinity;
+        for (const value of Array.isArray(values) ? values : []) {
+            if (!Number.isFinite(value)) continue;
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+        }
+        if (!Number.isFinite(min) || !Number.isFinite(max)) {
+            return { min: fallbackMin, max: fallbackMax };
+        }
+        if (max <= min) {
+            const minimumSpan = Math.max(Math.abs(min) * 0.05, 1e-6);
+            max = min + minimumSpan;
+        }
+        const padding = (max - min) * Math.max(0, paddingFraction);
+        if (!Number.isFinite(minimum)) min -= padding;
+        if (!Number.isFinite(maximum)) max += padding;
+        const fitted = priceScale(min, max, 5);
+        return Number.isFinite(fitted.min) && Number.isFinite(fitted.max) && fitted.max > fitted.min
+            ? { min: fitted.min, max: fitted.max }
+            : { min: fallbackMin, max: fallbackMax };
+    }
     function zoomValueScale(minimum, maximum, anchor, factor) {
         const min = number(minimum);
         const max = number(maximum);
@@ -85,5 +114,5 @@ export const QuantChart = (() => {
             signal.direction || '',
         ].join('|');
     }
-    return { clamp, number, viewport, priceScale, zoomValueScale, panValueScale, valueAtScaleY, zoom, key };
+    return { clamp, number, viewport, priceScale, fitValueScale, zoomValueScale, panValueScale, valueAtScaleY, zoom, key };
 })();

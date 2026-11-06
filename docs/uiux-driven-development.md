@@ -835,6 +835,34 @@ research signal mapping.
     SHORT. Reconsider if the displayed study mode is mistaken for causal signal
     evidence.
 
+## Decision record: scale NWE to the visible chart window
+
+Pine price overlays only contribute their visible values to automatic price
+scaling. The NWE excursion pane fits its range to percentage data and prints
+percent units; DSS keeps its oscillator scale.
+
+1. **Direct effect:** Small 15m excursions remain visible, and off-screen Pine
+   extrema no longer stretch the selected price window. Acceptance: synthetic
+   15m output shows a fitted percent axis and overlay bounds use visible bars.
+2. **Immediate consequence:** The NWE trace occupies more of its pane while
+   candles retain a useful price range during pan and zoom.
+3. **Response:** Fit recomputes from the selected timeframe's indicator output;
+   manual zoom and pan continue to use the chosen scale.
+4. **Interactions:** NWE endpoint/repaint calculations, DSS values, signal
+   scoring, and price-overlay clipping remain unchanged.
+5. **Accumulation:** Old extremes outside the viewport cannot distort repeated
+   chart views; the bounded chart history and candle store are unchanged.
+6. **Failure boundaries:** Empty or flat NWE output receives a small safe range;
+   non-finite and out-of-range overlay values are ignored.
+7. **Recovery:** Existing Fit restores the selected pane's current values. If a
+   visible NWE sample falls outside its fitted range, correct the range inputs.
+8. **Governance:** This changes only research visualization and adds no
+   signal, execution, or persisted data behavior.
+9. **Trajectory:** Hypothesis: unit-correct axes improve 15m inspection; verify
+   on real app history and reconsider if visible excursions remain compressed.
+10. **Decision:** Fit percent data separately and autoscale Pine overlays from
+    visible indices, while leaving the DSS 0–100 meaning intact.
+
 ## Superseded decision record: score Stockbit 4h NWE crosses with a 70% floor
 
 The score is a ranking aid, not a probability or a claim of validated returns.

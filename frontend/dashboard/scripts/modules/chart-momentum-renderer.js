@@ -49,6 +49,10 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
         const scaleMin = Number.isFinite(chartIndicatorScale?.min) ? chartIndicatorScale.min : 0;
         const scaleMax = Number.isFinite(chartIndicatorScale?.max) && chartIndicatorScale.max > scaleMin ? chartIndicatorScale.max : 100;
         const scaleTicks = QuantChart.priceScale(scaleMin, scaleMax, 5);
+        const scaleDigits = scaleTicks.step > 0
+            ? Math.max(0, Math.min(isNweOutsideDistance ? 6 : 3, Math.ceil(-Math.log10(scaleTicks.step))))
+            : 1;
+        const displayScaleValue = value => `${value.toFixed(isNweOutsideDistance ? Math.max(2, scaleDigits) : scaleDigits)}${isNweOutsideDistance ? '%' : ''}`;
 
         function getDssY(v) {
             return dssPadding.top + (scaleMax - v) / (scaleMax - scaleMin) * dssPlotH;
@@ -58,7 +62,7 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
             const title = momentumPane?.querySelector('.dss-summary-title');
             if (title) title.textContent = `${registeredDisplayName} · ${registeredAuthor}`;
             dssCanvas.setAttribute('aria-label', isRegisteredPaneOutput
-                ? `${registeredName} by ${registeredAuthor}, calculated in browser WASM from ${sourceContext}. The indicator pane draws its Pine plots on a ${scaleMin.toFixed(1)} to ${scaleMax.toFixed(1)} value scale${isNweOutsideDistance ? ', as historical excursion percentages and not as a trading signal' : ''}. Drag the right edge or press Shift+ArrowUp/Down to zoom; Shift-drag the plot to pan vertically; use Fit to restore the plotted value range.`
+                ? `${registeredName} by ${registeredAuthor}, calculated in browser WASM from ${sourceContext}. The indicator pane draws its Pine plots on a ${displayScaleValue(scaleMin)} to ${displayScaleValue(scaleMax)} scale${isNweOutsideDistance ? ', as historical excursion percentages and not as a trading signal' : ''}. Drag the right edge or press Shift+ArrowUp/Down to zoom; Shift-drag the plot to pan vertically; use Fit to restore the plotted value range.`
                 : `${registeredName} by ${registeredAuthor}. ${registeredState === 'error' ? 'Unavailable: ' : 'Updating: '}${registeredPaneState?.message || 'The registered Pine output is being calculated.'}`);
             const legend = document.getElementById('dssLegend');
             if (legend) {
@@ -168,10 +172,9 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
             dCtx.stroke();
             const overlapsLevelLabel = labeledLevels.some(level => Math.abs(getDssY(level) - y) < 12);
             if (!overlapsLevelLabel) {
-                const digits = scaleTicks.step > 0 ? Math.max(0, Math.min(3, Math.ceil(-Math.log10(scaleTicks.step)))) : 1;
                 dCtx.fillStyle = '#9ca3af';
                 dCtx.textAlign = 'right';
-                dCtx.fillText(tick.toFixed(digits), dWidth - 4, y + 3);
+                dCtx.fillText(displayScaleValue(tick), dWidth - 4, y + 3);
             }
         }
         dCtx.restore();
