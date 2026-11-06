@@ -2,6 +2,7 @@ import { publishDashboardBindings } from './runtime-context.js';
 import { QuantChart } from './chart-math.js';
 import { readApiResponse } from './api.js';
 import { pineChartPlots } from './pine-chart-output.js';
+import { NWE_MAX_OUTSIDE_DISTANCE_ID } from './pine-sources.js';
 import { marketSymbolForSignal, marketVenueForSignal } from './chart-market-identity.js';
 import { CHART_INDICATOR_IDS, finiteChartIndicatorValue, normalizeChartIndicators } from './chart-indicator-data.js';
 import { formatChartCandleTimestamp } from './chart-candle-time.js';
@@ -712,17 +713,10 @@ export function installChartData() {
                     Array.isArray(bars) ? bars.length : 0,
                 ).paneOutput;
                 const values = (paneOutput?.plots || []).flatMap(plot => plot.values).filter(Number.isFinite);
-                if (values.length) {
-                    const dataMin = Math.min(0, ...values);
-                    const dataMax = Math.max(100, ...values);
-                    const fittedScale = QuantChart.priceScale(dataMin, dataMax, 5);
-                    chartIndicatorScale = {
-                        min: Math.min(dataMin, fittedScale.min),
-                        max: Math.max(dataMax, fittedScale.max),
-                    };
-                } else {
-                    chartIndicatorScale = { min: 0, max: 100 };
-                }
+                const isNweOutsideDistance = String(paneOutput?.id) === NWE_MAX_OUTSIDE_DISTANCE_ID;
+                chartIndicatorScale = QuantChart.fitValueScale(values, isNweOutsideDistance
+                    ? { minimum: 0, fallbackMin: 0, fallbackMax: 1, paddingFraction: 0.08 }
+                    : { minimum: 0, maximum: 100 });
                 if (selectedSignal) drawCandleChart(selectedSignal);
             }
 

@@ -18,6 +18,23 @@ export function withChartPricePaneClip(ctx, bounds, render) {
     }
 }
 
+export function visibleOverlayPriceRange(plots, startIndex, endIndex) {
+    let min = Infinity;
+    let max = -Infinity;
+    const start = Math.max(0, Math.floor(Number(startIndex) || 0));
+    const end = Math.max(start, Math.floor(Number(endIndex) || 0));
+    for (const plot of Array.isArray(plots) ? plots : []) {
+        const values = Array.isArray(plot?.values) ? plot.values : [];
+        for (let index = start; index < Math.min(end, values.length); index += 1) {
+            const value = values[index];
+            if (!Number.isFinite(value)) continue;
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+        }
+    }
+    return { min, max };
+}
+
 /** Draws the selected signal's candles, current price, and indicator pane. */
 export function installChartRenderer() {
             function drawCandleChartNow(signal) {
@@ -178,10 +195,10 @@ export function installChartRenderer() {
                 }
 
                 const pinePlots = pineChartPlots(signal.pine_indicator_outputs, activeTimeframe, allCandles.length);
-                for (const plot of pinePlots.overlayPlots) {
-                    for (const value of plot.values) {
-                        if (Number.isFinite(value)) { minP = Math.min(minP, value); maxP = Math.max(maxP, value); }
-                    }
+                const pineOverlayRange = visibleOverlayPriceRange(pinePlots.overlayPlots, startIndex, endIndex);
+                if (Number.isFinite(pineOverlayRange.min) && Number.isFinite(pineOverlayRange.max)) {
+                    minP = Math.min(minP, pineOverlayRange.min);
+                    maxP = Math.max(maxP, pineOverlayRange.max);
                 }
 
                 if (signal.current_price) { minP = Math.min(minP, signal.current_price); maxP = Math.max(maxP, signal.current_price); }

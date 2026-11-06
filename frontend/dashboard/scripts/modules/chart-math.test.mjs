@@ -25,6 +25,26 @@ test('invalid price ranges return no ticks', () => {
     assert.deepEqual(QuantChart.priceScale(2, 2), { min: 2, max: 2, step: 0, ticks: [] });
 });
 
+test('indicator value fitting keeps small NWE percentages legible', () => {
+    const scale = QuantChart.fitValueScale([0, 0.04, 0.11, 0.16], {
+        minimum: 0,
+        fallbackMin: 0,
+        fallbackMax: 1,
+        paddingFraction: 0.08,
+    });
+
+    assert.equal(scale.min, 0);
+    assert.ok(scale.max > 0.16);
+    assert.ok(scale.max < 1);
+});
+
+test('indicator value fitting preserves the oscillator range and handles flat data', () => {
+    assert.deepEqual(QuantChart.fitValueScale([20, 50, 80], { minimum: 0, maximum: 100 }), { min: 0, max: 100 });
+    const flatScale = QuantChart.fitValueScale([0, 0], { minimum: 0, fallbackMax: 1 });
+    assert.equal(flatScale.min, 0);
+    assert.ok(flatScale.max > 0 && flatScale.max < 0.001);
+});
+
 test('indicator scale zoom stays anchored at the pointer value', () => {
     assert.deepEqual(QuantChart.zoomValueScale(0, 100, 25, 2), { min: 12.5, max: 62.5 });
     assert.deepEqual(QuantChart.zoomValueScale(0, 100, 25, 1), { min: 0, max: 100 });
