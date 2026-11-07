@@ -148,6 +148,204 @@ pub(super) fn get_report(conn: &Connection, instrument_id: &str, timeframe: &str
     encoded.map(decode_json).transpose()
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct DailyRefreshState {
+    pub(super) status: String,
+    pub(super) cycle_started_at: i64,
+    pub(super) cycle_completed_at: i64,
+    pub(super) next_due_at: i64,
+    pub(super) total_pairs: usize,
+    pub(super) completed_pairs: usize,
+    pub(super) failed_pairs: usize,
+    pub(super) cursor: usize,
+    pub(super) current_instrument_id: String,
+    pub(super) current_timeframe: String,
+    pub(super) current_label: String,
+    pub(super) resume_instrument_id: String,
+    pub(super) resume_timeframe: String,
+    pub(super) last_failure_label: String,
+    pub(super) last_error: String,
+}
+
+pub(super) fn daily_refresh_state(
+    conn: &Connection,
+) -> Result<DailyRefreshState, rusqlite::Error> {
+    conn.query_row(
+        "SELECT status,cycle_started_at,cycle_completed_at,next_due_at,total_pairs,
+                completed_pairs,failed_pairs,cursor,current_instrument_id,current_timeframe,
+                current_label,resume_instrument_id,resume_timeframe,last_failure_label,last_error
+           FROM app.entry_model_validation_daily_refresh WHERE id=1",
+        [],
+        |row| Ok(DailyRefreshState {
+            status: row.get(0)?, cycle_started_at: row.get(1)?,
+            cycle_completed_at: row.get(2)?, next_due_at: row.get(3)?,
+            total_pairs: row.get(4)?, completed_pairs: row.get(5)?,
+            failed_pairs: row.get(6)?, cursor: row.get(7)?,
+            current_instrument_id: row.get(8)?, current_timeframe: row.get(9)?,
+            current_label: row.get(10)?, resume_instrument_id: row.get(11)?,
+            resume_timeframe: row.get(12)?, last_failure_label: row.get(13)?,
+            last_error: row.get(14)?,
+        }),
+    )
+}
+
+pub(super) fn daily_refresh_status(conn: &Connection) -> Result<Value, rusqlite::Error> {
+    let state = daily_refresh_state(conn)?;
+    let active = matches!(state.status.as_str(), "running" | "waiting");
+    let current = (!state.current_label.is_empty()).then(|| json!({
+        "instrument_id":state.current_instrument_id,
+        "timeframe":state.current_timeframe,
+        "label":state.current_label,
+    }));
+    Ok(json!({
+        "status":state.status,"active":active,
+        "cycle_started_at":(state.cycle_started_at > 0).then_some(state.cycle_started_at),
+        "cycle_completed_at":(state.cycle_completed_at > 0).then_some(state.cycle_completed_at),
+        "next_due_at":(state.next_due_at > 0).then_some(state.next_due_at),
+        "total_pairs":state.total_pairs,"processed_pairs":state.cursor,
+        "completed_pairs":state.completed_pairs,"failed_pairs":state.failed_pairs,
+        "progress_pct":if state.total_pairs == 0 {0.0} else {
+            (state.cursor.min(state.total_pairs) as f64 / state.total_pairs as f64 * 100.0).clamp(0.0,100.0)
+        },
+        "current":current,"last_failure_label":state.last_failure_label,
+        "last_error":state.last_error,
+    }))
+}
+
+pub(super) fn start_daily_refresh(
+    conn: &Connection,
+    started_at: i64,
+    total_pairs: usize,
+    next_due_at: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE app.entry_model_validation_daily_refresh SET status='running',
+         cycle_started_at=?1,next_due_at=?2,total_pairs=?3,
+         completed_pairs=0,failed_pairs=0,cursor=0,current_instrument_id='',
+         current_timeframe='',current_label='',resume_instrument_id='',resume_timeframe='',
+         last_failure_label='',last_error='',updated_at=?1
+         WHERE id=1",
+        params![started_at, next_due_at, total_pairs as i64],
+    )?;
+    Ok(())
+}
+
+pub(super) fn set_daily_refresh_current(
+    conn: &Connection,
+    index: usize,
+    instrument_id: &str,
+    timeframe: &str,
+    label: &str,
+    updated_at: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE app.entry_model_validation_daily_refresh SET status='running',cursor=?1,
+         current_instrument_id=?2,current_timeframe=?3,current_label=?4,
+         resume_instrument_id=?2,resume_timeframe=?3,updated_at=?5 WHERE id=1",
+        params![index as i64, instrument_id, timeframe, label, updated_at],
+    )?;
+    Ok(())
+}
+
+pub(super) fn set_daily_refresh_total(
+    conn: &Connection,
+    total_pairs: usize,
+    updated_at: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE app.entry_model_validation_daily_refresh SET total_pairs=?1,
+         cursor=MIN(cursor,?1),updated_at=?2 WHERE id=1",
+        params![total_pairs as i64, updated_at],
+    )?;
+    Ok(())
+}
+
+pub(super) fn wait_daily_refresh(
+    conn: &Connection,
+    updated_at: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE app.entry_model_validation_daily_refresh SET status='waiting',updated_at=?1
+         WHERE id=1",
+        [updated_at],
+    )?;
+    Ok(())
+}
+
+pub(super) fn advance_daily_refresh(
+    conn: &Connection,
+    next_index: usize,
+    resume_target: (&str, &str),
+    failed: Option<(&str, &str)>,
+    updated_at: i64,
+) -> Result<(), rusqlite::Error> {
+    match failed {
+        Some((label, error)) => {
+            conn.execute(
+                "UPDATE app.entry_model_validation_daily_refresh SET status='running',
+                 cursor=?1,failed_pairs=failed_pairs+1,current_instrument_id='',
+                 current_timeframe='',current_label='',last_failure_label=?2,last_error=?3,
+                 resume_instrument_id=?4,resume_timeframe=?5,updated_at=?6 WHERE id=1",
+                params![next_index as i64, label, error.chars().take(500).collect::<String>(),
+                    resume_target.0, resume_target.1, updated_at],
+            )?;
+        }
+        None => {
+            conn.execute(
+                "UPDATE app.entry_model_validation_daily_refresh SET status='running',
+                 cursor=?1,completed_pairs=completed_pairs+1,current_instrument_id='',
+                 current_timeframe='',current_label='',resume_instrument_id=?2,
+                 resume_timeframe=?3,updated_at=?4 WHERE id=1",
+                params![next_index as i64, resume_target.0, resume_target.1, updated_at],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn fail_daily_refresh_cycle(
+    conn: &Connection,
+    error: &str,
+    retry_at: i64,
+    updated_at: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE app.entry_model_validation_daily_refresh SET status='error',
+         last_error=?1,next_due_at=?2,updated_at=?3 WHERE id=1",
+        params![error.chars().take(500).collect::<String>(), retry_at, updated_at],
+    )?;
+    Ok(())
+}
+
+pub(super) fn finish_daily_refresh(
+    conn: &Connection,
+    completed_at: i64,
+    next_due_at: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE app.entry_model_validation_daily_refresh SET
+         status=CASE WHEN failed_pairs=0 THEN 'complete' ELSE 'complete_with_errors' END,
+         cycle_completed_at=?1,next_due_at=?2,current_instrument_id='',
+         current_timeframe='',current_label='',resume_instrument_id='',
+         resume_timeframe='',updated_at=?1 WHERE id=1",
+        params![completed_at, next_due_at],
+    )?;
+    Ok(())
+}
+
+pub(super) fn active_verified_instrument_ids(
+    conn: &Connection,
+) -> Result<Vec<String>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT instrument_id FROM app.instruments
+          WHERE is_active=1 AND venue_verified=1
+            AND listing_status IN ('venue_active','public_listed_snapshot')
+          ORDER BY instrument_id",
+    )?;
+    let rows = statement.query_map([], |row| row.get(0))?;
+    rows.collect()
+}
+
 fn products(conn: &Connection, exchange: &str) -> Result<Vec<Value>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT p.product_id,p.display_name FROM app.exchange_products p

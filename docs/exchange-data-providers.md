@@ -926,6 +926,42 @@ history connections remain unchanged. The steady-state memory ceiling is now
 32 MB. Recheck full sweep duration and private memory after deploy; acceptance
 targets are at most 900 seconds and 32 MB.
 
+### Increase signal scan concurrency to four — 2026-11-06
+
+Raise the shared signal-history reservation from two to four so four distinct
+registered tickers can be scanned concurrently. The queue continues rotating
+through Stockbit, Pintu, Pluang, and Tokocrypto one ticker at a time; each
+worker takes its next ticker from that shared queue. Keep the nine regular
+history leases available to candle refresh, so the total open ticker-history
+cap increases from eleven to thirteen. The per-symbol gate still serializes a
+scan against sync or another scan for the same storage symbol. Runtime scan
+progress already reports all active tickers and their parallel count.
+
+1. **Direct effect:** Up to four registered ticker scans run simultaneously.
+2. **Immediate consequence:** More candle reads and scan threads can be active
+   during a market refresh, while its nine-worker allowance remains available.
+3. **Repeated operation:** The scanner remains bounded by the four-connection
+   reserve and the number of queued tickers; empty queues do not start work.
+4. **Interactions:** The total ticker-history connection cap becomes thirteen
+   (nine regular plus four scan leases); same-symbol writes and reads still
+   serialize at the existing gate.
+5. **Accumulation:** No provider requests, candle copies, or new stores are
+   added. Four workers also open four app database connections during a scan.
+6. **Boundary conditions:** A blocked same-symbol lease can reduce effective
+   concurrency; missing or stale prices remain ineligible, and scan errors
+   still fail the completed scan rather than publishing partial results.
+7. **Operational recovery:** Observe full scan duration, database-lock errors,
+   and process memory; return to two scan leases if private memory exceeds
+   32 MB or lock errors increase.
+8. **Governance:** This changes only a bounded internal resource limit; signal
+   qualification, data ownership, and execution behavior stay the same.
+9. **Longer-term hypothesis:** Four workers may shorten scan completion and
+   help keep screener snapshots current; deployed scan timing will show whether
+   the added concurrency produces that result.
+10. **Decision and learning:** Keep four workers while the deployment stays
+    within the 32 MB memory ceiling and lock/error rates do not worsen; use
+    measured scan duration and memory to decide whether to retain the cap.
+
 ### Stale daily-frame recovery follow-up — 2026-10-02
 
 The full service test suite found that a stale `1d` series did not enter the

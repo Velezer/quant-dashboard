@@ -1,10 +1,7 @@
 use super::{api_error,has_json_content_type,query_values,read_post_body,respond,RequestContext};
 use crate::*;
 use serde_json::json;
-use std::sync::{Mutex,TryLockError};
-
-// One heavy ticker computation at a time; public requests are rejected when busy.
-static ENTRY_VALIDATION_WORK: Mutex<()> = Mutex::new(());
+use std::sync::TryLockError;
 
 fn request_header<'a>(request: &'a str, name: &str) -> Option<&'a str> {
     request.lines().take_while(|line| !line.is_empty()).find_map(|line| {
@@ -22,10 +19,19 @@ fn same_origin_request(request: &str) -> bool {
 }
 
 pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(),RequestContext<'a>> {
-    if !matches!(request.route,"/api/entry-validation"|"/api/entry-validation/report"|"/api/entry-validation/run") {
+    if !matches!(request.route,"/api/entry-validation"|"/api/entry-validation/report"|"/api/entry-validation/run"|"/api/entry-validation/status") {
         return Err(request);
     }
     let RequestContext {stream,db,method,path,route,request_text,..} = request;
+    if route == "/api/entry-validation/status" {
+        if method != "GET" { api_error(stream,"405 Method Not Allowed","Use GET to read daily backtest status."); return Ok(()) }
+        let connection = match open_db_minimal(db) {Ok(value)=>value,Err(error)=>{api_error(stream,"500 Internal Server Error",error);return Ok(())}};
+        match entry_validation_daily_status(&connection) {
+            Ok(status) => respond(stream,crate::wire::encode(&json!({"daily_refresh":status})).unwrap_or_default(),"200 OK"),
+            Err(error) => api_error(stream,"500 Internal Server Error",error),
+        }
+        return Ok(())
+    }
     if route == "/api/entry-validation/run" {
         if method != "POST" { api_error(stream,"405 Method Not Allowed","Use POST with application/json to run a ticker."); return Ok(()); }
         if !has_json_content_type(request_text) { api_error(stream,"415 Unsupported Media Type","Entry validation requires application/json."); return Ok(()); }

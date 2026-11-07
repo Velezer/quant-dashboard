@@ -34,6 +34,28 @@ CREATE TABLE IF NOT EXISTS app.entry_model_validation_reports (
 );
 CREATE INDEX IF NOT EXISTS app.idx_entry_validation_reports_timeframe
     ON entry_model_validation_reports(timeframe,protocol_id,computed_at);
+CREATE TABLE IF NOT EXISTS app.entry_model_validation_daily_refresh (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    status TEXT NOT NULL DEFAULT 'idle'
+        CHECK(status IN ('idle','running','waiting','complete','complete_with_errors','error')),
+    cycle_started_at INTEGER NOT NULL DEFAULT 0,
+    cycle_completed_at INTEGER NOT NULL DEFAULT 0,
+    next_due_at INTEGER NOT NULL DEFAULT 0,
+    total_pairs INTEGER NOT NULL DEFAULT 0,
+    completed_pairs INTEGER NOT NULL DEFAULT 0,
+    failed_pairs INTEGER NOT NULL DEFAULT 0,
+    cursor INTEGER NOT NULL DEFAULT 0,
+    current_instrument_id TEXT NOT NULL DEFAULT '',
+    current_timeframe TEXT NOT NULL DEFAULT '',
+    current_label TEXT NOT NULL DEFAULT '',
+    resume_instrument_id TEXT NOT NULL DEFAULT '',
+    resume_timeframe TEXT NOT NULL DEFAULT '',
+    last_failure_label TEXT NOT NULL DEFAULT '',
+    last_error TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO app.entry_model_validation_daily_refresh(id,status)
+    VALUES(1,'idle');
 CREATE TABLE IF NOT EXISTS app.saved_reward_risk_rule (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     risk_pct REAL NOT NULL, reward_pct REAL NOT NULL, win_rate_pct REAL NOT NULL,

@@ -193,7 +193,7 @@ reuse fresh completed candles during the interval's refresh window (10 minutes
 for 15m, one hour for 1h, one day for 1d). A provider failure has the existing
 five-minute retry cooldown across those products. Reuse requires actual fresh
 completed bars, so a recently successful response containing old prices does
-not suppress recovery. The per-symbol writer gate and two-worker bound apply.
+not suppress recovery. The per-symbol writer gate and bounded worker pools apply.
 
 ### Consolidating existing crypto references
 

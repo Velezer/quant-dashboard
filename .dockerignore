@@ -1,6 +1,5 @@
 .git
 .agents
-.serena
 .env*
 data
 scratch

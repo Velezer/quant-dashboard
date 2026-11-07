@@ -105,6 +105,8 @@ export function initializeEntryValidation(doc = document) {
     let stopping = false;
     let failures = [];
     let protocol = '';
+    let lastDailyCompletedAt = 0;
+    let receivedDailyStatus = false;
 
     const element = (tag, text, className = '') => {
         const node = doc.createElement(tag);
@@ -123,6 +125,43 @@ export function initializeEntryValidation(doc = document) {
         catch (error) {
             if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw new Error('The request timed out. The current ticker may still finish on the server; refresh saved evidence before retrying.');
             throw error;
+        }
+    }
+    async function refreshDailyStatus() {
+        try {
+            const payload = await request('/api/entry-validation/status');
+            const daily = payload?.daily_refresh;
+            if (!daily || typeof daily.status !== 'string') throw new Error('Daily backtest status is incomplete.');
+            const completedAt = numeric(daily.cycle_completed_at) || 0;
+            if (receivedDailyStatus && completedAt > lastDailyCompletedAt && !busy) void loadList();
+            lastDailyCompletedAt = Math.max(lastDailyCompletedAt, completedAt);
+            receivedDailyStatus = true;
+            const labels = {
+                idle: 'Starting', running: 'Running', waiting: 'Waiting for capacity',
+                complete: 'Complete', complete_with_errors: 'Complete with errors', error: 'Retry scheduled',
+            };
+            const stateElement = $('daily-refresh-state');
+            text('daily-refresh-state', labels[daily.status] || 'Status unavailable');
+            stateElement.className = `state-badge ${daily.status === 'complete' ? 'valid' : 'pending'}`;
+            text('daily-refresh-progress', `${metric(daily.processed_pairs, '', 0)} / ${metric(daily.total_pairs, '', 0)} pairs · ${metric(daily.failed_pairs, '', 0)} failed`);
+            text('daily-refresh-last', dateText(daily.cycle_completed_at, true));
+            text('daily-refresh-next', dateText(daily.next_due_at, true));
+            const current = daily.current?.label;
+            let message = daily.status === 'running'
+                ? `Backtesting ${current || 'the next registered ticker/timeframe'}. It processes one pair at a time and checks for signal scans between pairs; a pair already underway can finish.`
+                : daily.status === 'waiting'
+                    ? `Waiting for an active signal scan or manual backtest to finish${current ? ` before continuing ${current}` : ''}.`
+                    : daily.status === 'complete_with_errors'
+                        ? `${metric(daily.failed_pairs, '', 0)} pairs failed. They will be retried in the next daily cycle.`
+                        : daily.status === 'error'
+                            ? 'The daily backtest worker could not prepare its ticker list and will retry shortly.'
+                            : daily.status === 'complete'
+                                ? 'All eligible registered ticker/timeframe pairs were refreshed. Candidate weights remain research-only.'
+                                : 'The first daily backtest cycle is waiting to start.';
+            if (daily.last_failure_label && daily.last_error) message += ` Last failure: ${daily.last_failure_label} · ${daily.last_error}`;
+            status('daily-refresh-message', message, daily.status === 'error' || daily.status === 'complete_with_errors' ? 'error' : '');
+        } catch (error) {
+            status('daily-refresh-message', `Automatic backtest status is unavailable: ${error.message}`, 'error');
         }
     }
     function setBusy(value) {
@@ -640,7 +679,8 @@ export function initializeEntryValidation(doc = document) {
             buttons[next]?.click(); buttons[next]?.focus();
         });
     }
-    void loadList();
+    void refreshDailyStatus().finally(() => { void loadList(); });
+    globalThis.setInterval(() => { void refreshDailyStatus(); }, 30_000);
 }
 
 if (typeof document !== 'undefined') initializeEntryValidation(document);
