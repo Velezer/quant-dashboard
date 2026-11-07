@@ -8,6 +8,26 @@ in the selected scope. Scope runs follow every registry page, process tickers
 sequentially, save each completed result, and offer stop-after-current and
 retry-failed controls.
 
+## Daily candidate refresh
+
+The service automatically reruns both entry models for every eligible
+registered ticker and supported signal timeframe once per 24 hours. The first
+cycle starts after the initial registry sync; later cycles are due 24 hours
+after the previous cycle starts. It processes one ticker/timeframe pair at a
+time and yields between pairs. It checks for signal scans between pairs; a
+pair already underway can finish. It shares a lock with manual backtests and
+resumes from its registered ticker/timeframe after a restart. Per-pair
+failures are recorded and retried in the next daily cycle. The page shows
+cycle status, progress, last completion, next due time, and the latest
+failure. If a cycle takes more than 24 hours, the next one starts as soon as
+the current one finishes.
+
+This refresh updates the saved research reports and their training-selected
+candidate weights. It uses stored matching candles and never fetches provider
+data. A candidate remains research-only; daily retraining does not change live
+screener weights or signal qualification. Reports without sufficient training
+trades or known fees do not produce candidate weights.
+
 ## Reading a report
 
 Each saved report identifies its registered instrument, model and score version,
@@ -90,6 +110,31 @@ For pending app verification, resolve listing readiness first. A failed request
 can be retried from the page; completed ticker snapshots remain available after
 reload. An old protocol snapshot stays visible but must be rerun before current
 comparison.
+
+### Daily refresh operating contract
+
+1. **Direct effect:** Saved per-ticker candidate reports and weights are
+   refreshed on a daily cycle.
+2. **Immediate consequence:** A full pass can contain thousands of pairs, so
+   it processes one pair at a time and yields briefly between reports.
+3. **Repeated operation:** The next cycle becomes due 24 hours after start;
+   an unfinished cycle resumes after restart rather than starting a duplicate.
+4. **Interactions:** It shares the manual-backtest lock, checks for signal
+   scans between pairs, and reads the same per-symbol stored candle sources. A
+   scan that starts during a backtest pair can overlap that one pair.
+5. **Accumulation:** Each pass replaces the latest aggregate report per
+   ticker/timeframe; it stores no individual simulated trades.
+6. **Boundary conditions:** Unsupported, unverified, and excluded instruments
+   are skipped. A pair failure is recorded and does not block later pairs.
+7. **Recovery:** The page shows cycle progress and the latest failed pair; item
+   failures retry in the next daily pass and worker-level failures retry after
+   15 minutes.
+8. **Governance:** Daily training refreshes research candidates only. It does
+   not promote a weight candidate into live screener scoring.
+9. **Trajectory:** A long or repeatedly failing cycle can leave some reports
+   older than a day; progress and completion timestamps expose that condition.
+10. **Decision:** Keep the worker sequential and resumable; revise its cadence
+    only if deployed duration and memory measurements support a change.
 
 ## Conditional exit cues on the screener
 

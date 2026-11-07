@@ -1,10 +1,15 @@
 use super::*;
 use quant_core::{EntryModelKind, VenueFeePolicy};
 use serde_json::json;
+use std::sync::Mutex;
 
 pub(super) const PROTOCOL_ID: &str = quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID;
+pub(crate) static ENTRY_VALIDATION_WORK: Mutex<()> = Mutex::new(());
 #[path = "entry_validation_store.rs"]
 mod store;
+#[path = "entry_validation_scheduler.rs"]
+mod scheduler;
+pub(super) use scheduler::background_daily_refresh_loop;
 
 pub(crate) fn entry_validation_timeframe(timeframe: &str) -> Result<&str, String> {
     SIGNAL_SCREENER_TIMEFRAMES
@@ -54,6 +59,10 @@ pub(crate) fn entry_validation_saved(
     store::get_report(connection, instrument_id, timeframe).map_err(|error| error.to_string())
 }
 
+pub(crate) fn entry_validation_daily_status(connection: &Connection) -> Result<Value, String> {
+    store::daily_refresh_status(connection).map_err(|error| error.to_string())
+}
+
 pub(crate) fn run_entry_validation(
     connection: &Connection,
     market_directory: &str,
@@ -80,7 +89,15 @@ fn matching_models(
 ) -> Result<Vec<Value>, String> {
     let catalog = signal_screener_master_data_for_connection(connection)
         .map_err(|error| error.to_string())?;
-    Ok(catalog
+    Ok(matching_models_in_catalog(&catalog, instrument, timeframe))
+}
+
+pub(super) fn matching_models_in_catalog(
+    catalog: &Value,
+    instrument: &Value,
+    timeframe: &str,
+) -> Vec<Value> {
+    catalog
         .get("signal_score_models")
         .and_then(Value::as_array)
         .into_iter()
@@ -101,7 +118,7 @@ fn matching_models(
                     .any(|kind| text(model, "score_model_id") == kind.score_model_id())
         })
         .cloned()
-        .collect())
+        .collect()
 }
 
 fn empty_history() -> Value {

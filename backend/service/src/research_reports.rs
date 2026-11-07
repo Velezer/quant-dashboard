@@ -1,7 +1,11 @@
 use super::*;
 
 mod entry_validation;
-pub(super) use entry_validation::{entry_validation_list, entry_validation_saved, entry_validation_timeframe, run_entry_validation};
+pub(super) use entry_validation::{
+    background_daily_refresh_loop, entry_validation_daily_status, entry_validation_list,
+    entry_validation_saved, entry_validation_timeframe, run_entry_validation,
+};
+pub(crate) use entry_validation::ENTRY_VALIDATION_WORK;
 
 pub(super) fn build_nwe_dss_research_report(
     market_database: &str,

@@ -148,8 +148,10 @@ entry model. The existing composite NWE/DSS report is not substituted for the
 live NWE-led or DSS-led four-factor models.
 
 The page exposes paginated saved evidence, one-ticker runs, a sequential run of
-all eligible tickers in the selected scope, progress, stop after the current
-ticker, failed-ticker retry, and source/history recovery links. Empty history,
+all eligible tickers in the selected scope, and the automatic daily
+per-ticker/timeframe candidate refresh with persisted progress, last/next run,
+and failure status. Manual runs expose progress, stop after the current ticker,
+failed-ticker retry, and source/history recovery links. Empty history,
 pending venue verification, unsupported models, provider/proxy data, missing
 costs, insufficient validation/holdout samples, stale protocol snapshots, and
 request failures remain visible. No ticker beyond an arbitrary first page is
@@ -177,8 +179,9 @@ Existing sample, native-source, fee and full-cost requirements remain separate
 checks. Omitted slippage, funding/borrow, spread, depth and impact prevent
 execution/sizing promotion.
 
-Only aggregate, versioned evidence snapshots are saved in the existing app
-SQLite database, with exact identity and a fingerprint of the used candles.
+Only aggregate, versioned evidence snapshots and resumable daily-refresh status
+are saved in the existing app SQLite database, with exact identity and a
+fingerprint of the used candles.
 No simulated account, position, equity curve, or trade history is persisted.
 Saved snapshots do not imply current source freshness; rerunning refreshes them.
 History reads and concurrent evaluation remain bounded independently of candle

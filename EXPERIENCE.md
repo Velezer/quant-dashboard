@@ -8,9 +8,10 @@ lesson only when it will improve future tasks.
 - The local execution environment may be unavailable while the GitHub connector
   still works. Use repository file and GitHub Actions tools for edits and
   verification; don't claim a local build ran when it did not.
-- The Rust signal scan reserves two database connections. Worker count must be
-  based on queued tickers, not the number of nonempty apps, or one large app
-  silently scans serially. The progress API previously exposed one
+- The Rust signal scan reserves four database connections. Keep the worker
+  count, scan reservation, and total open-database cap aligned; worker count
+  must be based on queued tickers, not nonempty apps, or one large app silently
+  scans serially. The progress API previously exposed one
   `current_scan_symbol`; show all active ticker labels to make concurrency
   observable. The dashboard's status poll is coarse, so emit a bounded,
   throttled SSE progress event when parallel workers are active.
@@ -62,3 +63,7 @@ lesson only when it will improve future tasks.
   weights on training data, select exits and WIB hour pairs on validation, and
   keep the chronological holdout read-only. Report score and consecutive-trade
   return autocorrelation with pair counts; it describes dependence, not accuracy.
+- A daily all-ticker backtest must be sequential, resumable, and visible on its
+  research page. Persist its ticker/timeframe cursor and status, share the lock
+  with manual runs, yield to signal scans, and keep learned candidates separate
+  from live weights unless a promotion rule is explicitly authorized.

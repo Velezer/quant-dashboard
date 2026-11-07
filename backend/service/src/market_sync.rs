@@ -24,8 +24,7 @@ pub(super) use targets::{registered_daily_targets, registered_hourly_targets};
 
 const MAX_REGISTERED_CANDLE_TARGETS_PER_TICK: usize = 8;
 const MAX_DAILY_REGISTERED_CANDLE_TARGETS_PER_TICK: i64 = 12;
-// Match the existing regular history lease allowance while preserving the
-// two scan leases and eleven-connection cap.
+// Match the regular history lease allowance while preserving four scan leases.
 const MAX_PARALLEL_CANDLE_SYNC_WORKERS: usize = 9;
 const DAILY_CANDLE_SYNC_MINIMUM_INTERVAL_SECONDS: u64 = 5 * 60;
 const CANDLE_SYNC_WORKER_SQLITE_PAGE_CACHE_KIB: i64 = 64;

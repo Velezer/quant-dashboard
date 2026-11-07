@@ -425,6 +425,15 @@ fn main() {
                 .expect("spawn registry sync daemon");
         }
 
+        // Refresh per-ticker entry-model candidate weights once each day.
+        {
+            let state_clone = Arc::clone(&state);
+            thread::Builder::new()
+                .name("entry-validation-daemon".to_string())
+                .spawn(move || background_daily_refresh_loop(state_clone))
+                .expect("spawn daily entry-validation daemon");
+        }
+
         // Keep local hourly history current for the 4H chart even when the
         // dashboard is closed or idle. This worker has its own bounded sync batch
         // and does not generate signal results.

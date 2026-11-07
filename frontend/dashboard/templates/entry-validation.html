@@ -21,6 +21,15 @@
             <aside class="sequence" aria-label="Research sequence"><span class="sequence-current"><b>01</b> Validate entries</span><span><b>02</b> Review held-out evidence</span><span><b>03</b> Build sizing later <small>Blocked</small></span></aside>
         </section>
         <div class="meaning-note"><span aria-hidden="true">i</span><p><strong>The screener keeps its current equal weights.</strong> This page fits a separate research candidate per ticker from a bounded, predeclared weight grid. It never changes live signals. A completed backtest is not a validated entry model: sample size, history span, venue-native data, and execution-cost coverage are checked separately.</p></div>
+        <section class="daily-refresh-panel" aria-labelledby="daily-refresh-title">
+            <div class="section-heading"><div><p class="eyebrow">AUTOMATIC RESEARCH</p><h2 id="daily-refresh-title">Daily candidate-weight refresh</h2><p class="small-text">Once every 24 hours, the service reruns both entry models for eligible registered tickers across supported timeframes, using stored candles. It refreshes research candidates only; live screener weights stay unchanged.</p></div><span id="daily-refresh-state" class="state-badge pending">Loading</span></div>
+            <div class="daily-refresh-grid" aria-label="Daily backtest schedule status">
+                <div><span>Progress</span><strong id="daily-refresh-progress">Loading…</strong></div>
+                <div><span>Last completed</span><strong id="daily-refresh-last">Unavailable</strong></div>
+                <div><span>Next due</span><strong id="daily-refresh-next">Unavailable</strong></div>
+            </div>
+            <p id="daily-refresh-message" class="small-text" role="status" aria-live="polite">Loading automatic backtest status…</p>
+        </section>
         <section class="scope-panel" aria-labelledby="scope-title">
             <div class="section-heading"><div><p class="eyebrow">01 / CHOOSE THE UNIVERSE</p><h2 id="scope-title">Ticker scope</h2></div><span id="protocol-label" class="protocol-label">Loading protocol…</span></div>
             <form id="scope-form" class="scope-form">

@@ -15,7 +15,7 @@ fn collect_files(directory: &Path, files: &mut Vec<PathBuf>) -> io::Result<()> {
         if entry.file_type()?.is_dir() {
             if matches!(
                 name.as_ref(),
-                ".git" | ".agents" | ".serena" | "target" | "scratch" | "data" | "node_modules"
+                ".git" | ".agents" | "target" | "scratch" | "data" | "node_modules"
             ) {
                 continue;
             }
