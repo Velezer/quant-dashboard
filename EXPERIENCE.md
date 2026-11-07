@@ -75,3 +75,9 @@ lesson only when it will improve future tasks.
   research page. Persist its ticker/timeframe cursor and status, share the lock
   with manual runs, yield to signal scans, and keep learned candidates separate
   from live weights unless a promotion rule is explicitly authorized.
+- Mobile screener overrides must be checked after `signals-workspace-active`
+  is applied: higher-specificity terminal rules can keep the header in one row,
+  expand the layout viewport, and move a fixed app/timeframe dock off-screen.
+  Verify no horizontal document overflow at 320px and 390px, exercise both
+  filter rows and disclosures, and inspect the selected-chart state as well as
+  the empty/loading view.

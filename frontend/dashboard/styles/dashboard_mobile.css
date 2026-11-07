@@ -1,0 +1,627 @@
+/* Phone-first screener ergonomics. This stylesheet intentionally loads last
+   to resolve older terminal layouts that used competing fixed-height panels. */
+@media (max-width: 760px) {
+    .tv-terminal {
+        min-height: 100dvh !important;
+        padding: 0 8px calc(112px + env(safe-area-inset-bottom)) !important;
+        overflow-x: clip !important;
+        overflow-y: visible !important;
+        gap: 0 !important;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar {
+        position: sticky !important;
+        top: 0;
+        z-index: 70;
+        display: flex !important;
+        min-height: 78px !important;
+        height: auto !important;
+        max-height: none !important;
+        flex-wrap: wrap !important;
+        align-content: center;
+        gap: 4px !important;
+        margin: 0 -8px !important;
+        padding: 5px 8px !important;
+        border-bottom: 1px solid #303642 !important;
+        background: rgba(19, 23, 34, .97) !important;
+        backdrop-filter: blur(14px);
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar > div:first-child {
+        display: flex;
+        flex: 0 0 100% !important;
+        width: 100%;
+        min-width: 0;
+        justify-content: space-between;
+        gap: 8px !important;
+    }
+
+    .tv-terminal.signals-workspace-active #app-build-version {
+        max-width: min(56vw, 210px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar > div:nth-child(2) {
+        display: flex;
+        flex: 0 0 100% !important;
+        width: 100%;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px !important;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar > div:nth-child(2) > a {
+        display: inline-flex !important;
+        width: 40px;
+        min-width: 40px;
+        min-height: 40px !important;
+        justify-content: center;
+        padding: 0 !important;
+        font-size: 0 !important;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar > div:nth-child(2) > a > span {
+        font-size: 15px !important;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar #signalAlertsToggle {
+        display: inline-flex;
+        width: 52px;
+        min-width: 52px;
+        min-height: 40px;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 4px !important;
+        font-size: 0 !important;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar #signalAlertsToggle::before {
+        content: "🔔";
+        font-size: 14px;
+        line-height: 1;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar #signalAlertsToggle #signalCurrentCount {
+        margin: 0 !important;
+        font-size: 10px !important;
+    }
+
+    .tv-terminal #signalAlertsDetails[open] #signalAlertsPanel {
+        position: fixed !important;
+        top: 84px !important;
+        right: 8px !important;
+        left: 8px;
+        z-index: 90;
+        width: auto !important;
+        max-height: calc(100dvh - 200px) !important;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar #scanScheduleDetails > summary {
+        display: inline-flex;
+        min-width: 52px;
+        min-height: 40px;
+        align-items: center;
+        justify-content: center;
+        padding: 5px 8px !important;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar #refreshBtn {
+        display: inline-flex !important;
+        flex: 0 0 44px !important;
+        width: 44px !important;
+        min-width: 44px !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        align-items: center;
+        justify-content: center;
+        padding: 0 !important;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar #refreshBtn > span {
+        display: none !important;
+    }
+
+    .tv-terminal .scan-schedule-panel {
+        position: fixed !important;
+        top: 84px !important;
+        right: 8px !important;
+        z-index: 90;
+        width: min(260px, calc(100vw - 16px)) !important;
+    }
+
+    .tv-terminal #viewScreener {
+        min-width: 0;
+        gap: 8px !important;
+    }
+
+    .tv-terminal #scan-progress-banner:not(.hidden) {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) 104px;
+        align-items: center;
+        gap: 8px !important;
+        margin: 6px 0 0 !important;
+        padding: 8px !important;
+        border-radius: 10px !important;
+    }
+
+    .tv-terminal #scan-progress-banner > div:first-child {
+        min-width: 0;
+        align-items: flex-start;
+        gap: 7px !important;
+    }
+
+    .tv-terminal #scan-progress-banner > div:first-child > span:first-child {
+        flex: 0 0 9px;
+        margin-top: 3px;
+    }
+
+    .tv-terminal #scan-progress-title {
+        display: block;
+        overflow: hidden;
+        font-size: 10px !important;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .tv-terminal #scan-progress-subtitle {
+        display: block;
+        max-width: 100%;
+        color: #93c5fd !important;
+        font-size: 9px !important;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+    }
+
+    .tv-terminal #scan-current-symbol {
+        display: inline-block;
+        max-height: 4.5rem !important;
+        overflow: auto !important;
+        line-height: 1.25 !important;
+        white-space: pre-line !important;
+        vertical-align: top;
+    }
+
+    .tv-terminal #scan-progress-banner > div:last-child {
+        width: 104px !important;
+        min-width: 0;
+        align-self: center;
+        gap: 6px !important;
+    }
+
+    .tv-terminal #scan-progress-pct {
+        min-width: 32px;
+        font-size: 10px !important;
+    }
+
+    .tv-terminal #kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        margin: 0 !important;
+    }
+
+    .tv-terminal .signal-kpi {
+        padding: 7px;
+    }
+
+    .tv-terminal .signal-kpi strong {
+        font-size: 15px;
+    }
+
+    .tv-terminal #workspaceGrid {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: auto auto !important;
+        height: auto !important;
+        min-height: 0 !important;
+        gap: 8px !important;
+        overflow: visible !important;
+    }
+
+    .tv-terminal #workspaceGrid > .tv-chart-column,
+    .tv-terminal #workspaceGrid > .tv-watchlist-column {
+        grid-column: 1 !important;
+        grid-row: auto !important;
+        width: 100%;
+        height: auto !important;
+        min-width: 0;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+
+    .tv-terminal #workspace-resizer {
+        display: none !important;
+    }
+
+    .tv-terminal #signal-banner {
+        position: relative;
+        min-height: 48px !important;
+        height: auto !important;
+        scroll-margin-top: 86px;
+        gap: 7px !important;
+        padding: 7px 8px !important;
+    }
+
+    .tv-terminal.signals-workspace-active:not(.signal-chart-selected) #signal-banner {
+        display: none !important;
+    }
+
+    .tv-terminal:not(.signal-chart-selected) .mobile-signal-list-link {
+        display: none !important;
+    }
+
+    .tv-terminal #signal-banner > div:first-child {
+        min-width: 0;
+        flex: 1 1 100%;
+    }
+
+    .tv-terminal #signal-banner > div:nth-child(2) {
+        width: 100%;
+        justify-content: flex-end;
+        gap: 6px !important;
+    }
+
+    .tv-terminal #signal-selection-updated {
+        order: -1;
+        flex: 0 0 100%;
+        min-width: 0;
+        max-width: 100%;
+        margin: 0 !important;
+        overflow: hidden;
+        font-size: 9px !important;
+        line-height: 1.25;
+        text-align: right;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .tv-terminal #signal-selection-summary {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px !important;
+    }
+
+    .tv-terminal .mobile-signal-list-link {
+        display: inline-flex;
+        min-height: 40px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #155e75;
+        border-radius: 6px;
+        padding: 0 9px;
+        color: #a5f3fc;
+        font-size: 11px;
+        font-weight: 700;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .tv-terminal #signal-banner button {
+        min-height: 40px;
+        padding: 0 8px !important;
+        font-size: 10px !important;
+        white-space: nowrap;
+    }
+
+    .tv-terminal #chartShell {
+        min-height: 0 !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        padding: 0 !important;
+    }
+
+    .tv-terminal #chartContainer {
+        flex: 0 0 clamp(230px, 40dvh, 360px) !important;
+        width: 100%;
+        height: clamp(230px, 40dvh, 360px) !important;
+        min-height: 230px !important;
+        max-height: none !important;
+    }
+
+    .tv-terminal #tv-chart-toolbar {
+        min-height: 44px !important;
+        height: 44px !important;
+        padding: 2px 6px !important;
+        gap: 4px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        scrollbar-width: thin;
+        touch-action: pan-x;
+    }
+
+    .tv-terminal .tv-timeframe-group,
+    .tv-terminal #chartTimeframeButtons {
+        min-height: 40px;
+    }
+
+    .tv-terminal .tv-timeframe-group .chart-timeframe-btn {
+        min-width: 42px;
+        min-height: 38px;
+    }
+
+    .tv-terminal .tv-tool-group,
+    .tv-terminal #chart-time-scale-controls button {
+        min-height: 38px;
+    }
+
+    .tv-terminal #watchlistPanel {
+        position: static !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        padding: 8px !important;
+        gap: 8px !important;
+        border-radius: 10px !important;
+    }
+
+    .tv-terminal .tv-watchlist-header {
+        min-height: 38px;
+        padding: 0 2px;
+    }
+
+    .tv-terminal .screener-guidance,
+    .tv-terminal #screenerMoreFilters {
+        border-top: 1px solid #272b35;
+        padding-top: 4px;
+    }
+
+    .tv-terminal .screener-guidance > summary,
+    .tv-terminal #screenerMoreFilters > summary {
+        display: flex;
+        min-height: 42px;
+        align-items: center;
+        color: #a5f3fc;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .tv-terminal .screener-guidance > p {
+        padding: 0 2px 8px;
+        font-size: 11px !important;
+        line-height: 1.55;
+    }
+
+    .tv-terminal #screener-status {
+        padding: 8px !important;
+        font-size: 11px !important;
+    }
+
+    .tv-terminal #watchlistPanel #signalSearch {
+        padding: 0 !important;
+        border: 0 !important;
+    }
+
+    .tv-terminal #signalSearch .refine-filter-search {
+        min-height: 44px;
+        font-size: 16px;
+    }
+
+    .tv-terminal #signalSearch .signal-search-clear {
+        min-width: 54px;
+        min-height: 44px;
+    }
+
+    .tv-terminal #screener-product-filters,
+    .tv-terminal #signalIndicatorFilterPanel {
+        margin: 0 !important;
+        padding: 8px 0 !important;
+    }
+
+    .tv-terminal #screener-product-filters > button,
+    .tv-terminal .signal-indicator-filter-controls select {
+        min-height: 42px;
+        font-size: 12px;
+    }
+
+    .tv-terminal #watchlist-exchange-filter,
+    .tv-terminal #screenerTimeframeButtons {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        align-items: center;
+        gap: 5px !important;
+        min-width: 0;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #596273 #1e222d;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
+    }
+
+    .tv-terminal #watchlist-exchange-filter {
+        padding: 3px 2px 5px !important;
+        border-top: 0 !important;
+    }
+
+    .tv-terminal #watchlist-exchange-filter > span {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        flex: 0 0 auto;
+        padding-right: 3px;
+        background: #111827;
+    }
+
+    .tv-terminal #watchlist-exchange-filter > button {
+        flex: 0 0 auto;
+        min-height: 42px;
+        padding: 0 10px !important;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    .tv-terminal #screenerTimeframeButtons {
+        padding: 4px 0 3px !important;
+        border-top: 1px solid #272b35;
+    }
+
+    .tv-terminal #screenerTimeframeButtons > span {
+        display: none !important;
+    }
+
+    .tv-terminal #screenerTimeframeButtons::before {
+        content: "TF";
+        flex: 0 0 auto;
+        color: #9ca3af;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .06em;
+    }
+
+    .tv-terminal .screener-timeframe-btn {
+        flex: 0 0 40px;
+        min-width: 40px;
+        min-height: 40px;
+        padding: 0 4px;
+        font-size: 11px;
+        scroll-snap-align: center;
+    }
+
+    .tv-terminal #mobile-quick-filters {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 60;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 5px max(8px, env(safe-area-inset-left)) calc(5px + env(safe-area-inset-bottom));
+        border-top: 1px solid #3b4250;
+        background: rgba(19, 23, 34, .98);
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, .32);
+        backdrop-filter: blur(14px);
+    }
+
+    .tv-terminal #mobile-quick-filters #watchlist-exchange-filter > button {
+        min-height: 42px;
+    }
+
+    .tv-terminal #mobile-quick-filters #screenerTimeframeButtons {
+        border-top: 0;
+        padding-top: 0 !important;
+        gap: 3px !important;
+        scrollbar-width: thin;
+        scrollbar-color: #596273 #1e222d;
+    }
+
+    .tv-terminal #mobile-quick-filters #screenerTimeframeButtons::-webkit-scrollbar,
+    .tv-terminal #mobile-quick-filters #watchlist-exchange-filter::-webkit-scrollbar {
+        display: block;
+        height: 4px;
+    }
+
+    .tv-terminal #mobile-quick-filters #screenerTimeframeButtons::-webkit-scrollbar-thumb,
+    .tv-terminal #mobile-quick-filters #watchlist-exchange-filter::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: #596273;
+    }
+
+    .tv-terminal #signalResultsScroll {
+        min-height: 0;
+        overflow: visible !important;
+    }
+
+    .tv-terminal #signalResultsScroll #signalsList {
+        display: flex;
+        flex-direction: column;
+        gap: 8px !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        padding: 0 0 8px !important;
+        scroll-margin-bottom: 120px;
+    }
+
+    .tv-terminal #signalResultsScroll #signalsList > * {
+        min-width: 0;
+    }
+
+    .tv-terminal .signal-row {
+        min-height: 88px;
+        gap: 7px;
+        padding: 10px;
+        scroll-margin-top: 88px;
+        scroll-margin-bottom: 120px;
+    }
+
+    .tv-terminal .signal-row-top {
+        font-size: 12px;
+    }
+
+    .tv-terminal .signal-row-meta,
+    .tv-terminal .signal-row-footer,
+    .tv-terminal .signal-row-provenance,
+    .tv-terminal .signal-score-details {
+        font-size: 10px;
+    }
+
+    .tv-terminal .signal-readiness {
+        padding: 10px;
+        font-size: 11px;
+    }
+
+    .tv-terminal .signal-readiness-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 6px;
+    }
+
+    .tv-terminal .signal-readiness-actions button {
+        min-height: 42px;
+        font-size: 11px;
+    }
+
+    .tv-terminal #floating-toast {
+        right: 8px !important;
+        bottom: calc(112px + env(safe-area-inset-bottom)) !important;
+        left: 8px;
+        max-width: none !important;
+    }
+
+    .tv-terminal :is(button, a, summary, input, select):focus-visible {
+        outline: 2px solid #67e8f9;
+        outline-offset: 2px;
+    }
+}
+
+@media (max-width: 380px) {
+    .tv-terminal #app-build-version {
+        max-width: 48vw;
+        font-size: 8px !important;
+    }
+
+    .tv-terminal #watchlist-exchange-filter > button {
+        padding-right: 8px !important;
+        padding-left: 8px !important;
+        font-size: 11px;
+    }
+
+    .tv-terminal .screener-timeframe-btn {
+        flex-basis: 40px;
+        min-width: 40px;
+    }
+
+    .tv-terminal #mobile-quick-filters {
+        padding-right: 6px;
+        padding-left: 6px;
+    }
+}
+
+@media (min-width: 761px) {
+    .tv-terminal #mobile-quick-filters {
+        display: contents;
+    }
+
+    .tv-terminal .mobile-signal-list-link {
+        display: none;
+    }
+}

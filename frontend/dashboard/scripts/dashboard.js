@@ -6,6 +6,13 @@ status.setAttribute('aria-atomic', 'true');
 status.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483000;max-width:calc(100vw - 24px);padding:10px 14px;border:1px solid #363a45;border-radius:8px;background:#131722;color:#d1d4dc;box-shadow:0 8px 24px rgba(0,0,0,.32);font:13px/1.4 sans-serif';
 document.body.append(status);
 
+// Keep the full filter set open on desktop while giving phone screens a
+// compact default. Users can still expand both disclosures on any device.
+if (window.matchMedia('(max-width: 760px)').matches) {
+    document.querySelector('.screener-guidance')?.removeAttribute('open');
+    document.getElementById('screenerMoreFilters')?.removeAttribute('open');
+}
+
 const dashboardModules = [
     ['dashboard-foundation.js', 'installDashboardFoundation'],
     ['chart-data.js', 'installChartData'],
