@@ -54,7 +54,7 @@ fn sleep_seconds(seconds: u64) {
     thread::sleep(Duration::from_secs(seconds.max(1)));
 }
 
-pub(super) fn background_daily_refresh_loop(state: Arc<AppState>) {
+pub fn background_daily_refresh_loop(state: Arc<AppState>) {
     eprintln!("[EntryValidation] Daily per-ticker backtest worker initialized.");
     // Do not freeze an empty or incomplete universe before the first registry pass.
     while state.last_registry_sync_epoch.load(Ordering::Relaxed) == 0 {
