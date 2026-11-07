@@ -9,7 +9,7 @@ pub(crate) static ENTRY_VALIDATION_WORK: Mutex<()> = Mutex::new(());
 mod store;
 #[path = "entry_validation_scheduler.rs"]
 mod scheduler;
-pub(super) use scheduler::background_daily_refresh_loop;
+pub(crate) use scheduler::background_daily_refresh_loop;
 
 pub(crate) fn entry_validation_timeframe(timeframe: &str) -> Result<&str, String> {
     SIGNAL_SCREENER_TIMEFRAMES
