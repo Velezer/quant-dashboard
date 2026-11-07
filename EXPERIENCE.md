@@ -55,6 +55,9 @@ lesson only when it will improve future tasks.
 - Apply screener filters before pagination and compute filtered match counts on
   the server; a browser-only filter can make a matching signal appear absent
   from the first page.
+- Normalize an overall score filter by each signal model's declared maximum and
+  apply it before pagination on both server and browser. State the displayed
+  normalization clearly when models use /10, /20, and /40 scales.
 - Keep fresh Stockbit score snapshots with `not_qualifying` visible as
   zero-score, no-entry rows, while excluding them from current-entry and
   notification counts. The server and browser must use the same rule.

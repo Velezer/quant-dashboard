@@ -392,6 +392,9 @@
     color: #e2e8f0;
     font: 600 11px/1.2 -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
 }
+.tv-terminal .signal-indicator-filter-controls select:only-child {
+    grid-column: 1 / -1;
+}
 .tv-terminal .signal-indicator-filter-controls select:focus-visible {
     outline: 2px solid #38bdf8;
     outline-offset: 2px;

@@ -587,7 +587,26 @@
                                 <option value="9">9+/10</option>
                             </select>
                         </div>
-                        <p class="signal-indicator-filter-help">Choosing an indicator starts at 5+/10 so the list narrows immediately. Choose Any /10 to include every row with an available score. Total scores and model qualification rules stay unchanged.</p>
+                        <p class="signal-indicator-filter-help">Choosing an indicator starts at 5+/10 so the list narrows immediately. Choose Any /10 to include every row with an available score. This only narrows the list; model qualification rules stay unchanged.</p>
+                    </div>
+                    <div id="signalTotalScoreFilterPanel" class="signal-search-panel" aria-label="Filter signals by minimum total score">
+                        <label for="screenerMinimumTotalScore" class="signal-search-label">Minimum total score</label>
+                        <div class="signal-indicator-filter-controls">
+                            <select id="screenerMinimumTotalScore" aria-label="Minimum total score normalized to ten">
+                                <option value="0">Any score</option>
+                                <option value="1">1+/10</option>
+                                <option value="2">2+/10</option>
+                                <option value="3">3+/10</option>
+                                <option value="4">4+/10</option>
+                                <option value="5">5+/10</option>
+                                <option value="6">6+/10</option>
+                                <option value="7">7+/10</option>
+                                <option value="8">8+/10</option>
+                                <option value="9">9+/10</option>
+                                <option value="10">10/10</option>
+                            </select>
+                        </div>
+                        <p class="signal-indicator-filter-help">Scores are normalized to /10 using each model’s score scale. This narrows the saved rows and does not change model weights or qualification rules.</p>
                     </div>
                 </details>
             </section>
