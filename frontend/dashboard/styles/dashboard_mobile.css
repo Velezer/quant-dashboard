@@ -3,7 +3,7 @@
 @media (max-width: 760px) {
     .tv-terminal {
         min-height: 100dvh !important;
-        padding: 0 8px calc(112px + env(safe-area-inset-bottom)) !important;
+        padding: 0 8px calc(164px + env(safe-area-inset-bottom)) !important;
         overflow-x: clip !important;
         overflow-y: visible !important;
         gap: 0 !important;
@@ -502,8 +502,56 @@
         backdrop-filter: blur(14px);
     }
 
+    .tv-terminal.signals-workspace-active #mobile-quick-filters #watchlist-exchange-filter {
+        order: 1;
+    }
+
+    .tv-terminal.signals-workspace-active #mobile-quick-filters #mobile-product-filters {
+        order: 2;
+    }
+
+    .tv-terminal.signals-workspace-active #mobile-quick-filters #screenerTimeframeButtons {
+        order: 3;
+    }
+
     .tv-terminal #mobile-quick-filters #watchlist-exchange-filter > button {
         min-height: 42px;
+    }
+
+    .tv-terminal #mobile-product-filters {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        align-items: center;
+        gap: 5px !important;
+        min-width: 0;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        padding: 0 2px 3px !important;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #596273 #1e222d;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
+    }
+
+    .tv-terminal #mobile-product-filters > span {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        flex: 0 0 auto;
+        padding-right: 3px;
+        background: #131722;
+    }
+
+    .tv-terminal #mobile-product-filters > button {
+        flex: 0 0 auto;
+        min-height: 42px;
+        white-space: nowrap;
+        font-size: 11px;
+    }
+
+    .tv-terminal #screenerMoreFilters #screener-product-filters {
+        display: none !important;
     }
 
     .tv-terminal #mobile-quick-filters #screenerTimeframeButtons {
@@ -515,13 +563,15 @@
     }
 
     .tv-terminal #mobile-quick-filters #screenerTimeframeButtons::-webkit-scrollbar,
-    .tv-terminal #mobile-quick-filters #watchlist-exchange-filter::-webkit-scrollbar {
+    .tv-terminal #mobile-quick-filters #watchlist-exchange-filter::-webkit-scrollbar,
+    .tv-terminal #mobile-product-filters::-webkit-scrollbar {
         display: block;
         height: 4px;
     }
 
     .tv-terminal #mobile-quick-filters #screenerTimeframeButtons::-webkit-scrollbar-thumb,
-    .tv-terminal #mobile-quick-filters #watchlist-exchange-filter::-webkit-scrollbar-thumb {
+    .tv-terminal #mobile-quick-filters #watchlist-exchange-filter::-webkit-scrollbar-thumb,
+    .tv-terminal #mobile-product-filters::-webkit-scrollbar-thumb {
         border-radius: 999px;
         background: #596273;
     }
@@ -583,7 +633,7 @@
 
     .tv-terminal #floating-toast {
         right: 8px !important;
-        bottom: calc(112px + env(safe-area-inset-bottom)) !important;
+        bottom: calc(164px + env(safe-area-inset-bottom)) !important;
         left: 8px;
         max-width: none !important;
     }
@@ -620,6 +670,10 @@
 @media (min-width: 761px) {
     .tv-terminal #mobile-quick-filters {
         display: contents;
+    }
+
+    .tv-terminal #mobile-product-filters {
+        display: none !important;
     }
 
     .tv-terminal .mobile-signal-list-link {

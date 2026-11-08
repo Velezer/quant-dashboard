@@ -545,6 +545,18 @@
                         <button type="button" class="exchange-btn px-2.5 py-1 rounded bg-gray-900 text-gray-400 font-medium border border-purple-800/70" data-exchange="pluang" aria-pressed="false">◈ Pluang</button>
                         <button type="button" class="exchange-btn px-2.5 py-1 rounded bg-gray-900 text-cyan-300 hover:text-white font-medium border border-cyan-800/70" data-exchange="tokocrypto" aria-pressed="false">🪙 Tokocrypto</button>
                     </div>
+                    <div id="mobile-product-filters" class="flex items-center gap-1.5 text-xs" role="group" aria-label="Filter by app product">
+                        <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Product</span>
+                        <button type="button" class="product-btn" data-product="all" aria-pressed="true">All</button>
+                        <button type="button" class="product-btn" data-product="stockbit_regular" aria-pressed="false" hidden>IDX Stocks</button>
+                        <button type="button" class="product-btn" data-product="pintu_retail_spot" aria-pressed="false" hidden>Retail Spot</button>
+                        <button type="button" class="product-btn" data-product="pintu_pro_spot" aria-pressed="false" hidden>Pro Spot</button>
+                        <button type="button" class="product-btn" data-product="pintu_pro_futures" aria-label="Pintu Pro Futures" title="Pintu Pro Futures" aria-pressed="false" hidden>Futures</button>
+                        <button type="button" class="product-btn" data-product="pluang_spot" aria-pressed="false" hidden>Spot</button>
+                        <button type="button" class="product-btn" data-product="pluang_perpetual" aria-pressed="false" hidden>Perpetual</button>
+                        <button type="button" class="product-btn" data-product="tokocrypto_spot" aria-pressed="false" hidden>Crypto Spot</button>
+                        <button type="button" class="product-btn" data-product="tokocrypto_tokenized_stock" aria-pressed="false" hidden>Tokenized Stocks</button>
+                    </div>
                     <div id="screenerTimeframeButtons" class="flex flex-wrap items-center gap-1.5 border-t border-gray-800/60 pt-2" role="group" aria-label="Filter by signal timeframe" aria-live="polite">
                         <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Timeframe</span>
                     </div>
