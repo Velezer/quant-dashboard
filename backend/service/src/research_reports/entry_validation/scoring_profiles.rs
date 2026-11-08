@@ -474,7 +474,7 @@ fn record_evaluation(
     result
 }
 
-pub(super) fn evaluate_daily_profiles(
+pub(crate) fn evaluate_daily_profiles(
     connection: &Connection,
     cycle_started_at: i64,
     evaluated_at: i64,
@@ -552,7 +552,7 @@ pub(super) fn evaluate_daily_profiles(
     Ok(evaluated)
 }
 
-pub(super) fn active_profile_snapshot(
+pub(crate) fn active_profile_snapshot(
     connection: &Connection,
 ) -> Result<ActiveScoringProfiles, rusqlite::Error> {
     let mut statement = connection.prepare(
@@ -590,35 +590,36 @@ pub(super) fn active_profile_snapshot(
     Ok(profiles)
 }
 
-pub(super) fn scoring_profile_status(connection: &Connection) -> Result<Value, rusqlite::Error> {
+pub(crate) fn scoring_profile_status(connection: &Connection) -> Result<Value, rusqlite::Error> {
     let profiles = {
         let mut statement = connection.prepare(
             "SELECT score_model_id,asset_category_id,timeframe,source_family,version,weights_json,created_at,protocol_id
                FROM app.entry_model_scoring_profiles WHERE status='active'
               ORDER BY score_model_id,asset_category_id,timeframe,source_family",
         )?;
-        statement
-            .query_map([], |row| {
-                let weights_json: String = row.get(5)?;
-                let protocol_id: String = row.get(7)?;
-                Ok(json!({"score_model_id":row.get::<_,String>(0)?,
-                    "asset_category_id":row.get::<_,String>(1)?,"timeframe":row.get::<_,String>(2)?,
-                    "source_family":row.get::<_,String>(3)?,"version":row.get::<_,i64>(4)?,
-                    "weights":serde_json::from_str::<Value>(&weights_json).unwrap_or(Value::Null),
-                    "created_at":row.get::<_,i64>(6)?,"status":"active",
-                    "protocol_current":protocol_id == quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID}))
-            })?
-            .collect::<Result<Vec<_>, _>>()?
+        let rows = statement.query_map([], |row| {
+            let weights_json: String = row.get(5)?;
+            let protocol_id: String = row.get(7)?;
+            Ok(json!({"score_model_id":row.get::<_,String>(0)?,
+                "asset_category_id":row.get::<_,String>(1)?,"timeframe":row.get::<_,String>(2)?,
+                "source_family":row.get::<_,String>(3)?,"version":row.get::<_,i64>(4)?,
+                "weights":serde_json::from_str::<Value>(&weights_json).unwrap_or(Value::Null),
+                "created_at":row.get::<_,i64>(6)?,"status":"active",
+                "protocol_current":protocol_id == quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID}))
+        })?;
+        let profiles = rows.collect::<Result<Vec<_>, _>>()?;
+        profiles
     };
     let evaluations = {
         let mut statement = connection.prepare(
             "SELECT evaluation_json FROM app.entry_model_scoring_evaluations ORDER BY evaluated_at DESC LIMIT 40",
         )?;
-        statement
-            .query_map([], |row| row.get::<_, String>(0))?
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let evaluations = rows
             .filter_map(Result::ok)
             .filter_map(|encoded| serde_json::from_str::<Value>(&encoded).ok())
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        evaluations
     };
     Ok(json!({"target_after_fee_win_rate_pct":TARGET_AFTER_FEE_WIN_RATE_PCT,
         "active_profiles":profiles,"latest_evaluations":evaluations,
