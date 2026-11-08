@@ -127,11 +127,66 @@ export function initializeEntryValidation(doc = document) {
             throw error;
         }
     }
+    function renderLiveScoring(scoring) {
+        const activeContainer = $('live-scoring-active');
+        const decisionContainer = $('live-scoring-decisions');
+        if (!activeContainer || !decisionContainer) return;
+        const storedProfiles = Array.isArray(scoring?.active_profiles) ? scoring.active_profiles : [];
+        const profiles = storedProfiles.filter(profile => profile.protocol_current !== false);
+        const outdatedProfiles = storedProfiles.filter(profile => profile.protocol_current === false);
+        activeContainer.replaceChildren();
+        if (!profiles.length) {
+            activeContainer.append(element('p', `${outdatedProfiles.length ? 'Stored profiles use an outdated protocol and are ignored. ' : 'No cohort has passed the 70% after-fee promotion gates. '}Live scans use equal weights: ${weightVectorText(scoring?.default_weights || [10, 10, 10, 10])}.`, 'empty-cell'));
+            status('live-scoring-state', 'Equal-weight fallback', 'pending');
+        } else {
+            for (const profile of profiles) {
+                const card = element('article', '', 'profile-card');
+                const header = element('header');
+                header.append(
+                    element('strong', `${human(profile.asset_category_id)} · ${String(profile.timeframe || '').toUpperCase()} · v${metric(profile.version, '', 0)}`),
+                    element('span', 'ACTIVE', 'state-badge valid'),
+                );
+                card.append(header,
+                    element('p', `${profile.score_model_id} · ${sourceName(profile.source_family)}`),
+                    element('p', weightVectorText(profile.weights), 'profile-metrics'));
+                activeContainer.append(card);
+            }
+            status('live-scoring-state', `${profiles.length} active profile${profiles.length === 1 ? '' : 's'}`, 'valid');
+        }
+        decisionContainer.replaceChildren();
+        const decisions = Array.isArray(scoring?.latest_evaluations) ? scoring.latest_evaluations.slice(0, 8) : [];
+        if (!decisions.length) {
+            decisionContainer.append(element('p', 'No completed cohort evaluation yet. The daily backtest worker will report blockers here after its next cycle.', 'empty-cell'));
+            return;
+        }
+        for (const decision of decisions) {
+            const card = element('article', '', 'profile-card');
+            const header = element('header');
+            const scope = decision.scope || {};
+            const state = decision.decision || 'UNKNOWN';
+            header.append(
+                element('strong', `${human(scope.asset_category_id)} · ${String(scope.timeframe || '').toUpperCase()} · ${scope.score_model_id || 'model unavailable'}`),
+                element('span', state, `state-badge ${state === 'PROMOTED' || state === 'UNCHANGED' ? 'valid' : 'pending'}`),
+            );
+            card.append(header, element('p', sourceName(scope.source_family)));
+            if (Array.isArray(decision.weights)) card.append(element('p', `Candidate · ${weightVectorText(decision.weights)}`, 'profile-metrics'));
+            const validation = decision.validation || {};
+            const holdout = decision.holdout || {};
+            if (validation.trades != null || holdout.trades != null) {
+                card.append(element('p', `Validation ${metric(validation.win_rate_after_fees_pct, '%', 1)} · ${metric(validation.trades, '', 0)} trades · holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} · ${metric(holdout.trades, '', 0)} trades`));
+            }
+            const blockers = Array.isArray(decision.blockers) ? decision.blockers : [];
+            if (blockers.length) card.append(element('p', `Blocked: ${blockers.slice(0, 3).join(' ')}`));
+            card.append(element('p', `Checked ${dateText(decision.evaluated_at, true)} · after configured transaction fees`));
+            decisionContainer.append(card);
+        }
+    }
     async function refreshDailyStatus() {
         try {
             const payload = await request('/api/entry-validation/status');
             const daily = payload?.daily_refresh;
             if (!daily || typeof daily.status !== 'string') throw new Error('Daily backtest status is incomplete.');
+            renderLiveScoring(payload?.live_scoring);
             const completedAt = numeric(daily.cycle_completed_at) || 0;
             if (receivedDailyStatus && completedAt > lastDailyCompletedAt && !busy) void loadList();
             lastDailyCompletedAt = Math.max(lastDailyCompletedAt, completedAt);
@@ -156,7 +211,7 @@ export function initializeEntryValidation(doc = document) {
                         : daily.status === 'error'
                             ? 'The daily backtest worker could not prepare its ticker list and will retry shortly.'
                             : daily.status === 'complete'
-                                ? 'All eligible registered ticker/timeframe pairs were refreshed. Candidate weights remain research-only.'
+                                ? 'All eligible registered ticker/timeframe pairs were refreshed. Shared profile gates update the live weights only when after-fee validation and holdout evidence reach the 70% target.'
                                 : 'The first daily backtest cycle is waiting to start.';
             if (daily.last_failure_label && daily.last_error) message += ` Last failure: ${daily.last_failure_label} · ${daily.last_error}`;
             status('daily-refresh-message', message, daily.status === 'error' || daily.status === 'complete_with_errors' ? 'error' : '');
@@ -388,8 +443,9 @@ export function initializeEntryValidation(doc = document) {
             INSUFFICIENT_HISTORY: 'The strategy warm-up is incomplete. The equal-weight baseline remains available when history allows.',
             FEES_UNKNOWN: 'Fees are unknown, so weight fitting is disabled. The baseline result is gross-only.',
             INSUFFICIENT_TRAINING_SAMPLE: 'No candidate had 30 or more non-overlapping training trades at the existing score floor.',
+            AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED: 'Training candidates had enough trades, but none reached the 70% win-rate target after configured transaction fees.',
             NO_VALIDATION_EXIT: 'Training selected a weight candidate, but no exit rule met the validation sample minimum.',
-            CANDIDATE_READY: 'Training selected weights; validation selected the exit. The untouched holdout reports both against the current equal-weight baseline.',
+            CANDIDATE_READY: 'Training selected a candidate at the 70% after-fee win-rate target; validation selected the exit. The untouched holdout reports both against the equal-weight baseline.',
         };
         const statusText = learning?.reason || reasons[learning?.status] || 'This saved report predates weight learning. Rerun this ticker to calculate a training-only candidate.';
         status('weight-learning-status', `${statusText}${learning?.live_weights_changed === false ? ' Live screener weights were not changed.' : ''}`, learning?.status === 'CANDIDATE_READY' ? '' : '');

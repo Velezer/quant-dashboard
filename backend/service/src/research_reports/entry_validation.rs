@@ -9,7 +9,15 @@ pub(crate) static ENTRY_VALIDATION_WORK: Mutex<()> = Mutex::new(());
 mod store;
 #[path = "entry_validation_scheduler.rs"]
 mod scheduler;
+#[path = "entry_validation/scoring_profiles.rs"]
+mod scoring_profiles;
 pub(crate) use scheduler::background_daily_refresh_loop;
+pub(crate) use scoring_profiles::{
+    active_profile_snapshot as entry_validation_active_profile_snapshot,
+    evaluate_daily_profiles as evaluate_daily_scoring_profiles,
+    scoring_profile_status as entry_validation_scoring_profile_status,
+    ActiveScoringProfile, ActiveScoringProfiles,
+};
 
 pub(crate) fn entry_validation_timeframe(timeframe: &str) -> Result<&str, String> {
     SIGNAL_SCREENER_TIMEFRAMES
@@ -60,7 +68,10 @@ pub(crate) fn entry_validation_saved(
 }
 
 pub(crate) fn entry_validation_daily_status(connection: &Connection) -> Result<Value, String> {
-    store::daily_refresh_status(connection).map_err(|error| error.to_string())
+    let daily_refresh = store::daily_refresh_status(connection).map_err(|error| error.to_string())?;
+    let live_scoring = scoring_profiles::scoring_profile_status(connection)
+        .map_err(|error| error.to_string())?;
+    Ok(json!({"daily_refresh":daily_refresh,"live_scoring":live_scoring}))
 }
 
 pub(crate) fn run_entry_validation(

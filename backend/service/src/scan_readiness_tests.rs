@@ -55,6 +55,7 @@ fn scan_for(
             is_tokenized: false,
             is_multibagger: false,
             retained_stockbit_signal_rows: &Default::default(),
+            active_scoring_profiles: None,
         },
         &mut Vec::new(),
         &mut Vec::new(),

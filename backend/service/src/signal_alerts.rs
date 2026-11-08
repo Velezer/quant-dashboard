@@ -49,7 +49,7 @@ pub(super) fn score_components_match(
     {
         return false;
     }
-    let Some(component_points) = components
+    let Some(raw_component_points) = components
         .iter()
         .map(|component| {
             component
@@ -62,6 +62,39 @@ pub(super) fn score_components_match(
         .collect::<Option<Vec<_>>>()
     else {
         return false;
+    };
+    let component_points = if four_indicator_score_model {
+        let mut total_weight = 0_u16;
+        let weighted = components
+            .iter()
+            .zip(&raw_component_points)
+            .map(|(component, points)| {
+                let weight = component
+                    .get("weight_points")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| u8::try_from(value).ok())
+                    .unwrap_or(10);
+                let contribution = component
+                    .get("weighted_points")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(*points);
+                total_weight = total_weight.saturating_add(u16::from(weight));
+                (weight % 5 == 0
+                    && contribution.is_finite()
+                    && (contribution - *points * f64::from(weight) / 10.0).abs()
+                        <= SIGNAL_SCORE_SUM_TOLERANCE)
+                    .then_some(contribution)
+            })
+            .collect::<Option<Vec<_>>>();
+        if total_weight != 40 {
+            return false;
+        }
+        let Some(weighted) = weighted else {
+            return false;
+        };
+        weighted
+    } else {
+        raw_component_points
     };
     let groups_match = |difference: f64| {
         if group_tolerance_inclusive {

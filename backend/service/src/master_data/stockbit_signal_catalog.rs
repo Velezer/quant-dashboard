@@ -59,7 +59,6 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             relative_volume_lookback,
             minimum_score,
             maximum_score,
-            component_maximum_score,
             indicator_component_maximum_score,
         );
         let nwe_description = format!(
@@ -85,8 +84,8 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "minimum_score_out_of_40": minimum_score,
             "component_score_scale_max": component_maximum_score,
             "indicator_component_score_scale_max": indicator_component_maximum_score,
-            "strategy_score_label": "Price evidence (NWE + DSS)",
-            "confluence_score_label": "Volume evidence (relative volume + delta proxy)",
+            "strategy_score_label": "Weighted price contribution (NWE + DSS)",
+            "confluence_score_label": "Weighted volume contribution (relative volume + delta proxy)",
             "minimum_history_bars": minimum_nwe_history,
             "score_basis_description": nwe_description,
         });
@@ -102,7 +101,6 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             relative_volume_lookback,
             minimum_score,
             maximum_score,
-            component_maximum_score,
             indicator_component_maximum_score,
         );
         let dss_description = format!(
@@ -128,8 +126,8 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "minimum_score_out_of_40": minimum_score,
             "component_score_scale_max": component_maximum_score,
             "indicator_component_score_scale_max": indicator_component_maximum_score,
-            "strategy_score_label": "Price evidence (NWE + DSS)",
-            "confluence_score_label": "Volume evidence (relative volume + delta proxy)",
+            "strategy_score_label": "Weighted price contribution (NWE + DSS)",
+            "confluence_score_label": "Weighted volume contribution (relative volume + delta proxy)",
             "minimum_history_bars": minimum_dss_history,
             "score_basis_description": dss_description,
         });
@@ -146,10 +144,9 @@ fn four_indicator_score_basis(
     relative_volume_lookback: usize,
     minimum_score: f64,
     maximum_score: f64,
-    component_maximum_score: f64,
     indicator_component_maximum_score: f64,
 ) -> String {
     format!(
-        "{setup_description} The current entry setup score has four equal-weight factors: NWE, DSS Bressert, {relative_volume_lookback}-bar relative volume, and estimated OHLCV volume delta. Each factor contributes 0–{indicator_component_maximum_score:.0}; the two price factors and two volume factors each form a group capped at {component_maximum_score:.0}, for {maximum_score:.0} total. Relative volume compares the current bar against the preceding {relative_volume_lookback} same-source {timeframe} bars and awards points only when candle direction agrees with the signal. The delta proxy uses candle close location; it is not true aggressor-side trade delta. Missing/zero volume or insufficient history is labeled unavailable and contributes zero. Scores below {minimum_score:.1}/{maximum_score:.0} are withheld. The score measures setup strength, not win probability or execution availability."
+        "{setup_description} The entry setup score uses four indicator readings, each scored 0–{indicator_component_maximum_score:.0}: NWE, DSS Bressert, {relative_volume_lookback}-bar relative volume, and estimated OHLCV volume delta. The active validated profile assigns a total of {maximum_score:.0} weight points across those factors; the dashboard shows each raw /10 reading, its weight, and its weighted contribution. Price and volume subtotals depend on the active weights. Relative volume compares the current bar against the preceding {relative_volume_lookback} same-source {timeframe} bars and awards points only when candle direction agrees with the signal. The delta proxy uses candle close location; it is not true aggressor-side trade delta. Missing/zero volume or insufficient history is labeled unavailable and contributes zero. Scores below {minimum_score:.1}/{maximum_score:.0} are withheld. The score measures setup strength, not win probability or execution availability."
     )
 }

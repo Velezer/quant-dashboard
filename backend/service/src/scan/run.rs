@@ -38,6 +38,12 @@ pub(super) fn run_rust_scan_inner(
     exchange_scope: Option<&str>,
     selected_signal_scope: Option<&SelectedSignalScanTarget>,
 ) -> Result<Value, rusqlite::Error> {
+    #[cfg(not(test))]
+    let active_scoring_profiles =
+        crate::research_reports::entry_validation_active_profile_snapshot(app_connection)?;
+    #[cfg(test)]
+    let active_scoring_profiles = crate::research_reports::ActiveScoringProfiles::new();
+
     // Signal rows belong to an app registration. Stored candles only supply
     // prices; they cannot create a ticker or choose an app.
     let registered = {
@@ -134,6 +140,7 @@ pub(super) fn run_rust_scan_inner(
                 &completed_count,
                 registered_count,
                 selected_signal_scope.is_some(),
+                &active_scoring_profiles,
                 &mut output,
             )?;
             worker.elapsed += started.elapsed();
@@ -245,6 +252,7 @@ pub(super) fn run_rust_scan_inner(
                             progress,
                             registered_count,
                             selected_signal_scope.is_some(),
+                            &active_scoring_profiles,
                             &mut instrument_output,
                         )?;
                         let elapsed = started.elapsed();
@@ -720,6 +728,7 @@ fn scan_registered_app(
     completed_count: &std::sync::atomic::AtomicUsize,
     total_instruments: usize,
     force_selected_refresh: bool,
+    active_scoring_profiles: &crate::research_reports::ActiveScoringProfiles,
     output: &mut ScanCycleOutput,
 ) -> Result<AppScanResult, rusqlite::Error> {
     let mut app_result = AppScanResult {
@@ -911,6 +920,7 @@ fn scan_registered_app(
                 is_tokenized,
                 is_multibagger,
                 retained_stockbit_signal_rows: &retained_stockbit_signal_rows,
+                active_scoring_profiles: Some(active_scoring_profiles),
             },
             &mut running_plans,
             &mut potential_plans,

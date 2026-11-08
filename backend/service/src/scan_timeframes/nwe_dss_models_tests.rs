@@ -65,6 +65,7 @@ fn crypto_dss_rows_keep_dss_and_nwe_points_on_the_correct_indicators() {
             symbol: "BTC-USD", asset: "BTC", strategy: "test", evidence_class: "crypto_spot",
             class: "crypto_spot", exchange, time_window: "test", base_timeframe: "15m",
             is_tokenized: false, is_multibagger: false, retained_stockbit_signal_rows: &retained,
+            active_scoring_profiles: None,
         };
         let source = (format!("{exchange}_yfinance_fallback"), "yfinance".to_string());
         let price = CurrentPrice {

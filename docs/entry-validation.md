@@ -24,9 +24,24 @@ the current one finishes.
 
 This refresh updates the saved research reports and their training-selected
 candidate weights. It uses stored matching candles and never fetches provider
-data. A candidate remains research-only; daily retraining does not change live
-screener weights or signal qualification. Reports without sufficient training
-trades or known fees do not produce candidate weights.
+data. After a complete cycle, the service groups reports by model, asset
+category, timeframe, and candle source family. It can promote one exact vector
+only when it is shared by at least five instruments and covers at least 80% of
+the refreshed cohort and each app/product slice.
+
+Live profile promotion requires known transaction fees, at least 730 days of
+history, positive net expectancy and profit factor above 1, and both validation
+and untouched holdout to meet the 70% after-fee win-rate target with a 95%
+Wilson lower bound at or above 70%. It must also improve mean net return over
+equal weights in both samples. If any requirement fails, the current active
+profile remains; when no profile exists, scans use `[10, 10, 10, 10]`. A 70%
+historical result is a target, not a future win guarantee.
+
+The `/entry-validation` page shows active profile versions and the latest
+cohort blockers. Each signal scan loads one profile snapshot at its start and
+uses that version throughout the scan. Signal rows retain raw component points
+out of 10, each component's weight and weighted contribution, and the profile
+version. Newly promoted weights apply on the next scan.
 
 ## Reading a report
 
@@ -39,18 +54,19 @@ win-rate interval, returns, wins/losses, and profit factor. Scores rank signals;
 they are not win probabilities.
 
 The protocol replays the live lead signal and shared four component scores using
-only candles available at that signal. The score floor remains unchanged at 20
-out of 40. A qualifying signal enters at the next bar open. The nominal 60/20/20
+only candles available at that signal. The score floor remains 1 point out of
+40. A qualifying signal enters at the next bar open. The nominal 60/20/20
 chronological splits apply to bars after the model's indicator warm-up; no
 position crosses a split boundary.
 
 Weight learning tests 165 predeclared nonnegative weight vectors in steps of 5
 that sum to 40. Missing factor values contribute zero and their weight is not
-redistributed. Training selects the vector with the highest mean return after
-known transaction fees using a fixed 8-bar timeout, and requires at least 30
-non-overlapping training outcomes for each candidate. Equal weights are the
-baseline, and ties favor the vector closest to equal weights. Unknown fees or
-too few training outcomes disable weight fitting.
+redistributed. Training candidates need at least 30 non-overlapping outcomes
+and 70% winners after configured transaction fees using a fixed 8-bar timeout.
+Among those candidates, the fitter maximizes the Wilson 95% lower bound for
+after-fee win rate, then mean net return, then proximity to equal weights.
+Unknown fees disable weight fitting; if no candidate reaches 70%, no candidate
+vector is produced.
 
 For the fixed equal-weight baseline and the training-selected candidate,
 validation compares fixed 4, 8, and 12-bar timeouts with an exit on the first
@@ -58,8 +74,10 @@ opposite-direction signal that qualifies under that model's weights and score
 floor. The opposite signal closes the position and does not open a reverse one.
 Validation selects the exit rule and maximum hold independently for each model.
 Each selected policy is evaluated once on the final chronological holdout; the
-holdout does not select weights or exits. This evidence remains exploratory and
-does not change live screener scores. Inspecting the holdout and then changing
+holdout does not select weights or exits. The separate cohort evaluator
+combines only reports whose training-selected vector exactly matches, checks
+the vector in validation and holdout, and leaves weights unchanged when the
+evidence is short or inconclusive. Inspecting the holdout and then changing
 weights, floors, or rules contaminates it as independent evidence.
 
 After weights are fitted, an intraday-only rule searches 576 entry-hour/exit-hour
@@ -84,9 +102,9 @@ equal-time series.
 holdout evidence** has additional minimum sample and calendar-span, positive
 holdout return and profit factor, separated score-band evidence, verified
 registered identity, venue-native candles, known product fees, and complete
-execution-cost checks. A training-selected weight vector is a candidate, not a
-validated replacement for the live equal weights; it does not stand in for
-these checks.
+execution-cost checks. Live scoring profile promotion is a separate gate; it
+subtracts configured transaction fees but does not imply spread, slippage,
+funding, borrow, or market impact are covered.
 
 Research-proxy candles cannot qualify as venue-native evidence. Unknown fees are
 shown as unknown and returns remain gross; weight fitting is disabled without
@@ -113,8 +131,8 @@ comparison.
 
 ### Daily refresh operating contract
 
-1. **Direct effect:** Saved per-ticker candidate reports and weights are
-   refreshed on a daily cycle.
+1. **Direct effect:** Saved per-ticker candidates refresh daily; a completed
+   cycle evaluates shared live profiles against the 70% after-fee target.
 2. **Immediate consequence:** A full pass can contain thousands of pairs, so
    it processes one pair at a time and yields briefly between reports.
 3. **Repeated operation:** The next cycle becomes due 24 hours after start;

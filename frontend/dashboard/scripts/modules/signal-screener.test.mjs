@@ -257,7 +257,7 @@ test('score presentation keeps retained legacy rows on /10 and current models on
     const currentModel = {
         score_scale_max: 40,
         minimum_score_out_of_40: 1,
-        component_score_scale_max: 20,
+        component_score_scale_max: 40,
         indicator_component_score_scale_max: 10,
     };
     assert.deepEqual(
@@ -334,25 +334,25 @@ test('score component weights are shown from the active model or legacy row basi
     );
 });
 
-test('four-factor model uses /40 total, /20 groups, and /10 individual factors', () => {
+test('four-factor model uses /40 total, /40 flexible subtotals, and /10 individual factors', () => {
     assert.deepEqual(
         signalScorePresentation({
             score_basis: {
                 score_scale_max: 40,
-                component_score_scale_max: 20,
+                component_score_scale_max: 40,
                 indicator_component_score_scale_max: 10,
                 score_model_status: 'current',
             },
         }, {
             score_scale_max: 40,
-            component_score_scale_max: 20,
+            component_score_scale_max: 40,
             indicator_component_score_scale_max: 10,
             minimum_score_out_of_40: 1,
         }),
         {
             scoreScaleMax: 40,
             minimumScore: 1,
-            componentScoreScaleMax: 20,
+            componentScoreScaleMax: 40,
             indicatorComponentScoreScaleMax: 10,
             legacy: false,
         },

@@ -121,10 +121,17 @@ fn append_crypto_model_signal(
         return;
     };
 
+    let profile = active_scoring_profile(
+        context.input,
+        model.score_model_id(),
+        context.timeframe,
+        context.source,
+    );
     let (score_components, four_factor_groups) = four_indicator_score_outputs(
         &context.bars[..=signal_index],
         signal,
         indicator,
+        profile,
     );
     append_timeframe_signal_candidate(
         candidates,
