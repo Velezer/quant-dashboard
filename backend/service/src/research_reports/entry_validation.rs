@@ -15,7 +15,6 @@ pub(crate) use scheduler::background_daily_refresh_loop;
 pub(crate) use scoring_profiles::{
     active_profile_snapshot as entry_validation_active_profile_snapshot,
     evaluate_daily_profiles as evaluate_daily_scoring_profiles,
-    scoring_profile_status as entry_validation_scoring_profile_status,
     ActiveScoringProfile, ActiveScoringProfiles,
 };
 

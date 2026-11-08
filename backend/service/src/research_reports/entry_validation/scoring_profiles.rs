@@ -511,8 +511,8 @@ pub(crate) fn evaluate_daily_profiles(
                 })
                 .then_with(|| left.0.cmp(&right.0))
         });
-        let (weights, evidence, decision) = if let Some((weights, evidence, decision)) = selected {
-            (Some(*weights), Some(*evidence), decision.clone())
+        let (weights, decision) = if let Some((weights, _, decision)) = selected {
+            (Some(*weights), decision.clone())
         } else {
             let decision = json!({"evaluated_at":evaluated_at,"decision":"BLOCKED",
                 "scope":{"score_model_id":scope.score_model_id,"asset_category_id":scope.asset_category_id,
@@ -520,7 +520,7 @@ pub(crate) fn evaluate_daily_profiles(
                 "target_after_fee_win_rate_pct":TARGET_AFTER_FEE_WIN_RATE_PCT,
                 "cohort":{"reports":cohort.report_count,"candidate_symbols":0,"coverage_pct":0.0},
                 "blockers":["No report in this cohort produced a fee-aware candidate meeting the 70% training target."]});
-            (None, None, decision)
+            (None, decision)
         };
         let promote = decision.get("decision").and_then(Value::as_str) == Some("PROMOTED");
         let active_profile: Option<Vec<u8>> = connection

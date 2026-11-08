@@ -226,6 +226,7 @@ pub(super) fn run_rust_scan_inner(
                 let queue = &queue;
                 let progress = &completed_count;
                 let app_scan_progress = &app_scan_progress;
+                let active_profiles = &active_scoring_profiles;
                 handles.push(scope.spawn(move || -> Result<_, rusqlite::Error> {
                     let mut worker_output = ScanCycleOutput::new();
                     let mut worker_app_results =
@@ -252,7 +253,7 @@ pub(super) fn run_rust_scan_inner(
                             progress,
                             registered_count,
                             selected_signal_scope.is_some(),
-                            &active_scoring_profiles,
+                            active_profiles,
                             &mut instrument_output,
                         )?;
                         let elapsed = started.elapsed();
