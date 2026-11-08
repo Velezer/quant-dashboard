@@ -63,6 +63,7 @@ export function installSignalScreener() {
     let timeframeFilter = 'all';
     let indicatorFilter = 'all';
     let indicatorMinimumScore = 0;
+    let minimumTotalScore = 0;
     let availableTimeframes = [];
     let searchQuery = '';
     let visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
@@ -291,6 +292,7 @@ export function installSignalScreener() {
         timeframeFilter = availableTimeframes.includes(timeframe) ? timeframe : 'all';
         indicatorFilter = 'all';
         indicatorMinimumScore = 0;
+        minimumTotalScore = 0;
         updateIndicatorFilterControls();
         updateAppButtons();
         updateProductFilters();
@@ -397,6 +399,10 @@ export function installSignalScreener() {
                 );
                 if (points === null || points < indicatorMinimumScore) return false;
             }
+            if (minimumTotalScore > 0) {
+                const score = normalizedTotalScore(signal);
+                if (score === null || score < minimumTotalScore) return false;
+            }
             if (!query) return true;
             return signal.symbol.toLowerCase().includes(query)
                 || signal.signal_strategy_name.toLowerCase().includes(query)
@@ -409,6 +415,14 @@ export function installSignalScreener() {
                 || right.last_updated_at - left.last_updated_at
                 || left.symbol.localeCompare(right.symbol);
         });
+    }
+
+    function normalizedTotalScore(signal) {
+        const score = signalDisplayScore(signal);
+        const modelScale = signalScorePresentation(signal, scoreModelFor(signal)).scoreScaleMax;
+        const scale = Number.isFinite(modelScale) && modelScale > 0 ? modelScale : 10;
+        if (!Number.isFinite(score)) return null;
+        return Math.max(0, Math.min(10, score / scale * 10));
     }
 
     function formatPrice(value) {
@@ -467,11 +481,13 @@ export function installSignalScreener() {
     function updateIndicatorFilterControls() {
         const indicatorSelect = document.getElementById('screenerIndicatorSelect');
         const minimumSelect = document.getElementById('screenerIndicatorMinScore');
+        const minimumTotalSelect = document.getElementById('screenerMinimumTotalScore');
         if (indicatorSelect) indicatorSelect.value = indicatorFilter;
         if (minimumSelect) {
             minimumSelect.value = String(indicatorMinimumScore);
             minimumSelect.disabled = indicatorFilter === 'all';
         }
+        if (minimumTotalSelect) minimumTotalSelect.value = String(minimumTotalScore);
     }
 
     function renderTimeframeControls() {
@@ -540,7 +556,11 @@ export function installSignalScreener() {
         const renderedSignals = signalRowsForDisplay(signals, visibleSignalLimit);
         if (countBadge) {
             const storedMatches = Number(summary.matching_rows);
-            const matchLabel = indicatorFilter === 'all' ? 'stored matches' : 'indicator matches';
+            const matchLabel = indicatorFilter !== 'all' && minimumTotalScore === 0
+                ? 'indicator matches'
+                : minimumTotalScore > 0 || indicatorFilter !== 'all'
+                    ? 'score matches'
+                    : 'stored matches';
             const countText = Number.isFinite(storedMatches)
                 ? `${signals.length} loaded · ${storedMatches} ${matchLabel}`
                 : `${signals.length} ${summary.stale ? 'saved ' : ''}signal${signals.length === 1 ? '' : 's'}`;
@@ -558,10 +578,16 @@ export function installSignalScreener() {
         if (clearButton) clearButton.disabled = !searchQuery;
 
         if (signals.length === 0) {
+            const scoreFilterDescriptions = [];
+            if (indicatorFilter !== 'all') {
+                scoreFilterDescriptions.push(`${SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorFilter)?.label || 'the selected indicator'} at ${indicatorMinimumScore > 0 ? `${indicatorMinimumScore}/10 or higher` : 'any available /10 score'}`);
+            }
+            if (minimumTotalScore > 0) scoreFilterDescriptions.push(`total score ${minimumTotalScore}/10 or higher`);
+            const hasScoreFilters = scoreFilterDescriptions.length > 0;
             const emptyText = requestState === 'error' && rows.length === 0
                 ? 'Signal data could not be loaded. Retry after checking the service connection.'
-                : indicatorFilter !== 'all'
-                    ? `No current signal rows match ${SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorFilter)?.label || 'the selected indicator'} at ${indicatorMinimumScore > 0 ? `${indicatorMinimumScore}/10 or higher` : 'any available /10 score'}. This filter only narrows existing signals; it does not change the total score or model qualification rules.${summary.stale ? ' The saved snapshot may be outdated.' : ''}`
+                : hasScoreFilters
+                    ? `No current signal rows match ${scoreFilterDescriptions.join(' and ')}. Score filters only narrow saved rows; they do not change model weights or qualification rules.${summary.stale ? ' The saved snapshot may be outdated.' : ''}`
                 : summary.stale && rows.length === 0
                     ? 'The saved snapshot is stale and has no current signals. Retry the scan or wait for the running scan to complete.'
                 : staleScoreSignalCount > 0
@@ -586,8 +612,10 @@ export function installSignalScreener() {
                 .join(' ');
             const emptyHeading = requestState === 'error'
                 ? 'Signal data unavailable'
-                : indicatorFilter !== 'all'
+                : hasScoreFilters && indicatorFilter !== 'all'
                     ? `No ${SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorFilter)?.label || 'indicator'} matches`
+                : minimumTotalScore > 0
+                    ? 'No total score matches'
                 : appReadiness.hasScanDetails
                     ? `${appLabel(selectedApp)}: ${appReadiness.title}`
                 : searchQuery.trim()
@@ -597,7 +625,7 @@ export function installSignalScreener() {
                     : stockbitSignalSelected
                         ? 'No current Stockbit signal'
                     : 'No matching signals';
-            list.innerHTML = `<div class="signal-empty-state" role="status"><strong>${escape(emptyHeading)}</strong><p>${escape(emptyStateText)}</p>${searchQuery || timeframeFilter !== 'all' || getDashboardBinding('activeProductFilter') !== 'all' || indicatorFilter !== 'all' ? '<button type="button" data-clear-signal-filters>Clear filters</button>' : ''}${hasMoreSignalRows ? '<button type="button" data-load-more-signals>Continue loading matching signals</button>' : ''}</div>`;
+            list.innerHTML = `<div class="signal-empty-state" role="status"><strong>${escape(emptyHeading)}</strong><p>${escape(emptyStateText)}</p>${searchQuery || timeframeFilter !== 'all' || getDashboardBinding('activeProductFilter') !== 'all' || indicatorFilter !== 'all' || minimumTotalScore > 0 ? '<button type="button" data-clear-signal-filters>Clear filters</button>' : ''}${hasMoreSignalRows ? '<button type="button" data-load-more-signals>Continue loading matching signals</button>' : ''}</div>`;
             const chartText = requestState === 'error' ? 'Signal data is unavailable. Retry to restore the screener.' : 'No matching signal is selected.';
             if (selectedId && !signals.some(signal => signal.signal_id === selectedId)) clearSelectedSignalChart(chartText);
             return;
@@ -714,6 +742,8 @@ export function installSignalScreener() {
             timeframeFilter = 'all';
             indicatorFilter = 'all';
             indicatorMinimumScore = 0;
+            minimumTotalScore = 0;
+            updateIndicatorFilterControls();
             globalThis.activeProductFilter = 'all';
             const search = document.getElementById('searchInput');
             if (search) search.value = '';
@@ -761,6 +791,13 @@ export function installSignalScreener() {
         renderSignalsList();
         refreshSignalRows();
     });
+    document.getElementById('screenerMinimumTotalScore')?.addEventListener('change', event => {
+        const parsed = Number(event.currentTarget.value);
+        minimumTotalScore = Number.isFinite(parsed) ? Math.max(0, Math.min(10, parsed)) : 0;
+        visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
+        renderSignalsList();
+        refreshSignalRows();
+    });
     document.getElementById('searchInput')?.addEventListener('input', event => {
         setSearchQuery(event.currentTarget.value);
     });
@@ -795,6 +832,7 @@ export function installSignalScreener() {
             search: searchQuery,
             indicator: indicatorFilter,
             indicatorMinimumScore,
+            minimumTotalScore,
             limit: SIGNAL_LIST_PAGE_SIZE,
         }) },
         setScreenerLoading: { get: () => setLoading },

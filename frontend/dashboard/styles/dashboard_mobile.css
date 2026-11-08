@@ -409,7 +409,8 @@
     }
 
     .tv-terminal #screener-product-filters,
-    .tv-terminal #signalIndicatorFilterPanel {
+    .tv-terminal #signalIndicatorFilterPanel,
+    .tv-terminal #signalTotalScoreFilterPanel {
         margin: 0 !important;
         padding: 8px 0 !important;
     }

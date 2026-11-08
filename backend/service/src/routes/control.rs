@@ -43,6 +43,12 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             .and_then(|value| value.parse::<f64>().ok())
             .filter(|value| value.is_finite())
             .map(|value| value.clamp(0.0, 10.0));
+        let minimum_total_score = values
+            .get("minimum_total_score")
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite())
+            .map(|value| value.clamp(0.0, 10.0))
+            .filter(|value| *value > 0.0);
         let offset = values
             .get("offset")
             .and_then(|value| value.parse::<usize>().ok())
@@ -74,7 +80,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             }
             return Ok(());
         }
-        match crate::signal_alerts::list_signal_screener_page(
+        match crate::signal_alerts::list_signal_screener_page_with_minimum_total_score(
             &connection,
             scan_interval_seconds,
             exchange_filter,
@@ -83,6 +89,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             search_filter.as_deref(),
             indicator_filter,
             indicator_min_score,
+            minimum_total_score,
             offset,
             limit,
         ) {

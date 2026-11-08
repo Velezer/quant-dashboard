@@ -317,6 +317,34 @@ pub(crate) fn list_signal_screener_page(
     offset: usize,
     limit: usize,
 ) -> Result<Value, rusqlite::Error> {
+    list_signal_screener_page_with_minimum_total_score(
+        connection,
+        scan_interval_seconds,
+        exchange_filter,
+        timeframe_filter,
+        product_filter,
+        search_filter,
+        indicator_filter,
+        indicator_min_score,
+        None,
+        offset,
+        limit,
+    )
+}
+
+pub(crate) fn list_signal_screener_page_with_minimum_total_score(
+    connection: &Connection,
+    scan_interval_seconds: i64,
+    exchange_filter: Option<&str>,
+    timeframe_filter: Option<&str>,
+    product_filter: Option<&str>,
+    search_filter: Option<&str>,
+    indicator_filter: Option<&str>,
+    indicator_min_score: Option<f64>,
+    minimum_total_score: Option<f64>,
+    offset: usize,
+    limit: usize,
+) -> Result<Value, rusqlite::Error> {
     let now = now_secs() as i64;
     let mut query_values = Vec::new();
     let mut where_clause = String::new();
@@ -471,6 +499,12 @@ pub(crate) fn list_signal_screener_page(
         if !is_current && !retain_stale_crypto_setup {
             continue;
         }
+        if minimum_total_score.is_some_and(|minimum| {
+            normalized_total_score_out_of_ten(&signal, &master_data["signal_score_models"])
+                .is_none_or(|score| score < minimum)
+        }) {
+            continue;
+        }
         if matching_rows >= offset && signals.len() < page_size {
             signals.push(signal);
         }
@@ -533,6 +567,23 @@ pub(crate) fn list_signal_screener_page(
             "status": status,
         }
     }))
+}
+
+fn normalized_total_score_out_of_ten(signal: &Value, models: &Value) -> Option<f64> {
+    let score = signal["score"].as_f64().filter(|score| score.is_finite())?;
+    let strategy_id = signal["signal_strategy_id"].as_str()?;
+    let model = models
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|model| model["id"].as_str() == Some(strategy_id));
+    let scale = signal["score_basis"]["score_scale_max"]
+        .as_f64()
+        .or_else(|| signal["score_scale_max"].as_f64())
+        .or_else(|| model.and_then(|model| model["score_scale_max"].as_f64()))
+        .filter(|scale| scale.is_finite() && *scale > 0.0)
+        .unwrap_or(10.0);
+    Some((score / scale * 10.0).clamp(0.0, 10.0))
 }
 
 pub(crate) fn count_current_signal_screener_rows(
