@@ -17,13 +17,15 @@ const WEIGHT_FIT_EXIT_BARS: usize = 8;
 const BASELINE_WEIGHTS: [u8; 4] = [10; 4];
 const HOURS_PER_DAY: i64 = 24;
 const TOP_HOUR_PAIRS_TO_REPORT: usize = 5;
+pub const ENTRY_SCORE_CALIBRATION_BAND_WIDTH: f64 = TOTAL_SCORE_BAND_WIDTH;
+pub const ENTRY_SCORE_CALIBRATION_BAND_COUNT: usize = BAND_COUNT;
 const FACTOR_NAMES: [&str; 4] = [
     "Nadaraya-Watson Envelope",
     "DSS Bressert",
     "Relative Volume",
     "Estimated Volume Delta (OHLCV proxy)",
 ];
-pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str = "entry_four_factor_weight_fit_after_fee_target_70_v4";
+pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str = "entry_four_factor_weight_fit_after_fee_target_70_v5";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {
@@ -148,7 +150,8 @@ fn evaluate_window(
             )
         };
         add(&mut result.overall);
-        add(&mut result.total_bands[band_index(observation.total, TOTAL_SCORE_BAND_WIDTH)]);
+        let weighted_score = score_with_weights(observation, policy.weights);
+        add(&mut result.total_bands[band_index(weighted_score, TOTAL_SCORE_BAND_WIDTH)]);
         for factor in 0..4 {
             if observation.available[factor] {
                 add(&mut result.factor_bands[factor]
@@ -535,8 +538,18 @@ fn policy_comparison_json(
         "selected_exit_bars": selection.selected_policy.map(|selected| selected.horizon),
         "selected_exit_rule": selected_exit_rule(selection.selected_policy),
         "validation": summary_json(selection.validation.overall, fees_known),
+        "validation_score_bands": score_bands_json(
+            &selection.validation.total_bands,
+            TOTAL_SCORE_BAND_WIDTH,
+            fees_known,
+        ),
         "validation_exit_candidates": selection.candidates,
         "holdout": summary_json(holdout.overall, fees_known),
+        "holdout_score_bands": score_bands_json(
+            &holdout.total_bands,
+            TOTAL_SCORE_BAND_WIDTH,
+            fees_known,
+        ),
     })
 }
 

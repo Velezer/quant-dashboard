@@ -441,7 +441,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         }
 
         if is_nwe_dss_signal_scope {
-            append_nwe_dss_model_signals(
+            let blocked_setups = append_nwe_dss_model_signals(
                 &input,
                 is_stockbit_signal_scope,
                 timeframe,
@@ -451,6 +451,23 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                 standalone_indicator_signals,
                 standalone_score_updates,
             );
+            for issue in blocked_setups {
+                let frame = &mut readiness.timeframes[diagnosis_index];
+                frame.backtest_gate_blocked_count =
+                    frame.backtest_gate_blocked_count.saturating_add(1);
+                match issue.reason.as_str() {
+                    "after_fee_profile_missing" => {
+                        frame.backtest_profile_missing_count =
+                            frame.backtest_profile_missing_count.saturating_add(1);
+                    }
+                    "below_after_fee_score_cutoff" => {
+                        frame.backtest_score_below_cutoff_count =
+                            frame.backtest_score_below_cutoff_count.saturating_add(1);
+                    }
+                    _ => {}
+                }
+                readiness.issue(issue);
+            }
         }
 
         if completed_strategy_bars.len() < timeframe_required_history_bars {

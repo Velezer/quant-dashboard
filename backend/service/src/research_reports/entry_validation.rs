@@ -17,6 +17,7 @@ pub(crate) use scoring_profiles::{
     evaluate_daily_profiles as evaluate_daily_scoring_profiles,
     ActiveScoringProfile, ActiveScoringProfiles,
 };
+pub(crate) use scoring_profiles::signal_gate_is_qualified;
 
 pub(crate) fn entry_validation_timeframe(timeframe: &str) -> Result<&str, String> {
     SIGNAL_SCREENER_TIMEFRAMES

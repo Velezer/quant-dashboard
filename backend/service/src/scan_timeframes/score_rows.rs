@@ -14,6 +14,7 @@ pub(super) fn append_timeframe_signal_candidate(
     provider: &str,
     score_components: Vec<Value>,
     four_factor_groups: Option<(f64, f64, f64)>,
+    profile: Option<&crate::research_reports::ActiveScoringProfile>,
 ) {
     let data_quality = if is_research_proxy_source(source) {
         "RESEARCH_PROXY"
@@ -47,6 +48,10 @@ pub(super) fn append_timeframe_signal_candidate(
         "Signal_Scoring_Model_ID": score_model_id,
         "Signal_Scoring_Weights": score_weights,
         "Signal_Scoring_Profile_Version": profile_version,
+        "Signal_After_Fee_Gate": profile
+            .map(|profile| profile.after_fee_gate.clone())
+            .unwrap_or(Value::Null),
+        "Signal_Requires_After_Fee_Gate": input.active_scoring_profiles.is_some(),
         "Signal_Score_Components": score_components,
         "timeframe": timeframe,
         "Current_Price": current_price.value,
@@ -130,15 +135,15 @@ pub(super) fn append_stockbit_model_result(
     provider: &str,
     indicator: &str,
     current_price: Option<&CurrentPrice>,
-) {
+) -> Option<ReadinessIssue> {
     let Some(current_price) = current_price.filter(|price| price.source == source) else {
-        return;
+        return None;
     };
     let Some(score_bar) = bars
         .last()
         .filter(|bar| bar.close.is_finite() && bar.close > 0.0)
     else {
-        return;
+        return None;
     };
     let latest_signal = model_signals
         .last()
@@ -160,22 +165,59 @@ pub(super) fn append_stockbit_model_result(
                 Some((0.0, 0.0, 0.0)),
             )
         });
-    if let Some(signal) = latest_signal {
-        append_timeframe_signal_candidate(
-            candidates,
-            input,
-            signal,
-            strategy_id,
-            score_model_id,
-            timeframe,
-            score_bar,
-            score_bar,
-            current_price,
-            source,
-            provider,
-            score_components.clone(),
-            four_factor_groups,
-        );
+    let gate_required = input.active_scoring_profiles.is_some();
+    let has_after_fee_setup = latest_signal.is_some()
+        && (!gate_required
+            || profile.is_some_and(|profile| {
+                four_factor_groups.is_some_and(|(_, _, total)| total >= profile.minimum_score)
+            }));
+    let blocked_issue = if gate_required && latest_signal.is_some() && !has_after_fee_setup {
+        let (reason, explanation) = match (profile, four_factor_groups) {
+            (None, _) => (
+                "after_fee_profile_missing",
+                "No active backtested score range passed the after-fee signal gate.",
+            ),
+            (Some(profile), Some((_, _, score))) if score < profile.minimum_score => (
+                "below_after_fee_score_cutoff",
+                "The live score is below this cohort's backtested after-fee score cutoff.",
+            ),
+            _ => (
+                "after_fee_score_unavailable",
+                "The current setup score could not be checked against after-fee backtest evidence.",
+            ),
+        };
+        Some(ReadinessIssue {
+            symbol: input.asset.into(),
+            reason: reason.into(),
+            timeframe: timeframe.into(),
+            source: Some(source.into()),
+            data_provider: Some(provider.into()),
+            last_bar_time: Some(score_bar.time),
+            error: Some(explanation.into()),
+            ..ReadinessIssue::default()
+        })
+    } else {
+        None
+    };
+    if has_after_fee_setup {
+        if let Some(signal) = latest_signal {
+            append_timeframe_signal_candidate(
+                candidates,
+                input,
+                signal,
+                strategy_id,
+                score_model_id,
+                timeframe,
+                score_bar,
+                score_bar,
+                current_price,
+                source,
+                provider,
+                score_components.clone(),
+                four_factor_groups,
+                profile,
+            );
+        }
     }
     let score_weights = score_components
         .iter()
@@ -204,6 +246,7 @@ pub(super) fn append_stockbit_model_result(
             "Signal_Scoring_Model_ID": score_model_id,
             "Signal_Scoring_Weights": score_weights,
             "Signal_Scoring_Profile_Version": profile_version,
+            "Signal_After_Fee_Gate": profile.map(|profile| profile.after_fee_gate.clone()),
             "timeframe": timeframe,
             "Signal_Direction": latest_signal.map(|signal| signal.direction.as_str()),
             "Signal_Bar_Time": latest_signal.map(|_| score_bar.time),
@@ -211,7 +254,7 @@ pub(super) fn append_stockbit_model_result(
             "Strategy_Strength": four_factor_groups.map(|(price, _, _)| price).unwrap_or(0.0),
             "Signal_Confluence_Score": four_factor_groups.map(|(_, volume, _)| volume),
             "Signal_Score_Components": score_components,
-            "Score_Update_Status": if latest_signal.is_some() {
+            "Score_Update_Status": if has_after_fee_setup {
                 "qualifying"
             } else {
                 "not_qualifying"
@@ -234,4 +277,5 @@ pub(super) fn append_stockbit_model_result(
             },
         }));
     }
+    blocked_issue
 }

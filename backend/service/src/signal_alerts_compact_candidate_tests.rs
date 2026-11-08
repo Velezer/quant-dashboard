@@ -57,6 +57,13 @@ fn compact_stockbit_score_updates_preserve_the_validated_basis() {
     let now_ns = i64::try_from(crate::now_secs()).unwrap_or(i64::MAX) * 1_000_000_000;
     let timeframe_ns = 4 * 60 * 60 * 1_000_000_000;
     let forming_bar = now_ns.div_euclid(timeframe_ns) * timeframe_ns;
+    let evidence = json!({
+        "trades": 100,
+        "win_rate_after_fees_pct": 90.0,
+        "win_rate_after_fees_wilson_95_lower_pct": 82.0,
+        "mean_net_return_pct": 1.0,
+        "profit_factor": 2.0
+    });
     let candidate = json!({
         "Score_Update_Only": true,
         "Exchange_ID": "stockbit",
@@ -66,6 +73,15 @@ fn compact_stockbit_score_updates_preserve_the_validated_basis() {
         "Data_Symbol": "AADI.JK",
         "Signal_Strategy_ID": quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID,
         "Signal_Scoring_Model_ID": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
+        "Signal_Scoring_Profile_Version": 1,
+        "Signal_After_Fee_Gate": {
+            "status": "QUALIFIED",
+            "minimum_score_out_of_40": 1.0,
+            "target_after_fee_win_rate_pct": 70.0,
+            "fees_applied": true,
+            "validation": evidence.clone(),
+            "holdout": evidence
+        },
         "timeframe": "4h",
         "Signal_Direction": "LONG",
         "Signal_Bar_Time": forming_bar,

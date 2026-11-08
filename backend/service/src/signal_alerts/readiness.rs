@@ -17,6 +17,9 @@ pub(crate) struct TimeframeReadiness {
     pub(crate) evaluated_count: usize,
     pub(crate) evaluated_model_count: usize,
     pub(crate) qualifying_signal_count: usize,
+    pub(crate) backtest_gate_blocked_count: usize,
+    pub(crate) backtest_profile_missing_count: usize,
+    pub(crate) backtest_score_below_cutoff_count: usize,
 }
 
 #[derive(Default, Serialize)]
@@ -74,6 +77,9 @@ fn merge_timeframe(timeframes: &mut Vec<TimeframeReadiness>, frame: TimeframeRea
         existing.evaluated_count = existing.evaluated_count.saturating_add(frame.evaluated_count);
         existing.evaluated_model_count = existing.evaluated_model_count.saturating_add(frame.evaluated_model_count);
         existing.qualifying_signal_count = existing.qualifying_signal_count.saturating_add(frame.qualifying_signal_count);
+        existing.backtest_gate_blocked_count = existing.backtest_gate_blocked_count.saturating_add(frame.backtest_gate_blocked_count);
+        existing.backtest_profile_missing_count = existing.backtest_profile_missing_count.saturating_add(frame.backtest_profile_missing_count);
+        existing.backtest_score_below_cutoff_count = existing.backtest_score_below_cutoff_count.saturating_add(frame.backtest_score_below_cutoff_count);
     } else {
         timeframes.push(frame);
     }

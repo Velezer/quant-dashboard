@@ -19,9 +19,10 @@ pub(super) fn append_nwe_dss_model_signals(
     current_price: Option<&CurrentPrice>,
     standalone_indicator_signals: &mut Vec<Value>,
     standalone_score_updates: &mut Vec<Value>,
-) {
+) -> Vec<ReadinessIssue> {
+    let mut blocked = Vec::new();
     let Some((source, provider)) = source_metadata else {
-        return;
+        return blocked;
     };
 
     for model in [quant_core::EntryModelKind::Nwe, quant_core::EntryModelKind::Dss] {
@@ -57,7 +58,7 @@ pub(super) fn append_nwe_dss_model_signals(
             let Some(strategy_id) = strategy_id else {
                 continue;
             };
-            append_stockbit_model_result(
+            if let Some(issue) = append_stockbit_model_result(
                 standalone_indicator_signals,
                 standalone_score_updates,
                 input,
@@ -70,7 +71,9 @@ pub(super) fn append_nwe_dss_model_signals(
                 provider,
                 indicator,
                 current_price,
-            );
+            ) {
+                blocked.push(issue);
+            }
         } else {
             let crypto_context = CryptoSignalContext {
                 input,
@@ -80,16 +83,19 @@ pub(super) fn append_nwe_dss_model_signals(
                 bars,
                 current_price,
             };
-            append_crypto_model_signal(
+            if let Some(issue) = append_crypto_model_signal(
                 &crypto_context,
                 model,
                 &signals,
                 strategy_id,
                 indicator,
                 standalone_indicator_signals,
-            );
+            ) {
+                blocked.push(issue);
+            }
         }
     }
+    blocked
 }
 
 fn append_crypto_model_signal(
@@ -99,26 +105,26 @@ fn append_crypto_model_signal(
     strategy_id: Option<String>,
     indicator: &str,
     candidates: &mut Vec<Value>,
-) {
+) -> Option<ReadinessIssue> {
     let Some(strategy_id) = strategy_id else {
-        return;
+        return None;
     };
     let Some((signal_index, signal)) = latest_crypto_signal_for_latest_bar(signals, context.bars)
     else {
-        return;
+        return None;
     };
     let Some(bar) = context
         .bars
         .get(signal_index)
         .filter(|bar| bar.close.is_finite() && bar.close > 0.0)
     else {
-        return;
+        return None;
     };
     let Some(current_price) = context
         .current_price
         .filter(|price| price.source == context.source)
     else {
-        return;
+        return None;
     };
 
     let profile = active_scoring_profile(
@@ -133,6 +139,38 @@ fn append_crypto_model_signal(
         indicator,
         profile,
     );
+    let score = four_factor_groups.map(|(_, _, total)| total);
+    let gate_required = context.input.active_scoring_profiles.is_some();
+    let eligible = !gate_required
+        || profile
+            .zip(score)
+            .is_some_and(|(profile, score)| score >= profile.minimum_score);
+    if !eligible {
+        let (reason, explanation) = match (profile, score) {
+            (None, _) => (
+                "after_fee_profile_missing",
+                "No active backtested score range passed the after-fee signal gate.",
+            ),
+            (Some(profile), Some(score)) if score < profile.minimum_score => (
+                "below_after_fee_score_cutoff",
+                "The live score is below this cohort's backtested after-fee score cutoff.",
+            ),
+            _ => (
+                "after_fee_score_unavailable",
+                "The current setup score could not be checked against after-fee backtest evidence.",
+            ),
+        };
+        return Some(ReadinessIssue {
+            symbol: context.input.asset.into(),
+            reason: reason.into(),
+            timeframe: context.timeframe.into(),
+            source: Some(context.source.into()),
+            data_provider: Some(context.provider.into()),
+            last_bar_time: Some(bar.time),
+            error: Some(explanation.into()),
+            ..ReadinessIssue::default()
+        });
+    }
     append_timeframe_signal_candidate(
         candidates,
         context.input,
@@ -147,7 +185,9 @@ fn append_crypto_model_signal(
         context.provider,
         score_components,
         four_factor_groups,
+        profile,
     );
+    None
 }
 
 fn latest_crypto_signal_for_latest_bar<'a>(

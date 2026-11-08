@@ -4,6 +4,24 @@ use serde_json::json;
 
 const HOUR_NANOSECONDS: i64 = 60 * 60 * 1_000_000_000;
 
+fn qualified_after_fee_gate() -> serde_json::Value {
+    let evidence = json!({
+        "trades": 100,
+        "win_rate_after_fees_pct": 90.0,
+        "win_rate_after_fees_wilson_95_lower_pct": 82.0,
+        "mean_net_return_pct": 1.0,
+        "profit_factor": 2.0
+    });
+    json!({
+        "status": "QUALIFIED",
+        "minimum_score_out_of_40": 1.0,
+        "target_after_fee_win_rate_pct": 70.0,
+        "fees_applied": true,
+        "validation": evidence.clone(),
+        "holdout": evidence
+    })
+}
+
 fn stockbit_4h_candidate(signal_bar_time: i64, price_bar_time: i64) -> serde_json::Value {
     json!({
         "Signal_Direction": "LONG",
@@ -155,6 +173,8 @@ fn screener_returns_only_completed_scores_with_fresh_strategy_bars() {
                             "component_score_scale_max": quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX,
                             "indicator_component_score_scale_max": quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
                             "score_model_status": "current",
+                            "profile_version": 1,
+                            "after_fee_gate": qualified_after_fee_gate(),
                             "status": "qualifying",
                             "score_bar_time": score_bar_time,
                             "score_bar_is_forming": false,

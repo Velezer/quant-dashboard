@@ -147,7 +147,20 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         "minimum_score_out_of_10"
     };
     let minimum_score = if four_indicator_score_model {
-        Some(quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40)
+        let gate = candidate.get("Signal_After_Fee_Gate");
+        if candidate
+            .get("Signal_Requires_After_Fee_Gate")
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
+            let gate = gate?;
+            if !crate::research_reports::signal_gate_is_qualified(gate) {
+                return None;
+            }
+        }
+        gate.and_then(|gate| gate.get("minimum_score_out_of_40"))
+            .and_then(Value::as_f64)
+            .or(Some(quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40))
     } else if is_crypto_nwe_dss_signal_score {
         Some(quant_core::NWE_DSS_SIGNAL_MINIMUM_SCORE_OUT_OF_20)
     } else {

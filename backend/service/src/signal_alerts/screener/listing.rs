@@ -271,6 +271,32 @@ fn score_basis_matches_indicator_filter(
     points >= minimum_score.unwrap_or(0.0).clamp(0.0, 10.0)
 }
 
+fn signal_passes_after_fee_setup_gate(
+    signal: &Value,
+    models: &std::collections::HashMap<&'static str, &'static str>,
+) -> bool {
+    let strategy_id = signal["signal_strategy_id"].as_str().unwrap_or_default();
+    let stored_model_id = signal["score_basis"]["model_id"].as_str().unwrap_or_default();
+    let current_model_id = models.get(strategy_id).copied().unwrap_or_default();
+    if !super::super::is_four_indicator_score_model(stored_model_id)
+        && !super::super::is_four_indicator_score_model(current_model_id)
+    {
+        return true;
+    }
+    let gate = &signal["score_basis"]["after_fee_gate"];
+    let minimum_score = gate["minimum_score_out_of_40"]
+        .as_f64()
+        .unwrap_or(f64::INFINITY);
+    let profile_version = signal["score_basis"]["profile_version"]
+        .as_i64()
+        .unwrap_or_default();
+    crate::research_reports::signal_gate_is_qualified(gate)
+        && profile_version > 0
+        && signal["score"]
+            .as_f64()
+            .is_some_and(|score| score >= minimum_score)
+}
+
 fn score_meets_render_minimum(
     strategy: String,
     score: f64,
@@ -468,6 +494,11 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             continue;
         }
         let mut signal = row_mapper(row)?;
+        if !is_stockbit_no_entry
+            && !signal_passes_after_fee_setup_gate(&signal, &score_model_by_strategy)
+        {
+            continue;
+        }
         let (is_current, is_stale_price, is_stale_score) = update_signal_market_entry_freshness(
             connection,
             &mut signal,
@@ -647,6 +678,9 @@ pub(crate) fn count_current_signal_screener_rows(
                 "data_source": row.get::<_, String>(12)?,
                 "current_price": row.get::<_, f64>(13)?,
             });
+            if !signal_passes_after_fee_setup_gate(&signal, &score_models) {
+                continue;
+            }
             let (is_current, _, _) = update_signal_market_entry_freshness(
                 &transaction,
                 &mut signal,

@@ -27,6 +27,7 @@ use serde_json::{json, Value};
 
 pub use entry_score::{
     evaluate_entry_score_backtest, ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
+    ENTRY_SCORE_CALIBRATION_BAND_COUNT, ENTRY_SCORE_CALIBRATION_BAND_WIDTH,
     ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
 };
 pub use nwe_dss::{evaluate_nwe_dss_exit_selection, NWE_DSS_EXIT_CANDIDATES_BARS};
