@@ -78,6 +78,10 @@ lesson only when it will improve future tasks.
   research page. Persist its ticker/timeframe cursor and status, share the lock
   with manual runs, yield to signal scans, and keep learned candidates separate
   from live weights unless a promotion rule is explicitly authorized.
+- When an authorized promotion path moves learned scoring weights into live
+  scans, persist immutable profile versions and pin one profile snapshot per
+  scan. Stamp signal output with that version so a promotion cannot mix scores
+  within a scan and prior results remain reproducible.
 - Mobile screener overrides must be checked after `signals-workspace-active`
   is applied: higher-specificity terminal rules can keep the header in one row,
   expand the layout viewport, and move a fixed app/timeframe dock off-screen.

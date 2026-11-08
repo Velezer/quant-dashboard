@@ -104,6 +104,7 @@ fn stockbit_nwe_can_emit_separate_qualifying_rows_for_every_supported_timeframe(
                 is_tokenized: false,
                 is_multibagger: false,
                 retained_stockbit_signal_rows: &std::collections::BTreeSet::new(),
+                active_scoring_profiles: None,
             },
             &mut Vec::new(),
             &mut Vec::new(),

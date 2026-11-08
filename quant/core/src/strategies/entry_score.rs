@@ -1,5 +1,6 @@
 use super::{
-    generate_stockbit_dss_bressert_4h_signals, score_four_indicators,
+    generate_stockbit_dss_bressert_4h_signals, score_four_indicators_with_weights,
+    FOUR_INDICATOR_EQUAL_WEIGHTS,
     stockbit_nwe_4h_minimum_history_bars, FourIndicatorScore, StrategyBar, StrategySignal,
     DSS_BRESSERT_MINIMUM_HISTORY_BARS, STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID,
     STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
@@ -34,6 +35,17 @@ pub fn score_entry_signal(
     signal: &StrategySignal,
     kind: EntryModelKind,
 ) -> Option<FourIndicatorScore> {
+    score_entry_signal_with_weights(bars, signal, kind, FOUR_INDICATOR_EQUAL_WEIGHTS)
+}
+
+/// Apply the selected live scoring profile to the causal indicator readings
+/// for a signal. Invalid profile weights fail closed to no score.
+pub fn score_entry_signal_with_weights(
+    bars: &[StrategyBar],
+    signal: &StrategySignal,
+    kind: EntryModelKind,
+    weights: [u8; 4],
+) -> Option<FourIndicatorScore> {
     let confluence = signal.confluence.as_ref();
     let (nwe_points, nwe_state, dss_points, dss_state) = match kind {
         EntryModelKind::Dss => (
@@ -49,8 +61,9 @@ pub fn score_entry_signal(
             confluence.map(|score| score.dss_state.as_str()).unwrap_or("UNAVAILABLE"),
         ),
     };
-    score_four_indicators(
+    score_four_indicators_with_weights(
         bars, &signal.direction, nwe_state, nwe_points, dss_state, dss_points,
+        weights,
     )
 }
 

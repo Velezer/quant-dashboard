@@ -1,7 +1,10 @@
 use super::common::StrategyBar;
 
 pub const FOUR_INDICATOR_SCORE_SCALE_MAX: f64 = 40.0;
-pub const FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX: f64 = 20.0;
+pub const FOUR_INDICATOR_EQUAL_WEIGHTS: [u8; 4] = [10; 4];
+/// A price or volume subtotal may receive the full score budget under a
+/// learned profile, so its valid range is the complete model scale.
+pub const FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX: f64 = FOUR_INDICATOR_SCORE_SCALE_MAX;
 pub const FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX: f64 = 10.0;
 pub const FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40: f64 =
     super::confirmations::NWE_DSS_SIGNAL_MINIMUM_SCORE_OUT_OF_20;
@@ -14,6 +17,8 @@ pub struct ScoreComponent {
     pub indicator: &'static str,
     pub state: String,
     pub points: f64,
+    pub weight_points: u8,
+    pub weighted_points: f64,
     pub value: Option<f64>,
 }
 
@@ -22,6 +27,7 @@ pub struct FourIndicatorScore {
     pub price_score: f64,
     pub volume_score: f64,
     pub total_score: f64,
+    pub weights: [u8; 4],
     pub components: [ScoreComponent; 4],
 }
 
@@ -36,8 +42,31 @@ pub fn score_four_indicators(
     dss_state: &str,
     dss_points_out_of_ten: f64,
 ) -> Option<FourIndicatorScore> {
+    score_four_indicators_with_weights(
+        bars,
+        direction,
+        nwe_state,
+        nwe_points_out_of_ten,
+        dss_state,
+        dss_points_out_of_ten,
+        FOUR_INDICATOR_EQUAL_WEIGHTS,
+    )
+}
+
+/// Score the same raw 0–10 indicator readings with a validated 40-point
+/// weight vector. Raw indicator points remain visible; weights affect only
+/// their contribution to the total score.
+pub fn score_four_indicators_with_weights(
+    bars: &[StrategyBar],
+    direction: &str,
+    nwe_state: &str,
+    nwe_points_out_of_ten: f64,
+    dss_state: &str,
+    dss_points_out_of_ten: f64,
+    weights: [u8; 4],
+) -> Option<FourIndicatorScore> {
     let bar = bars.last()?;
-    if !matches!(direction, "LONG" | "SHORT") {
+    if !matches!(direction, "LONG" | "SHORT") || !valid_four_indicator_weights(weights) {
         return None;
     }
     let direction_sign = if direction == "LONG" { 1.0 } else { -1.0 };
@@ -45,30 +74,45 @@ pub fn score_four_indicators(
     let dss_points = bounded_price_component(dss_points_out_of_ten);
     let volume = relative_volume_component(bars, bar, direction_sign);
     let delta = estimated_delta_component(bar, direction_sign);
-    let price_score = nwe_points + dss_points;
-    let volume_score = volume.points + delta.points;
+    let mut components = [
+        ScoreComponent {
+            indicator: "Nadaraya-Watson Envelope",
+            state: nwe_state.to_string(),
+            points: nwe_points,
+            weight_points: FOUR_INDICATOR_EQUAL_WEIGHTS[0],
+            weighted_points: nwe_points,
+            value: None,
+        },
+        ScoreComponent {
+            indicator: "DSS Bressert",
+            state: dss_state.to_string(),
+            points: dss_points,
+            weight_points: FOUR_INDICATOR_EQUAL_WEIGHTS[1],
+            weighted_points: dss_points,
+            value: None,
+        },
+        volume,
+        delta,
+    ];
+    for (component, weight) in components.iter_mut().zip(weights) {
+        component.weight_points = weight;
+        component.weighted_points = component.points * f64::from(weight) / 10.0;
+    }
+    let price_score = components[0].weighted_points + components[1].weighted_points;
+    let volume_score = components[2].weighted_points + components[3].weighted_points;
     let total_score = price_score + volume_score;
     Some(FourIndicatorScore {
         price_score,
         volume_score,
         total_score,
-        components: [
-            ScoreComponent {
-                indicator: "Nadaraya-Watson Envelope",
-                state: nwe_state.to_string(),
-                points: nwe_points,
-                value: None,
-            },
-            ScoreComponent {
-                indicator: "DSS Bressert",
-                state: dss_state.to_string(),
-                points: dss_points,
-                value: None,
-            },
-            volume,
-            delta,
-        ],
+        weights,
+        components,
     })
+}
+
+fn valid_four_indicator_weights(weights: [u8; 4]) -> bool {
+    weights.iter().all(|weight| weight % 5 == 0)
+        && weights.iter().map(|weight| u16::from(*weight)).sum::<u16>() == 40
 }
 
 fn bounded_price_component(value: f64) -> f64 {
@@ -88,6 +132,8 @@ fn relative_volume_component(
         indicator: "Relative Volume",
         state: "UNAVAILABLE".to_string(),
         points: 0.0,
+        weight_points: FOUR_INDICATOR_EQUAL_WEIGHTS[2],
+        weighted_points: 0.0,
         value: None,
     };
     if bars.len() <= FOUR_INDICATOR_VOLUME_LOOKBACK_BARS
@@ -135,6 +181,8 @@ fn relative_volume_component(
         indicator: "Relative Volume",
         state: state.to_string(),
         points,
+        weight_points: FOUR_INDICATOR_EQUAL_WEIGHTS[2],
+        weighted_points: points,
         value: Some(relative_volume),
     }
 }
@@ -144,6 +192,8 @@ fn estimated_delta_component(current: &StrategyBar, direction_sign: f64) -> Scor
         indicator: "Estimated Volume Delta (OHLCV proxy)",
         state: "UNAVAILABLE".to_string(),
         points: 0.0,
+        weight_points: FOUR_INDICATOR_EQUAL_WEIGHTS[3],
+        weighted_points: 0.0,
         value: None,
     };
     let range = current.high - current.low;
@@ -171,6 +221,8 @@ fn estimated_delta_component(current: &StrategyBar, direction_sign: f64) -> Scor
         indicator: "Estimated Volume Delta (OHLCV proxy)",
         state: state.to_string(),
         points: aligned_pressure.max(0.0) * FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
+        weight_points: FOUR_INDICATOR_EQUAL_WEIGHTS[3],
+        weighted_points: aligned_pressure.max(0.0) * FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
         value: Some(close_location),
     }
 }

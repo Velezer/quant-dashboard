@@ -214,7 +214,12 @@ export function signalIndicatorScores(signal, model) {
         const component = components.find(item => item?.indicator === indicator);
         const value = component?.points;
         const points = typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 10 ? value : null;
-        return { id, indicator, label, points, scale: 10, weight: 1 / SIGNAL_SCORE_INDICATORS.length,
+        const weightPoints = typeof component?.weight_points === 'number' && Number.isFinite(component.weight_points)
+            ? component.weight_points : 40 / SIGNAL_SCORE_INDICATORS.length;
+        const weightedPoints = typeof component?.weighted_points === 'number' && Number.isFinite(component.weighted_points)
+            ? component.weighted_points : points === null ? null : points * weightPoints / 10;
+        return { id, indicator, label, points, weightedPoints, scale: 10, weight: weightPoints / 40,
+            profileVersion: component?.scoring_profile_version ?? null,
             state: String(component?.state || 'UNAVAILABLE'), value: component?.value };
     });
 }
@@ -233,7 +238,7 @@ export function signalTotalStrength(signal, model) {
     if (!hasFourIndicatorScores(signal, model)) return null;
     const indicators = signalIndicatorScores(signal, model);
     const known = indicators.every(item => item.points !== null);
-    const total = known ? indicators.reduce((sum, item) => sum + item.points, 0) : null;
+    const total = known ? indicators.reduce((sum, item) => sum + (item.weightedPoints ?? item.points), 0) : null;
     const low = known && total < LOW_TOTAL_INDICATOR_POINTS;
     const label = !known ? 'Total strength unavailable' : low ? 'Low total strength' : `${LOW_TOTAL_INDICATOR_POINTS}+ combined points`;
     const retained = signalScoreState(signal)?.tone === 'stale';
@@ -241,13 +246,13 @@ export function signalTotalStrength(signal, model) {
         tone: !known ? 'unavailable' : low ? 'low' : 'standard',
         label: retained ? `Last recorded: ${label.toLowerCase()}` : label,
         description: !known ? 'All four numeric indicator contributions are needed to classify total strength.'
-            : `The four indicator scores add up to ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} points (before rounding).`,
+            : `The four indicator readings are each out of 10, then combined using the active weights to produce ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} weighted points.`,
     };
 }
 
 export function signalIndicatorSummary(signal, model) {
     return signalIndicatorScores(signal, model).map(item =>
-        `${item.label} ${item.points === null ? '—' : item.points.toFixed(1)}/10 (${scoreWeightLabel(item.weight)}${item.state.toUpperCase() === 'UNAVAILABLE' ? ', unavailable' : ''})`
+        `${item.label} ${item.points === null ? '—' : item.points.toFixed(1)}/10 (${scoreWeightLabel(item.weight)}, contributes ${item.weightedPoints === null ? '—' : item.weightedPoints.toFixed(1)}${item.state.toUpperCase() === 'UNAVAILABLE' ? ', unavailable' : ''})`
     ).join(' · ');
 }
 

@@ -20,6 +20,15 @@ pub(super) fn append_timeframe_signal_candidate(
     } else {
         "APP_NATIVE"
     };
+    let score_weights = score_components
+        .iter()
+        .map(|component| component.get("weight_points").cloned().unwrap_or(Value::Null))
+        .collect::<Vec<_>>();
+    let profile_version = score_components
+        .first()
+        .and_then(|component| component.get("scoring_profile_version"))
+        .cloned()
+        .unwrap_or(Value::Null);
     signals.push(serde_json::json!({
         "Exchange_ID": input.exchange_id,
         "Product_ID": input.product_id,
@@ -36,6 +45,8 @@ pub(super) fn append_timeframe_signal_candidate(
             serde_json::to_value(signal.confluence.as_ref()).unwrap_or(Value::Null)
         },
         "Signal_Scoring_Model_ID": score_model_id,
+        "Signal_Scoring_Weights": score_weights,
+        "Signal_Scoring_Profile_Version": profile_version,
         "Signal_Score_Components": score_components,
         "timeframe": timeframe,
         "Current_Price": current_price.value,
@@ -58,13 +69,17 @@ pub(super) fn four_indicator_score_outputs(
     bars: &[StrategyBar],
     signal: &quant_core::StrategySignal,
     lead_indicator: &str,
+    profile: Option<&crate::research_reports::ActiveScoringProfile>,
 ) -> (Vec<Value>, Option<(f64, f64, f64)>) {
     let kind = if lead_indicator == "DSS Bressert" {
         quant_core::EntryModelKind::Dss
     } else {
         quant_core::EntryModelKind::Nwe
     };
-    let Some(score) = quant_core::score_entry_signal(bars, signal, kind) else {
+    let weights = profile
+        .map(|profile| profile.weights)
+        .unwrap_or(quant_core::FOUR_INDICATOR_EQUAL_WEIGHTS);
+    let Some(score) = quant_core::score_entry_signal_with_weights(bars, signal, kind, weights) else {
         return (Vec::new(), None);
     };
     let groups = Some((score.price_score, score.volume_score, score.total_score));
@@ -76,11 +91,30 @@ pub(super) fn four_indicator_score_outputs(
                 "indicator": component.indicator,
                 "state": component.state,
                 "points": component.points,
+                "weight_points": component.weight_points,
+                "weighted_points": component.weighted_points,
                 "value": component.value,
+                "scoring_profile_version": profile.map(|profile| profile.version),
             })
         })
         .collect();
     (components, groups)
+}
+
+pub(super) fn active_scoring_profile<'a>(
+    input: &'a TimeframeScanInput<'_>,
+    score_model_id: &str,
+    timeframe: &str,
+    source: &str,
+) -> Option<&'a crate::research_reports::ActiveScoringProfile> {
+    let profiles = input.active_scoring_profiles?;
+    let key = (
+        score_model_id.to_string(),
+        input.category_id.to_string(),
+        timeframe.to_string(),
+        source.to_string(),
+    );
+    profiles.get(&key)
 }
 
 pub(super) fn append_stockbit_model_result(
@@ -109,15 +143,19 @@ pub(super) fn append_stockbit_model_result(
     let latest_signal = model_signals
         .last()
         .filter(|signal| matches!(signal.direction.as_str(), "LONG" | "SHORT"));
+    let profile = active_scoring_profile(input, score_model_id, timeframe, source);
     let (score_components, four_factor_groups) = latest_signal
-        .map(|signal| four_indicator_score_outputs(bars, signal, indicator))
+        .map(|signal| four_indicator_score_outputs(bars, signal, indicator, profile))
         .unwrap_or_else(|| {
+            let weights = profile.map(|profile| profile.weights)
+                .unwrap_or(quant_core::FOUR_INDICATOR_EQUAL_WEIGHTS);
+            let version = profile.map(|profile| profile.version);
             (
                 vec![
-                    serde_json::json!({"indicator": "Nadaraya-Watson Envelope", "state": "NO_QUALIFYING_SETUP", "points": 0.0}),
-                    serde_json::json!({"indicator": "DSS Bressert", "state": "NO_QUALIFYING_SETUP", "points": 0.0}),
-                    serde_json::json!({"indicator": "Relative Volume", "state": "UNAVAILABLE", "points": 0.0}),
-                    serde_json::json!({"indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "UNAVAILABLE", "points": 0.0}),
+                    serde_json::json!({"indicator": "Nadaraya-Watson Envelope", "state": "NO_QUALIFYING_SETUP", "points": 0.0,"weight_points":weights[0],"weighted_points":0.0,"scoring_profile_version":version}),
+                    serde_json::json!({"indicator": "DSS Bressert", "state": "NO_QUALIFYING_SETUP", "points": 0.0,"weight_points":weights[1],"weighted_points":0.0,"scoring_profile_version":version}),
+                    serde_json::json!({"indicator": "Relative Volume", "state": "UNAVAILABLE", "points": 0.0,"weight_points":weights[2],"weighted_points":0.0,"scoring_profile_version":version}),
+                    serde_json::json!({"indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "UNAVAILABLE", "points": 0.0,"weight_points":weights[3],"weighted_points":0.0,"scoring_profile_version":version}),
                 ],
                 Some((0.0, 0.0, 0.0)),
             )
@@ -139,6 +177,15 @@ pub(super) fn append_stockbit_model_result(
             four_factor_groups,
         );
     }
+    let score_weights = score_components
+        .iter()
+        .map(|component| component.get("weight_points").cloned().unwrap_or(Value::Null))
+        .collect::<Vec<_>>();
+    let profile_version = score_components
+        .first()
+        .and_then(|component| component.get("scoring_profile_version"))
+        .cloned()
+        .unwrap_or(Value::Null);
     let retained_score_row_exists = input.retained_stockbit_signal_rows.iter().any(
         |(retained_strategy_id, retained_timeframe)| {
             retained_strategy_id == strategy_id && retained_timeframe == timeframe
@@ -155,6 +202,8 @@ pub(super) fn append_stockbit_model_result(
             "Signal_Strategy_ID": strategy_id,
             "Signal_Strategy_Name": strategy_id,
             "Signal_Scoring_Model_ID": score_model_id,
+            "Signal_Scoring_Weights": score_weights,
+            "Signal_Scoring_Profile_Version": profile_version,
             "timeframe": timeframe,
             "Signal_Direction": latest_signal.map(|signal| signal.direction.as_str()),
             "Signal_Bar_Time": latest_signal.map(|_| score_bar.time),

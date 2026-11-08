@@ -58,6 +58,7 @@ fn run_frame_scan(connection: &Connection) -> (Vec<Value>, Vec<Value>) {
             is_tokenized: false,
             is_multibagger: false,
             retained_stockbit_signal_rows: &std::collections::BTreeSet::new(),
+            active_scoring_profiles: None,
         },
         &mut running,
         &mut potential,
@@ -97,6 +98,7 @@ fn fresh_screener_price_uses_the_latest_completed_15m_bar_without_watchlist_rows
         is_tokenized: false,
         is_multibagger: false,
         retained_stockbit_signal_rows: &retained_stockbit_signal_rows,
+        active_scoring_profiles: None,
     };
     let current_price =
         fresh_current_price(&input, None, now_ns).expect("fresh 15m data should provide a price");

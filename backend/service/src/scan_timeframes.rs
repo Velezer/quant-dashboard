@@ -30,6 +30,8 @@ pub(super) struct TimeframeScanInput<'a> {
     pub(super) is_tokenized: bool,
     pub(super) is_multibagger: bool,
     pub(super) retained_stockbit_signal_rows: &'a std::collections::BTreeSet<(String, String)>,
+    pub(super) active_scoring_profiles:
+        Option<&'a crate::research_reports::ActiveScoringProfiles>,
 }
 
 #[cfg(test)]
@@ -593,7 +595,8 @@ fn pintu_golden_cross_context_timeframe(timeframe: &str) -> &str {
 #[path = "scan_timeframes/score_rows.rs"]
 mod score_rows;
 use score_rows::{
-    append_stockbit_model_result, append_timeframe_signal_candidate, four_indicator_score_outputs,
+    active_scoring_profile, append_stockbit_model_result, append_timeframe_signal_candidate,
+    four_indicator_score_outputs,
 };
 
 pub(super) fn append_timeframe_to_plan_id(plan: &mut Value, timeframe: &str) {

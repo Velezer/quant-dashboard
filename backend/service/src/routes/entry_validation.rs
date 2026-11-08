@@ -27,7 +27,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(),RequestContex
         if method != "GET" { api_error(stream,"405 Method Not Allowed","Use GET to read daily backtest status."); return Ok(()) }
         let connection = match open_db_minimal(db) {Ok(value)=>value,Err(error)=>{api_error(stream,"500 Internal Server Error",error);return Ok(())}};
         match entry_validation_daily_status(&connection) {
-            Ok(status) => respond(stream,crate::wire::encode(&json!({"daily_refresh":status})).unwrap_or_default(),"200 OK"),
+            Ok(status) => respond(stream,crate::wire::encode(&status).unwrap_or_default(),"200 OK"),
             Err(error) => api_error(stream,"500 Internal Server Error",error),
         }
         return Ok(())

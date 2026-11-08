@@ -256,7 +256,7 @@ fn catalog_free_crypto_timeframe_models_use_the_forty_point_scale() {
         row["minimum_score_out_of_40"],
         quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
     );
-    assert_eq!(row["component_score_scale_max"], 20.0);
+    assert_eq!(row["component_score_scale_max"], 40.0);
     assert_eq!(row["timeframe"], "15m");
 
     let mut dss_candidate = candidate.clone();

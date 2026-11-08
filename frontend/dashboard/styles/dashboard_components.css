@@ -759,6 +759,7 @@
 .signal-kpi span { color: #6b7280; font-size: 9px; }
 
 .signal-indicator-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.35rem; margin-top:.4rem; }
+.signal-scoring-profile { display:block; margin-top:.25rem; color:#91a9c2; font:500 .58rem/1.4 ui-monospace,monospace; }
 .signal-indicator-score { display:grid; grid-template-columns:1fr auto; gap:.2rem .35rem; padding:.4rem; border:1px solid #334155; border-radius:.4rem; background:#0b1826; font-size:10px; color:#cbd5e1; }
 .signal-indicator-score strong { color:#67e8f9; font:600 12px ui-monospace,monospace; white-space:nowrap; }
 .signal-indicator-score small { color:#94a3b8; font-size:9px; }

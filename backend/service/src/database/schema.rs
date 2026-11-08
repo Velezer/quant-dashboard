@@ -56,6 +56,32 @@ CREATE TABLE IF NOT EXISTS app.entry_model_validation_daily_refresh (
 );
 INSERT OR IGNORE INTO app.entry_model_validation_daily_refresh(id,status)
     VALUES(1,'idle');
+CREATE TABLE IF NOT EXISTS app.entry_model_scoring_profiles (
+    profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    score_model_id TEXT NOT NULL,
+    asset_category_id TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    source_family TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('active','superseded')),
+    weights_json TEXT NOT NULL,
+    protocol_id TEXT NOT NULL,
+    evaluation_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(score_model_id,asset_category_id,timeframe,source_family,version)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS app.idx_entry_scoring_one_active_profile
+    ON entry_model_scoring_profiles(score_model_id,asset_category_id,timeframe,source_family)
+    WHERE status='active';
+CREATE TABLE IF NOT EXISTS app.entry_model_scoring_evaluations (
+    score_model_id TEXT NOT NULL,
+    asset_category_id TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    source_family TEXT NOT NULL,
+    evaluated_at INTEGER NOT NULL,
+    evaluation_json TEXT NOT NULL,
+    PRIMARY KEY(score_model_id,asset_category_id,timeframe,source_family)
+);
 CREATE TABLE IF NOT EXISTS app.saved_reward_risk_rule (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     risk_pct REAL NOT NULL, reward_pct REAL NOT NULL, win_rate_pct REAL NOT NULL,

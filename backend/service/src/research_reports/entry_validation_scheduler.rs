@@ -228,12 +228,24 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
     let next_due_at = cycle_started_at.saturating_add(DAILY_REFRESH_INTERVAL_SECONDS as i64);
     store::finish_daily_refresh(&connection, completed_at, next_due_at)
         .map_err(|error| error.to_string())?;
+    let refresh_summary = store::daily_refresh_state(&connection)
+        .map_err(|error| error.to_string())?;
+    match super::evaluate_daily_scoring_profiles(
+        &connection,
+        cycle_started_at,
+        completed_at,
+        refresh_summary.failed_pairs,
+    ) {
+        Ok(evaluated) => eprintln!(
+            "[EntryValidation] Evaluated {evaluated} shared live-scoring cohorts against the 70% after-fee target."
+        ),
+        Err(error) => eprintln!(
+            "[EntryValidation] Live-scoring profile evaluation failed; existing active weights remain unchanged: {error}"
+        ),
+    }
     eprintln!(
         "[EntryValidation] Daily refresh complete: {} reports processed, {} failed.",
-        targets.len(),
-        store::daily_refresh_state(&connection)
-            .map_err(|error| error.to_string())?
-            .failed_pairs
+        targets.len(), refresh_summary.failed_pairs
     );
     Ok(next_due_at.saturating_sub(completed_at).max(1) as u64)
 }

@@ -11,6 +11,7 @@ const SCORE_WEIGHT_BUDGET: u8 = 40;
 const SCORE_WEIGHT_STEP: u8 = 5;
 const SCORE_WEIGHT_SCALE: f64 = 10.0;
 const MIN_WEIGHT_FIT_TRADES: usize = 30;
+pub const ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT: f64 = 70.0;
 const MIN_HOUR_SELECTION_TRADES: usize = crate::MIN_EVIDENCE_SAMPLE_TRADES;
 const WEIGHT_FIT_EXIT_BARS: usize = 8;
 const BASELINE_WEIGHTS: [u8; 4] = [10; 4];
@@ -22,7 +23,7 @@ const FACTOR_NAMES: [&str; 4] = [
     "Relative Volume",
     "Estimated Volume Delta (OHLCV proxy)",
 ];
-pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str = "entry_four_factor_weight_fit_holdout_v3";
+pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str = "entry_four_factor_weight_fit_after_fee_target_70_v4";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {
@@ -204,18 +205,31 @@ fn fit_weights(
             ..policy
         };
         let summary = evaluate_window(bars, observations, start, end, candidate_policy).overall;
-        let Some(mean) = summary.mean_net() else {
-            continue;
-        };
         if summary.trades < MIN_WEIGHT_FIT_TRADES {
             continue;
         }
         eligible_candidates += 1;
-        let replace = selected_summary.mean_net().is_none_or(|best| {
-            mean > best + f64::EPSILON
-                || ((mean - best).abs() <= f64::EPSILON
-                    && weight_distance_from_baseline(weights)
-                        < weight_distance_from_baseline(selected.unwrap_or(BASELINE_WEIGHTS)))
+        let win_rate = summary.wins as f64 / summary.trades as f64 * 100.0;
+        if win_rate + f64::EPSILON < ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT {
+            continue;
+        }
+        let lower_bound = wilson_interval(summary.wins, summary.trades)
+            .map(|interval| interval[0])
+            .unwrap_or_default();
+        let mean = summary.mean_net().unwrap_or_default();
+        let best_lower_bound = wilson_interval(selected_summary.wins, selected_summary.trades)
+            .map(|interval| interval[0]);
+        let best_mean = selected_summary.mean_net();
+        let replace = best_lower_bound.is_none_or(|best| {
+            lower_bound > best + f64::EPSILON
+                || ((lower_bound - best).abs() <= f64::EPSILON
+                    && (best_mean.is_none_or(|best_mean| mean > best_mean + f64::EPSILON)
+                        || (best_mean.is_some_and(|best_mean| {
+                            (mean - best_mean).abs() <= f64::EPSILON
+                        }) && weight_distance_from_baseline(weights)
+                            < weight_distance_from_baseline(
+                                selected.unwrap_or(BASELINE_WEIGHTS),
+                            ))))
         });
         if replace {
             selected = Some(weights);
@@ -727,6 +741,18 @@ pub fn evaluate_entry_score_backtest(
             )
         })
         .unwrap_or_default();
+    let learned_validation = learned_selection
+        .as_ref()
+        .map(|selection| selection.validation.overall)
+        .unwrap_or_default();
+    let after_fee_target_met = |summary: TradeSummary| {
+        fees_known
+            && summary.trades >= MIN_WEIGHT_FIT_TRADES
+            && summary.wins as f64 / summary.trades as f64 * 100.0
+                >= ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT
+            && wilson_interval(summary.wins, summary.trades)
+                .is_some_and(|interval| interval[0] >= ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT)
+    };
     let weight_learning_status = if invalid {
         "INVALID_HISTORY"
     } else if bars.len() < minimum_history {
@@ -734,7 +760,11 @@ pub fn evaluate_entry_score_backtest(
     } else if !fees_known {
         "FEES_UNKNOWN"
     } else if selected_weights.is_none() {
-        "INSUFFICIENT_TRAINING_SAMPLE"
+        if eligible_weight_candidates > 0 {
+            "AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED"
+        } else {
+            "INSUFFICIENT_TRAINING_SAMPLE"
+        }
     } else if learned_selection
         .as_ref()
         .is_some_and(|selection| selection.selected_policy.is_none())
@@ -748,6 +778,7 @@ pub fn evaluate_entry_score_backtest(
         "INSUFFICIENT_HISTORY" => "The strategy warm-up is incomplete; no candidate weights were fitted.",
         "FEES_UNKNOWN" => "Weight fitting requires known transaction fees; the equal-weight gross-only backtest remains available.",
         "INSUFFICIENT_TRAINING_SAMPLE" => "No candidate weight vector produced the minimum 30 non-overlapping training outcomes at the existing score floor.",
+        "AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED" => "Training candidates had enough outcomes, but none reached the 70% after-fee win-rate target; live weights stay at the active validated profile.",
         "NO_VALIDATION_EXIT" => "Weights were selected on training data, but no exit candidate met the minimum validation sample.",
         _ => "A training-only weight candidate and validation-selected exit are available for untouched holdout comparison.",
     };
@@ -781,7 +812,10 @@ pub fn evaluate_entry_score_backtest(
         "eligible_candidate_count": eligible_weight_candidates,
         "minimum_training_trades": MIN_WEIGHT_FIT_TRADES,
         "training_exit_bars": WEIGHT_FIT_EXIT_BARS,
-        "selection_metric": "Highest mean return after configured transaction fees over non-overlapping training outcomes; equal-weight proximity breaks ties.",
+        "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
+        "selection_metric": "Among candidates with at least 30 non-overlapping training outcomes and at least 70% wins after configured transaction fees, maximize the Wilson 95% lower bound for after-fee win rate; tie-break by mean net return, then proximity to equal weights.",
+        "validation_after_fee_target_met": after_fee_target_met(learned_validation),
+        "holdout_after_fee_target_met": after_fee_target_met(learned_holdout.overall),
         "selected_weights": selected_weights,
         "weighted_score_autocorrelation": selected_weights.map(|weights|
             weighted_score_autocorrelation(&observations, warmup_end, train_end, weights)),
@@ -833,6 +867,7 @@ pub fn evaluate_entry_score_backtest(
         "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
         "minimum_holdout_days": crate::MIN_EVIDENCE_SAMPLE_DAYS,
         "fees_known": fees_known,
+        "weight_promotion_target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
         "selection_metric": "Equal-weight baseline exit: highest validation mean return; ties favor the shorter maximum hold, then fixed timeout. Fee-unknown results are gross only.",
         "entry_rule": "Completed-bar live lead model; enter next bar open; no overlapping trades or trades crossing split boundaries.",
         "exit_rule": "Validation compares fixed bar-close timeouts with a close on the first opposite-direction entry signal that qualifies under the tested weights and existing score floor, capped by the same maximum hold. Each selected policy is evaluated once on the untouched holdout.",
