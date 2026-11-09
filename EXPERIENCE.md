@@ -103,9 +103,9 @@ lesson only when it will improve future tasks.
   filters on signal creation, screener listing, or notification counts. Show
   validation/holdout percentages and explain when a cohort has no promoted
   profile.
-- Mobile screener overrides must be checked after `signals-workspace-active`
-  is applied: higher-specificity terminal rules can keep the header in one row,
-  expand the layout viewport, and move a fixed app/timeframe dock off-screen.
-  Verify no horizontal document overflow at 320px and 390px, exercise both
-  filter rows and disclosures, and inspect the selected-chart state as well as
-  the empty/loading view.
+- Mobile screener filters must not sit fixed over signal rows or readiness
+  recovery actions. Keep a collapsed, keyboard-accessible summary of the active
+  app/product/timeframe; expand the controls in document flow and keep the
+  selection visible after closing. Verify app, product, and timeframe changes,
+  Escape handling, no horizontal overflow at 320px and 390px, and the selected
+  chart as well as empty/loading states after workspace CSS is applied.

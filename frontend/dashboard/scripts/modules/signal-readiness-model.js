@@ -33,6 +33,7 @@ function latestAfterFeeMetric(liveScoring, app, product, timeframe) {
         label: 'Latest after-fee holdout',
         value: `${rate.toFixed(1)}% after fees · ${rate >= target ? 'met' : 'below'} ${target.toFixed(0)}%${Number.isFinite(trades) ? ` · ${Math.trunc(trades)} trades` : ''}`,
         detail: `${Number.isFinite(lowerBound) ? `95% lower bound ${lowerBound.toFixed(1)}%. ` : ''}${scope.asset_category_id || 'All assets'} · ${String(scope.timeframe || '').toUpperCase()}`,
+        highlight: true,
     };
 }
 

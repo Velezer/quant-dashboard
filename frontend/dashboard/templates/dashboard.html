@@ -538,6 +538,12 @@
                 </div>
 
                 <div id="mobile-quick-filters" class="mobile-quick-filters">
+                    <button id="mobileQuickFilterToggle" class="mobile-quick-filter-toggle" type="button" aria-expanded="false" aria-controls="mobile-quick-filter-sheet" aria-label="Open app, product, and timeframe filters">
+                        <span class="mobile-filter-toggle-label">FILTERS</span>
+                        <span id="mobileQuickFilterSummary">Stockbit · All · All timeframes</span>
+                        <span class="mobile-filter-toggle-icon" aria-hidden="true">⌃</span>
+                    </button>
+                    <div id="mobile-quick-filter-sheet" class="mobile-quick-filter-sheet">
                     <div id="watchlist-exchange-filter" class="flex items-center gap-1.5 text-xs flex-wrap pt-1 border-t border-gray-800/60" role="group" aria-label="Choose app">
                         <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">App</span>
                         <button type="button" class="exchange-btn active px-2.5 py-1 rounded bg-gray-800 text-white font-medium border border-gray-700" data-exchange="stockbit" aria-pressed="true">📈 Stockbit</button>
@@ -559,6 +565,7 @@
                     </div>
                     <div id="screenerTimeframeButtons" class="flex flex-wrap items-center gap-1.5 border-t border-gray-800/60 pt-2" role="group" aria-label="Filter by signal timeframe" aria-live="polite">
                         <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Timeframe</span>
+                    </div>
                     </div>
                 </div>
                 <div id="signalSearch" class="signal-search-panel" role="search" aria-label="Search screener signals">
@@ -630,10 +637,11 @@
                     <p id="appSignalReadinessScope" class="signal-readiness-scope">Selected app · product · timeframe</p>
                     <h3 id="appSignalReadinessTitle">Checking why signals are unavailable…</h3>
                     <p id="appSignalReadinessStatus" role="status" aria-live="polite">Loading app data checks…</p>
-                    <dl id="appSignalReadinessMetrics" class="signal-readiness-metrics" hidden></dl>
+                    <dl id="appSignalReadinessHighlights" class="signal-readiness-highlights" hidden></dl>
                     <p id="appSignalReadinessNextStep" class="signal-readiness-next"></p>
                     <details id="appSignalReadinessDetails" hidden>
-                        <summary>View data checks and observed errors</summary>
+                        <summary>View scan metrics, data checks and observed errors</summary>
+                        <dl id="appSignalReadinessMetrics" class="signal-readiness-metrics" hidden></dl>
                         <p id="appSignalReadinessCheckedAt"></p>
                         <ul id="appSignalReadinessExamples"></ul>
                     </details>
