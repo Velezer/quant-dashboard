@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS app.entry_model_validation_daily_refresh (
     resume_timeframe TEXT NOT NULL DEFAULT '',
     last_failure_label TEXT NOT NULL DEFAULT '',
     last_error TEXT NOT NULL DEFAULT '',
+    protocol_id TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL DEFAULT 0
 );
 INSERT OR IGNORE INTO app.entry_model_validation_daily_refresh(id,status)
