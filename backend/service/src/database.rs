@@ -72,12 +72,34 @@ pub(super) fn initialize_app_runtime_storage_schema(
 ) -> Result<(), rusqlite::Error> {
     signal_alerts::reject_legacy_screener_tables(connection)?;
     connection.execute_batch(APP_RUNTIME_SCHEMA)?;
+    ensure_entry_validation_protocol_column(connection)?;
     connections::initialize_market_app_schema(connection)?;
     master_data::initialize_schema(connection)?;
     instrument_registry::initialize_schema(connection)?;
     foreign_flow::initialize_schema(connection)?;
     signal_alerts::initialize_schema(connection)?;
     pine_registry::initialize_schema(connection)
+}
+
+fn ensure_entry_validation_protocol_column(
+    connection: &Connection,
+) -> Result<(), rusqlite::Error> {
+    let has_protocol_column = {
+        let mut statement =
+            connection.prepare("PRAGMA app.table_info(entry_model_validation_daily_refresh)")?;
+        let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+        columns
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "protocol_id")
+    };
+    if !has_protocol_column {
+        connection.execute_batch(
+            "ALTER TABLE app.entry_model_validation_daily_refresh
+             ADD COLUMN protocol_id TEXT NOT NULL DEFAULT ''",
+        )?;
+    }
+    Ok(())
 }
 
 pub(super) fn initialize_empty_market_schema(

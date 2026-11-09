@@ -165,6 +165,7 @@ pub(super) struct DailyRefreshState {
     pub(super) resume_timeframe: String,
     pub(super) last_failure_label: String,
     pub(super) last_error: String,
+    pub(super) protocol_id: String,
 }
 
 pub(super) fn daily_refresh_state(
@@ -173,7 +174,8 @@ pub(super) fn daily_refresh_state(
     conn.query_row(
         "SELECT status,cycle_started_at,cycle_completed_at,next_due_at,total_pairs,
                 completed_pairs,failed_pairs,cursor,current_instrument_id,current_timeframe,
-                current_label,resume_instrument_id,resume_timeframe,last_failure_label,last_error
+                current_label,resume_instrument_id,resume_timeframe,last_failure_label,last_error,
+                protocol_id
            FROM app.entry_model_validation_daily_refresh WHERE id=1",
         [],
         |row| Ok(DailyRefreshState {
@@ -184,7 +186,7 @@ pub(super) fn daily_refresh_state(
             current_instrument_id: row.get(8)?, current_timeframe: row.get(9)?,
             current_label: row.get(10)?, resume_instrument_id: row.get(11)?,
             resume_timeframe: row.get(12)?, last_failure_label: row.get(13)?,
-            last_error: row.get(14)?,
+            last_error: row.get(14)?, protocol_id: row.get(15)?,
         }),
     )
 }
@@ -209,6 +211,7 @@ pub(super) fn daily_refresh_status(conn: &Connection) -> Result<Value, rusqlite:
         },
         "current":current,"last_failure_label":state.last_failure_label,
         "last_error":state.last_error,
+        "protocol_id":state.protocol_id,
     }))
 }
 
@@ -217,15 +220,16 @@ pub(super) fn start_daily_refresh(
     started_at: i64,
     total_pairs: usize,
     next_due_at: i64,
+    protocol_id: &str,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
         "UPDATE app.entry_model_validation_daily_refresh SET status='running',
          cycle_started_at=?1,next_due_at=?2,total_pairs=?3,
          completed_pairs=0,failed_pairs=0,cursor=0,current_instrument_id='',
          current_timeframe='',current_label='',resume_instrument_id='',resume_timeframe='',
-         last_failure_label='',last_error='',updated_at=?1
+         last_failure_label='',last_error='',protocol_id=?4,updated_at=?1
          WHERE id=1",
-        params![started_at, next_due_at, total_pairs as i64],
+        params![started_at, next_due_at, total_pairs as i64, protocol_id],
     )?;
     Ok(())
 }

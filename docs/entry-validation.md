@@ -22,8 +22,10 @@ cycle status, progress, last completion, next due time, and the latest
 failure. The live progress bar refreshes every 15 seconds and shows processed
 pairs and failed attempts. A waiting state means the worker yielded to a signal
 scan or manual backtest; it resumes automatically. SQLite busy/locked errors
-are retried in place before a pair is recorded as failed. If a cycle takes more
-than 24 hours, the next one starts as soon as the current one finishes.
+are retried in place before a pair is recorded as failed. A protocol change
+restarts the cycle from the first pair so a profile evaluation never mixes
+reports from different backtest rules. If a cycle takes more than 24 hours, the
+next one starts as soon as the current one finishes.
 
 This refresh updates the saved research reports and their training-selected
 candidate weights. It uses stored matching candles and never fetches provider

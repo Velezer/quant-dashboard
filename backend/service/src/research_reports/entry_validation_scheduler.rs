@@ -112,12 +112,17 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
     let connection = open_db_minimal(&state.market_database).map_err(|error| error.to_string())?;
     let now = now_secs().min(i64::MAX as u64) as i64;
     let persisted = store::daily_refresh_state(&connection).map_err(|error| error.to_string())?;
+    let protocol_changed = persisted.protocol_id != PROTOCOL_ID;
     let unfinished = persisted.cycle_started_at > persisted.cycle_completed_at
         && !matches!(persisted.status.as_str(), "idle" | "complete" | "complete_with_errors");
-    if unfinished && persisted.status == "error" && persisted.next_due_at > now {
+    if unfinished
+        && !protocol_changed
+        && persisted.status == "error"
+        && persisted.next_due_at > now
+    {
         return Ok((persisted.next_due_at - now) as u64);
     }
-    if !unfinished && persisted.next_due_at > now {
+    if !unfinished && !protocol_changed && persisted.next_due_at > now {
         return Ok((persisted.next_due_at - now) as u64);
     }
 
@@ -136,7 +141,7 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
         }
     };
 
-    let (cycle_started_at, cursor) = if unfinished {
+    let (cycle_started_at, cursor) = if unfinished && !protocol_changed {
         let resume_instrument_id = if persisted.resume_instrument_id.is_empty() {
             &persisted.current_instrument_id
         } else {
@@ -171,7 +176,14 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
         )
     } else {
         let next_due_at = now.saturating_add(DAILY_REFRESH_INTERVAL_SECONDS as i64);
-        store::start_daily_refresh(&connection, now, targets.len(), next_due_at)
+        if protocol_changed && persisted.cycle_started_at > 0 {
+            eprintln!(
+                "[EntryValidation] Backtest protocol changed from {} to {}; restarting the daily refresh from the first eligible pair.",
+                persisted.protocol_id,
+                PROTOCOL_ID
+            );
+        }
+        store::start_daily_refresh(&connection, now, targets.len(), next_due_at, PROTOCOL_ID)
             .map_err(|error| error.to_string())?;
         (now, 0)
     };
