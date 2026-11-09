@@ -7,6 +7,24 @@ use super::{
 use rusqlite::Connection;
 use serde_json::json;
 
+fn qualified_after_fee_gate(minimum_score: f64) -> serde_json::Value {
+    let evidence = json!({
+        "trades": 100,
+        "win_rate_after_fees_pct": 90.0,
+        "win_rate_after_fees_wilson_95_lower_pct": 82.0,
+        "mean_net_return_pct": 1.0,
+        "profit_factor": 2.0
+    });
+    json!({
+        "status": "QUALIFIED",
+        "minimum_score_out_of_40": minimum_score,
+        "target_after_fee_win_rate_pct": 70.0,
+        "fees_applied": true,
+        "validation": evidence.clone(),
+        "holdout": evidence
+    })
+}
+
 fn stockbit_candidate(price_bar_time: i64) -> serde_json::Value {
     json!({
         "Signal_Direction": "LONG",
@@ -36,6 +54,7 @@ fn stockbit_candidate(price_bar_time: i64) -> serde_json::Value {
 }
 
 fn stockbit_nwe_candidate(price_bar_time: i64, score: f64) -> serde_json::Value {
+    let after_fee_gate = qualified_after_fee_gate(1.0);
     let nwe_points = score.clamp(0.0, 10.0);
     let dss_points = (score - 10.0).clamp(0.0, 10.0);
     let volume_points = (score - 20.0).clamp(0.0, 10.0);
@@ -58,6 +77,8 @@ fn stockbit_nwe_candidate(price_bar_time: i64, score: f64) -> serde_json::Value 
         "Strategy_Strength": price_score,
         "Signal_Confluence_Score": volume_score,
         "Signal_Scoring_Model_ID": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
+        "Signal_Scoring_Profile_Version": 1,
+        "Signal_After_Fee_Gate": after_fee_gate,
         "Signal_Score_Components": [
             { "indicator": "Nadaraya-Watson Envelope", "state": "NWE_SCORE", "points": nwe_points },
             { "indicator": "DSS Bressert", "state": "DSS_SCORE", "points": dss_points },
@@ -73,6 +94,7 @@ fn crypto_nwe_candidate(
     nwe_points: f64,
     dss_points: f64,
 ) -> serde_json::Value {
+    let after_fee_gate = qualified_after_fee_gate(1.0);
     let nwe_component = nwe_points;
     let dss_component = dss_points;
     let price_score = nwe_component + dss_component;
@@ -93,6 +115,8 @@ fn crypto_nwe_candidate(
         "Strategy_Strength": price_score,
         "Signal_Confluence_Score": 0.0,
         "Signal_Scoring_Model_ID": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
+        "Signal_Scoring_Profile_Version": 1,
+        "Signal_After_Fee_Gate": after_fee_gate,
         "Signal_Score_Components": [
             { "indicator": "Nadaraya-Watson Envelope", "state": "NWE_SCORE", "points": nwe_component },
             { "indicator": "DSS Bressert", "state": "DSS_SCORE", "points": dss_component },

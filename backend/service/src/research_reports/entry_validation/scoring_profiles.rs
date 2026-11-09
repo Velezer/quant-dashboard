@@ -7,6 +7,7 @@ const MIN_PROFILE_TRADES: usize = 30;
 const MIN_COHORT_COVERAGE_PCT: f64 = 80.0;
 const TARGET_AFTER_FEE_WIN_RATE_PCT: f64 =
     quant_core::ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT;
+const SCORE_BAND_COUNT: usize = quant_core::ENTRY_SCORE_CALIBRATION_BAND_COUNT;
 
 pub(crate) type ScoringProfileKey = (String, String, String, String);
 pub(crate) type ActiveScoringProfiles = BTreeMap<ScoringProfileKey, ActiveScoringProfile>;
@@ -15,6 +16,8 @@ pub(crate) type ActiveScoringProfiles = BTreeMap<ScoringProfileKey, ActiveScorin
 pub(crate) struct ActiveScoringProfile {
     pub(crate) version: i64,
     pub(crate) weights: [u8; 4],
+    pub(crate) minimum_score: f64,
+    pub(crate) after_fee_gate: Value,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -41,6 +44,8 @@ struct CandidateEvidence {
     baseline_holdout: MetricTotals,
     minimum_history_days: i64,
     minimum_holdout_days: i64,
+    validation_score_bands: [MetricTotals; SCORE_BAND_COUNT],
+    holdout_score_bands: [MetricTotals; SCORE_BAND_COUNT],
     product_slices: BTreeMap<(String, String), CandidateSlice>,
 }
 
@@ -53,6 +58,8 @@ struct CandidateSlice {
     baseline_holdout: MetricTotals,
     minimum_history_days: i64,
     minimum_holdout_days: i64,
+    validation_score_bands: [MetricTotals; SCORE_BAND_COUNT],
+    holdout_score_bands: [MetricTotals; SCORE_BAND_COUNT],
 }
 
 #[derive(Default, Clone, Copy)]
@@ -135,6 +142,21 @@ impl MetricTotals {
                 .is_some_and(|lower| lower >= TARGET_AFTER_FEE_WIN_RATE_PCT)
     }
 
+    fn signal_potential_passes(self) -> bool {
+        self.target_passes()
+            && self.mean_net().is_some_and(|mean| mean > 0.0)
+            && self.profit_factor().is_some_and(|factor| factor > 1.0)
+    }
+
+    fn merge(&mut self, incoming: Self) {
+        self.trades = self.trades.saturating_add(incoming.trades);
+        self.wins = self.wins.saturating_add(incoming.wins);
+        self.losses = self.losses.saturating_add(incoming.losses);
+        self.net_sum_pct += incoming.net_sum_pct;
+        self.positive_sum_pct += incoming.positive_sum_pct;
+        self.negative_sum_pct += incoming.negative_sum_pct;
+    }
+
     fn as_json(self) -> Value {
         json!({
             "trades": self.trades,
@@ -146,6 +168,34 @@ impl MetricTotals {
             "profit_factor": self.profit_factor(),
         })
     }
+}
+
+fn add_score_bands(target: &mut [MetricTotals; SCORE_BAND_COUNT], encoded: &Value) {
+    let Some(bands) = encoded.as_array().filter(|bands| bands.len() == SCORE_BAND_COUNT) else {
+        return;
+    };
+    for (summary, band) in target.iter_mut().zip(bands) {
+        summary.add_json(band);
+    }
+}
+
+fn cumulative_score_bands(
+    bands: &[MetricTotals; SCORE_BAND_COUNT],
+    minimum_band: usize,
+) -> MetricTotals {
+    bands
+        .iter()
+        .skip(minimum_band)
+        .copied()
+        .fold(MetricTotals::default(), |mut total, band| {
+            total.merge(band);
+            total
+        })
+}
+
+fn score_floor_for_band(band: usize) -> f64 {
+    (band as f64 * quant_core::ENTRY_SCORE_CALIBRATION_BAND_WIDTH)
+        .max(quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40)
 }
 
 fn value_text<'a>(value: &'a Value, key: &str) -> &'a str {
@@ -192,6 +242,18 @@ fn add_candidate_summary(
     evidence.symbol_count = evidence.symbol_count.saturating_add(1);
     evidence.validation.add_json(validation);
     evidence.holdout.add_json(holdout);
+    add_score_bands(
+        &mut evidence.validation_score_bands,
+        candidate
+            .get("validation_score_bands")
+            .unwrap_or(&Value::Null),
+    );
+    add_score_bands(
+        &mut evidence.holdout_score_bands,
+        candidate
+            .get("holdout_score_bands")
+            .unwrap_or(&Value::Null),
+    );
     evidence.baseline_validation.add_json(baseline_validation);
     evidence.baseline_holdout.add_json(baseline_holdout);
     evidence.minimum_holdout_days = if evidence.minimum_holdout_days == 0 {
@@ -211,6 +273,18 @@ fn add_candidate_summary(
     slice.symbol_count = slice.symbol_count.saturating_add(1);
     slice.validation.add_json(validation);
     slice.holdout.add_json(holdout);
+    add_score_bands(
+        &mut slice.validation_score_bands,
+        candidate
+            .get("validation_score_bands")
+            .unwrap_or(&Value::Null),
+    );
+    add_score_bands(
+        &mut slice.holdout_score_bands,
+        candidate
+            .get("holdout_score_bands")
+            .unwrap_or(&Value::Null),
+    );
     slice.baseline_validation.add_json(baseline_validation);
     slice.baseline_holdout.add_json(baseline_holdout);
     slice.minimum_holdout_days = if slice.minimum_holdout_days == 0 {
@@ -316,6 +390,16 @@ fn candidate_decision(
     } else {
         evidence.symbol_count as f64 / cohort.report_count as f64 * 100.0
     };
+    // Choose the lowest score cutoff on validation data only. Holdout checks
+    // that frozen cutoff and never participates in selecting it.
+    let calibration_band = (0..SCORE_BAND_COUNT).find(|band| {
+        cumulative_score_bands(&evidence.validation_score_bands, *band)
+            .signal_potential_passes()
+    });
+    let validation_signal_gate = calibration_band
+        .map(|band| cumulative_score_bands(&evidence.validation_score_bands, band));
+    let holdout_signal_gate = calibration_band
+        .map(|band| cumulative_score_bands(&evidence.holdout_score_bands, band));
     let mut blockers = Vec::new();
     if !cycle_complete {
         blockers.push("The daily backtest cycle contains failures; its cohort is incomplete.");
@@ -347,6 +431,12 @@ fn candidate_decision(
     {
         blockers.push("Validation and holdout profit factors must both exceed 1 after fees.");
     }
+    if validation_signal_gate.is_none() {
+        blockers.push("No validation score cutoff meets the 70% after-fee win-rate, 95% Wilson lower-bound, and positive-expectancy gates.");
+    }
+    if holdout_signal_gate.is_none_or(|summary| !summary.signal_potential_passes()) {
+        blockers.push("The frozen validation score cutoff does not meet the same after-fee gates on untouched holdout data.");
+    }
     let product_slices = cohort
         .product_report_counts
         .iter()
@@ -356,6 +446,16 @@ fn candidate_decision(
             let symbol_count = slice.map(|slice| slice.symbol_count).unwrap_or_default();
             let validation = slice.map(|slice| slice.validation).unwrap_or_default();
             let holdout = slice.map(|slice| slice.holdout).unwrap_or_default();
+            let signal_validation = calibration_band.map(|band| {
+                slice
+                    .map(|slice| cumulative_score_bands(&slice.validation_score_bands, band))
+                    .unwrap_or_default()
+            });
+            let signal_holdout = calibration_band.map(|band| {
+                slice
+                    .map(|slice| cumulative_score_bands(&slice.holdout_score_bands, band))
+                    .unwrap_or_default()
+            });
             let minimum_history_days = slice.map(|slice| slice.minimum_history_days).unwrap_or_default();
             let slice_coverage = if *expected == 0 { 0.0 } else { symbol_count as f64 / *expected as f64 * 100.0 };
             if slice_coverage + f64::EPSILON < MIN_COHORT_COVERAGE_PCT {
@@ -386,9 +486,16 @@ fn candidate_decision(
             {
                 slice_blockers.push("profit factor does not exceed 1".to_string());
             }
+            if signal_validation.is_none_or(|summary| !summary.signal_potential_passes())
+                || signal_holdout.is_none_or(|summary| !summary.signal_potential_passes())
+            {
+                slice_blockers.push("the calibrated score range misses the 70% after-fee setup gate".to_string());
+            }
             json!({"exchange_id":exchange,"product_id":product,"symbols":symbol_count,
                 "expected_reports":expected,"coverage_pct":slice_coverage,
                 "validation":validation.as_json(),"holdout":holdout.as_json(),
+                "signal_gate_validation":signal_validation.map(MetricTotals::as_json),
+                "signal_gate_holdout":signal_holdout.map(MetricTotals::as_json),
                 "blockers":slice_blockers})
         })
         .collect::<Vec<_>>();
@@ -397,6 +504,29 @@ fn candidate_decision(
     }) {
         blockers.push("Every app/product slice must independently meet cohort coverage and the after-fee target.");
     }
+    let product_signal_gate_passes = calibration_band.is_some()
+        && cohort.product_report_counts.keys().all(|key| {
+            evidence.product_slices.get(key).is_some_and(|slice| {
+                let band = calibration_band.unwrap_or_default();
+                cumulative_score_bands(&slice.validation_score_bands, band)
+                    .signal_potential_passes()
+                    && cumulative_score_bands(&slice.holdout_score_bands, band)
+                        .signal_potential_passes()
+            })
+        });
+    let signal_gate_qualified = validation_signal_gate
+        .is_some_and(MetricTotals::signal_potential_passes)
+        && holdout_signal_gate.is_some_and(MetricTotals::signal_potential_passes)
+        && product_signal_gate_passes;
+    let signal_gate = json!({
+        "status": if signal_gate_qualified {"QUALIFIED"} else {"BLOCKED"},
+        "minimum_score_out_of_40": calibration_band.map(score_floor_for_band),
+        "target_after_fee_win_rate_pct": TARGET_AFTER_FEE_WIN_RATE_PCT,
+        "fees_applied": true,
+        "validation": validation_signal_gate.map(MetricTotals::as_json),
+        "holdout": holdout_signal_gate.map(MetricTotals::as_json),
+        "selection_basis": "lowest score cutoff passing validation; same cutoff evaluated once on untouched holdout",
+    });
     json!({
         "evaluated_at": evaluated_at,
         "decision": if blockers.is_empty() {"PROMOTED"} else {"BLOCKED"},
@@ -408,6 +538,7 @@ fn candidate_decision(
             "minimum_history_days":evidence.minimum_history_days,"minimum_holdout_days":evidence.minimum_holdout_days},
         "validation": evidence.validation.as_json(),
         "holdout": evidence.holdout.as_json(),
+        "signal_gate": signal_gate,
         "equal_weight_validation": evidence.baseline_validation.as_json(),
         "equal_weight_holdout": evidence.baseline_holdout.as_json(),
         "fees_applied": true,
@@ -523,23 +654,32 @@ pub(crate) fn evaluate_daily_profiles(
             (None, decision)
         };
         let promote = decision.get("decision").and_then(Value::as_str) == Some("PROMOTED");
-        let active_profile: Option<Vec<u8>> = connection
+        let active_profile: Option<(Vec<u8>, Option<f64>)> = connection
             .query_row(
-                "SELECT weights_json,protocol_id FROM app.entry_model_scoring_profiles
+                "SELECT weights_json,protocol_id,evaluation_json FROM app.entry_model_scoring_profiles
                   WHERE score_model_id=?1 AND asset_category_id=?2 AND timeframe=?3
                     AND source_family=?4 AND status='active'",
                 params![scope.score_model_id,scope.asset_category_id,scope.timeframe,scope.source_family],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
             )
             .optional()?
-            .and_then(|(encoded, protocol)| {
+            .and_then(|(encoded, protocol, evaluation)| {
                 if protocol != quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID {
                     return None;
                 }
-                serde_json::from_str(&encoded).ok()
+                let weights = serde_json::from_str::<Vec<u8>>(&encoded).ok()?;
+                let evaluation = serde_json::from_str::<Value>(&evaluation).ok()?;
+                let minimum_score = validated_signal_gate(&evaluation)
+                    .and_then(|gate| gate.get("minimum_score_out_of_40").and_then(Value::as_f64));
+                Some((weights, minimum_score))
             });
         let same_active = weights.is_some_and(|candidate| {
-            active_profile.as_deref() == Some(candidate.as_slice())
+            active_profile.as_ref().is_some_and(|(active_weights, active_minimum)| {
+                active_weights.as_slice() == candidate.as_slice()
+                    && *active_minimum
+                        == decision.pointer("/signal_gate/minimum_score_out_of_40")
+                            .and_then(Value::as_f64)
+            })
         });
         let promote = promote && !same_active;
         let mut decision = decision;
@@ -556,7 +696,7 @@ pub(crate) fn active_profile_snapshot(
     connection: &Connection,
 ) -> Result<ActiveScoringProfiles, rusqlite::Error> {
     let mut statement = connection.prepare(
-        "SELECT score_model_id,asset_category_id,timeframe,source_family,version,weights_json,protocol_id
+        "SELECT score_model_id,asset_category_id,timeframe,source_family,version,weights_json,protocol_id,evaluation_json
            FROM app.entry_model_scoring_profiles WHERE status='active'",
     )?;
     let rows = statement.query_map([], |row| {
@@ -568,11 +708,12 @@ pub(crate) fn active_profile_snapshot(
             row.get::<_, i64>(4)?,
             row.get::<_, String>(5)?,
             row.get::<_, String>(6)?,
+            row.get::<_, String>(7)?,
         ))
     })?;
     let mut profiles = BTreeMap::new();
     for row in rows {
-        let (model, category, timeframe, source, version, encoded, protocol_id) = row?;
+        let (model, category, timeframe, source, version, encoded, protocol_id, evaluation) = row?;
         if protocol_id != quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID {
             continue;
         }
@@ -582,30 +723,100 @@ pub(crate) fn active_profile_snapshot(
         else {
             continue;
         };
+        let Ok(evaluation) = serde_json::from_str::<Value>(&evaluation) else {
+            continue;
+        };
+        let Some(after_fee_gate) = validated_signal_gate(&evaluation) else {
+            continue;
+        };
+        let Some(minimum_score) = after_fee_gate
+            .get("minimum_score_out_of_40")
+            .and_then(Value::as_f64)
+        else {
+            continue;
+        };
         profiles.insert(
             (model, category, timeframe, source),
-            ActiveScoringProfile { version, weights },
+            ActiveScoringProfile {
+                version,
+                weights,
+                minimum_score,
+                after_fee_gate,
+            },
         );
     }
     Ok(profiles)
 }
 
+fn validated_gate_summary(summary: &Value) -> bool {
+    summary["trades"]
+        .as_u64()
+        .is_some_and(|trades| trades >= MIN_PROFILE_TRADES as u64)
+        && summary["win_rate_after_fees_pct"]
+            .as_f64()
+            .is_some_and(|rate| rate >= TARGET_AFTER_FEE_WIN_RATE_PCT)
+        && summary["win_rate_after_fees_wilson_95_lower_pct"]
+            .as_f64()
+            .is_some_and(|lower| lower >= TARGET_AFTER_FEE_WIN_RATE_PCT)
+        && summary["mean_net_return_pct"]
+            .as_f64()
+            .is_some_and(|mean| mean > 0.0)
+        && summary["profit_factor"]
+            .as_f64()
+            .is_some_and(|factor| factor > 1.0)
+}
+
+fn validated_signal_gate(evaluation: &Value) -> Option<Value> {
+    let gate = evaluation.get("signal_gate")?;
+    (evaluation.get("fees_applied").and_then(Value::as_bool) == Some(true)
+        && signal_gate_is_qualified(gate))
+    .then(|| gate.clone())
+}
+
+pub(crate) fn signal_gate_is_qualified(gate: &Value) -> bool {
+    let Some(minimum_score) = gate
+        .get("minimum_score_out_of_40")
+        .and_then(Value::as_f64)
+    else {
+        return false;
+    };
+    gate.get("fees_applied").and_then(Value::as_bool) == Some(true)
+        && gate.get("status").and_then(Value::as_str) == Some("QUALIFIED")
+        && gate
+            .get("target_after_fee_win_rate_pct")
+            .and_then(Value::as_f64)
+            == Some(TARGET_AFTER_FEE_WIN_RATE_PCT)
+        && minimum_score.is_finite()
+        && (quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
+            ..=quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX)
+            .contains(&minimum_score)
+        && gate
+            .get("validation")
+            .is_some_and(validated_gate_summary)
+        && gate
+            .get("holdout")
+            .is_some_and(validated_gate_summary)
+}
+
 pub(crate) fn scoring_profile_status(connection: &Connection) -> Result<Value, rusqlite::Error> {
     let profiles = {
         let mut statement = connection.prepare(
-            "SELECT score_model_id,asset_category_id,timeframe,source_family,version,weights_json,created_at,protocol_id
+            "SELECT score_model_id,asset_category_id,timeframe,source_family,version,weights_json,created_at,protocol_id,evaluation_json
                FROM app.entry_model_scoring_profiles WHERE status='active'
               ORDER BY score_model_id,asset_category_id,timeframe,source_family",
         )?;
         let rows = statement.query_map([], |row| {
             let weights_json: String = row.get(5)?;
             let protocol_id: String = row.get(7)?;
+            let evaluation_json: String = row.get(8)?;
+            let evaluation = serde_json::from_str::<Value>(&evaluation_json).unwrap_or(Value::Null);
             Ok(json!({"score_model_id":row.get::<_,String>(0)?,
                 "asset_category_id":row.get::<_,String>(1)?,"timeframe":row.get::<_,String>(2)?,
                 "source_family":row.get::<_,String>(3)?,"version":row.get::<_,i64>(4)?,
                 "weights":serde_json::from_str::<Value>(&weights_json).unwrap_or(Value::Null),
                 "created_at":row.get::<_,i64>(6)?,"status":"active",
-                "protocol_current":protocol_id == quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID}))
+                "protocol_current":protocol_id == quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
+                "signal_gate":evaluation.get("signal_gate").cloned().unwrap_or(Value::Null)}))
         })?;
         let profiles = rows.collect::<Result<Vec<_>, _>>()?;
         profiles
@@ -623,5 +834,5 @@ pub(crate) fn scoring_profile_status(connection: &Connection) -> Result<Value, r
     };
     Ok(json!({"target_after_fee_win_rate_pct":TARGET_AFTER_FEE_WIN_RATE_PCT,
         "active_profiles":profiles,"latest_evaluations":evaluations,
-        "default_weights":[10,10,10,10],"default_status":"equal-weight fallback until promotion gates pass"}))
+        "default_weights":[10,10,10,10],"default_status":"research-only equal weights until score-range after-fee gates pass"}))
 }

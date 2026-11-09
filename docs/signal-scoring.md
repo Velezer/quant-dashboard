@@ -6,8 +6,11 @@ illustrative points example and the deployment's current model catalog.
 This is a reader reference for the signal scores shown by the dashboard. The
 versioned strategy and catalog definitions in the source code own runtime
 values; update this explanation when those definitions change. A score ranks a
-research setup. It is not win probability, validated performance, an execution
-quote, or an order recommendation.
+research setup. It is not win probability, an execution quote, or an order
+recommendation. Live four-indicator signals also need a backtested score-range
+gate for their model, asset category, timeframe, and candle-source cohort. The
+gate is historical evidence for a score range, not a forecast for an individual
+signal.
 
 Compare rows only when their `score_model_id`, app/product/category, timeframe,
 and data-source basis match. Keep legacy score bases at their recorded scale;
@@ -16,9 +19,13 @@ never convert an old `/10` or `/20` value into `/40` by multiplying it.
 ## Crypto signal refresh
 
 Each scan recalculates crypto NWE/DSS from the latest completed bar in the
-selected timeframe. The directional strategy setup and the active model's
-score floor determine whether that scan emits a row; there is no separate
-signal-age expiry. A successful scan replaces rows that no longer qualify.
+selected timeframe. A signal row also requires an active cohort profile and a
+score at or above the cutoff selected from validation data. That same cutoff
+must reach at least 70% after-fee wins, a 95% Wilson lower bound of at least
+70%, positive mean net return, and profit factor above 1 on untouched holdout
+data, with at least 30 trades. Each app/product slice must pass independently.
+Without this evidence, the setup is withheld and Signal availability reports
+the blocker. A successful scan replaces rows that no longer qualify.
 Notification history has a separate two-hour retention window based on when
 the alert was created. A stale reference price can remain visible with its
 freshness label, but it is not a current market entry.
@@ -34,6 +41,19 @@ rows qualify the label as last recorded. This is a presentation distinction,
 not a change to eligibility, ordering, evidence validation, or notifications.
 Legacy score models keep their recorded scales and do not use this distinction.
 The four separate /10 values and 25% weights remain the primary score display.
+
+## After-fee setup gate
+
+For each learned cohort, the service tests cumulative score cutoffs in
+ascending order using candidate-weight outcomes. It selects the lowest cutoff
+that passes the 70% after-fee target, 95% Wilson lower bound, positive mean net
+return, profit factor above 1, and 30-trade minimum on validation data. The
+frozen cutoff is then checked once on the chronological holdout and separately
+for each app/product slice. Only a promoted profile carries that cutoff into
+live scans. Signals show the holdout rate, confidence lower bound, sample
+count, and cutoff. These describe historical cohort outcomes; they do not
+estimate an individual signal's future win rate. Spread, slippage, depth,
+market impact, funding, and borrow remain outside the fee-adjusted return.
 
 ## Four indicator scores (`/10` each; 25% weight each)
 

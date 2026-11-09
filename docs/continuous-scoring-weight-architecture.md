@@ -2,14 +2,15 @@
 
 ## Goal
 
-Use recurring, causal backtests to propose and safely activate scoring weights.
-The daily backtest worker remains the research producer. A cohort evaluator
-decides whether a candidate is strong enough to become a versioned live scoring
-profile. A promoted profile takes effect on the next signal scan.
+Use recurring, causal backtests to propose and safely activate scoring weights
+and a score-range signal cutoff. The daily backtest worker remains the research
+producer. A cohort evaluator decides whether a candidate is strong enough to
+become a versioned live scoring profile. A promoted profile takes effect on the
+next signal scan.
 
-The dashboard remains read-only with respect to execution. Weight promotion
-changes signal ranking and may change qualification at the existing score floor;
-it never places an order.
+The dashboard remains read-only with respect to execution. A promoted profile
+sets the weighted ranking and the lowest validated score range eligible for
+signals; it never places an order.
 
 ## Current system
 
@@ -22,7 +23,8 @@ it never places an order.
 - Reports are saved in `app.entry_model_validation_reports`. They retain
   aggregate evidence and candidate weights, not simulated trade rows.
 - The live scorer in `quant/core/src/strategies/four_indicator_score.rs` uses
-  the scan-pinned validated profile, with equal weights as its fallback.
+  the scan-pinned validated profile. Equal weights remain a research fallback;
+  they do not publish four-indicator signal rows without a calibrated cutoff.
 - The Entry Validation page shows active profile versions, recent cohort
   decisions, and promotion blockers. Research reports remain separate and
   state `live_weights_changed: false`.
@@ -154,6 +156,12 @@ previous current-protocol profile or the equal-weight default.
 - At scan start, load the bounded set of active profiles once and pin that
   immutable version map for the whole scan. Do not read the app database per
   ticker.
+- Per-ticker backtests report candidate-weight score bands separately for
+  validation and holdout. The cohort evaluator selects the lowest cumulative
+  score cutoff that passes on validation, then checks the same frozen cutoff on
+  untouched holdout and every app/product slice. Each gate requires at least 30
+  fee-aware trades, at least 70% wins after fees, a 95% Wilson lower bound of at
+  least 70%, positive mean net return, and profit factor above 1.
 - Pass the selected profile through the existing typed scoring API. Keep raw
   NWE, DSS, relative-volume, and estimated-delta evidence visible as four
   component scores out of 10. Return the profile weights and version beside
@@ -166,8 +174,9 @@ previous current-protocol profile or the equal-weight default.
   snapshot.
 - A profile promoted during a scan is adopted on the next scan. It cannot mix
   versions inside one scan or retroactively change a saved research report.
-- Keep the existing score scale and floor. Since reweighting can change which
-  rows pass that floor, publish the updated signal and inbox counts together.
+- Keep the existing score scale and base floor. Publish only current setups at
+  or above the active profile's additional backtested cutoff. Publish signal
+  rows and inbox counts from the same gated scan snapshot.
 
 ### 7. UI and operations
 
@@ -176,15 +185,20 @@ The existing Entry Validation page has a **Live scoring weights** panel with:
 - Active profile by model, category, timeframe, and source family.
 - Four component scores out of 10, current weight allocation, profile version,
   and effective scan.
+- The score cutoff and its held-out after-fee win rate, Wilson lower bound, and
+  sample count. The screener presents these as historical cohort evidence, not
+  an individual win-probability estimate.
 - Latest candidate beside the active profile, with validation/holdout metrics,
   source, fee coverage, coverage dates, and exact promotion blockers.
 - Promotion state, latest cohort metrics, and exact blockers.
 
-The screener shows the profile version used for its latest signal snapshot. The
-panel distinguishes a new candidate from a live profile and explains when the
-equal-weight default is in use. Loading, partial coverage, stale evidence,
-blocked promotion, database errors, and rollback each have visible status and
-recovery guidance.
+The screener shows the profile version and after-fee score gate used for its
+latest signal snapshot. The panel distinguishes a new candidate from a live
+profile and explains when equal weights are research-only. If no cutoff passes,
+the scan withholds signals and Signal availability shows the missing profile
+or below-cutoff counts. Loading, partial coverage, stale evidence, blocked
+promotion, database errors, and rollback each have visible status and recovery
+guidance.
 
 Active profile rows are immutable; promotion atomically supersedes the previous
 version and activates the new one. The database retains prior rows for

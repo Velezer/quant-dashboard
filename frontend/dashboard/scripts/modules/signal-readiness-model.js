@@ -82,11 +82,20 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
     const staleFrames = sum(frames, 'stale_history_count');
     const frameErrors = sum(frames, 'data_error_count');
     const mismatched = sum(frames, 'source_mismatch_count');
+    const backtestGateBlocked = sum(frames, 'backtest_gate_blocked_count');
+    const missingBacktestProfile = sum(frames, 'backtest_profile_missing_count');
+    const belowBacktestCutoff = sum(frames, 'backtest_score_below_cutoff_count');
     const blockers = [stale && `${stale} stale 15m prices`, missing && `${missing} missing 15m prices`,
         errors && `${errors} unreadable price histories`, missingFrames && `${missingFrames} missing timeframe histories`,
         frameErrors && `${frameErrors} unreadable timeframe histories`,
         staleFrames && `${staleFrames} stale timeframe histories`, insufficient && `${insufficient} histories below model warm-up`,
         nweInsufficient && `${nweInsufficient} histories below NWE warm-up`, mismatched && `${mismatched} price/history source mismatches`].filter(Boolean);
+    const backtestGateSummary = [
+        missingBacktestProfile && `${missingBacktestProfile} setups lack an active 70% after-fee backtest profile`,
+        belowBacktestCutoff && `${belowBacktestCutoff} setups are below their backtested score cutoff`,
+        backtestGateBlocked && !missingBacktestProfile && !belowBacktestCutoff
+            && `${backtestGateBlocked} setups could not be checked against after-fee evidence`,
+    ].filter(Boolean);
     const firstChecked = Math.min(...products.map(row => Number(row.first_checked_at) || snapshot.scan_started_at || snapshot.checked_at));
     const lastChecked = Math.max(...products.map(row => Number(row.checked_at) || snapshot.checked_at));
     result.checkedAt = `Last completed scan: ${readinessTime(snapshot.checked_at)}. Checks describe inputs when each ticker was scanned.`
@@ -98,6 +107,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         { label: 'Fresh 15m prices at scan', value: `${fresh} / ${instruments}` },
         { label: 'Ticker / timeframe checks evaluated', value: String(evaluated) },
         { label: 'Qualifying rows at scan', value: String(qualified) },
+        ...(backtestGateBlocked ? [{ label: 'Setups held by after-fee backtest gate', value: String(backtestGateBlocked) }] : []),
     ];
     result.examples = products.flatMap(row => (Array.isArray(row.examples) ? row.examples : [])
         .filter(example => timeframe === 'all' || example.timeframe === timeframe
@@ -130,9 +140,12 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         result.message = `Data checks cover the selected app, product, and timeframe. Your search filters the returned signal rows only.`;
         result.nextStep = 'Clear the search or choose another product or timeframe.';
         result.tone = 'neutral';
-    } else if (!qualified && blockers.length) {
-        result.title = 'Some tickers still need usable data';
-        result.message = `${evaluated} ticker / timeframe checks were evaluated without a qualifying setup. Other checks remain blocked: ${blockers.join('; ')}.`;
+    } else if (!qualified && (blockers.length || backtestGateSummary.length)) {
+        result.title = backtestGateBlocked ? 'No setup passed the after-fee backtest gate' : 'Some tickers still need usable data';
+        result.message = `${evaluated} ticker / timeframe checks were evaluated without a qualifying setup.${backtestGateSummary.length ? ` Backtest gate: ${backtestGateSummary.join('; ')}.` : ''}${blockers.length ? ` Other checks remain blocked: ${blockers.join('; ')}.` : ''}`;
+        if (backtestGateBlocked) {
+            result.nextStep = 'Run or wait for the daily entry backtest to produce a validated profile, then refresh signals.';
+        }
     } else if (!qualified) {
         result.title = 'No qualifying setup in the last scan';
         result.message = `${evaluated} ticker / timeframe checks had usable data but produced no qualifying signal. An empty result is valid when the model rules are not met.`;

@@ -618,6 +618,8 @@ fn insert_signal_screener_rows<'a>(
             "minimum_score_out_of_10": signal["minimum_score_out_of_10"],
             "minimum_score_out_of_20": signal["minimum_score_out_of_20"],
             "minimum_score_out_of_40": signal["minimum_score_out_of_40"],
+            "profile_version": signal["Signal_Scoring_Profile_Version"],
+            "after_fee_gate": signal["Signal_After_Fee_Gate"],
             "component_score_scale_max": signal["component_score_scale_max"],
             "score_model_status": "current",
             "strategy_strength": signal["strategy_strength"],

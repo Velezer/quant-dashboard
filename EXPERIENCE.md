@@ -82,6 +82,11 @@ lesson only when it will improve future tasks.
   scans, persist immutable profile versions and pin one profile snapshot per
   scan. Stamp signal output with that version so a promotion cannot mix scores
   within a scan and prior results remain reproducible.
+- A composite score is setup strength, not an individual win probability.
+  Calibrate its minimum on candidate-weight validation trades after fees, then
+  check that same cutoff on untouched holdout data and each app/product slice.
+  Gate signal creation, screener listing, and notification counts consistently;
+  show the historical cohort metrics and explain when evidence is missing.
 - Mobile screener overrides must be checked after `signals-workspace-active`
   is applied: higher-specificity terminal rules can keep the header in one row,
   expand the layout viewport, and move a fixed app/timeframe dock off-screen.
