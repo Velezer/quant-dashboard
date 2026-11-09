@@ -19,6 +19,30 @@ export function installSignalAppReadiness() {
     let shownKey = '';
     let serial = 0;
 
+    function renderMetrics(container, items, highlight = false) {
+        container.replaceChildren(...items.map(metric => {
+            const cell = document.createElement('div');
+            if (metric.highlight) cell.classList.add('signal-readiness-metric-highlight');
+            if (metric.label === 'Qualifying rows at scan') cell.classList.add('signal-readiness-metric-count');
+            const term = document.createElement('dt');
+            term.textContent = highlight && metric.label === 'Qualifying rows at scan' ? 'Signals found at last scan' : metric.label;
+            const value = document.createElement('dd');
+            value.textContent = metric.value;
+            if (metric.detail) {
+                value.title = metric.detail;
+                value.setAttribute('aria-label', `${metric.value}. ${metric.detail}`);
+            }
+            cell.append(term, value);
+            if (metric.detail && metric.highlight) {
+                const detail = document.createElement('small');
+                detail.textContent = metric.detail;
+                cell.append(detail);
+            }
+            return cell;
+        }));
+        container.hidden = items.length === 0;
+    }
+
     function renderCurrent() {
         const summary = liveScoringCache
             ? { ...selectedSummary, live_scoring: liveScoringCache }
@@ -48,23 +72,12 @@ export function installSignalAppReadiness() {
         status.textContent = readiness.message;
         document.getElementById('appSignalReadinessNextStep').textContent = readiness.nextStep;
         listingRetry.hidden = !readiness.retryListings;
-        const metrics = document.getElementById('appSignalReadinessMetrics');
-        metrics.replaceChildren(...readiness.metrics.map(metric => {
-            const cell = document.createElement('div');
-            const term = document.createElement('dt');
-            term.textContent = metric.label;
-            const value = document.createElement('dd');
-            value.textContent = metric.value;
-            if (metric.detail) {
-                value.title = metric.detail;
-                value.setAttribute('aria-label', `${metric.value}. ${metric.detail}`);
-            }
-            cell.append(term, value);
-            return cell;
-        }));
-        metrics.hidden = readiness.metrics.length === 0;
+        const highlightMetrics = readiness.metrics.filter(metric => metric.highlight || metric.label === 'Qualifying rows at scan');
+        const diagnosticMetrics = readiness.metrics.filter(metric => !metric.highlight && metric.label !== 'Qualifying rows at scan');
+        renderMetrics(document.getElementById('appSignalReadinessHighlights'), highlightMetrics, true);
+        renderMetrics(document.getElementById('appSignalReadinessMetrics'), diagnosticMetrics);
         const details = document.getElementById('appSignalReadinessDetails');
-        details.hidden = !readiness.checkedAt && readiness.examples.length === 0;
+        details.hidden = !readiness.checkedAt && readiness.examples.length === 0 && diagnosticMetrics.length === 0;
         document.getElementById('appSignalReadinessCheckedAt').textContent = readiness.checkedAt;
         document.getElementById('appSignalReadinessExamples').replaceChildren(...readiness.examples.map(example => {
             const item = document.createElement('li');

@@ -103,12 +103,6 @@ export function installMarkovModal() {
                 // ticker backtest removed
             }
 
-            function openMarkovModalFromBacktestModal() {
-                const sym = currentModalSymbol;
-                closeTickerBacktestModal();
-                if (sym) openMarkovModal(sym);
-            }
-
             function renderMarkovModalData(symbol) {
                 if (!MARKOV_DATA) return;
 
@@ -462,12 +456,11 @@ export function installMarkovModal() {
                 });
             }
 
-            // Global Keyboard Shortcut: ESC closes any open modal
+            // Escape closes the Markov modal. Other modules own their dialogs.
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape' || e.keyCode === 27) {
                     closeMarkovModal();
-                    closeTickerBacktestModal();
-                    closeDaemonDiagnosticModal();
+                    getDashboardBinding('closeDaemonDiagnosticModal')?.();
                 }
             });
 
@@ -498,7 +491,6 @@ export function installMarkovModal() {
         closeMarkovModal: { get: () => closeMarkovModal },
         onMarkovModalBackdropClick: { get: () => onMarkovModalBackdropClick },
         openBacktestFromMarkovModal: { get: () => openBacktestFromMarkovModal },
-        openMarkovModalFromBacktestModal: { get: () => openMarkovModalFromBacktestModal },
         renderMarkovModalData: { get: () => renderMarkovModalData },
         drawMarkovModalGraph: { get: () => drawMarkovModalGraph },
         switchMainTab: { get: () => switchMainTab },

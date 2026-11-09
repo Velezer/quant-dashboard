@@ -672,11 +672,382 @@
         display: contents;
     }
 
+    .tv-terminal #mobileQuickFilterToggle {
+        display: none !important;
+    }
+
+    .tv-terminal #mobile-quick-filter-sheet {
+        display: contents;
+    }
+
     .tv-terminal #mobile-product-filters {
         display: none !important;
     }
 
     .tv-terminal .mobile-signal-list-link {
         display: none;
+    }
+}
+
+/* Signal desk refresh: make the current signal and its evidence easier to scan. */
+.tv-terminal.signals-workspace-active #watchlistPanel {
+    border-color: #273548 !important;
+    border-radius: 14px !important;
+    background: linear-gradient(165deg, #171f2d 0%, #111722 72%) !important;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, .2);
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness {
+    border-color: #334155;
+    border-left-width: 4px;
+    border-radius: 12px;
+    padding: 14px;
+    background: linear-gradient(145deg, #121d2b, #101722);
+    box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness[data-tone="warning"] {
+    border-color: #75531c;
+    border-left-color: #f5b83d;
+    background: linear-gradient(145deg, #282215, #171914);
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness[data-tone="ready"] {
+    border-color: #175c50;
+    border-left-color: #34d399;
+    background: linear-gradient(145deg, #11251f, #101b1b);
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-eyebrow {
+    color: #82a3c6;
+    letter-spacing: .12em;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness h3 {
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-highlights {
+    display: grid;
+    grid-template-columns: minmax(88px, .55fr) minmax(0, 1.45fr);
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-highlights > div {
+    min-width: 0;
+    border: 1px solid #2d3c4e;
+    border-radius: 9px;
+    padding: 9px 10px;
+    background: rgba(7, 13, 22, .46);
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-highlights dt {
+    color: #9badc2;
+    font-size: 9px;
+    line-height: 1.35;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-highlights dd {
+    margin: 2px 0 0;
+    color: #f4f7fb;
+    font: 650 13px/1.4 ui-monospace, monospace;
+    overflow-wrap: anywhere;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-highlights .signal-readiness-metric-count dd {
+    color: #c9f8e3;
+    font-size: 24px;
+    line-height: 1.1;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-highlights .signal-readiness-metric-highlight {
+    border-color: #136356;
+    background: linear-gradient(115deg, rgba(6, 78, 59, .38), rgba(8, 47, 73, .2));
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-highlights .signal-readiness-metric-highlight dt {
+    color: #8de2c3;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-highlights .signal-readiness-metric-highlight dd {
+    color: #d6fff0;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-highlights .signal-readiness-metric-highlight small {
+    display: block;
+    margin-top: 3px;
+    color: #93cdb9;
+    font-size: 9px;
+    line-height: 1.35;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-metrics {
+    gap: 8px 12px;
+    margin: 12px 0;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-metrics > div {
+    border-top-color: #2c394b;
+    padding-top: 7px;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-metrics dt {
+    color: #9badc2;
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-metrics dd {
+    color: #f4f7fb;
+    font-size: 15px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-metrics .signal-readiness-metric-highlight {
+    grid-column: 1 / -1;
+    border: 1px solid #136356;
+    border-radius: 9px;
+    padding: 9px 10px;
+    background: linear-gradient(115deg, rgba(6, 78, 59, .38), rgba(8, 47, 73, .2));
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-metric-highlight dt {
+    color: #8de2c3;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .04em;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-metric-highlight dd {
+    color: #d6fff0;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-metric-highlight small {
+    color: #93cdb9;
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.tv-terminal.signals-workspace-active .signal-readiness-actions button {
+    min-height: 38px;
+    border-radius: 7px;
+    padding: 7px 10px;
+    font-size: 11px;
+}
+
+.tv-terminal.signals-workspace-active .signal-row {
+    border-color: #293647;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #151d2a, #111720);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
+    transition: transform .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+
+.tv-terminal.signals-workspace-active .signal-row:hover,
+.tv-terminal.signals-workspace-active .signal-row:focus-visible {
+    border-color: #26a9bd;
+    background: linear-gradient(145deg, #172635, #111b26);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .22);
+    transform: translateY(-1px);
+}
+
+.tv-terminal.signals-workspace-active .signal-row.is-selected {
+    border-color: #22a3b8;
+    background: linear-gradient(145deg, #102d38, #121b27);
+    box-shadow: inset 3px 0 #22d3ee, 0 8px 22px rgba(0, 0, 0, .18);
+}
+
+.tv-terminal.signals-workspace-active .signal-row-symbol {
+    font-size: 15px;
+    letter-spacing: .015em;
+}
+
+.tv-terminal.signals-workspace-active .signal-row-timeframe {
+    border-color: #355268;
+    border-radius: 6px;
+    background: #102333;
+    padding: 3px 7px;
+    font-size: 10px;
+}
+
+@media (max-width: 760px) {
+    .tv-terminal {
+        padding-bottom: calc(14px + env(safe-area-inset-bottom)) !important;
+    }
+
+    .tv-terminal #mobile-quick-filters {
+        position: relative !important;
+        inset: auto !important;
+        z-index: auto;
+        display: flex !important;
+        flex-direction: column;
+        gap: 4px;
+        margin: 2px 0 4px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+    }
+
+    .tv-terminal #mobileQuickFilterToggle {
+        display: grid;
+        width: 100%;
+        min-height: 46px;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid #344258;
+        border-radius: 10px;
+        padding: 0 12px;
+        background: #182334;
+        color: #e8f1fb;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .tv-terminal #mobileQuickFilterToggle .mobile-filter-toggle-label {
+        color: #8db5d8;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: .12em;
+    }
+
+    .tv-terminal #mobileQuickFilterSummary {
+        overflow: hidden;
+        color: #f4f8fc;
+        font-size: 12px;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .tv-terminal #mobileQuickFilterToggle .mobile-filter-toggle-icon {
+        color: #a9c1d8;
+        font-size: 17px;
+        transition: transform .16s ease;
+    }
+
+    .tv-terminal #mobile-quick-filters.is-open #mobileQuickFilterToggle .mobile-filter-toggle-icon {
+        transform: rotate(180deg);
+    }
+
+    .tv-terminal #mobile-quick-filter-sheet {
+        display: none;
+        max-height: min(48dvh, 360px);
+        flex-direction: column;
+        gap: 2px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 2px 2px 7px;
+        scrollbar-width: thin;
+    }
+
+    .tv-terminal #mobile-quick-filters.is-open #mobile-quick-filter-sheet {
+        display: flex;
+    }
+
+    .tv-terminal.signals-workspace-active #mobile-quick-filters #watchlist-exchange-filter,
+    .tv-terminal.signals-workspace-active #mobile-quick-filters #mobile-product-filters,
+    .tv-terminal.signals-workspace-active #mobile-quick-filters #screenerTimeframeButtons {
+        order: initial;
+    }
+
+    .tv-terminal #mobile-quick-filter-sheet #watchlist-exchange-filter,
+    .tv-terminal #mobile-quick-filter-sheet #mobile-product-filters,
+    .tv-terminal #mobile-quick-filter-sheet #screenerTimeframeButtons {
+        flex-wrap: nowrap !important;
+        min-height: 44px;
+        padding: 3px 2px !important;
+        border-top: 1px solid #293648;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        scrollbar-width: none;
+        touch-action: pan-x;
+    }
+
+    .tv-terminal #mobile-quick-filter-sheet #watchlist-exchange-filter > span,
+    .tv-terminal #mobile-quick-filter-sheet #mobile-product-filters > span {
+        color: #94a8bf;
+        background: transparent;
+        font-size: 9px;
+        letter-spacing: .08em;
+    }
+
+    .tv-terminal #mobile-quick-filter-sheet #watchlist-exchange-filter > button,
+    .tv-terminal #mobile-quick-filter-sheet #mobile-product-filters > button,
+    .tv-terminal #mobile-quick-filter-sheet .screener-timeframe-btn {
+        min-height: 38px;
+        border-radius: 8px;
+        padding: 0 11px !important;
+        font-size: 11px;
+        touch-action: manipulation;
+    }
+
+    .tv-terminal #mobile-quick-filter-sheet .screener-timeframe-btn {
+        flex: 0 0 42px;
+        min-width: 42px;
+        padding: 0 5px !important;
+    }
+
+    .tv-terminal #floating-toast {
+        bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    }
+
+    .tv-terminal .signal-row {
+        min-height: 0;
+        gap: 9px;
+        border-radius: 12px;
+        padding: 12px;
+    }
+
+    .tv-terminal .signal-row-symbol {
+        font-size: 16px !important;
+    }
+
+    .tv-terminal .signal-readiness {
+        padding: 12px;
+    }
+
+    .tv-terminal .signal-readiness-highlights {
+        grid-template-columns: minmax(58px, .4fr) minmax(0, 1.6fr);
+    }
+
+    .tv-terminal .signal-readiness-highlights > div {
+        padding: 8px;
+    }
+
+    .tv-terminal .signal-readiness-highlights .signal-readiness-metric-count dd {
+        font-size: 22px;
+    }
+
+    .tv-terminal .signal-readiness-metrics .signal-readiness-metric-highlight {
+        margin-top: 2px;
+    }
+
+    .tv-terminal .signal-readiness-actions {
+        grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    }
+}
+
+@media (max-width: 360px) {
+    .tv-terminal #mobileQuickFilterToggle {
+        min-height: 44px;
+        gap: 6px;
+        padding: 0 9px;
+    }
+
+    .tv-terminal #mobileQuickFilterSummary {
+        font-size: 10px;
     }
 }

@@ -20,6 +20,7 @@ const dashboardModules = [
     ['signal-refresh.js', 'installSignalRefresh'],
     ['signal-alerts.js', 'installSignalAlerts'],
     ['signal-app-readiness.js', 'installSignalAppReadiness'],
+    ['mobile-screener-controls.js', 'installMobileScreenerControls'],
     ['signal-screener.js', 'installSignalScreener'],
     ['rule-simulator.js', 'installRuleSimulator'],
     ['chart-inspection.js', 'installChartInspection'],
