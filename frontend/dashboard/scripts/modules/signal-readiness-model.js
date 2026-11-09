@@ -91,7 +91,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         staleFrames && `${staleFrames} stale timeframe histories`, insufficient && `${insufficient} histories below model warm-up`,
         nweInsufficient && `${nweInsufficient} histories below NWE warm-up`, mismatched && `${mismatched} price/history source mismatches`].filter(Boolean);
     const backtestGateSummary = [
-        missingBacktestProfile && `${missingBacktestProfile} setups lack an active 70% after-fee backtest profile`,
+        missingBacktestProfile && `${missingBacktestProfile} setups lack an active 50% after-fee backtest profile`,
         belowBacktestCutoff && `${belowBacktestCutoff} setups are below their backtested score cutoff`,
         backtestGateBlocked && !missingBacktestProfile && !belowBacktestCutoff
             && `${backtestGateBlocked} setups could not be checked against after-fee evidence`,
@@ -121,7 +121,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
     } else if (summary.stale) {
         if (missingBacktestProfile) {
             result.title = 'No active after-fee scoring profile';
-            result.message = `The last completed scan withheld ${missingBacktestProfile} setups because no shared profile has passed the 70% after-fee validation and untouched-holdout gates.${blockers.length ? ` The scan also observed: ${blockers.join('; ')}.` : ''}`;
+            result.message = `The last completed scan withheld ${missingBacktestProfile} setups because no shared profile has passed the 50% after-fee validation and untouched-holdout gates.${blockers.length ? ` The scan also observed: ${blockers.join('; ')}.` : ''}`;
             result.nextStep = 'Open Validate entry models to see daily backtest progress and cohort blockers. Refresh signals after a profile qualifies.';
         } else {
             result.title = 'The last signal checks are outdated';
@@ -143,7 +143,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         result.message = `${fresh} tickers had fresh 15m prices, but no selected ticker / timeframe check could be evaluated.${blockers.length ? ` Observed: ${blockers.join('; ')}.` : ''}`;
     } else if (!qualified && missingBacktestProfile) {
         result.title = 'No active after-fee scoring profile';
-        result.message = `${missingBacktestProfile} potential setups were withheld because no shared profile has passed the 70% after-fee validation and untouched-holdout gates.`;
+        result.message = `${missingBacktestProfile} potential setups were withheld because no shared profile has passed the 50% after-fee validation and untouched-holdout gates.`;
         result.nextStep = 'Open Validate entry models to see backtest progress and cohort blockers. Refresh signals after a profile qualifies.';
     } else if (selection.search && selection.visibleCount === 0) {
         result.title = 'No current signals match your search';

@@ -21,8 +21,8 @@ never convert an old `/10` or `/20` value into `/40` by multiplying it.
 Each scan recalculates crypto NWE/DSS from the latest completed bar in the
 selected timeframe. A signal row also requires an active cohort profile and a
 score at or above the cutoff selected from validation data. That same cutoff
-must reach at least 70% after-fee wins, a 95% Wilson lower bound of at least
-70%, positive mean net return, and profit factor above 1 on untouched holdout
+must reach at least 50% after-fee wins, a 95% Wilson lower bound of at least
+50%, positive mean net return, and profit factor above 1 on untouched holdout
 data, with at least 30 trades. Each app/product slice must pass independently.
 Without this evidence, the setup is withheld and Signal availability reports
 the blocker. A successful scan replaces rows that no longer qualify.
@@ -46,7 +46,7 @@ The four separate /10 values and 25% weights remain the primary score display.
 
 For each learned cohort, the service tests cumulative score cutoffs in
 ascending order using candidate-weight outcomes. It selects the lowest cutoff
-that passes the 70% after-fee target, 95% Wilson lower bound, positive mean net
+that passes the 50% after-fee target, 95% Wilson lower bound, positive mean net
 return, profit factor above 1, and 30-trade minimum on validation data. The
 frozen cutoff is then checked once on the chronological holdout and separately
 for each app/product slice. Only a promoted profile carries that cutoff into
