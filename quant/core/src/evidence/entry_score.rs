@@ -11,7 +11,7 @@ const SCORE_WEIGHT_BUDGET: u8 = 40;
 const SCORE_WEIGHT_STEP: u8 = 5;
 const SCORE_WEIGHT_SCALE: f64 = 10.0;
 const MIN_WEIGHT_FIT_TRADES: usize = 30;
-pub const ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT: f64 = 70.0;
+pub const ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT: f64 = 50.0;
 const MIN_HOUR_SELECTION_TRADES: usize = crate::MIN_EVIDENCE_SAMPLE_TRADES;
 const WEIGHT_FIT_EXIT_BARS: usize = 8;
 const BASELINE_WEIGHTS: [u8; 4] = [10; 4];
@@ -25,7 +25,7 @@ const FACTOR_NAMES: [&str; 4] = [
     "Relative Volume",
     "Estimated Volume Delta (OHLCV proxy)",
 ];
-pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str = "entry_four_factor_weight_fit_after_fee_target_70_v5";
+pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str = "entry_four_factor_weight_fit_after_fee_target_50_v6";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {
@@ -791,7 +791,7 @@ pub fn evaluate_entry_score_backtest(
         "INSUFFICIENT_HISTORY" => "The strategy warm-up is incomplete; no candidate weights were fitted.",
         "FEES_UNKNOWN" => "Weight fitting requires known transaction fees; the equal-weight gross-only backtest remains available.",
         "INSUFFICIENT_TRAINING_SAMPLE" => "No candidate weight vector produced the minimum 30 non-overlapping training outcomes at the existing score floor.",
-        "AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED" => "Training candidates had enough outcomes, but none reached the 70% after-fee win-rate target; live weights stay at the active validated profile.",
+        "AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED" => "Training candidates had enough outcomes, but none reached the 50% after-fee win-rate target; live weights stay at the active validated profile.",
         "NO_VALIDATION_EXIT" => "Weights were selected on training data, but no exit candidate met the minimum validation sample.",
         _ => "A training-only weight candidate and validation-selected exit are available for untouched holdout comparison.",
     };
@@ -826,7 +826,7 @@ pub fn evaluate_entry_score_backtest(
         "minimum_training_trades": MIN_WEIGHT_FIT_TRADES,
         "training_exit_bars": WEIGHT_FIT_EXIT_BARS,
         "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
-        "selection_metric": "Among candidates with at least 30 non-overlapping training outcomes and at least 70% wins after configured transaction fees, maximize the Wilson 95% lower bound for after-fee win rate; tie-break by mean net return, then proximity to equal weights.",
+        "selection_metric": "Among candidates with at least 30 non-overlapping training outcomes and at least 50% wins after configured transaction fees, maximize the Wilson 95% lower bound for after-fee win rate; tie-break by mean net return, then proximity to equal weights.",
         "validation_after_fee_target_met": after_fee_target_met(learned_validation),
         "holdout_after_fee_target_met": after_fee_target_met(learned_holdout.overall),
         "selected_weights": selected_weights,

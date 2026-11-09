@@ -86,7 +86,7 @@ finishes.
 1. Refresh per-ticker reports from stored completed candles using the existing
    bounded, causal protocol. The fitter searches the predeclared grid on
    training bars only. A candidate needs 30 non-overlapping trades and at least
-   70% wins after configured fees; candidates are ranked by their Wilson 95%
+   50% wins after configured fees; candidates are ranked by their Wilson 95%
    lower bound, then mean net return and proximity to equal weights.
 2. Evaluate each exact training-selected vector against cohort coverage,
    validation, holdout, fees, and app/product gates. Prefer a passing vector
@@ -110,8 +110,8 @@ Promote only an exact weight vector that passed all of these checks:
   and in every app/product slice.
 - At least 730 calendar days of input history and at least 30 validation and
   holdout trades after configured transaction fees.
-- Validation and untouched holdout each reach the 70% after-fee win-rate target
-  and a 95% Wilson lower bound of at least 70%.
+- Validation and untouched holdout each reach the 50% after-fee win-rate target
+  and a 95% Wilson lower bound of at least 50%.
 - Positive mean net return and profit factor above 1 in validation and holdout.
 - The candidate beats the equal-weight baseline on mean net return in both
   validation and holdout, and every app/product slice meets the same win-rate,
@@ -160,8 +160,8 @@ previous current-protocol profile or the equal-weight default.
   validation and holdout. The cohort evaluator selects the lowest cumulative
   score cutoff that passes on validation, then checks the same frozen cutoff on
   untouched holdout and every app/product slice. Each gate requires at least 30
-  fee-aware trades, at least 70% wins after fees, a 95% Wilson lower bound of at
-  least 70%, positive mean net return, and profit factor above 1.
+  fee-aware trades, at least 50% wins after fees, a 95% Wilson lower bound of at
+  least 50%, positive mean net return, and profit factor above 1.
 - Pass the selected profile through the existing typed scoring API. Keep raw
   NWE, DSS, relative-volume, and estimated-delta evidence visible as four
   component scores out of 10. Return the profile weights and version beside
@@ -228,5 +228,5 @@ of the current UI yet.
 The current implementation wires daily candidate fitting, cohort promotion,
 versioned profile storage, scan-pinned live scoring, and the Entry Validation
 status panel. Available history may still block activation. Continuous
-backtesting alone is not a reason to promote a candidate; the 70% target must
+backtesting alone is not a reason to promote a candidate; the 50% target must
 clear on both validation and untouched holdout after configured fees.

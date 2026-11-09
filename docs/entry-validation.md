@@ -19,7 +19,8 @@ pair already underway can finish. It shares a lock with manual backtests and
 resumes from its registered ticker/timeframe after a restart. Per-pair
 failures are recorded and retried in the next daily cycle. The page shows
 cycle status, progress, last completion, next due time, and the latest
-failure. If a cycle takes more than 24 hours, the next one starts as soon as
+failure. The live progress bar refreshes every 15 seconds and shows processed
+pairs and failed attempts. If a cycle takes more than 24 hours, the next one starts as soon as
 the current one finishes.
 
 This refresh updates the saved research reports and their training-selected
@@ -31,10 +32,10 @@ the refreshed cohort and each app/product slice.
 
 Live profile promotion requires known transaction fees, at least 730 days of
 history, positive net expectancy and profit factor above 1, and both validation
-and untouched holdout to meet the 70% after-fee win-rate target with a 95%
-Wilson lower bound at or above 70%. It must also improve mean net return over
+and untouched holdout to meet the 50% after-fee win-rate target with a 95%
+Wilson lower bound at or above 50%. It must also improve mean net return over
 equal weights in both samples. If any requirement fails, the current active
-profile remains; when no profile exists, scans use `[10, 10, 10, 10]`. A 70%
+profile remains; when no profile exists, scans use `[10, 10, 10, 10]`. A 50%
 historical result is a target, not a future win guarantee.
 
 The `/entry-validation` page shows active profile versions and the latest
@@ -62,10 +63,10 @@ position crosses a split boundary.
 Weight learning tests 165 predeclared nonnegative weight vectors in steps of 5
 that sum to 40. Missing factor values contribute zero and their weight is not
 redistributed. Training candidates need at least 30 non-overlapping outcomes
-and 70% winners after configured transaction fees using a fixed 8-bar timeout.
+and 50% winners after configured transaction fees using a fixed 8-bar timeout.
 Among those candidates, the fitter maximizes the Wilson 95% lower bound for
 after-fee win rate, then mean net return, then proximity to equal weights.
-Unknown fees disable weight fitting; if no candidate reaches 70%, no candidate
+Unknown fees disable weight fitting; if no candidate reaches 50%, no candidate
 vector is produced.
 
 For the fixed equal-weight baseline and the training-selected candidate,
@@ -133,7 +134,7 @@ comparison.
 
 1. **Direct effect:** Saved per-ticker candidates refresh daily; shared live
    profiles are evaluated once successful jobs cover 80% of the cycle, then
-   again at cycle end against the 70% after-fee target.
+   again at cycle end against the 50% after-fee target.
 2. **Immediate consequence:** A full pass can contain thousands of pairs, so
    it processes one pair at a time and yields briefly between reports.
 3. **Repeated operation:** The next cycle becomes due 24 hours after start;
@@ -149,7 +150,7 @@ comparison.
    failures retry in the next daily pass and worker-level failures retry after
    15 minutes.
 8. **Governance:** A candidate reaches live screener scoring only when its
-   after-fee validation and untouched holdout both pass the 70% target, score
+   after-fee validation and untouched holdout both pass the 50% target, score
    cutoff, sample, and return checks. A failed or incomplete cohort leaves the
    existing active profile unchanged.
 9. **Trajectory:** A long or repeatedly failing cycle can leave some reports

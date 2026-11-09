@@ -207,12 +207,20 @@ export function initializeEntryValidation(doc = document) {
             const stateElement = $('daily-refresh-state');
             text('daily-refresh-state', labels[daily.status] || 'Status unavailable');
             stateElement.className = `state-badge ${daily.status === 'complete' ? 'valid' : 'pending'}`;
-            text('daily-refresh-progress', `${metric(daily.processed_pairs, '', 0)} / ${metric(daily.total_pairs, '', 0)} pairs · ${metric(daily.failed_pairs, '', 0)} failed`);
+            const processed = Math.max(0, numeric(daily.processed_pairs) ?? numeric(daily.completed_pairs) ?? 0);
+            const total = Math.max(0, numeric(daily.total_pairs) ?? 0);
+            const percentage = Math.min(100, Math.max(0, numeric(daily.progress_pct) ?? (total ? processed / total * 100 : 0)));
+            text('daily-refresh-progress', `${metric(processed, '', 0)} / ${metric(total, '', 0)} processed · ${metric(daily.failed_pairs, '', 0)} failed`);
+            text('daily-refresh-percent', `${metric(percentage, '%', 1)}`);
+            if ($('daily-refresh-bar')) {
+                $('daily-refresh-bar').value = percentage;
+                $('daily-refresh-bar').setAttribute('aria-valuetext', `${metric(percentage, '%', 1)} complete; ${metric(processed, '', 0)} of ${metric(total, '', 0)} backtests processed`);
+            }
             text('daily-refresh-last', dateText(daily.cycle_completed_at, true));
             text('daily-refresh-next', dateText(daily.next_due_at, true));
             const current = daily.current?.label;
             let message = daily.status === 'running'
-                ? `Backtesting ${current || 'the next registered ticker/timeframe'}. It processes one pair at a time and checks for signal scans between pairs; a pair already underway can finish.`
+                ? `Backtest cycle running${current ? ` · ${current}` : ''}. This count includes completed attempts; ${metric(daily.failed_pairs, '', 0)} failed pairs are shown separately. Progress refreshes every 15 seconds.`
                 : daily.status === 'waiting'
                     ? `Waiting for an active signal scan or manual backtest to finish${current ? ` before continuing ${current}` : ''}.`
                     : daily.status === 'complete_with_errors'
@@ -220,7 +228,7 @@ export function initializeEntryValidation(doc = document) {
                         : daily.status === 'error'
                             ? 'The daily backtest worker could not prepare its ticker list and will retry shortly.'
                             : daily.status === 'complete'
-                                ? 'All eligible registered ticker/timeframe pairs were refreshed. Shared profile gates update the live weights only when after-fee validation and holdout evidence reach the 70% target.'
+                                ? 'All eligible registered ticker/timeframe pairs were refreshed. Shared profiles use a 50% after-fee target plus confidence, return, and validation gates.'
                                 : 'The first daily backtest cycle is waiting to start.';
             if (daily.last_failure_label && daily.last_error) message += ` Last failure: ${daily.last_failure_label} · ${daily.last_error}`;
             status('daily-refresh-message', message, daily.status === 'error' || daily.status === 'complete_with_errors' ? 'error' : '');
@@ -452,9 +460,9 @@ export function initializeEntryValidation(doc = document) {
             INSUFFICIENT_HISTORY: 'The strategy warm-up is incomplete. The equal-weight baseline remains available when history allows.',
             FEES_UNKNOWN: 'Fees are unknown, so weight fitting is disabled. The baseline result is gross-only.',
             INSUFFICIENT_TRAINING_SAMPLE: 'No candidate had 30 or more non-overlapping training trades at the existing score floor.',
-            AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED: 'Training candidates had enough trades, but none reached the 70% win-rate target after configured transaction fees.',
+            AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED: 'Training candidates had enough trades, but none reached the 50% win-rate target after configured transaction fees.',
             NO_VALIDATION_EXIT: 'Training selected a weight candidate, but no exit rule met the validation sample minimum.',
-            CANDIDATE_READY: 'Training selected a candidate at the 70% after-fee win-rate target; validation selected the exit. The untouched holdout reports both against the equal-weight baseline.',
+            CANDIDATE_READY: 'Training selected a candidate at the 50% after-fee win-rate target; validation selected the exit. The untouched holdout reports both against the equal-weight baseline.',
         };
         const statusText = learning?.reason || reasons[learning?.status] || 'This saved report predates weight learning. Rerun this ticker to calculate a training-only candidate.';
         status('weight-learning-status', `${statusText}${learning?.live_weights_changed === false ? ' Live screener weights were not changed.' : ''}`, learning?.status === 'CANDIDATE_READY' ? '' : '');
@@ -745,7 +753,7 @@ export function initializeEntryValidation(doc = document) {
         });
     }
     void refreshDailyStatus().finally(() => { void loadList(); });
-    globalThis.setInterval(() => { void refreshDailyStatus(); }, 30_000);
+    globalThis.setInterval(() => { void refreshDailyStatus(); }, 15_000);
 }
 
 if (typeof document !== 'undefined') initializeEntryValidation(document);

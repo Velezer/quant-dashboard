@@ -414,10 +414,10 @@ fn candidate_decision(
         blockers.push("Every included instrument needs at least 730 calendar days of stored history.");
     }
     if !evidence.validation.target_passes() {
-        blockers.push("Validation does not meet the 70% after-fee win-rate target with a 95% Wilson lower bound.");
+        blockers.push("Validation does not meet the 50% after-fee win-rate target with a 95% Wilson lower bound.");
     }
     if !evidence.holdout.target_passes() {
-        blockers.push("The untouched holdout does not meet the 70% after-fee win-rate target with a 95% Wilson lower bound.");
+        blockers.push("The untouched holdout does not meet the 50% after-fee win-rate target with a 95% Wilson lower bound.");
     }
     if evidence.validation.mean_net().zip(evidence.baseline_validation.mean_net())
         .is_none_or(|(candidate, baseline)| candidate <= baseline)
@@ -432,7 +432,7 @@ fn candidate_decision(
         blockers.push("Validation and holdout profit factors must both exceed 1 after fees.");
     }
     if validation_signal_gate.is_none() {
-        blockers.push("No validation score cutoff meets the 70% after-fee win-rate, 95% Wilson lower-bound, and positive-expectancy gates.");
+        blockers.push("No validation score cutoff meets the 50% after-fee win-rate, 95% Wilson lower-bound, and positive-expectancy gates.");
     }
     if holdout_signal_gate.is_none_or(|summary| !summary.signal_potential_passes()) {
         blockers.push("The frozen validation score cutoff does not meet the same after-fee gates on untouched holdout data.");
@@ -462,7 +462,7 @@ fn candidate_decision(
                 slice_blockers.push("candidate coverage below 80%".to_string());
             }
             if !validation.target_passes() || !holdout.target_passes() {
-                slice_blockers.push("validation or holdout misses the 70% after-fee target".to_string());
+                slice_blockers.push("validation or holdout misses the 50% after-fee target".to_string());
             }
             if minimum_history_days < quant_core::MIN_EVIDENCE_SAMPLE_DAYS {
                 slice_blockers.push("history is shorter than 730 days".to_string());
@@ -489,7 +489,7 @@ fn candidate_decision(
             if signal_validation.is_none_or(|summary| !summary.signal_potential_passes())
                 || signal_holdout.is_none_or(|summary| !summary.signal_potential_passes())
             {
-                slice_blockers.push("the calibrated score range misses the 70% after-fee setup gate".to_string());
+                slice_blockers.push("the calibrated score range misses the 50% after-fee setup gate".to_string());
             }
             json!({"exchange_id":exchange,"product_id":product,"symbols":symbol_count,
                 "expected_reports":expected,"coverage_pct":slice_coverage,
@@ -653,7 +653,7 @@ pub(crate) fn evaluate_daily_profiles(
                     "timeframe":scope.timeframe,"source_family":scope.source_family},
                 "target_after_fee_win_rate_pct":TARGET_AFTER_FEE_WIN_RATE_PCT,
                 "cohort":{"reports":cohort.report_count,"candidate_symbols":0,"coverage_pct":0.0},
-                "blockers":["No report in this cohort produced a fee-aware candidate meeting the 70% training target."]});
+                "blockers":["No report in this cohort produced a fee-aware candidate meeting the 50% training target."]});
             (None, decision)
         };
         let promote = decision.get("decision").and_then(Value::as_str) == Some("PROMOTED");

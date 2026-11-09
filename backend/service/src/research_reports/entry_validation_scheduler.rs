@@ -31,7 +31,7 @@ fn evaluate_scoring_profiles(
     ) {
         Ok(evaluated) => {
             eprintln!(
-                "[EntryValidation] Evaluated {evaluated} shared live-scoring cohorts after {completed_pairs}/{total_pairs} successful reports against the 70% after-fee target."
+                "[EntryValidation] Evaluated {evaluated} shared live-scoring cohorts after {completed_pairs}/{total_pairs} successful reports against the 50% after-fee target."
             );
             true
         }
