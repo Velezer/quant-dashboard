@@ -2,8 +2,14 @@ use rusqlite::Connection;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex, OnceLock,
+    },
 };
+
+const SQLITE_IOERR_SHMSIZE: i32 = 4874;
+static WAL_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum JournalMode {
@@ -35,28 +41,45 @@ pub(in crate::database) fn configure(
     connection: &Connection,
     schemas: &[&str],
 ) -> Result<(), rusqlite::Error> {
-    configure_with_mode(connection, schemas, configured_mode()?)
+    let (mode, is_default) = configured_mode()?;
+    match configure_with_mode(connection, schemas, mode) {
+        Err(error)
+            if mode == JournalMode::Wal && is_default && is_wal_shared_memory_error(&error) =>
+        {
+            WAL_UNAVAILABLE.store(true, Ordering::Relaxed);
+            eprintln!(
+                "[SQLite] WAL shared-memory initialization failed (SQLite error {SQLITE_IOERR_SHMSIZE}); falling back to DELETE journals for this process."
+            );
+            configure_with_mode(connection, schemas, JournalMode::Delete)
+        }
+        result => result,
+    }
 }
 
-fn configured_mode() -> Result<JournalMode, rusqlite::Error> {
+fn configured_mode() -> Result<(JournalMode, bool), rusqlite::Error> {
     let configured = std::env::var("QUANT_SQLITE_JOURNAL_MODE");
-    let value = match &configured {
-        Ok(value) => Some(value.as_str()),
-        Err(std::env::VarError::NotPresent) => None,
+    let (value, is_default) = match &configured {
+        Ok(value) => (Some(value.as_str()), false),
+        Err(std::env::VarError::NotPresent) => (None, true),
         Err(std::env::VarError::NotUnicode(_)) => {
             return Err(super::storage_error(
                 "QUANT_SQLITE_JOURNAL_MODE must be WAL or DELETE",
             ));
         }
     };
-    JournalMode::parse(value)
+    let mode = if is_default && WAL_UNAVAILABLE.load(Ordering::Relaxed) {
+        JournalMode::Delete
+    } else {
+        JournalMode::parse(value)?
+    };
+    Ok((mode, is_default))
 }
 
 pub(in crate::database) fn prepare_database(
     path: &Path,
     create: bool,
 ) -> Result<(), rusqlite::Error> {
-    prepare_database_with_mode(path, create, configured_mode()?)
+    prepare_database_with_mode(path, create, configured_mode()?.0)
 }
 
 fn prepare_database_with_mode(
@@ -126,6 +149,13 @@ fn configure_with_mode(
         connection.execute_batch(&format!("PRAGMA {schema}.synchronous={synchronous};"))?;
     }
     Ok(())
+}
+
+fn is_wal_shared_memory_error(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(code, _) if code.extended_code == SQLITE_IOERR_SHMSIZE
+    )
 }
 
 #[cfg(test)]
