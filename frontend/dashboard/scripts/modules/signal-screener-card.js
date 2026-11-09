@@ -24,22 +24,28 @@ export function createSignalScreenerCard({
         const directionLabel = scoreState && !scoreState.current ? `LAST ${signal.direction}` : signal.direction;
         const evidence = String(signal.evidence_status || 'VALIDATION_PENDING').replaceAll('_', ' ');
         const scoreModel = scoreModelFor(signal);
+        const presentation = signalScorePresentation(signal, scoreModel);
+        const scoreScaleMax = Number.isFinite(presentation.scoreScaleMax)
+            ? presentation.scoreScaleMax
+            : 10;
+        const fourIndicators = hasFourIndicatorScores(signal, scoreModel);
         const afterFeeGate = signal.score_basis?.after_fee_gate;
         const gateHoldout = afterFeeGate?.holdout || {};
         const gateWinRate = Number(gateHoldout.win_rate_after_fees_pct);
         const gateLowerBound = Number(gateHoldout.win_rate_after_fees_wilson_95_lower_pct);
         const gateTrades = Number(gateHoldout.trades);
         const gateMinimumScore = Number(afterFeeGate?.minimum_score_out_of_40);
-        const afterFeeGateText = afterFeeGate?.status === 'QUALIFIED'
-            && Number.isFinite(gateWinRate) && Number.isFinite(gateLowerBound)
-            && Number.isFinite(gateTrades) && Number.isFinite(gateMinimumScore)
-            ? `Potential setup gate · ${gateWinRate.toFixed(1)}% after fees · ${Math.trunc(gateTrades)} holdout trades · 95% lower bound ${gateLowerBound.toFixed(1)}% · score ≥ ${gateMinimumScore.toFixed(0)}/40`
+        const targetAfterFeeWinRate = Number(afterFeeGate?.target_after_fee_win_rate_pct ?? 50);
+        const hasAfterFeeMetric = Number.isFinite(gateWinRate) && Number.isFinite(gateLowerBound)
+            && Number.isFinite(gateTrades) && Number.isFinite(gateMinimumScore);
+        const afterFeeMetricText = fourIndicators && (hasAfterFeeMetric || signal.persistent_score !== true)
+            ? hasAfterFeeMetric
+                ? `Historical holdout ${gateWinRate.toFixed(1)}% after fees vs ${targetAfterFeeWinRate.toFixed(0)}% target · ${Math.trunc(gateTrades)} trades · 95% lower bound ${gateLowerBound.toFixed(1)}% · profile cutoff ${gateMinimumScore.toFixed(0)}/40 is informational, not a signal filter`
+                : 'No promoted after-fee profile · equal weights used · signal shown without a profile filter'
             : '';
-        const presentation = signalScorePresentation(signal, scoreModel);
-        const scoreScaleMax = Number.isFinite(presentation.scoreScaleMax)
-            ? presentation.scoreScaleMax
-            : 10;
-        const fourIndicators = hasFourIndicatorScores(signal, scoreModel);
+        const afterFeeAccessibleText = hasAfterFeeMetric
+            ? `${afterFeeMetricText}. Historical cohort evidence is not this signal's win probability.`
+            : afterFeeMetricText;
         const totalStrength = signalTotalStrength(signal, scoreModel);
         const displayScore = signalDisplayScore(signal);
         const scoreLabel = scoreState?.tone === 'stale' ? 'Last recorded score' : 'Market-entry score';
@@ -55,7 +61,7 @@ export function createSignalScreenerCard({
         const accessibleScore = fourIndicators ? signalIndicatorSummary(signal, scoreModel) : Number.isFinite(displayScore)
             ? `${scoreValue} out of ${scoreScaleMax}`
             : 'unavailable';
-        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${fourIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeGateText ? `${afterFeeGateText}. Historical cohort holdout evidence, not this signal's win probability. ` : ''}Setup strength is not win probability or execution availability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
+        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${fourIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}Setup strength is not win probability or execution availability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
         const productLabel = signal.product_id === 'stockbit_regular'
             ? ''
             : signal.product_id.replaceAll('_', ' ');
@@ -74,7 +80,7 @@ export function createSignalScreenerCard({
                 <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${fourIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded indicators' : '4 indicator scores'} · ${escape(signalScoreWeightSummary(signal, scoreModel))}</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}</span>
                 ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
                 ${totalStrength ? `<span class="signal-total-strength signal-total-strength-${totalStrength.tone}" title="${escape(totalStrength.description)}">${escape(totalStrength.label)}<small>${escape(totalStrength.description)}</small></span>` : ''}
-                ${afterFeeGateText ? `<span class="signal-after-fee-gate" title="Historical cohort evidence does not predict the outcome of this individual signal.">${escape(afterFeeGateText)}<small>Historical cohort holdout evidence; not an individual win-rate forecast.</small></span>` : ''}
+                ${afterFeeMetricText ? `<span class="signal-after-fee-metric" title="${escape(hasAfterFeeMetric ? 'Historical cohort evidence does not predict this individual signal.' : 'After-fee status is informational; it does not filter signals.')}">${escape(afterFeeMetricText)}<small>${hasAfterFeeMetric ? 'Historical cohort holdout evidence; not an individual win-rate forecast.' : 'This signal remains visible without a validated profile.'}</small></span>` : ''}
                 ${renderScoreBasis(signal)}
                 <span class="signal-row-footer"><span>${escape(evidence)}</span><span>Price ${escape(signalPriceBarAgeLabel(signal.price_bar_time))}</span><span>Scanned ${escape(ageLabel(signal.last_updated_at))}</span></span>
                 ${provenance.length ? `<span class="signal-row-provenance">${escape(provenance.join(' · '))}</span>` : ''}

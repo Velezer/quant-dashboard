@@ -17,9 +17,9 @@ pub(crate) struct TimeframeReadiness {
     pub(crate) evaluated_count: usize,
     pub(crate) evaluated_model_count: usize,
     pub(crate) qualifying_signal_count: usize,
-    pub(crate) backtest_gate_blocked_count: usize,
-    pub(crate) backtest_profile_missing_count: usize,
-    pub(crate) backtest_score_below_cutoff_count: usize,
+    pub(crate) after_fee_metric_count: usize,
+    pub(crate) after_fee_profile_missing_count: usize,
+    pub(crate) after_fee_score_below_cutoff_count: usize,
 }
 
 #[derive(Default, Serialize)]
@@ -77,9 +77,9 @@ fn merge_timeframe(timeframes: &mut Vec<TimeframeReadiness>, frame: TimeframeRea
         existing.evaluated_count = existing.evaluated_count.saturating_add(frame.evaluated_count);
         existing.evaluated_model_count = existing.evaluated_model_count.saturating_add(frame.evaluated_model_count);
         existing.qualifying_signal_count = existing.qualifying_signal_count.saturating_add(frame.qualifying_signal_count);
-        existing.backtest_gate_blocked_count = existing.backtest_gate_blocked_count.saturating_add(frame.backtest_gate_blocked_count);
-        existing.backtest_profile_missing_count = existing.backtest_profile_missing_count.saturating_add(frame.backtest_profile_missing_count);
-        existing.backtest_score_below_cutoff_count = existing.backtest_score_below_cutoff_count.saturating_add(frame.backtest_score_below_cutoff_count);
+        existing.after_fee_metric_count = existing.after_fee_metric_count.saturating_add(frame.after_fee_metric_count);
+        existing.after_fee_profile_missing_count = existing.after_fee_profile_missing_count.saturating_add(frame.after_fee_profile_missing_count);
+        existing.after_fee_score_below_cutoff_count = existing.after_fee_score_below_cutoff_count.saturating_add(frame.after_fee_score_below_cutoff_count);
     } else {
         timeframes.push(frame);
     }
@@ -240,7 +240,7 @@ impl SignalReadiness {
 
     pub(crate) fn into_value(self) -> Value {
         json!({
-            "version": 1,
+            "version": 2,
             "scan_started_at": self.scan_started_at,
             "checked_at": now_secs() as i64,
             "dss_required_bars": quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS,
@@ -281,7 +281,10 @@ pub(super) fn load_scan_readiness(connection: &Connection) -> Result<Value, rusq
         .optional()?;
     Ok(encoded
         .and_then(|value| serde_json::from_str::<Value>(&value).ok())
-        .filter(|value| value["version"] == 1 && value["products"].is_array())
+        .filter(|value| {
+            matches!(value["version"].as_i64(), Some(1) | Some(2))
+                && value["products"].is_array()
+        })
         .unwrap_or(Value::Null))
 }
 

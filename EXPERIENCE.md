@@ -87,20 +87,22 @@ lesson only when it will improve future tasks.
   per-bar heap-heavy signal objects. Reuse causal indicator arrays and visit
   directional candidates so the longer sample stays within the process memory
   budget.
-- When an after-fee gate empties a screener, check the profile snapshot and the
-  persisted daily-backtest progress first. Keep the evidence threshold intact;
-  evaluate once when successful jobs reach the cohort-coverage threshold and
-  again at cycle end. Count completed jobs, not total minus failures, and
-  distinguish missing profiles from price/history blockers in the response.
+- After-fee profile promotion is separate from live signal eligibility. When a
+  screener is empty, check directional setups, the base score floor, candle and
+  price inputs first; do not hide a setup because its cohort lacks a promoted
+  profile or misses a historical score cutoff. Use equal weights when no
+  profile is active and report validation/holdout percentages as informational
+  metrics. Keep the 50% evidence threshold for profile promotion.
 - When an authorized promotion path moves learned scoring weights into live
   scans, persist immutable profile versions and pin one profile snapshot per
   scan. Stamp signal output with that version so a promotion cannot mix scores
   within a scan and prior results remain reproducible.
 - A composite score is setup strength, not an individual win probability.
-  Calibrate its minimum on candidate-weight validation trades after fees, then
-  check that same cutoff on untouched holdout data and each app/product slice.
-  Gate signal creation, screener listing, and notification counts consistently;
-  show the historical cohort metrics and explain when evidence is missing.
+  Retain the model's base score floor for signals. Calibrated after-fee
+  thresholds are historical metrics used to evaluate profile promotion, not
+  filters on signal creation, screener listing, or notification counts. Show
+  validation/holdout percentages and explain when a cohort has no promoted
+  profile.
 - Mobile screener overrides must be checked after `signals-workspace-active`
   is applied: higher-specificity terminal rules can keep the header in one row,
   expand the layout viewport, and move a fixed app/timeframe dock off-screen.

@@ -11,11 +11,34 @@ export function installSignalAppReadiness() {
     const scan = document.getElementById('appSignalScanRetry');
     const listingRetry = document.getElementById('appSignalListingRetry');
     const listingCache = new Map();
+    let liveScoringCache = null;
+    let liveScoringRequest = null;
     let selected = 'stockbit';
     let selectedSummary = {};
     let selectedScope = {};
     let shownKey = '';
     let serial = 0;
+
+    function renderCurrent() {
+        const summary = liveScoringCache
+            ? { ...selectedSummary, live_scoring: liveScoringCache }
+            : selectedSummary;
+        render(appSignalReadiness(selected, listingCache.get(selected), summary, selectedScope));
+    }
+
+    async function loadLiveScoring() {
+        if (liveScoringCache) return liveScoringCache;
+        if (!liveScoringRequest) {
+            liveScoringRequest = (async () => {
+                const response = await fetch('/api/entry-validation/status', { cache: 'no-store' });
+                const payload = await readApiResponse(response);
+                if (!response.ok || !payload?.live_scoring) return null;
+                liveScoringCache = payload.live_scoring;
+                return liveScoringCache;
+            })().catch(() => null).finally(() => { liveScoringRequest = null; });
+        }
+        return liveScoringRequest;
+    }
 
     function render(readiness) {
         if (!status || !panel) return;
@@ -32,6 +55,10 @@ export function installSignalAppReadiness() {
             term.textContent = metric.label;
             const value = document.createElement('dd');
             value.textContent = metric.value;
+            if (metric.detail) {
+                value.title = metric.detail;
+                value.setAttribute('aria-label', `${metric.value}. ${metric.detail}`);
+            }
             cell.append(term, value);
             return cell;
         }));
@@ -72,7 +99,13 @@ export function installSignalAppReadiness() {
         selectedScope = scope;
         serial++;
         if (recheck) recheck.disabled = false;
-        render(appSignalReadiness(app, listingCache.get(app), summary, scope));
+        renderCurrent();
+        if (!liveScoringCache) {
+            const showSerial = serial;
+            void loadLiveScoring().then(scoring => {
+                if (scoring && serial === showSerial && selected === app) renderCurrent();
+            });
+        }
     }
 
     async function refresh(app = selected, summary = selectedSummary, scope = selectedScope) {
@@ -89,7 +122,8 @@ export function installSignalAppReadiness() {
             if (!response.ok || !Array.isArray(payload?.products)) throw new Error(payload?.error || 'Readiness response unavailable');
             if (request !== serial) return;
             listingCache.set(app, payload);
-            render(appSignalReadiness(app, payload, summary, scope));
+            render(appSignalReadiness(app, payload, liveScoringCache
+                ? { ...summary, live_scoring: liveScoringCache } : summary, scope));
         } catch (error) {
             if (request === serial) unavailable(`App data checks could not be loaded: ${String(error?.message || error).slice(0, 200)}`);
         } finally {
@@ -99,7 +133,10 @@ export function installSignalAppReadiness() {
 
     function unavailable(error) {
         serial++;
-        render({ ...appSignalReadiness(selected, listingCache.get(selected), selectedSummary, selectedScope),
+        const summary = liveScoringCache
+            ? { ...selectedSummary, live_scoring: liveScoringCache }
+            : selectedSummary;
+        render({ ...appSignalReadiness(selected, listingCache.get(selected), summary, selectedScope),
             title: 'Signal availability could not be checked', tone: 'error',
             message: `${String(error || 'The signal service is unavailable').slice(0, 250)}. Any saved checks below may be outdated.`,
             nextStep: 'Recheck status to retry the signal service.' });

@@ -136,8 +136,8 @@ export function initializeEntryValidation(doc = document) {
         const outdatedProfiles = storedProfiles.filter(profile => profile.protocol_current === false);
         activeContainer.replaceChildren();
         if (!profiles.length) {
-            activeContainer.append(element('p', `${outdatedProfiles.length ? 'Stored profiles use an outdated protocol and are ignored. ' : 'No score range has passed the after-fee validation and holdout gates. '}Live signals are withheld until a profile qualifies; research fallback weights are ${weightVectorText(scoring?.default_weights || [10, 10, 10, 10])}.`, 'empty-cell'));
-            status('live-scoring-state', 'Signals withheld', 'pending');
+            activeContainer.append(element('p', `${outdatedProfiles.length ? 'Stored profiles use an outdated protocol and are ignored. ' : 'No score range has passed the after-fee promotion checks. '}Live signals remain visible using equal research weights (${weightVectorText(scoring?.default_weights || [10, 10, 10, 10])}). Validation and holdout win rates below are informational; they do not filter signals.`, 'empty-cell'));
+            status('live-scoring-state', 'No active profile · signals shown', 'pending');
         } else {
             for (const profile of profiles) {
                 const card = element('article', '', 'profile-card');
@@ -151,7 +151,7 @@ export function initializeEntryValidation(doc = document) {
                     element('p', weightVectorText(profile.weights), 'profile-metrics'));
                 const gate = profile.signal_gate || {};
                 const holdout = gate.holdout || {};
-                card.append(element('p', `Signals require score ≥ ${metric(gate.minimum_score_out_of_40, '/40', 0)} · holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} after fees · ${metric(holdout.trades, ' trades', 0)} · 95% lower bound ${metric(holdout.win_rate_after_fees_wilson_95_lower_pct, '%', 1)}`, 'profile-metrics'));
+                card.append(element('p', `Historical holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} after fees vs ${metric(gate.target_after_fee_win_rate_pct ?? scoring?.target_after_fee_win_rate_pct, '% target', 0)} · ${metric(holdout.trades, ' trades', 0)} · 95% lower bound ${metric(holdout.win_rate_after_fees_wilson_95_lower_pct, '%', 1)} · score cutoff ${metric(gate.minimum_score_out_of_40, '/40', 0)} is informational and does not filter signals`, 'profile-metrics'));
                 activeContainer.append(card);
             }
             status('live-scoring-state', `${profiles.length} active profile${profiles.length === 1 ? '' : 's'}`, 'valid');
@@ -176,13 +176,13 @@ export function initializeEntryValidation(doc = document) {
             const validation = decision.validation || {};
             const holdout = decision.holdout || {};
             if (validation.trades != null || holdout.trades != null) {
-                card.append(element('p', `Validation ${metric(validation.win_rate_after_fees_pct, '%', 1)} · ${metric(validation.trades, '', 0)} trades · holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} · ${metric(holdout.trades, '', 0)} trades`));
+                card.append(element('p', `Validation ${metric(validation.win_rate_after_fees_pct, '%', 1)} · ${metric(validation.trades, '', 0)} trades · holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} · ${metric(holdout.trades, '', 0)} trades · target ${metric(decision.target_after_fee_win_rate_pct, '% after fees', 0)}; informational only`));
             }
             const gate = decision.signal_gate || {};
             if (gate.minimum_score_out_of_40 != null) {
-                card.append(element('p', `Signal cutoff ≥ ${metric(gate.minimum_score_out_of_40, '/40', 0)} · validation ${metric(gate.validation?.win_rate_after_fees_pct, '%', 1)} · holdout ${metric(gate.holdout?.win_rate_after_fees_pct, '%', 1)} after fees`, 'profile-metrics'));
+                card.append(element('p', `Backtested score cutoff ${metric(gate.minimum_score_out_of_40, '/40', 0)} · validation ${metric(gate.validation?.win_rate_after_fees_pct, '%', 1)} · holdout ${metric(gate.holdout?.win_rate_after_fees_pct, '%', 1)} after fees · metric only; live signals are not filtered`, 'profile-metrics'));
             } else {
-                card.append(element('p', 'No validation score cutoff met the after-fee signal gate.', 'profile-metrics'));
+                card.append(element('p', 'No validation score cutoff met the after-fee promotion target. The measured validation and holdout rates above remain visible; live signals are not filtered.', 'profile-metrics'));
             }
             const blockers = Array.isArray(decision.blockers) ? decision.blockers : [];
             if (blockers.length) card.append(element('p', `Blocked: ${blockers.slice(0, 3).join(' ')}`));
