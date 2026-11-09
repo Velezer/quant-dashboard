@@ -449,9 +449,6 @@ pub(crate) fn compact_stockbit_signal_score_update(
         .get("Signal_After_Fee_Gate")
         .cloned()
         .unwrap_or(Value::Null);
-    let calibrated_minimum_score = after_fee_gate
-        .get("minimum_score_out_of_40")
-        .and_then(Value::as_f64);
     let score_basis_json = serde_json::to_string(&json!({
         "model_id": score_model_id,
         "score_scale_max": if four_indicator_score_model {
@@ -465,7 +462,7 @@ pub(crate) fn compact_stockbit_signal_score_update(
             Some(quant_core::NWE_DSS_SIGNAL_MINIMUM_SCORE_OUT_OF_20)
         },
         "minimum_score_out_of_40": if four_indicator_score_model {
-            calibrated_minimum_score
+            Some(quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40)
         } else {
             None
         },

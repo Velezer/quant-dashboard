@@ -51,7 +51,6 @@ pub(super) fn append_timeframe_signal_candidate(
         "Signal_After_Fee_Gate": profile
             .map(|profile| profile.after_fee_gate.clone())
             .unwrap_or(Value::Null),
-        "Signal_Requires_After_Fee_Gate": input.active_scoring_profiles.is_some(),
         "Signal_Score_Components": score_components,
         "timeframe": timeframe,
         "Current_Price": current_price.value,
@@ -165,25 +164,24 @@ pub(super) fn append_stockbit_model_result(
                 Some((0.0, 0.0, 0.0)),
             )
         });
-    let gate_required = input.active_scoring_profiles.is_some();
-    let has_after_fee_setup = latest_signal.is_some()
-        && (!gate_required
-            || profile.is_some_and(|profile| {
-                four_factor_groups.is_some_and(|(_, _, total)| total >= profile.minimum_score)
-            }));
-    let blocked_issue = if gate_required && latest_signal.is_some() && !has_after_fee_setup {
+    let has_after_fee_setup = latest_signal.is_some();
+    let after_fee_issue = if has_after_fee_setup
+        && profile.is_none_or(|profile| {
+            four_factor_groups.is_none_or(|(_, _, total)| total < profile.minimum_score)
+        })
+    {
         let (reason, explanation) = match (profile, four_factor_groups) {
             (None, _) => (
                 "after_fee_profile_missing",
-                "No active backtested score range passed the after-fee signal gate.",
+                "No active after-fee profile is available; equal-weight scoring is used and this setup is still shown.",
             ),
             (Some(profile), Some((_, _, score))) if score < profile.minimum_score => (
                 "below_after_fee_score_cutoff",
-                "The live score is below this cohort's backtested after-fee score cutoff.",
+                "The setup is below the historical after-fee score cutoff; the metric is informational and does not hide this signal.",
             ),
             _ => (
                 "after_fee_score_unavailable",
-                "The current setup score could not be checked against after-fee backtest evidence.",
+                "The after-fee backtest metric is unavailable; this setup is still shown.",
             ),
         };
         Some(ReadinessIssue {
@@ -277,5 +275,5 @@ pub(super) fn append_stockbit_model_result(
             },
         }));
     }
-    blocked_issue
+    after_fee_issue
 }

@@ -837,5 +837,5 @@ pub(crate) fn scoring_profile_status(connection: &Connection) -> Result<Value, r
     };
     Ok(json!({"target_after_fee_win_rate_pct":TARGET_AFTER_FEE_WIN_RATE_PCT,
         "active_profiles":profiles,"latest_evaluations":evaluations,
-        "default_weights":[10,10,10,10],"default_status":"research-only equal weights until score-range after-fee gates pass"}))
+        "default_weights":[10,10,10,10],"default_status":"equal-weight live scoring when no validated profile exists; after-fee metrics are informational"}))
 }

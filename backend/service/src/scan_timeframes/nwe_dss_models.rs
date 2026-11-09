@@ -20,9 +20,9 @@ pub(super) fn append_nwe_dss_model_signals(
     standalone_indicator_signals: &mut Vec<Value>,
     standalone_score_updates: &mut Vec<Value>,
 ) -> Vec<ReadinessIssue> {
-    let mut blocked = Vec::new();
+    let mut after_fee_diagnostics = Vec::new();
     let Some((source, provider)) = source_metadata else {
-        return blocked;
+        return after_fee_diagnostics;
     };
 
     for model in [quant_core::EntryModelKind::Nwe, quant_core::EntryModelKind::Dss] {
@@ -72,7 +72,7 @@ pub(super) fn append_nwe_dss_model_signals(
                 indicator,
                 current_price,
             ) {
-                blocked.push(issue);
+                after_fee_diagnostics.push(issue);
             }
         } else {
             let crypto_context = CryptoSignalContext {
@@ -91,11 +91,11 @@ pub(super) fn append_nwe_dss_model_signals(
                 indicator,
                 standalone_indicator_signals,
             ) {
-                blocked.push(issue);
+                after_fee_diagnostics.push(issue);
             }
         }
     }
-    blocked
+    after_fee_diagnostics
 }
 
 fn append_crypto_model_signal(
@@ -140,27 +140,24 @@ fn append_crypto_model_signal(
         profile,
     );
     let score = four_factor_groups.map(|(_, _, total)| total);
-    let gate_required = context.input.active_scoring_profiles.is_some();
-    let eligible = !gate_required
-        || profile
-            .zip(score)
-            .is_some_and(|(profile, score)| score >= profile.minimum_score);
-    if !eligible {
+    let after_fee_issue = if profile.is_none_or(|profile| {
+        score.is_none_or(|score| score < profile.minimum_score)
+    }) {
         let (reason, explanation) = match (profile, score) {
             (None, _) => (
                 "after_fee_profile_missing",
-                "No active backtested score range passed the after-fee signal gate.",
+                "No active after-fee profile is available; equal-weight scoring is used and this setup is still shown.",
             ),
             (Some(profile), Some(score)) if score < profile.minimum_score => (
                 "below_after_fee_score_cutoff",
-                "The live score is below this cohort's backtested after-fee score cutoff.",
+                "The setup is below the historical after-fee score cutoff; the metric is informational and does not hide this signal.",
             ),
             _ => (
                 "after_fee_score_unavailable",
-                "The current setup score could not be checked against after-fee backtest evidence.",
+                "The after-fee backtest metric is unavailable; this setup is still shown.",
             ),
         };
-        return Some(ReadinessIssue {
+        Some(ReadinessIssue {
             symbol: context.input.asset.into(),
             reason: reason.into(),
             timeframe: context.timeframe.into(),
@@ -169,8 +166,10 @@ fn append_crypto_model_signal(
             last_bar_time: Some(bar.time),
             error: Some(explanation.into()),
             ..ReadinessIssue::default()
-        });
-    }
+        })
+    } else {
+        None
+    };
     append_timeframe_signal_candidate(
         candidates,
         context.input,
@@ -187,7 +186,7 @@ fn append_crypto_model_signal(
         four_factor_groups,
         profile,
     );
-    None
+    after_fee_issue
 }
 
 fn latest_crypto_signal_for_latest_bar<'a>(
