@@ -82,12 +82,49 @@ pub(crate) fn run_entry_validation(
     timeframe: &str,
 ) -> Result<Value, String> {
     entry_validation_timeframe(timeframe)?;
+    const SQLITE_CONTENTION_RETRY_DELAYS_MS: [u64; 4] = [250, 750, 2_000, 5_000];
+    for attempt in 0..=SQLITE_CONTENTION_RETRY_DELAYS_MS.len() {
+        let result =
+            run_entry_validation_once(connection, market_directory, instrument_id, timeframe);
+        if attempt == SQLITE_CONTENTION_RETRY_DELAYS_MS.len()
+            || !result
+                .as_ref()
+                .is_err_and(|error| is_sqlite_contention_error(error))
+        {
+            return result;
+        }
+        let error = result.as_ref().err().map(String::as_str).unwrap_or("");
+        let delay = SQLITE_CONTENTION_RETRY_DELAYS_MS[attempt];
+        eprintln!(
+            "[EntryValidation] SQLite contention for {instrument_id} {timeframe}; retry {}/{} in {delay}ms: {error}",
+            attempt + 1,
+            SQLITE_CONTENTION_RETRY_DELAYS_MS.len()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(delay));
+    }
+    unreachable!("the final attempt returns before the retry loop ends")
+}
+
+fn run_entry_validation_once(
+    connection: &Connection,
+    market_directory: &str,
+    instrument_id: &str,
+    timeframe: &str,
+) -> Result<Value, String> {
     let instrument = store::instrument(connection, instrument_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "The exact active registered instrument was not found.".to_string())?;
     let report = build_report(connection, market_directory, instrument, timeframe)?;
     store::save_report(connection, &report).map_err(|error| error.to_string())?;
     Ok(report)
+}
+
+fn is_sqlite_contention_error(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("database is locked")
+        || error.contains("database table is locked")
+        || error.contains("database schema is locked")
+        || error.contains("database is busy")
 }
 
 fn text<'a>(value: &'a Value, field: &str) -> &'a str {
