@@ -68,9 +68,12 @@ must still support SQLite file locking and durable writes.
 ## Candle retention
 
 Canonical candle history has no application-imposed maximum age or total-row
-retention cap. Candles older than 730 days remain stored, and newly acquired
-older candles can be added. The 730-day value is a minimum coverage requirement
-for evidence validation, not a storage limit. Syncs upsert the exact
+retention cap. Candles older than 1,000 days remain stored, and newly acquired
+older candles can be added. The 1,000-day value is the minimum stored-history
+coverage requirement, not a storage limit. Binance crypto history uses bounded
+pages from the oldest saved candle, and continues backfilling even when a recent
+price refresh succeeded. Historical pages do not replace current-price refreshes.
+The separate 730-day value is the minimum evidence sample requirement. Syncs upsert the exact
 symbol/interval/source/timestamp and preserve other timestamps.
 
 Provider request windows and per-response budgets bound acquisition. Chart,

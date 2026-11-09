@@ -190,7 +190,7 @@ fn sync_daily_market(
     registered_storage_symbol: &str,
 ) -> Result<usize, String> {
     let storage_symbol = resolve_storage_symbol(venue, tokenized, registered_storage_symbol)?;
-    let bars_1d = fetch_klines(&venue, "1d", 500).map_err(|error| {
+    let bars_1d = fetch_klines(&venue, "1d", 1_000).map_err(|error| {
         record_failure(connection, &storage_symbol, "1d", &error);
         error
     })?;

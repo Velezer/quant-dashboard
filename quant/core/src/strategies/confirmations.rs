@@ -152,46 +152,59 @@ pub(super) fn apply_stockbit_nwe_proximity_confluence_with_dss(
     signals: &mut [StrategySignal],
     dss: &crate::DssResult,
 ) {
-    let dss_config = DssConfig::default();
     for (index, signal) in signals.iter_mut().enumerate() {
-        let direction = match signal.direction.as_str() {
-            "LONG" => 1,
-            "SHORT" => -1,
-            _ => continue,
-        };
-        let dss_state = classify_latest_spread(&dss.dss[..=index], &dss.trigger[..=index])
-            .map(|(_, state)| state)
-            .unwrap_or("UNAVAILABLE");
-        let dss_points = dss_confirmation_state(&dss.dss, &dss.trigger, index, direction)
-            .map(|(_, points)| points)
-            .unwrap_or(0.0);
-        let dss_extreme_zone =
-            has_recent_directional_extreme(&dss.dss, index, direction, &dss_config);
-        let dss_extreme_points = if dss_extreme_zone {
-            DSS_EXTREME_ZONE_POINTS
-        } else {
-            0.0
-        };
-        let confluence_score = stockbit_nwe_dss_confluence_score(dss_points + dss_extreme_points);
-        let strategy_strength = if signal.strength.is_finite() {
-            signal.strength.clamp(0.0, SIGNAL_STRENGTH_SCORE_SCALE_MAX)
-        } else {
-            0.0
-        };
-        signal.strategy_strength = strategy_strength;
-        signal.strength = strategy_strength + confluence_score;
-        signal.confluence = Some(SignalConfluenceScore {
-            score: confluence_score,
-            nadaraya_state: signal.regime.clone(),
-            dss_state: dss_state.to_string(),
-            dss_extreme_zone,
-            dss_points,
-            dss_extreme_points,
-            nadaraya_touch_points: 0.0,
-            nadaraya_near_line_points: 0.0,
-            nadaraya_reclaim_points: 0.0,
-        });
+        apply_stockbit_nwe_proximity_confluence_with_dss_at(signal, dss, index);
     }
+}
+
+pub(super) fn apply_stockbit_nwe_proximity_confluence_with_dss_at(
+    signal: &mut StrategySignal,
+    dss: &crate::DssResult,
+    index: usize,
+) {
+    let dss_config = DssConfig::default();
+    let direction = match signal.direction.as_str() {
+        "LONG" => 1,
+        "SHORT" => -1,
+        _ => return,
+    };
+    let Some(dss_values) = dss.dss.get(..=index) else {
+        return;
+    };
+    let Some(trigger_values) = dss.trigger.get(..=index) else {
+        return;
+    };
+    let dss_state = classify_latest_spread(dss_values, trigger_values)
+        .map(|(_, state)| state)
+        .unwrap_or("UNAVAILABLE");
+    let dss_points = dss_confirmation_state(&dss.dss, &dss.trigger, index, direction)
+        .map(|(_, points)| points)
+        .unwrap_or(0.0);
+    let dss_extreme_zone = has_recent_directional_extreme(&dss.dss, index, direction, &dss_config);
+    let dss_extreme_points = if dss_extreme_zone {
+        DSS_EXTREME_ZONE_POINTS
+    } else {
+        0.0
+    };
+    let confluence_score = stockbit_nwe_dss_confluence_score(dss_points + dss_extreme_points);
+    let strategy_strength = if signal.strength.is_finite() {
+        signal.strength.clamp(0.0, SIGNAL_STRENGTH_SCORE_SCALE_MAX)
+    } else {
+        0.0
+    };
+    signal.strategy_strength = strategy_strength;
+    signal.strength = strategy_strength + confluence_score;
+    signal.confluence = Some(SignalConfluenceScore {
+        score: confluence_score,
+        nadaraya_state: signal.regime.clone(),
+        dss_state: dss_state.to_string(),
+        dss_extreme_zone,
+        dss_points,
+        dss_extreme_points,
+        nadaraya_touch_points: 0.0,
+        nadaraya_near_line_points: 0.0,
+        nadaraya_reclaim_points: 0.0,
+    });
 }
 
 pub(super) fn stockbit_nwe_dss_confluence_score(points: f64) -> f64 {

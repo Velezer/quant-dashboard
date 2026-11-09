@@ -91,8 +91,8 @@ pub(super) fn sync_intraday_asset(
     Ok((bars_15m.len(), bars_1h.len()))
 }
 
-/// Refresh a rolling 1,000 completed daily candles. This keeps the Pintu
-/// futures history beyond the dashboard's 730-day evidence window.
+/// Refresh a rolling 1,000 completed daily candles, meeting the dashboard's
+/// minimum daily-history coverage target.
 pub(super) fn sync_daily_asset(
     connection: &Connection,
     storage_symbol: &str,
@@ -110,9 +110,9 @@ pub(super) fn sync_daily_asset(
             record_failure(connection, storage_symbol, product_id, "1d", &error);
             error
         })?;
-    if bars.len() < 731 {
+    if bars.len() < 1_000 {
         let error = format!(
-            "Pintu returned {} completed daily candles; at least 731 are required",
+            "Pintu returned {} completed daily candles; at least 1,000 are required",
             bars.len()
         );
         record_failure(connection, storage_symbol, product_id, "1d", &error);

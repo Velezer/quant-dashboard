@@ -6,6 +6,43 @@ const DAILY_REFRESH_INTERVAL_SECONDS: u64 = quant_core::SECONDS_PER_DAY as u64;
 const DAILY_REFRESH_RETRY_SECONDS: u64 = 15 * quant_core::SECONDS_PER_MINUTE as u64;
 const DAILY_REFRESH_WAIT_SECONDS: u64 = 5;
 const DAILY_REFRESH_PAUSE_MILLISECONDS: u64 = 100;
+const PROFILE_EVALUATION_RETRY_PAIRS: usize = 500;
+
+fn required_profile_coverage_pairs(total_pairs: usize) -> usize {
+    total_pairs
+        .saturating_mul(PROFILE_MIN_COHORT_COVERAGE_PCT)
+        .saturating_add(99)
+        / 100
+}
+
+fn evaluate_scoring_profiles(
+    connection: &Connection,
+    cycle_started_at: i64,
+    evaluated_at: i64,
+    completed_pairs: usize,
+    total_pairs: usize,
+) -> bool {
+    match super::evaluate_daily_scoring_profiles(
+        connection,
+        cycle_started_at,
+        evaluated_at,
+        completed_pairs,
+        total_pairs,
+    ) {
+        Ok(evaluated) => {
+            eprintln!(
+                "[EntryValidation] Evaluated {evaluated} shared live-scoring cohorts after {completed_pairs}/{total_pairs} successful reports against the 70% after-fee target."
+            );
+            true
+        }
+        Err(error) => {
+            eprintln!(
+                "[EntryValidation] Live-scoring profile evaluation failed; existing active weights remain unchanged: {error}"
+            );
+            false
+        }
+    }
+}
 
 #[derive(Clone)]
 struct RefreshTarget {
@@ -141,6 +178,29 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
     let cursor = cursor.min(targets.len());
     store::set_daily_refresh_total(&connection, targets.len(), now)
         .map_err(|error| error.to_string())?;
+    let mut completed_pairs = if unfinished {
+        persisted.completed_pairs.min(targets.len())
+    } else {
+        0
+    };
+    let mut profiles_evaluated = false;
+    let mut next_profile_evaluation_pair = required_profile_coverage_pairs(targets.len());
+    if unfinished
+        && next_profile_evaluation_pair > 0
+        && completed_pairs >= next_profile_evaluation_pair
+    {
+        profiles_evaluated = evaluate_scoring_profiles(
+            &connection,
+            cycle_started_at,
+            now,
+            completed_pairs,
+            targets.len(),
+        );
+        if !profiles_evaluated {
+            next_profile_evaluation_pair =
+                completed_pairs.saturating_add(PROFILE_EVALUATION_RETRY_PAIRS);
+        }
+    }
     eprintln!(
         "[EntryValidation] Daily refresh started: {} eligible ticker/timeframe reports, resuming at {}.",
         targets.len(), cursor
@@ -202,6 +262,7 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
             .as_ref()
             .err()
             .map(|error| (target.label.as_str(), error.as_str()));
+        let pair_succeeded = result.is_ok();
         if let Some((label, error)) = failed {
             eprintln!("[EntryValidation] Daily backtest failed for {label}: {error}");
         }
@@ -215,6 +276,25 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
             updated_at,
         )
         .map_err(|error| error.to_string())?;
+        if pair_succeeded {
+            completed_pairs = completed_pairs.saturating_add(1);
+        }
+        if !profiles_evaluated
+            && next_profile_evaluation_pair > 0
+            && completed_pairs >= next_profile_evaluation_pair
+        {
+            profiles_evaluated = evaluate_scoring_profiles(
+                &connection,
+                cycle_started_at,
+                updated_at,
+                completed_pairs,
+                targets.len(),
+            );
+            if !profiles_evaluated {
+                next_profile_evaluation_pair =
+                    completed_pairs.saturating_add(PROFILE_EVALUATION_RETRY_PAIRS);
+            }
+        }
         drop(result);
         connection
             .execute_batch("PRAGMA shrink_memory;")
@@ -230,19 +310,13 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
         .map_err(|error| error.to_string())?;
     let refresh_summary = store::daily_refresh_state(&connection)
         .map_err(|error| error.to_string())?;
-    match super::evaluate_daily_scoring_profiles(
+    evaluate_scoring_profiles(
         &connection,
         cycle_started_at,
         completed_at,
-        refresh_summary.failed_pairs,
-    ) {
-        Ok(evaluated) => eprintln!(
-            "[EntryValidation] Evaluated {evaluated} shared live-scoring cohorts against the 70% after-fee target."
-        ),
-        Err(error) => eprintln!(
-            "[EntryValidation] Live-scoring profile evaluation failed; existing active weights remain unchanged: {error}"
-        ),
-    }
+        refresh_summary.completed_pairs,
+        refresh_summary.total_pairs,
+    );
     eprintln!(
         "[EntryValidation] Daily refresh complete: {} reports processed, {} failed.",
         targets.len(), refresh_summary.failed_pairs

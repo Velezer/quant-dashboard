@@ -69,7 +69,7 @@ const DEFAULT_SIGNAL_DB: &str = "data/signals/signals.sqlite3";
 const SIGNAL_REFRESH_INTERVAL_SECONDS: u64 = 15 * quant_core::SECONDS_PER_MINUTE as u64;
 const DEFAULT_SCAN_INTERVAL_MINUTES: u64 =
     SIGNAL_REFRESH_INTERVAL_SECONDS / quant_core::SECONDS_PER_MINUTE as u64;
-const MIN_ENGINE_HISTORY_DAYS: i64 = MIN_EVIDENCE_SAMPLE_DAYS;
+const MIN_ENGINE_HISTORY_DAYS: i64 = 1_000;
 const MARKET_SYNC_TICK_SECONDS: u64 = quant_core::SECONDS_PER_MINUTE as u64;
 // The browser loads dashboard modules in parallel, so the bounded cap must
 // allow that startup burst while rejecting excess connections under load.
@@ -80,15 +80,14 @@ const MIN_CHART_CANDLES: usize = 2;
 // A higher-timeframe chart may need more lower-timeframe rows than the normal
 // response cap. The rollup is built in one bounded request and released before
 // the response is assembled, keeping the 32 MB steady-state cap intact.
-const MAX_AGGREGATION_SOURCE_CANDLES: i64 = 12_000;
+const MAX_AGGREGATION_SOURCE_CANDLES: i64 = 100_000;
 // A 20,000-bar 4h strategy sample needs at most 80,000 hourly rows plus
 // bounded rollup warm-up. This cap applies only to transient strategy reads.
 const MAX_STRATEGY_AGGREGATION_SOURCE_CANDLES: i64 = 80_120;
-// Evidence reads are bounded separately from chart reads. One symbol is
-// evaluated at a time, so this keeps the sidecar within the 16 MB steady-state
-// target. A future two-year 24/7 intraday store can exceed this cap; its
-// evidence remains explicitly under-target until a streaming evaluator is used.
-const MAX_EVIDENCE_CANDLES: i64 = 10_000;
+// A 1,000-day 15m sample is 96,000 rows. The entry-score replay visits only
+// directional bars and computes each indicator series once so this bounded
+// sample remains practical for the sequential backtest worker.
+const MAX_EVIDENCE_CANDLES: i64 = 100_000;
 const MAX_RESEARCH_SYMBOLS: usize = 100;
 mod candle_history;
 mod candles;

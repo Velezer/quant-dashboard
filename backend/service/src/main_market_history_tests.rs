@@ -259,14 +259,14 @@ fn provider_sync_errors_have_actionable_reasons() {
 }
 
 #[test]
-fn history_contract_requires_two_calendar_years() {
-    assert_eq!(MIN_ENGINE_HISTORY_DAYS, 730);
+fn history_contract_requires_one_thousand_calendar_days() {
+    assert_eq!(MIN_ENGINE_HISTORY_DAYS, 1_000);
     assert_eq!(history_coverage_status(0, 0), "MISSING");
-    assert_eq!(history_coverage_status(100, 729), "UNDER_TARGET");
-    assert_eq!(history_coverage_status(100, 730), "TARGET_MET");
-    assert!(history_coverage_warning("1d", 100, 729)
+    assert_eq!(history_coverage_status(100, 999), "UNDER_TARGET");
+    assert_eq!(history_coverage_status(100, 1_000), "TARGET_MET");
+    assert!(history_coverage_warning("1d", 100, 999)
         .expect("daily coverage should explain the gap")
-        .contains("729/730"));
+        .contains("999/1000"));
     assert!(history_coverage_warning("15m", 100, 65)
         .expect("intraday coverage should explain the provider limit")
         .contains("provider-window limited"));

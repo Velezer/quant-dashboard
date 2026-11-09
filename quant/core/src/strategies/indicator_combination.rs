@@ -5,6 +5,7 @@ use super::common::{
 };
 use super::confirmations::{
     apply_stockbit_nwe_proximity_confluence, apply_stockbit_nwe_proximity_confluence_with_dss,
+    apply_stockbit_nwe_proximity_confluence_with_dss_at,
     NWE_DSS_SIGNAL_MINIMUM_SCORE_OUT_OF_20,
     NWE_DSS_SIGNAL_SCORE_SCALE_MAX, SIGNAL_STRENGTH_SCORE_SCALE_MAX,
 };
@@ -92,12 +93,6 @@ pub fn generate_stockbit_nwe_4h_signals(bars: &[StrategyBar]) -> Vec<StrategySig
     generate_stockbit_nwe_4h_signals_internal(bars, None)
 }
 
-pub(super) fn generate_stockbit_nwe_4h_signals_with_dss(
-    bars: &[StrategyBar], dss: &crate::DssResult,
-) -> Vec<StrategySignal> {
-    generate_stockbit_nwe_4h_signals_internal(bars, Some(dss))
-}
-
 fn generate_stockbit_nwe_4h_signals_internal(
     bars: &[StrategyBar], dss: Option<&crate::DssResult>,
 ) -> Vec<StrategySignal> {
@@ -179,6 +174,84 @@ fn generate_stockbit_nwe_4h_signals_internal(
         }
     }
     signals
+}
+
+/// Visit every causal NWE/DSS history signal without allocating one large
+/// `StrategySignal` value for every candle. The envelope and DSS histories are
+/// computed once, then only directional candidates are materialized.
+pub(super) fn visit_stockbit_nwe_4h_signals_with_dss(
+    bars: &[StrategyBar],
+    dss: &crate::DssResult,
+    mut visitor: impl FnMut(usize, &StrategySignal),
+) {
+    let config = NadarayaWatsonEnvelopeConfig::default();
+    let signal_config = StockbitNwe4hSignalConfig::default();
+    let required_cross_bars = stockbit_nwe_4h_minimum_history_bars();
+    if !signal_config.is_valid() || bars.len() < required_cross_bars {
+        return;
+    }
+    let closes = bars.iter().map(|bar| bar.close).collect::<Vec<_>>();
+    let envelope = calculate_nadaraya_watson_endpoint_only(&closes, &config);
+    let score_rounding_tolerance = 1e-12;
+    for index in required_cross_bars.saturating_sub(1)..bars.len() {
+        let Some(bar) = bars.get(index) else {
+            continue;
+        };
+        let Some(crossed_above_upper) = envelope.crossed_above_upper.get(index).copied() else {
+            continue;
+        };
+        let Some(crossed_below_lower) = envelope.crossed_below_lower.get(index).copied() else {
+            continue;
+        };
+        let Some(upper) = envelope.upper.get(index).copied() else {
+            continue;
+        };
+        let Some(lower) = envelope.lower.get(index).copied() else {
+            continue;
+        };
+        if !finite(bar.close) || bar.close <= 0.0 {
+            continue;
+        }
+        let (direction, regime, strategy_strength) = match
+            (crossed_below_lower, crossed_above_upper)
+        {
+            (true, false) => (
+                "LONG",
+                "NWE_LOWER_BAND_CROSS_LONG",
+                SIGNAL_STRENGTH_SCORE_SCALE_MAX,
+            ),
+            (false, true) => (
+                "SHORT",
+                "NWE_UPPER_BAND_CROSS_SHORT",
+                SIGNAL_STRENGTH_SCORE_SCALE_MAX,
+            ),
+            (false, false) => {
+                let Some(candidate) = stockbit_nwe_4h_near_band_candidate(
+                    bar.close,
+                    lower,
+                    upper,
+                    signal_config,
+                ) else {
+                    continue;
+                };
+                candidate
+            }
+            (true, true) => continue,
+        };
+        let mut signal = StrategySignal {
+            direction: direction.to_string(),
+            strength: strategy_strength,
+            strategy_strength,
+            regime: regime.to_string(),
+            ..StrategySignal::default()
+        };
+        apply_stockbit_nwe_proximity_confluence_with_dss_at(&mut signal, dss, index);
+        if signal.strength + score_rounding_tolerance < signal_config.minimum_score_out_of_20 {
+            continue;
+        }
+        signal.strength = signal.strength.clamp(0.0, NWE_DSS_SIGNAL_SCORE_SCALE_MAX);
+        visitor(index, &signal);
+    }
 }
 
 pub(super) fn stockbit_nwe_4h_near_band_candidate(

@@ -248,7 +248,7 @@ candidate is not a live signal model and cannot make that evidence sizing-ready.
 
 ## Candle retention and low total strength
 
-The user must be able to retain history beyond 730 days and identify a
+The user must be able to retain history beyond 1,000 days and identify a
 four-indicator signal with fewer than 10 combined points. Candle storage has no
 application age or total-row retention cap. Data details shows actual stored
 coverage and labels the evidence minimum separately, with an explanation of

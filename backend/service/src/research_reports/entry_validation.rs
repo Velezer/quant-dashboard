@@ -4,6 +4,7 @@ use serde_json::json;
 use std::sync::Mutex;
 
 pub(super) const PROTOCOL_ID: &str = quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID;
+pub(super) const PROFILE_MIN_COHORT_COVERAGE_PCT: usize = 80;
 pub(crate) static ENTRY_VALIDATION_WORK: Mutex<()> = Mutex::new(());
 #[path = "entry_validation_store.rs"]
 mod store;
