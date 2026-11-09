@@ -116,7 +116,7 @@ the separate sizing rule and risk limits have been addressed.
 
 An unsupported app/product/category has no substitute strategy. Missing,
 forming, malformed, stale, or insufficient candles stay visible as such.
-Analysis reads at most 10,000 of the latest matching completed candles per run;
+Analysis reads at most 100,000 of the latest matching completed candles per run;
 this is an analysis bound, not a storage or candle-age limit. Check the sample
 dates and read-limit notice before interpreting a report. A saved report is an
 aggregate snapshot, not live evidence; rerun it after history or protocol changes.
@@ -131,8 +131,9 @@ comparison.
 
 ### Daily refresh operating contract
 
-1. **Direct effect:** Saved per-ticker candidates refresh daily; a completed
-   cycle evaluates shared live profiles against the 70% after-fee target.
+1. **Direct effect:** Saved per-ticker candidates refresh daily; shared live
+   profiles are evaluated once successful jobs cover 80% of the cycle, then
+   again at cycle end against the 70% after-fee target.
 2. **Immediate consequence:** A full pass can contain thousands of pairs, so
    it processes one pair at a time and yields briefly between reports.
 3. **Repeated operation:** The next cycle becomes due 24 hours after start;
@@ -147,12 +148,15 @@ comparison.
 7. **Recovery:** The page shows cycle progress and the latest failed pair; item
    failures retry in the next daily pass and worker-level failures retry after
    15 minutes.
-8. **Governance:** Daily training refreshes research candidates only. It does
-   not promote a weight candidate into live screener scoring.
+8. **Governance:** A candidate reaches live screener scoring only when its
+   after-fee validation and untouched holdout both pass the 70% target, score
+   cutoff, sample, and return checks. A failed or incomplete cohort leaves the
+   existing active profile unchanged.
 9. **Trajectory:** A long or repeatedly failing cycle can leave some reports
    older than a day; progress and completion timestamps expose that condition.
-10. **Decision:** Keep the worker sequential and resumable; revise its cadence
-    only if deployed duration and memory measurements support a change.
+10. **Decision:** Keep the worker sequential and resumable; profile evaluation
+    uses successful-job coverage, so one failed ticker cannot block all other
+    cohorts from becoming eligible.
 
 ## Conditional exit cues on the screener
 

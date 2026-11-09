@@ -191,6 +191,86 @@ pub(super) fn fetch_binance_interval(
     Ok(saved_rows)
 }
 
+/// Extend an existing Binance series by one bounded page before its oldest
+/// stored candle. The database's minimum timestamp is the durable cursor, so a
+/// restart resumes at the next missing range without a separate queue.
+pub(super) fn fetch_binance_history_page(
+    pair: &str,
+    market: BinanceMarket,
+    interval: &str,
+    duration_seconds: i64,
+    earliest_ts: i64,
+    target_days: i64,
+    mut save_page: impl FnMut(&[Bar]) -> Result<(), String>,
+) -> Result<usize, String> {
+    if pair.is_empty()
+        || pair.len() > 24
+        || !pair
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        || !matches!(interval, "15m" | "1h" | "1d")
+        || duration_seconds <= 0
+        || earliest_ts <= 0
+        || target_days <= 0
+    {
+        return Err("invalid Binance history backfill request".into());
+    }
+    let now_ms = i64::try_from(crate::now_secs())
+        .map_err(|_| "system clock exceeds Binance timestamp bound")?
+        .saturating_mul(quant_core::MILLISECONDS_PER_SECOND);
+    let interval_ms = duration_seconds
+        .checked_mul(quant_core::MILLISECONDS_PER_SECOND)
+        .ok_or("Binance interval overflow")?;
+    let target_floor_ms = now_ms.saturating_sub(
+        target_days
+            .saturating_sub(1)
+            .saturating_mul(quant_core::SECONDS_PER_DAY)
+            .saturating_mul(quant_core::MILLISECONDS_PER_SECOND),
+    );
+    let earliest_ms = earliest_ts.saturating_mul(quant_core::MILLISECONDS_PER_SECOND);
+    if earliest_ms <= target_floor_ms {
+        return Ok(0);
+    }
+    let end_ms = earliest_ms.saturating_sub(1);
+    let page_start_ms = earliest_ms
+        .saturating_sub(interval_ms.saturating_mul(BINANCE_INGESTION_PAGE_ROWS as i64))
+        .max(target_floor_ms);
+    let requested_rows = usize::try_from(
+        end_ms
+            .saturating_sub(page_start_ms)
+            .div_euclid(interval_ms)
+            .saturating_add(1),
+    )
+    .unwrap_or(BINANCE_INGESTION_PAGE_ROWS)
+    .clamp(1, BINANCE_INGESTION_PAGE_ROWS.min(market.max_page_size()));
+    let url = format!(
+        "{}?symbol={pair}&interval={interval}&startTime={page_start_ms}&endTime={end_ms}&limit={requested_rows}",
+        market.endpoint()
+    );
+    let body = fetch_bounded_url(&url)?;
+    let root: Value =
+        serde_json::from_slice(&body).map_err(|_| "invalid Binance history response")?;
+    let rows = root
+        .as_array()
+        .ok_or("Binance returned a non-array history response")?;
+    if rows.len() > requested_rows {
+        return Err("Binance history count exceeded request bound".into());
+    }
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let parsed = parse_binance_candles(&body, now_ms, duration_seconds, requested_rows)?;
+    if parsed.iter().any(|bar| bar.ts >= earliest_ts)
+        || parsed.windows(2).any(|pair| pair[0].ts >= pair[1].ts)
+    {
+        return Err("Binance history page overlaps stored candles or is unordered".into());
+    }
+    if !parsed.is_empty() {
+        save_page(&parsed)?;
+    }
+    Ok(parsed.len())
+}
+
 pub(super) fn yahoo_base_asset(symbol: &str) -> Result<String, String> {
     let normalized = symbol.trim().to_ascii_uppercase();
     let base = normalized

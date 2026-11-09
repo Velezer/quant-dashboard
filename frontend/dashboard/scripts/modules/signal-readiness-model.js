@@ -119,9 +119,15 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         result.title = 'The latest signal scan failed';
         result.message = `The checks below belong to the last successful scan. ${String(summary.status.last_error || 'The service did not record a detailed error.').slice(0, 250)}`;
     } else if (summary.stale) {
-        result.title = 'The last signal checks are outdated';
-        result.message = `A new completed scan is needed to explain this view now.${blockers.length ? ` Last observed blockers: ${blockers.join('; ')}.` : ''}`;
-        result.nextStep = 'Refresh signals or wait for the running scan to complete, then Recheck status.';
+        if (missingBacktestProfile) {
+            result.title = 'No active after-fee scoring profile';
+            result.message = `The last completed scan withheld ${missingBacktestProfile} setups because no shared profile has passed the 70% after-fee validation and untouched-holdout gates.${blockers.length ? ` The scan also observed: ${blockers.join('; ')}.` : ''}`;
+            result.nextStep = 'Open Validate entry models to see daily backtest progress and cohort blockers. Refresh signals after a profile qualifies.';
+        } else {
+            result.title = 'The last signal checks are outdated';
+            result.message = `A new completed scan is needed to explain this view now.${blockers.length ? ` Last observed blockers: ${blockers.join('; ')}.` : ''}`;
+            result.nextStep = 'Refresh signals or wait for the running scan to complete, then Recheck status.';
+        }
     } else if (count(summary.stale_price_signal_count)) {
         result.title = 'Signal setups retained with stale reference prices';
         result.message = `${count(summary.stale_price_signal_count)} active setups remain visible for inspection. Their reference prices are stale, so they are not current market entries.`;
@@ -135,6 +141,10 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
     } else if (!evaluated) {
         result.title = insufficient || nweInsufficient ? 'Not enough usable model history' : 'Timeframe data is not ready';
         result.message = `${fresh} tickers had fresh 15m prices, but no selected ticker / timeframe check could be evaluated.${blockers.length ? ` Observed: ${blockers.join('; ')}.` : ''}`;
+    } else if (!qualified && missingBacktestProfile) {
+        result.title = 'No active after-fee scoring profile';
+        result.message = `${missingBacktestProfile} potential setups were withheld because no shared profile has passed the 70% after-fee validation and untouched-holdout gates.`;
+        result.nextStep = 'Open Validate entry models to see backtest progress and cohort blockers. Refresh signals after a profile qualifies.';
     } else if (selection.search && selection.visibleCount === 0) {
         result.title = 'No current signals match your search';
         result.message = `Data checks cover the selected app, product, and timeframe. Your search filters the returned signal rows only.`;

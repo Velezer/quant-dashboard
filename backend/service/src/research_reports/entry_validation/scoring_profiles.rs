@@ -1,10 +1,10 @@
+use super::PROFILE_MIN_COHORT_COVERAGE_PCT;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 const MIN_PROFILE_SYMBOLS: usize = 5;
 const MIN_PROFILE_TRADES: usize = 30;
-const MIN_COHORT_COVERAGE_PCT: f64 = 80.0;
 const TARGET_AFTER_FEE_WIN_RATE_PCT: f64 =
     quant_core::ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT;
 const SCORE_BAND_COUNT: usize = quant_core::ENTRY_SCORE_CALIBRATION_BAND_COUNT;
@@ -402,12 +402,12 @@ fn candidate_decision(
         .map(|band| cumulative_score_bands(&evidence.holdout_score_bands, band));
     let mut blockers = Vec::new();
     if !cycle_complete {
-        blockers.push("The daily backtest cycle contains failures; its cohort is incomplete.");
+        blockers.push("Fewer than 80% of the full daily backtest jobs completed; the cohort is incomplete.");
     }
     if evidence.symbol_count < MIN_PROFILE_SYMBOLS {
         blockers.push("At least five independent registered instruments must share the candidate vector.");
     }
-    if coverage_pct + f64::EPSILON < MIN_COHORT_COVERAGE_PCT {
+    if coverage_pct + f64::EPSILON < PROFILE_MIN_COHORT_COVERAGE_PCT as f64 {
         blockers.push("The candidate vector does not cover at least 80% of the refreshed cohort.");
     }
     if evidence.minimum_history_days < quant_core::MIN_EVIDENCE_SAMPLE_DAYS {
@@ -458,7 +458,7 @@ fn candidate_decision(
             });
             let minimum_history_days = slice.map(|slice| slice.minimum_history_days).unwrap_or_default();
             let slice_coverage = if *expected == 0 { 0.0 } else { symbol_count as f64 / *expected as f64 * 100.0 };
-            if slice_coverage + f64::EPSILON < MIN_COHORT_COVERAGE_PCT {
+            if slice_coverage + f64::EPSILON < PROFILE_MIN_COHORT_COVERAGE_PCT as f64 {
                 slice_blockers.push("candidate coverage below 80%".to_string());
             }
             if !validation.target_passes() || !holdout.target_passes() {
@@ -609,10 +609,13 @@ pub(crate) fn evaluate_daily_profiles(
     connection: &Connection,
     cycle_started_at: i64,
     evaluated_at: i64,
-    failed_pairs: usize,
+    completed_pairs: usize,
+    total_pairs: usize,
 ) -> Result<usize, rusqlite::Error> {
     let cohorts = collect_cohorts(connection, cycle_started_at)?;
-    let cycle_complete = failed_pairs == 0;
+    let cycle_complete = total_pairs > 0
+        && completed_pairs.saturating_mul(100)
+            >= total_pairs.saturating_mul(PROFILE_MIN_COHORT_COVERAGE_PCT);
     let mut evaluated = 0;
     for (scope, cohort) in cohorts {
         let candidates = cohort

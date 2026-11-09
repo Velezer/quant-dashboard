@@ -21,8 +21,8 @@ use interval::sync_interval_for_exchange;
 #[cfg(test)]
 use providers::yahoo_request_window;
 use providers::{
-    fetch_binance_interval, fetch_chart_interval, fetch_yahoo_interval, yahoo_base_asset, Bar,
-    BinanceMarket,
+    fetch_binance_history_page, fetch_binance_interval, fetch_chart_interval,
+    fetch_yahoo_interval, yahoo_base_asset, Bar, BinanceMarket,
 };
 #[path = "research_proxy_warmup.rs"]
 mod warmup;
@@ -34,7 +34,8 @@ use parsing::{
 };
 
 const MAX_BINANCE_PAGES: usize = 4;
-const MAX_RESEARCH_15M_CANDLES: usize = 1_000;
+const MAX_RESEARCH_15M_CANDLES: usize = 96_000;
+const MAX_RESEARCH_1H_CANDLES: usize = 24_000;
 const RESEARCH_15M_REFRESH_INTERVAL_SECONDS: i64 = 10 * 60;
 
 /// Prefer Binance for crypto references, trying the next eligible research
@@ -122,11 +123,21 @@ fn recent_proxy_result(
         (exchange, product_id)
     };
     let now = i64::try_from(super::now_secs()).ok()?;
-    let result: Option<(String, Option<String>, Option<String>, Option<String>, i64)> = connection
+    let result: Option<(
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+        i64,
+    )> = connection
         .query_row(
-            "SELECT s.source,strftime('%s',replace(s.last_success,' UTC','')),s.last_error,
+            "SELECT s.source,s.data_provider,strftime('%s',replace(s.last_success,' UTC','')),s.last_error,
                 strftime('%s',replace(s.last_attempt,' UTC','')),
                 (SELECT COUNT(*) FROM bars b WHERE b.symbol=s.symbol AND b.interval=s.interval
+                    AND b.source=s.source),
+                (SELECT MIN(ts) FROM bars b WHERE b.symbol=s.symbol AND b.interval=s.interval
                     AND b.source=s.source)
            FROM series s WHERE s.symbol=?1 AND s.exchange_id=?2 AND s.product_id=?3
              AND s.source=?4 AND s.interval=?5
@@ -139,13 +150,15 @@ fn recent_proxy_result(
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
                 ))
             },
         )
         .optional()
         .ok()
         .flatten();
-    let (_source, last_success, last_error, last_attempt, rows) = result?;
+    let (_source, provider, last_success, last_error, last_attempt, earliest_ts, rows) = result?;
     let success_epoch = last_success.and_then(|value| value.parse::<i64>().ok());
     let attempt_epoch = last_attempt.and_then(|value| value.parse::<i64>().ok());
     let latest_completed: Option<i64> = connection
@@ -167,8 +180,21 @@ fn recent_proxy_result(
         now.saturating_sub(ts.div_euclid(NANOS_PER_SECOND))
             <= crate::freshness_threshold_seconds(symbol, interval)
     });
+    let history_complete = if provider == "binance" && matches!(interval, "15m" | "1h" | "1d") {
+        let target_floor_ns = now
+            .saturating_sub(
+                crate::MIN_ENGINE_HISTORY_DAYS
+                    .saturating_sub(1)
+                    .saturating_mul(quant_core::SECONDS_PER_DAY),
+            )
+            .saturating_mul(NANOS_PER_SECOND);
+        earliest_ts.is_some_and(|ts| ts <= target_floor_ns)
+    } else {
+        true
+    };
     if rows > 0
         && fresh
+        && history_complete
         && last_error.as_deref().is_none_or(str::is_empty)
         && success_epoch.is_some_and(|epoch| now.saturating_sub(epoch) < refresh_interval_seconds)
     {
@@ -198,14 +224,47 @@ fn sync_with_binance(
 ) -> Result<usize, String> {
     // Candle timestamps are the durable cursor, scoped to the exact source series.
     // Replay the last closed candle so provider corrections remain idempotent.
-    let resume_ts: Option<i64> = connection
+    let (earliest_ts, latest_ts): (Option<i64>, Option<i64>) = connection
         .query_row(
-            "SELECT MAX(ts) FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3",
+            "SELECT MIN(ts),MAX(ts) FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3",
             params![storage_symbol, interval, source],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|error| error.to_string())?;
-    let resume_ts = resume_ts.map(|ts| ts.div_euclid(NANOS_PER_SECOND));
+    if let Some(earliest_ts) = earliest_ts {
+        match fetch_binance_history_page(
+            pair,
+            market,
+            interval,
+            duration_seconds,
+            earliest_ts.div_euclid(NANOS_PER_SECOND),
+            crate::MIN_ENGINE_HISTORY_DAYS,
+            |candles| {
+                persist(
+                    connection,
+                    storage_symbol,
+                    kind,
+                    exchange,
+                    "binance",
+                    source,
+                    pair,
+                    interval,
+                    "binance_usdt_reference",
+                    candles,
+                )
+            },
+        ) {
+            Ok(_) => {}
+            Err(error) => eprintln!(
+                "[ResearchProxy] Binance history backfill deferred for {storage_symbol} {interval}: {error}"
+            ),
+        }
+    }
+
+    // The latest completed candle remains a separate, small incremental read.
+    // Historical pages advance backward from MIN(ts) and never replace recent
+    // market refreshes with a multi-year bulk download.
+    let resume_ts = latest_ts.map(|ts| ts.div_euclid(NANOS_PER_SECOND));
     let result = fetch_binance_interval(
         pair,
         market,

@@ -70,12 +70,26 @@ impl StockbitDssBressert4hSignalConfig {
 /// Same-direction NWE support adds a separate 0–10 component to the DSS score.
 pub fn generate_stockbit_dss_bressert_4h_signals(bars: &[StrategyBar]) -> Vec<StrategySignal> {
     let mut signals = vec![StrategySignal::default(); bars.len()];
+    visit_stockbit_dss_bressert_4h_signals(bars, |index, signal| {
+        if let Some(slot) = signals.get_mut(index) {
+            *slot = signal.clone();
+        }
+    });
+    signals
+}
+
+/// Visit only directional DSS candidates. This keeps long historical
+/// backtests bounded without changing the public per-bar signal API.
+pub(super) fn visit_stockbit_dss_bressert_4h_signals(
+    bars: &[StrategyBar],
+    mut visitor: impl FnMut(usize, &StrategySignal),
+) {
     let config = STOCKBIT_DSS_BRESSERT_4H_SIGNAL_CONFIG;
     if bars.len() < super::dss_bressert::DSS_BRESSERT_MINIMUM_HISTORY_BARS
         || !config.is_valid()
         || !valid_completed_history(bars)
     {
-        return signals;
+        return;
     }
 
     let highs = bars.iter().map(|bar| bar.high).collect::<Vec<_>>();
@@ -88,11 +102,7 @@ pub fn generate_stockbit_dss_bressert_4h_signals(bars: &[StrategyBar]) -> Vec<St
     let nwe_signal_config = StockbitNwe4hSignalConfig::default();
     let minimum_dss_history_bars = super::dss_bressert::DSS_BRESSERT_MINIMUM_HISTORY_BARS;
 
-    for (index, signal) in signals
-        .iter_mut()
-        .enumerate()
-        .skip(minimum_dss_history_bars - 1)
-    {
+    for index in minimum_dss_history_bars - 1..bars.len() {
         let Some((dss_score, dss_state)) =
             classify_latest_spread(&dss.dss[..=index], &dss.trigger[..=index])
         else {
@@ -131,23 +141,26 @@ pub fn generate_stockbit_dss_bressert_4h_signals(bars: &[StrategyBar]) -> Vec<St
             continue;
         }
 
-        signal.direction = direction.to_string();
-        signal.strength = score.clamp(0.0, NWE_DSS_SIGNAL_SCORE_SCALE_MAX);
-        signal.strategy_strength = strategy_strength;
-        signal.regime = regime.to_string();
-        signal.confluence = Some(SignalConfluenceScore {
-            score: confluence_score,
-            nadaraya_state: nwe_state.to_string(),
-            dss_state: dss_state.to_string(),
-            dss_extreme_zone: false,
-            dss_points: 0.0,
-            dss_extreme_points: 0.0,
-            nadaraya_touch_points: 0.0,
-            nadaraya_near_line_points: 0.0,
-            nadaraya_reclaim_points: 0.0,
-        });
+        let signal = StrategySignal {
+            direction: direction.to_string(),
+            strength: score.clamp(0.0, NWE_DSS_SIGNAL_SCORE_SCALE_MAX),
+            strategy_strength,
+            confluence: Some(SignalConfluenceScore {
+                score: confluence_score,
+                nadaraya_state: nwe_state.to_string(),
+                dss_state: dss_state.to_string(),
+                dss_extreme_zone: false,
+                dss_points: 0.0,
+                dss_extreme_points: 0.0,
+                nadaraya_touch_points: 0.0,
+                nadaraya_near_line_points: 0.0,
+                nadaraya_reclaim_points: 0.0,
+            }),
+            regime: regime.to_string(),
+            ..StrategySignal::default()
+        };
+        visitor(index, &signal);
     }
-    signals
 }
 
 fn valid_completed_history(bars: &[StrategyBar]) -> bool {
@@ -214,7 +227,7 @@ pub(super) fn near_cross_component_score(
     score.is_finite().then_some(score)
 }
 
-fn stockbit_nwe_4h_support(
+pub(super) fn stockbit_nwe_4h_support(
     close: f64,
     index: usize,
     nwe: &NadarayaWatsonEnvelopeMode,

@@ -50,8 +50,8 @@ lesson only when it will improve future tasks.
   Shared Spot reference charts for Futures must not receive index-aligned
   indicators calculated from Futures-specific candles; return overlays with
   the chart bundle and preserve them during later indicator hydration.
-- Use GitHub Actions to compile and test changes when the workspace cannot run
-  commands. Inspect the exact failing step and rerun after the fix.
+- Use GitHub Actions to compile changes when the workspace cannot run commands.
+  Run tests only when the user asks to test or verify implementation.
 - Apply screener filters before pagination and compute filtered match counts on
   the server; a browser-only filter can make a matching signal appear absent
   from the first page.
@@ -78,6 +78,20 @@ lesson only when it will improve future tasks.
   research page. Persist its ticker/timeframe cursor and status, share the lock
   with manual runs, yield to signal scans, and keep learned candidates separate
   from live weights unless a promotion rule is explicitly authorized.
+- Keep the stored-history target separate from the evidence sample requirement.
+  For multi-year crypto backfills, advance one bounded page from the oldest
+  saved timestamp and run the small latest-candle refresh independently. A
+  recent-success shortcut must still allow historical pages while coverage is
+  below target; recent candles alone never mean historical coverage is complete.
+- Before raising the per-report candle cap, remove repeated prefix replay and
+  per-bar heap-heavy signal objects. Reuse causal indicator arrays and visit
+  directional candidates so the longer sample stays within the process memory
+  budget.
+- When an after-fee gate empties a screener, check the profile snapshot and the
+  persisted daily-backtest progress first. Keep the evidence threshold intact;
+  evaluate once when successful jobs reach the cohort-coverage threshold and
+  again at cycle end. Count completed jobs, not total minus failures, and
+  distinguish missing profiles from price/history blockers in the response.
 - When an authorized promotion path moves learned scoring weights into live
   scans, persist immutable profile versions and pin one profile snapshot per
   scan. Stamp signal output with that version so a promotion cannot mix scores

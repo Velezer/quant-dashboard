@@ -213,14 +213,14 @@ fn daily_metadata_coverage_uses_local_session_dates() {
                 .expect("daily candle should persist");
     }
 
-    assert_eq!(history_coverage_days(Some(first_ts), Some(last_ts)), 0);
+    assert_eq!(history_coverage_days(Some(first_ts), Some(last_ts)), 1);
     for force_direct in [false, true] {
         let metadata = load_series_metadata(&connection, "COVER.JK", "1d", force_direct)
             .expect("daily metadata should load");
         assert_eq!(metadata["rows"], 2);
         assert_eq!(metadata["first_ts"], first_ts);
         assert_eq!(metadata["last_ts"], last_ts);
-        assert_eq!(metadata["coverage_days"], 1);
+        assert_eq!(metadata["coverage_days"], 2);
         assert_eq!(metadata["timezone"], "Asia/Jakarta");
     }
 

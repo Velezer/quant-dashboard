@@ -1,6 +1,5 @@
 use super::{
-    generate_stockbit_dss_bressert_4h_signals, score_four_indicators_with_weights,
-    FOUR_INDICATOR_EQUAL_WEIGHTS,
+    score_four_indicators_with_weights, FOUR_INDICATOR_EQUAL_WEIGHTS,
     stockbit_nwe_4h_minimum_history_bars, FourIndicatorScore, StrategyBar, StrategySignal,
     DSS_BRESSERT_MINIMUM_HISTORY_BARS, STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID,
     STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
@@ -67,33 +66,25 @@ pub fn score_entry_signal_with_weights(
     )
 }
 
-/// Replay exact latest NWE outputs on causal prefixes. DSS smoothing is causal
-/// and shared across the replay instead of being recomputed for every prefix.
+/// Replay the causal entry directions without retaining a full strategy-signal
+/// object per candle. The model indicators are calculated once per history.
 pub(crate) fn visit_entry_signals(
     bars: &[StrategyBar],
     kind: EntryModelKind,
-    mut visitor: impl FnMut(usize, &StrategySignal),
+    visitor: impl FnMut(usize, &StrategySignal),
 ) {
     match kind {
         EntryModelKind::Dss => {
-            let signals = generate_stockbit_dss_bressert_4h_signals(bars);
-            for (index, signal) in signals.iter().enumerate() {
-                visitor(index, signal);
-            }
+            super::dss_bressert_4h::visit_stockbit_dss_bressert_4h_signals(bars, visitor);
         }
         EntryModelKind::Nwe => {
             let highs: Vec<_> = bars.iter().map(|bar| bar.high).collect();
             let lows: Vec<_> = bars.iter().map(|bar| bar.low).collect();
             let closes: Vec<_> = bars.iter().map(|bar| bar.close).collect();
             let dss = crate::calculate_dss(&highs, &lows, &closes, &crate::DssConfig::default());
-            for index in kind.minimum_history_bars().saturating_sub(1)..bars.len() {
-                let signals = super::indicator_combination::generate_stockbit_nwe_4h_signals_with_dss(
-                    &bars[..=index], &dss,
-                );
-                if let Some(signal) = signals.last() {
-                    visitor(index, signal);
-                }
-            }
+            super::indicator_combination::visit_stockbit_nwe_4h_signals_with_dss(
+                bars, &dss, visitor,
+            );
         }
     }
 }

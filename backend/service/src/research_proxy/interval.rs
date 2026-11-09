@@ -11,7 +11,7 @@ pub(super) fn sync_interval_for_exchange(
 ) -> Result<usize, String> {
     let (duration_seconds, maximum_rows) = match interval {
         "15m" => (FIFTEEN_MINUTE_INTERVAL_SECONDS, MAX_RESEARCH_15M_CANDLES),
-        "1h" => (ONE_HOUR_INTERVAL_SECONDS, 200),
+        "1h" => (ONE_HOUR_INTERVAL_SECONDS, MAX_RESEARCH_1H_CANDLES),
         "1d" => (ONE_DAY_INTERVAL_SECONDS, 4_000),
         _ => return Err("unsupported research candle interval".into()),
     };

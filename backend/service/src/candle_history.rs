@@ -481,7 +481,11 @@ pub(super) fn history_target_days(_timeframe: &str) -> i64 {
 
 pub(super) fn history_coverage_days(first_ts: Option<i64>, last_ts: Option<i64>) -> i64 {
     match (first_ts, last_ts) {
-        (Some(first), Some(last)) => last.saturating_sub(first).max(0).div_euclid(NANOS_PER_DAY),
+        (Some(first), Some(last)) => last
+            .saturating_sub(first)
+            .max(0)
+            .div_euclid(NANOS_PER_DAY)
+            .saturating_add(1),
         _ => 0,
     }
 }
@@ -496,7 +500,10 @@ pub(super) fn daily_history_coverage_days(
             let offset = timezone_offset_from_name_ns(timezone);
             let first_day = first.saturating_add(offset).div_euclid(NANOS_PER_DAY);
             let last_day = last.saturating_add(offset).div_euclid(NANOS_PER_DAY);
-            last_day.saturating_sub(first_day).max(0)
+            last_day
+                .saturating_sub(first_day)
+                .max(0)
+                .saturating_add(1)
         }
         _ => 0,
     }
