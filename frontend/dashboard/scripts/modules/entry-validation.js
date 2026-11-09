@@ -201,7 +201,7 @@ export function initializeEntryValidation(doc = document) {
             lastDailyCompletedAt = Math.max(lastDailyCompletedAt, completedAt);
             receivedDailyStatus = true;
             const labels = {
-                idle: 'Starting', running: 'Running', waiting: 'Waiting for capacity',
+                idle: 'Starting', running: 'Running', waiting: 'Yielding to scan/backtest',
                 complete: 'Complete', complete_with_errors: 'Complete with errors', error: 'Retry scheduled',
             };
             const stateElement = $('daily-refresh-state');
