@@ -5,6 +5,11 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- The main chart's date scale is rendered inside the canvas' bottom 32 CSS pixels.
+  Keep its drag hit target and anchor calculation aligned with the plot bounds
+  (15 px left, 96 px right). Verify a date-axis drag changes visible bar count
+  while keeping the candle under the pointer anchored; right-axis price scaling
+  remains a separate vertical drag.
 - The local execution environment may be unavailable while the GitHub connector
   still works. Use repository file and GitHub Actions tools for edits and
   verification; don't claim a local build ran when it did not.

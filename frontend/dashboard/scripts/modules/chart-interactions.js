@@ -51,13 +51,19 @@ export function installChartCanvasInteractions(canvas, dssCanvas) {
                             const y = event.clientY - bounds.top;
                             const onIndicatorAxis = surface === dssCanvas && x >= bounds.width - 96;
                             const onIndicatorPlot = surface === dssCanvas && !onIndicatorAxis;
+                            const onTimeAxis = surface === canvas
+                                && x >= 15 && x < bounds.width - 96 && y >= bounds.height - 32;
                             const mode = surface === canvas && x >= bounds.width - 96
                                 ? 'price'
-                                : onIndicatorAxis ? 'indicator-scale'
-                                    : onIndicatorPlot && event.shiftKey ? 'indicator-pan' : 'pan';
+                                : onTimeAxis ? 'time-scale'
+                                    : onIndicatorAxis ? 'indicator-scale'
+                                        : onIndicatorPlot && event.shiftKey ? 'indicator-pan' : 'pan';
                             drag = {
                                 surface, id: event.pointerId, mode, x: event.clientX, y: event.clientY,
                                 size: activeWindowSize, offset: windowPanOffset, priceScale: chartPriceScale,
+                                timeAnchor: onTimeAxis
+                                    ? QuantChart.clamp((x - 15) / Math.max(1, bounds.width - 111), 0, 1)
+                                    : 0.5,
                                 indicatorScale: { ...chartIndicatorScale },
                                 indicatorAnchor: onIndicatorAxis
                                     ? QuantChart.valueAtScaleY(y, 12, Math.max(1, bounds.height - 24), chartIndicatorScale.min, chartIndicatorScale.max)
@@ -69,7 +75,9 @@ export function installChartCanvasInteractions(canvas, dssCanvas) {
                             surface.setPointerCapture(event.pointerId);
                             surface.focus({ preventScroll: true });
                             chartCrosshair.active = false;
-                            surface.style.cursor = mode === 'price' || mode === 'indicator-scale' ? 'ns-resize' : 'grabbing';
+                            surface.style.cursor = mode === 'price' || mode === 'indicator-scale'
+                                ? 'ns-resize'
+                                : mode === 'time-scale' ? 'ew-resize' : 'grabbing';
                             event.preventDefault();
                         });
                         surface.addEventListener('pointermove', event => {
@@ -80,6 +88,8 @@ export function installChartCanvasInteractions(canvas, dssCanvas) {
                                 const dy = event.clientY - drag.y;
                                 if (drag.mode === 'price') {
                                     setPriceScale(drag.priceScale * Math.exp(-dy * 0.008));
+                                } else if (drag.mode === 'time-scale') {
+                                    setChartWindowSize(drag.size * Math.exp(-dx * 0.008), drag.timeAnchor);
                                 } else if (drag.mode === 'indicator-scale' && Number.isFinite(drag.indicatorAnchor)) {
                                     setIndicatorScale(QuantChart.zoomValueScale(
                                         drag.indicatorScale.min,
@@ -105,9 +115,13 @@ export function installChartCanvasInteractions(canvas, dssCanvas) {
                             const x = event.clientX - bounds.left;
                             const y = event.clientY - bounds.top;
                             const onPriceAxis = surface === canvas && x >= bounds.width - 96;
+                            const onTimeAxis = surface === canvas
+                                && x >= 15 && x < bounds.width - 96 && y >= bounds.height - 32;
                             const onIndicatorAxis = surface === dssCanvas && x >= bounds.width - 96;
-                            if (onPriceAxis || onIndicatorAxis || x < 15) {
-                                surface.style.cursor = onPriceAxis || onIndicatorAxis ? 'ns-resize' : 'ew-resize';
+                            if (onPriceAxis || onIndicatorAxis || onTimeAxis || x < 15) {
+                                surface.style.cursor = onPriceAxis || onIndicatorAxis
+                                    ? 'ns-resize'
+                                    : onTimeAxis || x < 15 ? 'ew-resize' : 'crosshair';
                                 chartCrosshair.active = false;
                                 drawCandleChart(selectedSignal);
                                 return;

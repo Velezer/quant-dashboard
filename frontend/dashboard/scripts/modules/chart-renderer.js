@@ -76,7 +76,7 @@ export function installChartRenderer() {
                 const markovDescription = getDashboardBinding('showMarkovRegimeIndicator') === false
                     ? 'Markov regime ribbon hidden.'
                     : `Markov regime ribbon shows causal historical states; latest is ${latestMarkovState?.replaceAll('_', ' ') || 'warming up or unavailable'}.`;
-                canvas.setAttribute('aria-label', `${venue.label} · ${signal.asset || signal.symbol || 'Selected asset'} · ${activeTimeframe.toUpperCase()} chart. Signal timeframe ${signalTimeframe}. Signal price ${validCurrentPrice === null ? 'unavailable' : formatPrice(validCurrentPrice)}. ${volumeDeltaEnabled ? 'Volume delta estimate from chart-bar direction.' : 'Synchronized volume histogram.'} ${markovDescription} Plus/minus zoom, arrows pan, Home fits.`);
+                canvas.setAttribute('aria-label', `${venue.label} · ${signal.asset || signal.symbol || 'Selected asset'} · ${activeTimeframe.toUpperCase()} chart. Signal timeframe ${signalTimeframe}. Signal price ${validCurrentPrice === null ? 'unavailable' : formatPrice(validCurrentPrice)}. ${volumeDeltaEnabled ? 'Volume delta estimate from chart-bar direction.' : 'Synchronized volume histogram.'} ${markovDescription} Plus/minus zoom, arrows pan, Home fits. Drag the bottom date axis horizontally to scale dates and the right price axis vertically to scale price.`);
                 if (typeof updateChartDataWarning === 'function') updateChartDataWarning(signal);
 
                 const ctx = canvas.getContext('2d');
