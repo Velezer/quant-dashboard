@@ -5,6 +5,10 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- The Rust build workflow previously skipped frontend-only changes because its
+  path filters named only backend and Rust sources. Keep `frontend/**` in both
+  pull-request and branch-push filters, and confirm the release build check ran
+  before treating a code PR as verified; GitGuardian alone is not a build.
 - The main chart's date scale is rendered inside the canvas' bottom 32 CSS pixels.
   Keep its drag hit target and anchor calculation aligned with the plot bounds
   (15 px left, 96 px right). Verify a date-axis drag changes visible bar count

@@ -5,6 +5,7 @@ on:
     paths:
       - "backend/**"
       - "quant/**"
+      - "frontend/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "Dockerfile"
@@ -14,6 +15,7 @@ on:
     paths:
       - "backend/**"
       - "quant/**"
+      - "frontend/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "Dockerfile"

@@ -51,6 +51,16 @@ instructions remain authoritative.
 
 MiniCodex is not part of this repository workflow.
 
+## Pull request build check
+
+Every pull request that changes deployed application code must run and pass
+`.github/workflows/rust-build.yml`, including frontend-only changes. Keep its
+path filters aligned with `backend/**`, `quant/**`, `frontend/**`, and the Rust
+build inputs. Do not report a code PR as build-verified until the release WASM
+and service build check has passed. If the local environment cannot build, use
+the PR's GitHub Actions result and wait for completion; a security-only check
+does not prove compilation succeeded.
+
 ## Ten-level order-thinking contract
 
 Use first- through tenth-order thinking when choosing or reviewing a change.
