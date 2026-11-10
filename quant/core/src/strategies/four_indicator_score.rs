@@ -2,6 +2,9 @@ use super::common::StrategyBar;
 
 pub const FOUR_INDICATOR_SCORE_SCALE_MAX: f64 = 40.0;
 pub const FOUR_INDICATOR_EQUAL_WEIGHTS: [u8; 4] = [10; 4];
+pub const FIVE_INDICATOR_SCORE_SCALE_MAX: f64 = 50.0;
+pub const MARKOV_REGIME_COMPONENT_WEIGHT: u8 = 10;
+pub const FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50: f64 = 1.0;
 /// A price or volume subtotal may receive the full score budget under a
 /// learned profile, so its valid range is the complete model scale.
 pub const FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX: f64 = FOUR_INDICATOR_SCORE_SCALE_MAX;
@@ -29,6 +32,73 @@ pub struct FourIndicatorScore {
     pub total_score: f64,
     pub weights: [u8; 4],
     pub components: [ScoreComponent; 4],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FiveIndicatorScore {
+    pub price_score: f64,
+    pub volume_score: f64,
+    pub markov_regime_score: f64,
+    pub total_score: f64,
+    pub weights: [u8; 4],
+    pub components: [ScoreComponent; 5],
+}
+
+/// Add a causal current-bar Markov regime factor to the validated four-factor
+/// score. The Markov factor has a fixed 10-point weight; transition estimates
+/// are not used as trade probabilities or as a second prediction signal.
+pub fn add_markov_regime_score(
+    score: FourIndicatorScore,
+    direction: &str,
+    regime: Option<crate::RegimeId>,
+) -> FiveIndicatorScore {
+    let markov_component = markov_regime_component(direction, regime);
+    let markov_regime_score = markov_component.weighted_points;
+    let components = score.components;
+    let components = [
+        components[0].clone(),
+        components[1].clone(),
+        components[2].clone(),
+        components[3].clone(),
+        markov_component,
+    ];
+    FiveIndicatorScore {
+        price_score: score.price_score,
+        volume_score: score.volume_score,
+        markov_regime_score,
+        total_score: score.total_score + markov_regime_score,
+        weights: score.weights,
+        components,
+    }
+}
+
+fn markov_regime_component(direction: &str, regime: Option<crate::RegimeId>) -> ScoreComponent {
+    let state = regime.map(crate::RegimeId::name).unwrap_or("UNAVAILABLE");
+    let aligned_direction = match regime {
+        Some(crate::RegimeId::BullTrend | crate::RegimeId::Accumulation) => Some("LONG"),
+        Some(crate::RegimeId::BearTrend | crate::RegimeId::Distribution) => Some("SHORT"),
+        _ => None,
+    };
+    let points = if aligned_direction == Some(direction) {
+        FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX
+    } else {
+        0.0
+    };
+    let component_state = match (regime, aligned_direction) {
+        (Some(_), Some(aligned)) if aligned == direction => format!("ALIGNED_{state}"),
+        (Some(_), Some(_)) => format!("OPPOSED_{state}"),
+        (Some(crate::RegimeId::PullbackReset), None) => "PULLBACK_RESET_NO_DIRECTION".to_string(),
+        (Some(crate::RegimeId::ConsolidationChop), None) => "CONSOLIDATION_CHOP".to_string(),
+        _ => state.to_string(),
+    };
+    ScoreComponent {
+        indicator: "Markov Regime",
+        state: component_state,
+        points,
+        weight_points: MARKOV_REGIME_COMPONENT_WEIGHT,
+        weighted_points: points,
+        value: None,
+    }
 }
 
 /// Measure the setup strength of a qualifying NWE/DSS entry on its latest

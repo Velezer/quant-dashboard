@@ -181,6 +181,9 @@ fn update_signal_market_entry_freshness(
         && signal["score_basis"]["score_model_status"].as_str() != Some("legacy")
         && has_verified_stockbit_close_reference(connection, signal, now);
     let score_bar_is_forming = signal["score_bar_is_forming"].as_bool().unwrap_or(false);
+    let price_reference_only = signal["score_basis"]["price_reference_only"]
+        .as_bool()
+        .unwrap_or(false);
     let score_bar_time = signal["score_bar_time"].as_i64().unwrap_or(price_bar_time);
     let score_updated_at = signal["last_updated_at"].as_i64().unwrap_or_default();
     let score_is_recently_updated = now.saturating_sub(score_updated_at) < scan_interval_seconds;
@@ -189,7 +192,9 @@ fn update_signal_market_entry_freshness(
     let score_bar_is_current = score_bar_duration_ns > 0
         && score_bar_time <= now_ns
         && score_bar_time.saturating_add(score_bar_duration_ns) > now_ns;
-    let is_current_price_fresh = if is_stockbit_persistent {
+    let is_current_price_fresh = if price_reference_only {
+        false
+    } else if is_stockbit_persistent {
         score_is_recently_updated
             && crate::completed_bar_is_fresh_at(&symbol, &timeframe, price_bar_time, now_ns)
             && if score_bar_is_forming {
@@ -205,6 +210,10 @@ fn update_signal_market_entry_freshness(
     } else {
         crate::completed_bar_is_fresh_at(&symbol, &timeframe, price_bar_time, now_ns)
     };
+    if price_reference_only {
+        signal["price_reference_status"] = json!("same_source_timeframe_candle");
+        signal["market_entry_status"] = json!("NO_MARKET_ENTRY");
+    }
     if is_stockbit_persistent && !is_current_price_fresh && !is_verified_closed_reference {
         signal["score_status"] = json!("stale");
         if let Some(score_basis) = signal["score_basis"].as_object_mut() {
@@ -689,22 +698,23 @@ fn signal_meets_render_minimum(signal: &Value, models: &Value) -> bool {
         .or_else(|| signal["score_scale_max"].as_f64())
         .or_else(|| model.and_then(|model| model["score_scale_max"].as_f64()));
     let minimum_key = match scale {
+        Some(50.0) => "minimum_score_out_of_50",
         Some(40.0) => "minimum_score_out_of_40",
         Some(20.0) => "minimum_score_out_of_20",
         _ => "minimum_score_out_of_10",
     };
     let stored_model_id = basis["model_id"].as_str();
     let current_model_id = model.and_then(|model| model["score_model_id"].as_str());
-    let is_four_indicator_score_model = stored_model_id
+    let is_five_indicator_score_model = stored_model_id
         .or(current_model_id)
-        .is_some_and(super::super::is_four_indicator_score_model);
+        .is_some_and(super::super::is_five_indicator_score_model);
     let basis_is_current = basis["score_model_status"].as_str() != Some("legacy")
         && match (stored_model_id, current_model_id) {
             (Some(stored), Some(current)) => stored == current,
             _ => true,
         };
-    let minimum_candidate = if is_four_indicator_score_model {
-        Some(quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40)
+    let minimum_candidate = if is_five_indicator_score_model {
+        Some(quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50)
     } else if scale.is_some_and(|scale| scale >= 20.0) {
         if basis_is_current {
             model

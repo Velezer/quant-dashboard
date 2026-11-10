@@ -1,12 +1,15 @@
 use super::nwe_dss::{wilson_interval, LagOneCorrelation, TradeSummary};
-use crate::strategies::{score_entry_signal, visit_entry_signals, EntryModelKind, StrategyBar};
+use crate::strategies::{
+    score_entry_signal_with_markov, visit_entry_signals, EntryModelKind, StrategyBar,
+};
 use serde_json::{json, Value};
 
 const TRAINING_SHARE: usize = 60;
 const VALIDATION_END_SHARE: usize = 80;
 const TOTAL_SCORE_BAND_WIDTH: f64 = 10.0;
 const FACTOR_SCORE_BAND_WIDTH: f64 = 2.5;
-const BAND_COUNT: usize = 4;
+const TOTAL_SCORE_BAND_COUNT: usize = 5;
+const FACTOR_SCORE_BAND_COUNT: usize = 4;
 const SCORE_WEIGHT_BUDGET: u8 = 40;
 const SCORE_WEIGHT_STEP: u8 = 5;
 const SCORE_WEIGHT_SCALE: f64 = 10.0;
@@ -18,14 +21,15 @@ const BASELINE_WEIGHTS: [u8; 4] = [10; 4];
 const HOURS_PER_DAY: i64 = 24;
 const TOP_HOUR_PAIRS_TO_REPORT: usize = 5;
 pub const ENTRY_SCORE_CALIBRATION_BAND_WIDTH: f64 = TOTAL_SCORE_BAND_WIDTH;
-pub const ENTRY_SCORE_CALIBRATION_BAND_COUNT: usize = BAND_COUNT;
+pub const ENTRY_SCORE_CALIBRATION_BAND_COUNT: usize = TOTAL_SCORE_BAND_COUNT;
 const FACTOR_NAMES: [&str; 4] = [
     "Nadaraya-Watson Envelope",
     "DSS Bressert",
     "Relative Volume",
     "Estimated Volume Delta (OHLCV proxy)",
 ];
-pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str = "entry_four_factor_weight_fit_after_fee_target_50_v6";
+pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
+    "entry_five_factor_weight_fit_markov_fixed_10_after_fee_target_50_v7";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {
@@ -33,14 +37,18 @@ struct Observation {
     total: f64,
     factors: [f64; 4],
     available: [bool; 4],
+    markov_score: f64,
+    markov_available: bool,
 }
 
 #[derive(Clone, Copy, Default)]
 struct WindowSummary {
     overall: TradeSummary,
-    total_bands: [TradeSummary; BAND_COUNT],
-    factor_bands: [[TradeSummary; BAND_COUNT]; 4],
+    total_bands: [TradeSummary; TOTAL_SCORE_BAND_COUNT],
+    factor_bands: [[TradeSummary; FACTOR_SCORE_BAND_COUNT]; 4],
+    markov_score_bands: [TradeSummary; FACTOR_SCORE_BAND_COUNT],
     unavailable_factors: [TradeSummary; 4],
+    markov_unavailable: TradeSummary,
 }
 
 #[derive(Clone, Copy)]
@@ -74,17 +82,22 @@ struct HourSelection {
     top_candidates: Vec<HourPair>,
 }
 
-fn band_index(points: f64, width: f64) -> usize {
-    ((points / width).floor() as usize).min(BAND_COUNT - 1)
+fn band_index(points: f64, width: f64, count: usize) -> usize {
+    ((points / width).floor() as usize).min(count.saturating_sub(1))
 }
 
 fn score_with_weights(observation: Observation, weights: [u8; 4]) -> f64 {
-    observation
+    let weighted_factors = observation
         .factors
         .iter()
         .zip(weights)
         .map(|(points, weight)| points * f64::from(weight) / SCORE_WEIGHT_SCALE)
-        .sum()
+        .sum::<f64>();
+    weighted_factors + markov_points(observation)
+}
+
+fn markov_points(observation: Observation) -> f64 {
+    observation.markov_score
 }
 
 fn qualifies(observation: Observation, policy: EvaluationPolicy) -> bool {
@@ -151,14 +164,31 @@ fn evaluate_window(
         };
         add(&mut result.overall);
         let weighted_score = score_with_weights(observation, policy.weights);
-        add(&mut result.total_bands[band_index(weighted_score, TOTAL_SCORE_BAND_WIDTH)]);
+        add(&mut result.total_bands[band_index(
+            weighted_score,
+            TOTAL_SCORE_BAND_WIDTH,
+            TOTAL_SCORE_BAND_COUNT,
+        )]);
         for factor in 0..4 {
             if observation.available[factor] {
                 add(&mut result.factor_bands[factor]
-                    [band_index(observation.factors[factor], FACTOR_SCORE_BAND_WIDTH)]);
+                    [band_index(
+                        observation.factors[factor],
+                        FACTOR_SCORE_BAND_WIDTH,
+                        FACTOR_SCORE_BAND_COUNT,
+                    )]);
             } else {
                 add(&mut result.unavailable_factors[factor]);
             }
+        }
+        if observation.markov_available {
+            add(&mut result.markov_score_bands[band_index(
+                markov_points(observation),
+                FACTOR_SCORE_BAND_WIDTH,
+                FACTOR_SCORE_BAND_COUNT,
+            )]);
+        } else {
+            add(&mut result.markov_unavailable);
         }
         index = exit + 1;
     }
@@ -561,7 +591,8 @@ fn summary_json(summary: TradeSummary, fees_known: bool) -> Value {
     value
 }
 
-fn score_bands_json(bands: &[TradeSummary; BAND_COUNT], width: f64, fees_known: bool) -> Value {
+fn score_bands_json(bands: &[TradeSummary], width: f64, fees_known: bool) -> Value {
+    let last_band = bands.len().saturating_sub(1);
     Value::Array(
         bands
             .iter()
@@ -572,7 +603,7 @@ fn score_bands_json(bands: &[TradeSummary; BAND_COUNT], width: f64, fees_known: 
                     "{}–{}{}",
                     index as f64 * width,
                     (index + 1) as f64 * width,
-                    if index == BAND_COUNT - 1 {
+                    if index == last_band {
                         " inclusive"
                     } else {
                         " (upper exclusive)"
@@ -580,14 +611,14 @@ fn score_bands_json(bands: &[TradeSummary; BAND_COUNT], width: f64, fees_known: 
                 ));
                 value["min_score"] = Value::from(index as f64 * width);
                 value["max_score"] = Value::from((index + 1) as f64 * width);
-                value["max_inclusive"] = Value::from(index == BAND_COUNT - 1);
+                value["max_inclusive"] = Value::from(index == last_band);
                 value
             })
             .collect(),
     )
 }
 
-fn score_discrimination_supported(bands: &[TradeSummary; BAND_COUNT]) -> bool {
+fn score_discrimination_supported(bands: &[TradeSummary]) -> bool {
     let populated: Vec<_> = bands
         .iter()
         .filter(|summary| summary.trades >= crate::MIN_EVIDENCE_SAMPLE_TRADES)
@@ -664,9 +695,21 @@ pub fn evaluate_entry_score_backtest(
         || buy_fee_pct < 0.0
         || sell_fee_pct < 0.0;
     let mut observations = vec![None; bars.len()];
+    let markov_regimes = if !invalid && bars.len() >= minimum_history {
+        crate::classify_regimes(bars, &crate::MarkovRegimeConfig::default())
+    } else {
+        Vec::new()
+    };
     if !invalid && bars.len() >= minimum_history {
         visit_entry_signals(bars, kind, |index, signal| {
-            if let Some(score) = score_entry_signal(&bars[..=index], signal, kind) {
+            let markov_regime = markov_regimes.get(index).copied().flatten();
+            if let Some(score) = score_entry_signal_with_markov(
+                &bars[..=index],
+                signal,
+                kind,
+                BASELINE_WEIGHTS,
+                markov_regime,
+            ) {
                 observations[index] = Some(Observation {
                     long: signal.direction == "LONG",
                     total: score.total_score,
@@ -674,6 +717,8 @@ pub fn evaluate_entry_score_backtest(
                     available: std::array::from_fn(|factor| {
                         !score.components[factor].state.ends_with("UNAVAILABLE")
                     }),
+                    markov_score: score.markov_regime_score,
+                    markov_available: !score.components[4].state.ends_with("UNAVAILABLE"),
                 });
             }
         });
@@ -682,7 +727,7 @@ pub fn evaluate_entry_score_backtest(
         horizon: WEIGHT_FIT_EXIT_BARS,
         exit_on_reverse_signal: false,
         weights: BASELINE_WEIGHTS,
-        minimum_score: crate::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40,
+        minimum_score: crate::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50,
         buy_fee_pct,
         sell_fee_pct,
         fees_known,
@@ -814,12 +859,32 @@ pub fn evaluate_entry_score_backtest(
                     fees_known,
                 )
             });
+    let mut holdout_factor_bands = FACTOR_NAMES
+        .iter()
+        .enumerate()
+        .map(|(index, name)| json!({
+            "indicator": name,
+            "score_scale_max": crate::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
+            "bands": score_bands_json(&holdout.factor_bands[index], FACTOR_SCORE_BAND_WIDTH, fees_known),
+            "unavailable": summary_json(holdout.unavailable_factors[index], fees_known)
+        }))
+        .collect::<Vec<_>>();
+    holdout_factor_bands.push(json!({
+        "indicator": "Markov Regime",
+        "score_scale_max": crate::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
+        "weight_points": crate::MARKOV_REGIME_COMPONENT_WEIGHT,
+        "weight_status": "fixed",
+        "bands": score_bands_json(&holdout.markov_score_bands, FACTOR_SCORE_BAND_WIDTH, fees_known),
+        "unavailable": summary_json(holdout.markov_unavailable, fees_known)
+    }));
     let weight_learning = json!({
         "status": weight_learning_status,
         "reason": weight_learning_reason,
-        "score_formula": "sum(component_points * weight_points / 10); unavailable factors contribute zero without redistributing their weight",
-        "score_floor_out_of_40": crate::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40,
-        "weight_budget": SCORE_WEIGHT_BUDGET,
+        "score_formula": "sum(the four learned component_points * weight_points / 10) plus the fixed 10-point Markov regime contribution; unavailable indicators contribute zero without redistributing weight",
+        "score_floor_out_of_50": crate::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50,
+        "score_scale_max": crate::FIVE_INDICATOR_SCORE_SCALE_MAX,
+        "learned_weight_budget": SCORE_WEIGHT_BUDGET,
+        "fixed_markov_weight_points": crate::MARKOV_REGIME_COMPONENT_WEIGHT,
         "weight_step": SCORE_WEIGHT_STEP,
         "candidate_count": score_weight_candidates().len(),
         "eligible_candidate_count": eligible_weight_candidates,
@@ -867,11 +932,7 @@ pub fn evaluate_entry_score_backtest(
         "validation": summary_json(baseline_selection.validation.overall, fees_known),
         "holdout": summary_json(holdout.overall, fees_known),
         "holdout_score_bands": score_bands_json(&holdout.total_bands, TOTAL_SCORE_BAND_WIDTH, fees_known),
-        "holdout_factor_bands": FACTOR_NAMES.iter().enumerate().map(|(index, name)| json!({
-            "indicator": name, "score_scale_max": crate::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
-            "bands": score_bands_json(&holdout.factor_bands[index], FACTOR_SCORE_BAND_WIDTH, fees_known),
-            "unavailable": summary_json(holdout.unavailable_factors[index], fees_known)
-        })).collect::<Vec<_>>(),
+        "holdout_factor_bands": holdout_factor_bands,
         "weight_learning": weight_learning,
         "checks": { "holdout_sample_sufficient": holdout.overall.trades >= crate::MIN_EVIDENCE_SAMPLE_TRADES,
             "holdout_span_sufficient": !invalid && holdout_window_days >= crate::MIN_EVIDENCE_SAMPLE_DAYS,

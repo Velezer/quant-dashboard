@@ -617,7 +617,7 @@ fn insert_signal_screener_rows<'a>(
             "score_scale_max": signal["score_scale_max"],
             "minimum_score_out_of_10": signal["minimum_score_out_of_10"],
             "minimum_score_out_of_20": signal["minimum_score_out_of_20"],
-            "minimum_score_out_of_40": signal["minimum_score_out_of_40"],
+            "minimum_score_out_of_50": signal["minimum_score_out_of_50"],
             "profile_version": signal["Signal_Scoring_Profile_Version"],
             "after_fee_gate": signal["Signal_After_Fee_Gate"],
             "component_score_scale_max": signal["component_score_scale_max"],
@@ -628,6 +628,7 @@ fn insert_signal_screener_rows<'a>(
             "status": "qualifying",
             "score_bar_time": signal["score_bar_time"],
             "score_bar_is_forming": signal["score_bar_is_forming"],
+            "price_reference_only": signal["price_reference_only"],
         });
         connection.execute(
             "INSERT OR REPLACE INTO signals.signal_screener_rows (

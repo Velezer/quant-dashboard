@@ -15,9 +15,9 @@ use crate::{calculate_dss, DssConfig, NadarayaWatsonEnvelopeConfig};
 pub const STOCKBIT_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID: &str =
     "stockbit_dss_bressert_near_cross_4h_v1";
 pub const STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID_LEGACY: &str =
-    "dss_bressert_near_cross_nwe_rank_v2";
-pub const STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID: &str =
     "dss_bressert_near_cross_nwe_volume_rank_v4";
+pub const STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID: &str =
+    "dss_bressert_near_cross_nwe_volume_markov_rank_v5";
 pub const CRYPTO_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID: &str = "crypto_dss_bressert_near_cross_4h_v1";
 
 /// Return the stable crypto DSS Bressert strategy identity for a supported screener frame.

@@ -46,6 +46,12 @@ lesson only when it will improve future tasks.
   but they are not current market entries. Keep the API and browser filters aligned
   with the crypto strategy catalog, preserve the stale-price label, and keep
   stale setups out of current-entry notification counts.
+- A crypto setup was being dropped before screener persistence when its
+  same-source strategy candles qualified but the separately fetched 15m price
+  was absent or source-mismatched. Use that setup candle's close as an
+  explicitly reference-only price, retain the setup, and exclude it from
+  market-entry and alert counts. Never invent a directional signal or bypass
+  the model floor to force a nonempty crypto screener.
 - Calculate chart overlays from the exact candle source rendered on screen.
   Shared Spot reference charts for Futures must not receive index-aligned
   indicators calculated from Futures-specific candles; return overlays with
@@ -57,7 +63,7 @@ lesson only when it will improve future tasks.
   from the first page.
 - Normalize an overall score filter by each signal model's declared maximum and
   apply it before pagination on both server and browser. State the displayed
-  normalization clearly when models use /10, /20, and /40 scales.
+  normalization clearly when models use /10, /20, /40, and /50 scales.
 - Keep fresh Stockbit score snapshots with `not_qualifying` visible as
   zero-score, no-entry rows, while excluding them from current-entry and
   notification counts. The server and browser must use the same rule.
@@ -109,3 +115,9 @@ lesson only when it will improve future tasks.
   selection visible after closing. Verify app, product, and timeframe changes,
   Escape handling, no horizontal overflow at 320px and 390px, and the selected
   chart as well as empty/loading states after workspace CSS is applied.
+- When a scoring model gains a component, carry its model version and scale
+  through the live scorer, chronological backtest, learned-profile gate,
+  catalog, stored score basis, screener/API validation, filters, and guide. Keep
+  old rows on their recorded scale and mark them stale/legacy. For Markov input,
+  use the causal regime at the scored bar and document its fixed contribution;
+  do not treat whole-history transition statistics as a signal-time forecast.

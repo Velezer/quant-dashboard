@@ -50,14 +50,20 @@ pub use dss_bressert_4h::{
     STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID_LEGACY,
     STOCKBIT_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID,
 };
-pub use entry_score::{score_entry_signal, score_entry_signal_with_weights, EntryModelKind};
+pub use entry_score::{
+    score_entry_signal, score_entry_signal_with_markov, score_entry_signal_with_weights,
+    EntryModelKind,
+};
 pub(crate) use entry_score::visit_entry_signals;
 pub use four_indicator_score::{
-    score_four_indicators, score_four_indicators_with_weights, FourIndicatorScore, ScoreComponent,
+    add_markov_regime_score, score_four_indicators, score_four_indicators_with_weights,
+    FiveIndicatorScore, FourIndicatorScore, ScoreComponent,
+    FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50, FIVE_INDICATOR_SCORE_SCALE_MAX,
     FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX, FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX,
     FOUR_INDICATOR_MAX_RELATIVE_VOLUME_MULTIPLE_FOR_FULL_SCORE,
     FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40, FOUR_INDICATOR_MIN_RELATIVE_VOLUME_MULTIPLE,
     FOUR_INDICATOR_EQUAL_WEIGHTS, FOUR_INDICATOR_SCORE_SCALE_MAX,
+    MARKOV_REGIME_COMPONENT_WEIGHT,
     FOUR_INDICATOR_VOLUME_LOOKBACK_BARS,
 };
 

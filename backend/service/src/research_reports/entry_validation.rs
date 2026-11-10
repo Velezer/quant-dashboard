@@ -414,7 +414,7 @@ fn build_report(
         "computed_at":now_secs(),"status":status,"source":source,"history":history,"costs":costs,"models":models,
         "eligibility":{"status":if eligible {"eligible"} else {"pending_verification"},
             "reason":if !eligible {"A verified eligible registration is required before backtesting."}
-                else if !supported {"The current four-indicator entry models are not registered for this exact product/category. No substitute model was backtested."}
+                else if !supported {"The current five-indicator entry models are not registered for this exact product/category. No substitute model was backtested."}
                 else {"Exact registered identity selected. Historical research does not imply execution validation."}},
         "sizing":{"status":"BLOCKED","reason":"Sizing is a later modeling step. Exact entry evidence, full execution costs, model/data identity and uncertainty must qualify first.",
             "required_inputs":["Validated per-ticker/model/timeframe/source evidence","Conditional held-out return and loss distributions","Sample confidence and downside uncertainty","Complete execution costs and liquidity assumptions","A separately reviewed sizing rule and risk limits"]}}),

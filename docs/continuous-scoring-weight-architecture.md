@@ -24,10 +24,12 @@ whether a row is shown.
   selected policy on the chronological holdout.
 - Reports are saved in `app.entry_model_validation_reports`. They retain
   aggregate evidence and candidate weights, not simulated trade rows.
-- The live scorer in `quant/core/src/strategies/four_indicator_score.rs` uses
-  the scan-pinned validated profile when one is active and equal weights
-  otherwise. Both paths publish setups that meet the base score floor;
-  after-fee profile cutoffs are informational.
+- The live scorer combines four learned /10 factor readings (weight budget 40)
+  with a fixed /10 Markov regime component (weight 10). The Markov classifier
+  uses the causal current-bar state, not transition forecasts. The scan-pinned
+  profile redistributes only the first four weights; without a profile those
+  four share the 40-point budget equally. Both paths publish setups that meet
+  the /50 base score floor; after-fee profile cutoffs are informational.
 - The Entry Validation page shows active profile versions, recent cohort
   decisions, and promotion blockers. Research reports remain separate and
   state `live_weights_changed: false`.

@@ -1,4 +1,4 @@
-import { hasFourIndicatorScores, oppositeEntryExitCue, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength } from './signal-screener-model.js';
+import { hasFiveIndicatorScores, oppositeEntryExitCue, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength } from './signal-screener-model.js';
 /** Builds one accessible signal row from normalized screener data. */
 export function createSignalScreenerCard({
     escape,
@@ -28,19 +28,19 @@ export function createSignalScreenerCard({
         const scoreScaleMax = Number.isFinite(presentation.scoreScaleMax)
             ? presentation.scoreScaleMax
             : 10;
-        const fourIndicators = hasFourIndicatorScores(signal, scoreModel);
+        const fiveIndicators = hasFiveIndicatorScores(signal, scoreModel);
         const afterFeeGate = signal.score_basis?.after_fee_gate;
         const gateHoldout = afterFeeGate?.holdout || {};
         const gateWinRate = Number(gateHoldout.win_rate_after_fees_pct);
         const gateLowerBound = Number(gateHoldout.win_rate_after_fees_wilson_95_lower_pct);
         const gateTrades = Number(gateHoldout.trades);
-        const gateMinimumScore = Number(afterFeeGate?.minimum_score_out_of_40);
+        const gateMinimumScore = Number(afterFeeGate?.minimum_score_out_of_50);
         const targetAfterFeeWinRate = Number(afterFeeGate?.target_after_fee_win_rate_pct ?? 50);
         const hasAfterFeeMetric = Number.isFinite(gateWinRate) && Number.isFinite(gateLowerBound)
             && Number.isFinite(gateTrades) && Number.isFinite(gateMinimumScore);
-        const afterFeeMetricText = fourIndicators && (hasAfterFeeMetric || signal.persistent_score !== true)
+        const afterFeeMetricText = fiveIndicators && (hasAfterFeeMetric || signal.persistent_score !== true)
             ? hasAfterFeeMetric
-                ? `Historical holdout ${gateWinRate.toFixed(1)}% after fees vs ${targetAfterFeeWinRate.toFixed(0)}% target · ${Math.trunc(gateTrades)} trades · 95% lower bound ${gateLowerBound.toFixed(1)}% · profile cutoff ${gateMinimumScore.toFixed(0)}/40 is informational, not a signal filter`
+                ? `Historical holdout ${gateWinRate.toFixed(1)}% after fees vs ${targetAfterFeeWinRate.toFixed(0)}% target · ${Math.trunc(gateTrades)} trades · 95% lower bound ${gateLowerBound.toFixed(1)}% · profile cutoff ${gateMinimumScore.toFixed(0)}/50 is informational, not a signal filter`
                 : 'No promoted after-fee profile · equal weights used · signal shown without a profile filter'
             : '';
         const afterFeeAccessibleText = hasAfterFeeMetric
@@ -51,17 +51,17 @@ export function createSignalScreenerCard({
         const scoreLabel = scoreState?.tone === 'stale' ? 'Last recorded score' : 'Market-entry score';
         const scoreValue = Number.isFinite(displayScore) ? displayScore.toFixed(1) : '—';
         const scoreStateLabel = scoreState ? `, ${scoreState.label.toLowerCase()}` : '';
-        const componentSummary = fourIndicators
+        const componentSummary = fiveIndicators
             ? signalIndicatorScores(signal, scoreModel).map(item => `${item.indicator}: ${item.state}`).join('; ')
             : Array.isArray(signal.score_basis?.components) ? signal.score_basis.components.map(component =>
                 `${component.indicator || 'Indicator'} ${component.state || 'state unavailable'}, ${Number(component.points || 0).toFixed(1)} points`,
             ).join('; ')
             : '';
         const entryStatus = scoreState?.current === false ? 'no current market-entry signal' : 'current technical market-entry signal';
-        const accessibleScore = fourIndicators ? signalIndicatorSummary(signal, scoreModel) : Number.isFinite(displayScore)
-            ? `${scoreValue} out of ${scoreScaleMax}`
-            : 'unavailable';
-        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${fourIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}Setup strength is not win probability or execution availability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
+        const accessibleScore = fiveIndicators
+            ? `${Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax} weighted total; ` : ''}${signalIndicatorSummary(signal, scoreModel)}`
+            : Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax}` : 'unavailable';
+        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${fiveIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}Setup strength is not win probability or execution availability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
         const productLabel = signal.product_id === 'stockbit_regular'
             ? ''
             : signal.product_id.replaceAll('_', ' ');
@@ -77,7 +77,7 @@ export function createSignalScreenerCard({
                 <span class="signal-row-top"><span class="signal-row-rank">#${rank}</span><span class="signal-row-symbol">${escape(signal.symbol)}</span><span class="signal-row-timeframe">${escape(signal.timeframe.toUpperCase())}</span></span>
                 <span class="signal-row-meta">${escape(rowContext)}</span>
                 ${scoreState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}" role="status">${escape(scoreState.label)} · ${signal.persistent_score === true ? 'strategy' : 'price'} bar ${escape(signalPriceBarAgeLabel(signal.persistent_score === true ? signal.score_bar_time : signal.price_bar_time))}</span>` : ''}
-                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${fourIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded indicators' : '4 indicator scores'} · ${escape(signalScoreWeightSummary(signal, scoreModel))}</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}</span>
+                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${fiveIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded total' : 'Weighted total'} <strong>${scoreValue}</strong><span aria-hidden="true"> / 50</span> · five /10 indicators</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}</span>
                 ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
                 ${totalStrength ? `<span class="signal-total-strength signal-total-strength-${totalStrength.tone}" title="${escape(totalStrength.description)}">${escape(totalStrength.label)}<small>${escape(totalStrength.description)}</small></span>` : ''}
                 ${afterFeeMetricText ? `<span class="signal-after-fee-metric" title="${escape(hasAfterFeeMetric ? 'Historical cohort evidence does not predict this individual signal.' : 'After-fee status is informational; it does not filter signals.')}">${escape(afterFeeMetricText)}<small>${hasAfterFeeMetric ? 'Historical cohort holdout evidence; not an individual win-rate forecast.' : 'This signal remains visible without a validated profile.'}</small></span>` : ''}

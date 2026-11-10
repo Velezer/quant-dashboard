@@ -143,7 +143,7 @@ pub(crate) fn signal_screener_master_data_from_catalog(catalog: &Value) -> Value
                     "score_model_id": model["score_model_id"],
                     "score_scale_max": model["score_scale_max"],
                     "minimum_score_out_of_20": model["minimum_score_out_of_20"],
-                    "minimum_score_out_of_40": model["minimum_score_out_of_40"],
+                    "minimum_score_out_of_50": model["minimum_score_out_of_50"],
                     "component_score_scale_max": model["component_score_scale_max"],
                     "indicator_component_score_scale_max": model["indicator_component_score_scale_max"],
                     "strategy_score_label": model["strategy_score_label"],

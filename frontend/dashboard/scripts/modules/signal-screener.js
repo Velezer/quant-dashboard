@@ -358,7 +358,7 @@ export function installSignalScreener() {
                 : `${timeframeFilter} scores are stale. Retry or wait for a fresh scan.`;
         }
         const timeframeLabel = timeframeFilter === 'all' ? 'Fresh bars' : `Fresh ${timeframeFilter} bars`;
-        return `No market-entry signal now. The latest ${timeframeLabel.toLowerCase()} must qualify at the model’s minimum, with four /10 indicators and a fresh same-source 15m price.`;
+        return `No market-entry signal now. The latest ${timeframeLabel.toLowerCase()} must qualify at the model’s minimum with five /10 indicators and a fresh same-source 15m price.`;
     }
 
     function cryptoSignalModelsForView() {
