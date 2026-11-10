@@ -129,7 +129,7 @@ pub(crate) fn initialize_screener_schema(connection: &Connection) -> Result<(), 
         connection,
         "signal_screener_rows",
         true,
-        quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX,
+        quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX,
     )?;
     connection.execute_batch(
         "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_score
@@ -194,10 +194,10 @@ pub(crate) fn create_signal_screener_rows_table(
 ) -> Result<(), rusqlite::Error> {
     if !matches!(
         table_name,
-        "signal_screener_rows" | "signal_screener_rows_v2" | "signal_screener_rows_v3"
+        "signal_screener_rows" | "signal_screener_rows_v2" | "signal_screener_rows_v3" | "signal_screener_rows_v4"
     ) || !score_scale_max.is_finite()
         || score_scale_max <= 0.0
-        || score_scale_max > quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX
+        || score_scale_max > quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX
     {
         return Err(rusqlite::Error::InvalidParameterName(
             "unsupported signal screener table name".into(),
@@ -366,7 +366,7 @@ pub(crate) fn compact_stockbit_signal_score_update(
     if score_model_id != expected_score_model_id {
         return None;
     }
-    let four_indicator_score_model = super::is_four_indicator_score_model(&score_model_id);
+    let five_indicator_score_model = super::is_five_indicator_score_model(&score_model_id);
     let score_status = candidate
         .get("Score_Update_Status")
         .and_then(Value::as_str)
@@ -377,15 +377,15 @@ pub(crate) fn compact_stockbit_signal_score_update(
         .and_then(Value::as_f64)
         .filter(|score| {
             score.is_finite()
-                && (0.0..=if four_indicator_score_model {
-                    quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX
+                && (0.0..=if five_indicator_score_model {
+                    quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX
                 } else {
                     quant_core::NWE_DSS_SIGNAL_SCORE_SCALE_MAX
                 })
                     .contains(score)
         })
         .or_else(|| (score_status == "not_qualifying").then_some(0.0))?;
-    if score_status == "qualifying" && score < quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40 {
+    if score_status == "qualifying" && score < quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50 {
         return None;
     }
     let strategy_strength = candidate
@@ -415,19 +415,19 @@ pub(crate) fn compact_stockbit_signal_score_update(
         else {
             return None;
         };
-        let group_score_scale_max = if four_indicator_score_model {
+        let group_score_scale_max = if five_indicator_score_model {
             quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX
         } else {
             quant_core::NWE_DSS_COMPONENT_SCORE_SCALE_MAX
         };
-        let component_points_max = if four_indicator_score_model {
+        let component_points_max = if five_indicator_score_model {
             quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX
         } else {
             quant_core::NWE_DSS_COMPONENT_SCORE_SCALE_MAX
         };
         if !super::score_components_match(
             &components,
-            four_indicator_score_model,
+            five_indicator_score_model,
             component_points_max,
             group_score_scale_max,
             strategy_strength,
@@ -451,29 +451,29 @@ pub(crate) fn compact_stockbit_signal_score_update(
         .unwrap_or(Value::Null);
     let score_basis_json = serde_json::to_string(&json!({
         "model_id": score_model_id,
-        "score_scale_max": if four_indicator_score_model {
-            quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX
+        "score_scale_max": if five_indicator_score_model {
+            quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX
         } else {
             quant_core::NWE_DSS_SIGNAL_SCORE_SCALE_MAX
         },
-        "minimum_score_out_of_20": if four_indicator_score_model {
+        "minimum_score_out_of_20": if five_indicator_score_model {
             None
         } else {
             Some(quant_core::NWE_DSS_SIGNAL_MINIMUM_SCORE_OUT_OF_20)
         },
-        "minimum_score_out_of_40": if four_indicator_score_model {
-            Some(quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40)
+        "minimum_score_out_of_50": if five_indicator_score_model {
+            Some(quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50)
         } else {
             None
         },
         "profile_version": candidate["Signal_Scoring_Profile_Version"],
         "after_fee_gate": after_fee_gate,
-        "component_score_scale_max": if four_indicator_score_model {
+        "component_score_scale_max": if five_indicator_score_model {
             quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX
         } else {
             quant_core::NWE_DSS_COMPONENT_SCORE_SCALE_MAX
         },
-        "indicator_component_score_scale_max": if four_indicator_score_model {
+        "indicator_component_score_scale_max": if five_indicator_score_model {
             quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX
         } else {
             quant_core::NWE_DSS_COMPONENT_SCORE_SCALE_MAX

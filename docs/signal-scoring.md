@@ -15,7 +15,7 @@ signal.
 
 Compare rows only when their `score_model_id`, app/product/category, timeframe,
 and data-source basis match. Keep legacy score bases at their recorded scale;
-never convert an old `/10` or `/20` value into `/40` by multiplying it.
+never convert an old `/10`, `/20`, or `/40` value into `/50` by multiplying it.
 
 ## Crypto signal refresh
 
@@ -35,7 +35,7 @@ its freshness label, but it is not a current market entry.
 
 ## Total-strength display distinction
 
-For current four-indicator rows, sum the four unrounded numeric contributions.
+For current five-indicator rows, sum the five unrounded numeric contributions.
 A sum below 10 shows **Low total strength** with an amber label and left border;
 exactly 10 or above shows the neutral **10+ combined points** label. Missing
 numeric contributions show **Total strength unavailable**. An indicator with
@@ -43,7 +43,8 @@ recorded zero points and an unavailable state keeps that state visible. Stale
 rows qualify the label as last recorded. This is a presentation distinction,
 not a change to eligibility, ordering, evidence validation, or notifications.
 Legacy score models keep their recorded scales and do not use this distinction.
-The four separate /10 values and 25% weights remain the primary score display.
+The five separate /10 values, their learned or fixed weights, and contributions
+remain the primary score display.
 
 ## After-fee historical metric
 
@@ -61,16 +62,18 @@ Historical results do not estimate an individual signal's future win rate.
 Spread, slippage, depth, market impact, funding, and borrow remain outside the
 fee-adjusted return.
 
-## Four indicator scores (`/10` each; 25% weight each)
+## Five indicator scores (`/50` total)
 
 The registered NWE/DSS score models
-`nwe_dss_relative_volume_estimated_delta_rank_v6` and
-`dss_bressert_near_cross_nwe_volume_rank_v4` use four factors. Each factor is
-capped at 10 points. NWE and DSS form price evidence (0–20); relative volume
-and the OHLCV delta estimate form volume evidence (0–20). The dashboard shows
-those four values separately, each out of 10 with 25% maximum weight. Their sum
-remains an internal ranking value. The current minimum accepted score is
-1/40; the active catalog and strategy configuration own that floor.
+`nwe_dss_relative_volume_estimated_delta_markov_rank_v7` and
+`dss_bressert_near_cross_nwe_volume_markov_rank_v5` use five factors, each
+shown on a 0–10 scale. The first four share 40 weight points; validated
+after-fee profiles can redistribute those points, while the baseline assigns
+10 to each. Markov receives a fixed 10-point weight, making the total scale
+`/50`. NWE and DSS form the price subtotal; relative volume and the OHLCV delta
+estimate form the volume subtotal. Markov remains a separate fifth component.
+The base score floor is 1/50. The five raw values, current weights, and weighted
+contributions are shown separately.
 
 | Factor | Rule |
 | --- | --- |
@@ -78,6 +81,7 @@ remains an internal ranking value. The current minimum accepted score is
 | DSS Bressert | Uses the score supplied by the registered DSS setup for the selected timeframe and direction, bounded to 0–10. Cross and near-cross rules belong to that strategy version. |
 | Relative volume | Divide the current bar's volume by the mean volume of the preceding 20 bars for the same registered instrument, timeframe, and source. If the current candle direction agrees with the signal, score `10 × clamp((relative volume − 1) / (2 − 1), 0, 1)`; otherwise score zero. |
 | Estimated Volume Delta (OHLCV proxy) | Compute close location as `(2 × close − high − low) / (high − low)`, clamp it to −1…1, then multiply by +1 for LONG or −1 for SHORT. Score `10 × max(aligned close location, 0)`. This estimates candle pressure; it is not aggressor-side trade delta. |
+| Markov Regime | Classify the current scored bar using only data through that bar. Bull trend and accumulation align with LONG; bear trend and distribution align with SHORT. An aligned state receives 10 points; an opposing, neutral, or unavailable state receives zero. Its 10-point weight is fixed. Transition probabilities are not used as win probabilities or entry forecasts. |
 
 The two volume factors use related OHLCV observations, so they are not two
 independent trade-flow measurements. A relative-volume factor is unavailable
@@ -89,9 +93,10 @@ points and stays labeled unavailable; it is not treated as neutral agreement.
 Stale, incomplete, or cross-source bars do not become current score inputs.
 
 NWE and DSS calculations are deliberately not reduced to one shared formula:
-the factor values come from each registered strategy version. The table's
-`/40` arithmetic describes how the four values are combined after those
-strategy-specific calculations.
+the factor values come from each registered strategy version. The four learned
+factors' weighted contributions total at most 40; the fixed Markov contribution
+adds at most 10. Unavailable factors contribute zero without redistributing
+weight, so a score can be below 50 even when other factors are strong.
 
 ## Strategy/confluence blend (`/10`)
 
@@ -120,7 +125,7 @@ remaining points rank qualifying setups. The maximum is 11 raw confluence
 points before normalization.
 
 The component states are presented as separate evidence. This `/10` blend is
-not interchangeable with the four-factor `/40` score.
+not interchangeable with the five-factor `/50` score.
 
 ## Tokocrypto vote gate
 
@@ -132,15 +137,15 @@ tie does not qualify. Missing or neutral indicators do not vote. SHORT signal
 emission is disabled for these categories. The vote count is an
 eligibility rule, not a numeric subtotal. A signal that passes it still goes
 through the shared required-confirmation path and receives the `/10`
-strategy/confluence blend described above; it does not receive the four-factor
-`/40` model. The profile's registered version and configuration define the
+strategy/confluence blend described above; it does not receive the NWE/DSS
+five-factor `/50` model. The profile's registered version and configuration define the
 vote count and indicator parameters. Do not claim that all four indicators
 agree.
 
 ## Retained score versions and status
 
 Persisted score components retain the model identity and scale that produced
-them. A retired `/10` or `/20` model remains on its recorded scale and is
+them. A retired `/10`, `/20`, or `/40` model remains on its recorded scale and is
 marked legacy when it no longer matches the active catalog. Those same scales
 may still be current for other registered models; the `score_model_id` decides
 which rules apply. A fresh scan recomputes the active model; startup does not
@@ -149,7 +154,7 @@ preserve the last recorded value only with its stale/unavailable status and
 source provenance. A non-qualifying current strategy state is distinct from a
 stale retained score.
 
-Stale four-indicator rows display their recorded factor values as **Last recorded
+Stale prior-model rows display their recorded factor values as **Last recorded
 indicators**, beside the stale/no-current-entry status. Staleness does not replace that recorded value
 with zero. A fresh `not_qualifying` state still displays zero; missing numeric
 scores display unavailable rather than an invented zero.

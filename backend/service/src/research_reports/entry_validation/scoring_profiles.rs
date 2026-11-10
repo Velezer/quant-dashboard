@@ -195,7 +195,7 @@ fn cumulative_score_bands(
 
 fn score_floor_for_band(band: usize) -> f64 {
     (band as f64 * quant_core::ENTRY_SCORE_CALIBRATION_BAND_WIDTH)
-        .max(quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40)
+        .max(quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50)
 }
 
 fn value_text<'a>(value: &'a Value, key: &str) -> &'a str {
@@ -520,7 +520,7 @@ fn candidate_decision(
         && product_signal_gate_passes;
     let signal_gate = json!({
         "status": if signal_gate_qualified {"QUALIFIED"} else {"BLOCKED"},
-        "minimum_score_out_of_40": calibration_band.map(score_floor_for_band),
+        "minimum_score_out_of_50": calibration_band.map(score_floor_for_band),
         "target_after_fee_win_rate_pct": TARGET_AFTER_FEE_WIN_RATE_PCT,
         "fees_applied": true,
         "validation": validation_signal_gate.map(MetricTotals::as_json),
@@ -673,14 +673,14 @@ pub(crate) fn evaluate_daily_profiles(
                 let weights = serde_json::from_str::<Vec<u8>>(&encoded).ok()?;
                 let evaluation = serde_json::from_str::<Value>(&evaluation).ok()?;
                 let minimum_score = validated_signal_gate(&evaluation)
-                    .and_then(|gate| gate.get("minimum_score_out_of_40").and_then(Value::as_f64));
+                    .and_then(|gate| gate.get("minimum_score_out_of_50").and_then(Value::as_f64));
                 Some((weights, minimum_score))
             });
         let same_active = weights.is_some_and(|candidate| {
             active_profile.as_ref().is_some_and(|(active_weights, active_minimum)| {
                 active_weights.as_slice() == candidate.as_slice()
                     && *active_minimum
-                        == decision.pointer("/signal_gate/minimum_score_out_of_40")
+                        == decision.pointer("/signal_gate/minimum_score_out_of_50")
                             .and_then(Value::as_f64)
             })
         });
@@ -733,7 +733,7 @@ pub(crate) fn active_profile_snapshot(
             continue;
         };
         let Some(minimum_score) = after_fee_gate
-            .get("minimum_score_out_of_40")
+            .get("minimum_score_out_of_50")
             .and_then(Value::as_f64)
         else {
             continue;
@@ -778,7 +778,7 @@ fn validated_signal_gate(evaluation: &Value) -> Option<Value> {
 
 pub(crate) fn signal_gate_is_qualified(gate: &Value) -> bool {
     let Some(minimum_score) = gate
-        .get("minimum_score_out_of_40")
+        .get("minimum_score_out_of_50")
         .and_then(Value::as_f64)
     else {
         return false;
@@ -790,8 +790,8 @@ pub(crate) fn signal_gate_is_qualified(gate: &Value) -> bool {
             .and_then(Value::as_f64)
             == Some(TARGET_AFTER_FEE_WIN_RATE_PCT)
         && minimum_score.is_finite()
-        && (quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
-            ..=quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX)
+        && (quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50
+            ..=quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX)
             .contains(&minimum_score)
         && gate
             .get("validation")

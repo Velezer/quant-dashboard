@@ -10,10 +10,12 @@ pub(super) fn append_timeframe_signal_candidate(
     signal_bar: &quant_core::StrategyBar,
     score_bar: &quant_core::StrategyBar,
     current_price: &CurrentPrice,
+    price_timeframe: &str,
+    price_reference_only: bool,
     source: &str,
     provider: &str,
     score_components: Vec<Value>,
-    four_factor_groups: Option<(f64, f64, f64)>,
+    score_groups: Option<(f64, f64, f64, f64)>,
     profile: Option<&crate::research_reports::ActiveScoringProfile>,
 ) {
     let data_quality = if is_research_proxy_source(source) {
@@ -38,11 +40,17 @@ pub(super) fn append_timeframe_signal_candidate(
         "Data_Symbol": input.symbol,
         "Signal_Strategy_ID": strategy_id,
         "Signal_Direction": signal.direction,
-        "Signal_Strength": four_factor_groups.map(|(_, _, total)| total).unwrap_or(signal.strength),
-        "Strategy_Strength": four_factor_groups.map(|(price, _, _)| price).unwrap_or(signal.strategy_strength),
-        "Signal_Confluence_Score": four_factor_groups.map(|(_, volume, _)| volume)
+        "Signal_Strength": score_groups.map(|(_, _, _, total)| total).unwrap_or(signal.strength),
+        "Strategy_Strength": score_groups.map(|(price, _, _, _)| price).unwrap_or(signal.strategy_strength),
+        "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _)| volume)
             .or_else(|| signal.confluence.as_ref().map(|score| score.score)),
-        "Signal_Confluence": if four_factor_groups.is_some() { Value::Null } else {
+        "Signal_Markov_Regime_Score": score_groups.map(|(_, _, markov, _)| markov),
+        "Signal_Markov_Regime": score_components.iter()
+            .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Markov Regime"))
+            .and_then(|component| component.get("state"))
+            .cloned()
+            .unwrap_or(Value::Null),
+        "Signal_Confluence": if score_groups.is_some() { Value::Null } else {
             serde_json::to_value(signal.confluence.as_ref()).unwrap_or(Value::Null)
         },
         "Signal_Scoring_Model_ID": score_model_id,
@@ -54,8 +62,9 @@ pub(super) fn append_timeframe_signal_candidate(
         "Signal_Score_Components": score_components,
         "timeframe": timeframe,
         "Current_Price": current_price.value,
-        "Current_Price_Timeframe": "15m",
+        "Current_Price_Timeframe": price_timeframe,
         "Current_Price_Bar_Time": current_price.signal_bar_time,
+        "Current_Price_Reference_Only": price_reference_only,
         "Signal_Bar_Time": signal_bar.time,
         "Signal_Score_Bar_Time": score_bar.time,
         "Signal_Score_Bar_Is_Forming": score_bar.time.saturating_add(
@@ -69,12 +78,13 @@ pub(super) fn append_timeframe_signal_candidate(
     }));
 }
 
-pub(super) fn four_indicator_score_outputs(
+pub(super) fn five_indicator_score_outputs(
     bars: &[StrategyBar],
     signal: &quant_core::StrategySignal,
     lead_indicator: &str,
     profile: Option<&crate::research_reports::ActiveScoringProfile>,
-) -> (Vec<Value>, Option<(f64, f64, f64)>) {
+    markov_regime: Option<quant_core::RegimeId>,
+) -> (Vec<Value>, Option<(f64, f64, f64, f64)>) {
     let kind = if lead_indicator == "DSS Bressert" {
         quant_core::EntryModelKind::Dss
     } else {
@@ -83,10 +93,21 @@ pub(super) fn four_indicator_score_outputs(
     let weights = profile
         .map(|profile| profile.weights)
         .unwrap_or(quant_core::FOUR_INDICATOR_EQUAL_WEIGHTS);
-    let Some(score) = quant_core::score_entry_signal_with_weights(bars, signal, kind, weights) else {
+    let Some(score) = quant_core::score_entry_signal_with_markov(
+        bars,
+        signal,
+        kind,
+        weights,
+        markov_regime,
+    ) else {
         return (Vec::new(), None);
     };
-    let groups = Some((score.price_score, score.volume_score, score.total_score));
+    let groups = Some((
+        score.price_score,
+        score.volume_score,
+        score.markov_regime_score,
+        score.total_score,
+    ));
     let components = score
         .components
         .iter()
@@ -134,6 +155,7 @@ pub(super) fn append_stockbit_model_result(
     provider: &str,
     indicator: &str,
     current_price: Option<&CurrentPrice>,
+    markov_regime: Option<quant_core::RegimeId>,
 ) -> Option<ReadinessIssue> {
     let Some(current_price) = current_price.filter(|price| price.source == source) else {
         return None;
@@ -148,8 +170,8 @@ pub(super) fn append_stockbit_model_result(
         .last()
         .filter(|signal| matches!(signal.direction.as_str(), "LONG" | "SHORT"));
     let profile = active_scoring_profile(input, score_model_id, timeframe, source);
-    let (score_components, four_factor_groups) = latest_signal
-        .map(|signal| four_indicator_score_outputs(bars, signal, indicator, profile))
+    let (score_components, score_groups) = latest_signal
+        .map(|signal| five_indicator_score_outputs(bars, signal, indicator, profile, markov_regime))
         .unwrap_or_else(|| {
             let weights = profile.map(|profile| profile.weights)
                 .unwrap_or(quant_core::FOUR_INDICATOR_EQUAL_WEIGHTS);
@@ -160,22 +182,23 @@ pub(super) fn append_stockbit_model_result(
                     serde_json::json!({"indicator": "DSS Bressert", "state": "NO_QUALIFYING_SETUP", "points": 0.0,"weight_points":weights[1],"weighted_points":0.0,"scoring_profile_version":version}),
                     serde_json::json!({"indicator": "Relative Volume", "state": "UNAVAILABLE", "points": 0.0,"weight_points":weights[2],"weighted_points":0.0,"scoring_profile_version":version}),
                     serde_json::json!({"indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "UNAVAILABLE", "points": 0.0,"weight_points":weights[3],"weighted_points":0.0,"scoring_profile_version":version}),
+                    serde_json::json!({"indicator": "Markov Regime", "state": "UNAVAILABLE", "points": 0.0,"weight_points":quant_core::MARKOV_REGIME_COMPONENT_WEIGHT,"weighted_points":0.0,"scoring_profile_version":version}),
                 ],
-                Some((0.0, 0.0, 0.0)),
+                Some((0.0, 0.0, 0.0, 0.0)),
             )
         });
     let has_after_fee_setup = latest_signal.is_some();
     let after_fee_issue = if has_after_fee_setup
         && profile.is_none_or(|profile| {
-            four_factor_groups.is_none_or(|(_, _, total)| total < profile.minimum_score)
+            score_groups.is_none_or(|(_, _, _, total)| total < profile.minimum_score)
         })
     {
-        let (reason, explanation) = match (profile, four_factor_groups) {
+        let (reason, explanation) = match (profile, score_groups) {
             (None, _) => (
                 "after_fee_profile_missing",
                 "No active after-fee profile is available; equal-weight scoring is used and this setup is still shown.",
             ),
-            (Some(profile), Some((_, _, score))) if score < profile.minimum_score => (
+            (Some(profile), Some((_, _, _, score))) if score < profile.minimum_score => (
                 "below_after_fee_score_cutoff",
                 "The setup is below the historical after-fee score cutoff; the metric is informational and does not hide this signal.",
             ),
@@ -209,10 +232,12 @@ pub(super) fn append_stockbit_model_result(
                 score_bar,
                 score_bar,
                 current_price,
+                "15m",
+                false,
                 source,
                 provider,
                 score_components.clone(),
-                four_factor_groups,
+                score_groups,
                 profile,
             );
         }
@@ -248,9 +273,15 @@ pub(super) fn append_stockbit_model_result(
             "timeframe": timeframe,
             "Signal_Direction": latest_signal.map(|signal| signal.direction.as_str()),
             "Signal_Bar_Time": latest_signal.map(|_| score_bar.time),
-            "Signal_Strength": four_factor_groups.map(|(_, _, total)| total).unwrap_or(0.0),
-            "Strategy_Strength": four_factor_groups.map(|(price, _, _)| price).unwrap_or(0.0),
-            "Signal_Confluence_Score": four_factor_groups.map(|(_, volume, _)| volume),
+            "Signal_Strength": score_groups.map(|(_, _, _, total)| total).unwrap_or(0.0),
+            "Strategy_Strength": score_groups.map(|(price, _, _, _)| price).unwrap_or(0.0),
+            "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _)| volume),
+            "Signal_Markov_Regime_Score": score_groups.map(|(_, _, markov, _)| markov),
+            "Signal_Markov_Regime": score_components.iter()
+                .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Markov Regime"))
+                .and_then(|component| component.get("state"))
+                .cloned()
+                .unwrap_or(Value::Null),
             "Signal_Score_Components": score_components,
             "Score_Update_Status": if has_after_fee_setup {
                 "qualifying"

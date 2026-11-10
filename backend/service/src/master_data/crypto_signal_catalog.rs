@@ -53,10 +53,10 @@ pub(super) fn ensure_crypto_signal_catalog(catalog: &mut Value) -> bool {
         })
         .collect::<Vec<_>>();
 
-    let minimum_score = quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40;
+    let minimum_score = quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50;
     let nwe_minimum_history = quant_core::stockbit_nwe_4h_minimum_history_bars();
     let dss_minimum_history = quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS;
-    let score_scale_max = quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX;
+    let score_scale_max = quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX;
     let component_score_scale_max = quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX;
     let indicator_component_score_scale_max = quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX;
     let mut changed = false;
@@ -97,9 +97,9 @@ pub(super) fn ensure_crypto_signal_catalog(catalog: &mut Value) -> bool {
                 "label": format!("Crypto {timeframe} Nadaraya-Watson Band Proximity · Research"),
                 "short_label": format!("{timeframe} NWE Band Proximity"),
                 "description": nwe_description.clone(),
-                "indicator_ids": [quant_core::NWE_METHOD_ID, "dss_bressert", "relative_volume", "estimated_volume_delta_ohlcv"],
+                "indicator_ids": [quant_core::NWE_METHOD_ID, "dss_bressert", "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime"],
                 "score_model_id": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
-                "minimum_score_out_of_40": minimum_score,
+                "minimum_score_out_of_50": minimum_score,
                 "minimum_history_bars": nwe_minimum_history,
                 "strategy_score_label": "Weighted price contribution (NWE + DSS)",
                 "confluence_score_label": "Weighted volume contribution (relative volume + delta proxy)",
@@ -122,9 +122,9 @@ pub(super) fn ensure_crypto_signal_catalog(catalog: &mut Value) -> bool {
                 "label": format!("Crypto {timeframe} DSS Bressert Near-Cross · Research"),
                 "short_label": format!("{timeframe} DSS Near-Cross"),
                 "description": dss_description.clone(),
-                "indicator_ids": ["dss_bressert", quant_core::NWE_METHOD_ID, "relative_volume", "estimated_volume_delta_ohlcv"],
+                "indicator_ids": ["dss_bressert", quant_core::NWE_METHOD_ID, "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime"],
                 "score_model_id": quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID,
-                "minimum_score_out_of_40": minimum_score,
+                "minimum_score_out_of_50": minimum_score,
                 "minimum_history_bars": dss_minimum_history,
                 "strategy_score_label": "Price evidence (NWE + DSS)",
                 "confluence_score_label": "Volume evidence (relative volume + delta proxy)",
@@ -151,7 +151,7 @@ fn crypto_score_description(
         ""
     };
     format!(
-        "Crypto research market-entry signals are recalculated each scan from the latest directional setup on a completed {timeframe} bar. The strategy setup and base score floor determine whether a row qualifies; after-fee profile metrics and profile-specific cutoffs are informational and never hide a signal. An active validated profile supplies learned weights when available; otherwise the four factors use equal weights. There is no separate signal-age expiry. The latest same-source 15m reference price is shown when available; a stale reference remains labeled and is not a market entry. Setup strength uses four indicator readings, each scored 0–{indicator_component_score_scale_max:.0}: NWE, DSS Bressert, {volume_lookback_bars}-bar relative volume, and estimated volume delta from OHLCV close location. The screener shows each raw /10 score, its weight, and weighted contribution. Price and volume subtotals depend on the active weights. Relative volume compares the setup bar to the preceding {volume_lookback_bars} same-source bars; estimated delta is a candle proxy, not true aggressor-side trade delta. Unavailable volume evidence contributes zero and remains labeled unavailable. Scores below the base floor {minimum_score:.1}/{score_scale_max:.0} are withheld. Requires at least {minimum_history_bars} completed {timeframe} bars.{timeframe_source_note} The 15m price is a candle close, not a live bid/ask. Source and quality stay attached; proxy candles are not venue-native execution evidence. The score is not win probability or execution availability, and no order is placed."
+        "Crypto research market-entry signals are recalculated each scan from the latest directional setup on a completed {timeframe} bar. The strategy setup and base score floor determine whether a row qualifies; after-fee profile metrics and profile-specific cutoffs are informational and never hide a signal. An active validated profile supplies learned weights when available; otherwise the first four factors use equal weights. There is no separate signal-age expiry. The latest same-source 15m reference price is shown when available; a stale reference remains labeled and is not a market entry. The /{score_scale_max:.0} setup score has five /10 readings: NWE, DSS Bressert, {volume_lookback_bars}-bar relative volume, estimated volume delta from OHLCV close location, and Markov regime. The first four share 40 points of weight and Markov has a fixed 10-point weight; Markov earns its 10 only when the causal current-bar state aligns with signal direction (bull trend/accumulation for LONG, bear trend/distribution for SHORT), otherwise it contributes zero. The screener shows every raw /10 value, weight, and weighted contribution. Relative volume compares the setup bar to the preceding {volume_lookback_bars} same-source bars; estimated delta is a candle proxy, not true aggressor-side trade delta. Neutral or unavailable evidence contributes zero and remains labeled. The Markov state is not a forecast or win probability. Scores below the base floor {minimum_score:.1}/{score_scale_max:.0} are withheld. Requires at least {minimum_history_bars} completed {timeframe} bars.{timeframe_source_note} The 15m price is a candle close, not a live bid/ask. Source and quality stay attached; proxy candles are not venue-native execution evidence. The score measures setup strength, not execution availability, and no order is placed."
     )
 }
 

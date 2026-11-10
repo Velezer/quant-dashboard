@@ -8,6 +8,7 @@ struct CryptoSignalContext<'scan, 'data> {
     provider: &'scan str,
     bars: &'scan [StrategyBar],
     current_price: Option<&'scan CurrentPrice>,
+    markov_regime: Option<quant_core::RegimeId>,
 }
 
 pub(super) fn append_nwe_dss_model_signals(
@@ -24,6 +25,7 @@ pub(super) fn append_nwe_dss_model_signals(
     let Some((source, provider)) = source_metadata else {
         return after_fee_diagnostics;
     };
+    let mut markov_regime_cache: Option<Option<quant_core::RegimeId>> = None;
 
     for model in [quant_core::EntryModelKind::Nwe, quant_core::EntryModelKind::Dss] {
         if bars.len() < model.minimum_history_bars() {
@@ -53,6 +55,14 @@ pub(super) fn append_nwe_dss_model_signals(
                 "DSS Bressert",
             ),
         };
+        let has_directional_signal = signals
+            .last()
+            .is_some_and(|signal| matches!(signal.direction.as_str(), "LONG" | "SHORT"));
+        let markov_regime = if has_directional_signal {
+            *markov_regime_cache.get_or_insert_with(|| latest_markov_regime(bars))
+        } else {
+            None
+        };
 
         if is_stockbit_signal_scope {
             let Some(strategy_id) = strategy_id else {
@@ -71,6 +81,7 @@ pub(super) fn append_nwe_dss_model_signals(
                 provider,
                 indicator,
                 current_price,
+                markov_regime,
             ) {
                 after_fee_diagnostics.push(issue);
             }
@@ -82,6 +93,7 @@ pub(super) fn append_nwe_dss_model_signals(
                 provider,
                 bars,
                 current_price,
+                markov_regime,
             };
             if let Some(issue) = append_crypto_model_signal(
                 &crypto_context,
@@ -96,6 +108,13 @@ pub(super) fn append_nwe_dss_model_signals(
         }
     }
     after_fee_diagnostics
+}
+
+fn latest_markov_regime(bars: &[StrategyBar]) -> Option<quant_core::RegimeId> {
+    quant_core::classify_regimes(bars, &quant_core::MarkovRegimeConfig::default())
+        .last()
+        .copied()
+        .flatten()
 }
 
 fn append_crypto_model_signal(
@@ -120,12 +139,17 @@ fn append_crypto_model_signal(
     else {
         return None;
     };
-    let Some(current_price) = context
+    let fallback_price = CurrentPrice {
+        value: bar.close,
+        signal_bar_time: bar.time,
+        source: context.source.to_string(),
+        provider: context.provider.to_string(),
+    };
+    let (current_price, price_timeframe, price_reference_only) = context
         .current_price
         .filter(|price| price.source == context.source)
-    else {
-        return None;
-    };
+        .map(|price| (price, "15m", false))
+        .unwrap_or((&fallback_price, context.timeframe, true));
 
     let profile = active_scoring_profile(
         context.input,
@@ -133,13 +157,14 @@ fn append_crypto_model_signal(
         context.timeframe,
         context.source,
     );
-    let (score_components, four_factor_groups) = four_indicator_score_outputs(
+    let (score_components, score_groups) = five_indicator_score_outputs(
         &context.bars[..=signal_index],
         signal,
         indicator,
         profile,
+        context.markov_regime,
     );
-    let score = four_factor_groups.map(|(_, _, total)| total);
+    let score = score_groups.map(|(_, _, _, total)| total);
     let after_fee_issue = if profile.is_none_or(|profile| {
         score.is_none_or(|score| score < profile.minimum_score)
     }) {
@@ -180,10 +205,12 @@ fn append_crypto_model_signal(
         bar,
         bar,
         current_price,
+        price_timeframe,
+        price_reference_only,
         context.source,
         context.provider,
         score_components,
-        four_factor_groups,
+        score_groups,
         profile,
     );
     after_fee_issue

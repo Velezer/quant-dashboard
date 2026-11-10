@@ -21,9 +21,9 @@ pub const STOCKBIT_NWE_4H_PREVIOUS_BINARY_CROSS_STRATEGY_ID: &str = "stockbit_nw
 pub const STOCKBIT_NWE_4H_PREVIOUS_RANKED_CROSS_STRATEGY_ID: &str = "stockbit_nwe_band_cross_4h_v2";
 pub const STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID: &str = "stockbit_nwe_band_proximity_4h_v3";
 pub const STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID_LEGACY: &str =
-    "nwe_endpoint_band_proximity_dss_rank_v4";
-pub const STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID: &str =
     "nwe_dss_relative_volume_estimated_delta_rank_v6";
+pub const STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID: &str =
+    "nwe_dss_relative_volume_estimated_delta_markov_rank_v7";
 pub const CRYPTO_NWE_4H_SIGNAL_STRATEGY_ID: &str = "crypto_nwe_band_proximity_4h_v1";
 pub const STOCKBIT_NWE_4H_PRODUCT_ID: &str = "stockbit_regular";
 pub const STOCKBIT_NWE_4H_EXCHANGE_ID: &str = "stockbit";

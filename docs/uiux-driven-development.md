@@ -145,7 +145,7 @@ from the screener and scoring guide. App, exact product, ticker, timeframe,
 lead model/version, candle source, sample dates, costs, and frozen evaluation
 protocol remain explicit. A completed backtest is distinct from a validated
 entry model. The existing composite NWE/DSS report is not substituted for the
-live NWE-led or DSS-led four-factor models.
+live NWE-led or DSS-led five-factor models.
 
 The page exposes paginated saved evidence, one-ticker runs, a sequential run of
 all eligible tickers in the selected scope, and the automatic daily
@@ -158,12 +158,13 @@ request failures remain visible. No ticker beyond an arbitrary first page is
 silently omitted. Report details expose fixed score bands, factor outcomes,
 uncertainty, and future sizing prerequisites; no sizing model is built here.
 
-Reuse the live causal lead generators and one shared four-factor mapping.
+Reuse the live causal lead generators and one shared five-factor mapping.
 Entries occur at the next bar open, with no overlapping trades and no trades
 crossing split boundaries. Apply 60/20/20 chronological splits to bars after
 the model warm-up. Keep the equal-weight baseline, and fit one research-only
 candidate from 165 predeclared weight vectors (nonnegative, 5-point increments,
-sum /40) on training data using a fixed 8-bar timeout and known fees. Require 30
+sum /40 across four indicators, plus a fixed 10-point Markov component for a
+/50 total) on training data using a fixed 8-bar timeout and known fees. Require 30
 training trades per candidate; missing factors contribute zero without
 redistribution. Validation selects 4/8/12-bar or opposite-qualifying-signal
 exits independently for the baseline and candidate. With the candidate weights
@@ -249,19 +250,20 @@ candidate is not a live signal model and cannot make that evidence sizing-ready.
 ## Candle retention and low total strength
 
 The user must be able to retain history beyond 1,000 days and identify a
-four-indicator signal with fewer than 10 combined points. Candle storage has no
+five-indicator signal with fewer than 10 combined points. Candle storage has no
 application age or total-row retention cap. Data details shows actual stored
 coverage and labels the evidence minimum separately, with an explanation of
 provider download windows and bounded chart/backtest reads. Sync Market keeps
 its existing recovery path and merges accepted candles into canonical SQLite.
 
-Four-indicator cards show an amber **Low total strength** label and left border
-when all four numeric contributions sum to less than 10, using unrounded
+Five-indicator cards show an amber **Low total strength** label and left border
+when all five numeric contributions sum to less than 10, using unrounded
 points. A sum of exactly 10 belongs to the neutral **10+ combined points**
 category, which is not a validation or strong-signal claim. Missing numeric
 components show **Total strength unavailable**. Recorded zero contributions
-with an unavailable indicator state retain that state. Keep four /10 values,
-25% weights, existing freshness/entry labels, and a last-recorded qualifier for
+with an unavailable indicator state retain that state. Keep five /10 values,
+the first four weights totaling 40 and the fixed Markov weight of 10, existing
+freshness/entry labels, and a last-recorded qualifier for
 stale scores. The same distinction appears in the selected-chart summary and
 accessible card label. This presentation does not change ranking, model
 qualification, or browser alert delivery. Explain the threshold in the guide.
@@ -272,7 +274,7 @@ qualification, or browser alert delivery. Explain the threshold in the guide.
    minimum; readers can identify a low recorded contribution without arithmetic.
 3. **Response:** Repeated syncs upsert exact timestamps rather than replacing
    history; below-threshold signals remain selectable and eligible for alerts.
-4. **Interactions:** Keep source/product identity, four-factor semantics,
+4. **Interactions:** Keep source/product identity, five-factor semantics,
    SQLite ownership, validation minimums, and bounded per-request work.
 5. **Accumulation:** Disk use may grow; a chart or strategy read cap is never
    a reason to prune canonical candles or trim an accepted response before save.
@@ -289,10 +291,10 @@ qualification, or browser alert delivery. Explain the threshold in the guide.
 
 ## Indicator scores, browser alerts, and app readiness
 
-Signal cards and selected-chart summaries show four independent indicator
-values out of 10, each with its equal 25% maximum weight. The combined /40
-value remains an internal ordering value; the interface and scoring guide
-present the four factors instead. Verify all four values remain visible on
+Signal cards and selected-chart summaries show five indicator values out of
+10. Four weights total 40 and can be redistributed by an after-fee profile;
+Markov has a fixed 10-point weight. The /50 combined value is shown with all
+five components. Verify all five values remain visible on
 selected and unselected cards without hover, including narrow screens; old
 compact-layout rules can hide nested score sections. Missing components remain unavailable;
 legacy score models retain their original basis. This presentation change does
@@ -382,7 +384,7 @@ unrelated signal.
 The primary task is to understand a signal's displayed score and decide whether
 its model, timeframe, source, and freshness make it comparable to another row.
 The dashboard links to `/scoring`, a single page with a return link, section
-navigation, four-factor explanations, an illustrative points example, status
+navigation, five-factor explanations, an illustrative points example, status
 definitions, and the separate strategy/confluence and Tokocrypto voting rules.
 The example displays supplied factor points separately; it does not evaluate market candles,
 qualify a setup, or produce a signal. Current model identities and thresholds
@@ -435,10 +437,11 @@ and Retry states. All controls use native links, labels, and keyboard behavior.
 - **Score basis:** Show the score components used for ranking, including DSS
   Bressert near/cross states and extreme-zone evidence, plus Nadaraya-Watson
   near-line/cross states when available. The NWE/DSS research ranking also
-  shows its four equal-weight factors: NWE, DSS Bressert, 20-bar relative
-  volume, and the explicitly estimated OHLCV volume-delta proxy. Distinguish
-  each indicator as its own `/10` score with 25% weight; retain the sum only
-  for internal ranking. Avoid a combined `/40` score in the current model UI.
+  shows its five factors: NWE, DSS Bressert, 20-bar relative volume, estimated
+  OHLCV volume delta, and Markov regime. Show each raw `/10` score and its
+  weight; the first four weights total 40 and Markov is fixed at 10. Display
+  the combined `/50` score with its factor contributions. Preserve legacy
+  `/40` rows on their original scale.
   Keep component values, direction/alignment, and unavailable states visible so
   a score is interpretable. Missing components are unavailable, not silently
   treated as agreement. The candle-derived delta is not aggressor-side trade
@@ -1133,6 +1136,40 @@ history is insufficient or no latest-bar condition qualifies.
     versions, and preserve freshness, history, provenance, and expiry rules.
     Reconsider if a fresh qualifying latest-bar setup is omitted or if the UI
     presents a no-signal state as a scan failure.
+
+## Decision record: keep qualifying crypto setups when the separate 15m quote is missing
+
+A valid crypto NWE/DSS setup is computed from its own timeframe's stored
+candles. A missing or source-mismatched 15m quote must not suppress that setup:
+use the close of the qualifying same-source strategy candle as a reference-only
+price and label it as no market entry. Do not synthesize a direction, bypass
+the strategy score floor, or count this reference as an alert/market entry.
+
+1. **Direct effect:** A latest-bar LONG/SHORT setup that passes the existing
+   model floor remains in the screener even when its separate 15m quote is
+   missing or belongs to another source.
+2. **Immediate consequence:** The displayed reference is the setup candle's
+   close, time, source, and provider, and is explicitly marked reference-only.
+3. **Response:** Show `SETUP · {timeframe} CANDLE REFERENCE · NO MARKET ENTRY`
+   so the user can distinguish a setup from an executable price.
+4. **Interactions:** Preserve exact app, product, category, ticker, strategy,
+   timeframe, source, provider, and chart-candle identity.
+5. **Accumulation:** Persist the reference-only marker with the existing score
+   basis; add no duplicate candle store or hidden signal rows.
+6. **Failure boundaries:** Invalid candle closes, no latest-bar direction,
+   insufficient history, or a score below the existing floor still produce no
+   row. Never fabricate an always-on signal to satisfy a count.
+7. **Recovery:** The next scan recomputes from stored candles. A valid matching
+   15m quote can restore current-price status without changing the setup rules.
+8. **Governance:** Reference-only rows do not count as current market entries,
+   exit cues, or notification alerts; after-fee backtest profiles remain
+   informational and do not gate candidate generation.
+9. **Trajectory:** This removes an unrelated quote-availability gate while
+   keeping signal meaning and source provenance explicit. Track setup coverage
+   and reference-only coverage separately.
+10. **Decision:** Preserve the qualifying setup and candle reference, label the
+    no-entry state in the API and UI, and keep current-entry and notification
+    counts aligned with their existing freshness rules.
 
 ## 2026-10-09 — Retain and rescore Stockbit 4h rows
 

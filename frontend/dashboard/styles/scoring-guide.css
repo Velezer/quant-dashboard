@@ -79,6 +79,7 @@ section[id], main[id] { scroll-margin-top: 100px; }
 .dss { --factor-color: var(--dss); }
 .relative-volume { --factor-color: var(--volume); }
 .delta { --factor-color: var(--delta); }
+.markov { --factor-color: #c084fc; }
 .factor-number { color: var(--factor-color); font-size: .8rem; }
 .points-cap { font-size: .7rem; color: var(--factor-color); background: #ffffff06; border: 1px solid #ffffff16; border-radius: 4px; padding: 4px 8px; }
 .factor-card p, .model-explainer p { font-size: .86rem; color: #c0cbd9; line-height: 1.8; }
@@ -165,7 +166,7 @@ select { width: 100%; border: 1px solid #3a4c62; background: #0d1723; border-rad
 @media (prefers-reduced-motion: reduce) { :root { scroll-behavior: auto; } }
 @media print { body { background: white; color: black; } .site-header, .contents, .back-link, .example-actions, #catalog-retry { display: none; } .page-shell { display: block; } .guide-section { break-inside: avoid; } }
 
-.score-overview-indicators { grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+.score-overview-indicators { grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; }
 .score-overview-indicators > div { border-top:2px solid var(--nwe); padding-top:12px; }
 .score-overview-indicators strong { display:block; font-size:.85rem; }
 .score-overview-indicators small { color:var(--muted); font-size:.75rem; }

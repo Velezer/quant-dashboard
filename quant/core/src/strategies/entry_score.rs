@@ -1,8 +1,8 @@
 use super::{
-    score_four_indicators_with_weights, FOUR_INDICATOR_EQUAL_WEIGHTS,
-    stockbit_nwe_4h_minimum_history_bars, FourIndicatorScore, StrategyBar, StrategySignal,
-    DSS_BRESSERT_MINIMUM_HISTORY_BARS, STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID,
-    STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
+    add_markov_regime_score, score_four_indicators_with_weights, FOUR_INDICATOR_EQUAL_WEIGHTS,
+    stockbit_nwe_4h_minimum_history_bars, FiveIndicatorScore, FourIndicatorScore, StrategyBar,
+    StrategySignal, DSS_BRESSERT_MINIMUM_HISTORY_BARS,
+    STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID, STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,19 +27,33 @@ impl EntryModelKind {
     }
 }
 
-/// Score the supplied latest signal using the same lead/confluence mapping as
-/// the screener. The caller must pass only history available at signal time.
+/// Score the supplied latest signal using the screener's five-factor model.
+/// The caller must pass only history available at signal time.
 pub fn score_entry_signal(
     bars: &[StrategyBar],
     signal: &StrategySignal,
     kind: EntryModelKind,
-) -> Option<FourIndicatorScore> {
+) -> Option<FiveIndicatorScore> {
     score_entry_signal_with_weights(bars, signal, kind, FOUR_INDICATOR_EQUAL_WEIGHTS)
 }
 
-/// Apply the selected live scoring profile to the causal indicator readings
-/// for a signal. Invalid profile weights fail closed to no score.
+/// Apply the selected live scoring profile and latest causal Markov regime to
+/// a signal. Invalid profile weights fail closed to no score.
 pub fn score_entry_signal_with_weights(
+    bars: &[StrategyBar],
+    signal: &StrategySignal,
+    kind: EntryModelKind,
+    weights: [u8; 4],
+) -> Option<FiveIndicatorScore> {
+    let score = score_entry_signal_four_indicators_with_weights(bars, signal, kind, weights)?;
+    let markov_regime = crate::classify_regimes(bars, &crate::MarkovRegimeConfig::default())
+        .last()
+        .copied()
+        .flatten();
+    Some(add_markov_regime_score(score, &signal.direction, markov_regime))
+}
+
+fn score_entry_signal_four_indicators_with_weights(
     bars: &[StrategyBar],
     signal: &StrategySignal,
     kind: EntryModelKind,
@@ -64,6 +78,24 @@ pub fn score_entry_signal_with_weights(
         bars, &signal.direction, nwe_state, nwe_points, dss_state, dss_points,
         weights,
     )
+}
+
+/// Score one entry with the causal Markov state already classified at the
+/// signal bar. Callers that process histories should classify all bars once
+/// and pass the matching state to avoid repeated historical calculations.
+pub fn score_entry_signal_with_markov(
+    bars: &[StrategyBar],
+    signal: &StrategySignal,
+    kind: EntryModelKind,
+    weights: [u8; 4],
+    markov_regime: Option<crate::RegimeId>,
+) -> Option<FiveIndicatorScore> {
+    let score = score_entry_signal_four_indicators_with_weights(bars, signal, kind, weights)?;
+    Some(add_markov_regime_score(
+        score,
+        &signal.direction,
+        markov_regime,
+    ))
 }
 
 /// Replay the causal entry directions without retaining a full strategy-signal

@@ -611,7 +611,7 @@ fn pintu_golden_cross_context_timeframe(timeframe: &str) -> &str {
 mod score_rows;
 use score_rows::{
     active_scoring_profile, append_stockbit_model_result, append_timeframe_signal_candidate,
-    four_indicator_score_outputs,
+    five_indicator_score_outputs,
 };
 
 pub(super) fn append_timeframe_to_plan_id(plan: &mut Value, timeframe: &str) {

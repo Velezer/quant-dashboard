@@ -3,10 +3,10 @@ use serde_json::Value;
 pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
     let minimum_nwe_history = quant_core::stockbit_nwe_4h_minimum_history_bars();
     let minimum_dss_history = quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS;
-    let minimum_score = quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40;
+    let minimum_score = quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50;
     let nwe_band_distance_ratio =
         quant_core::STOCKBIT_NWE_4H_SIGNAL_CONFIG.maximum_band_distance_ratio;
-    let maximum_score = quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX;
+    let maximum_score = quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX;
     let component_maximum_score = quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX;
     let indicator_component_maximum_score = quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX;
     let relative_volume_lookback = quant_core::FOUR_INDICATOR_VOLUME_LOOKBACK_BARS;
@@ -23,6 +23,16 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
         serde_json::json!({
             "id": "estimated_volume_delta_ohlcv",
             "label": "Estimated Volume Delta (OHLCV proxy)",
+            "kind": "indicator",
+            "signal_strategy": false,
+        }),
+    );
+    changed |= super::upsert_catalog_record(
+        catalog,
+        "indicators",
+        serde_json::json!({
+            "id": "markov_regime",
+            "label": "Markov Regime",
             "kind": "indicator",
             "signal_strategy": false,
         }),
@@ -53,7 +63,7 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "{nwe_direction_rule} Without a cross, a close within {:.0}% of the full envelope width from its nearest band qualifies on either side.",
             nwe_band_distance_ratio * 100.0,
         );
-        let nwe_basis = four_indicator_score_basis(
+        let nwe_basis = five_indicator_score_basis(
             &nwe_setup_description,
             timeframe,
             relative_volume_lookback,
@@ -74,14 +84,14 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "validation_status": "UNVALIDATED",
             "research_only": true,
             "implemented": true,
-            "indicator_ids": [quant_core::NWE_METHOD_ID, "dss_bressert", "relative_volume", "estimated_volume_delta_ohlcv"],
+            "indicator_ids": [quant_core::NWE_METHOD_ID, "dss_bressert", "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime"],
             "asset_category_ids": [quant_core::STOCKBIT_NWE_4H_ASSET_CATEGORY_ID],
             "exchange_ids": [quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID],
             "product_ids": [quant_core::STOCKBIT_NWE_4H_PRODUCT_ID],
             "timeframe": timeframe,
             "score_model_id": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
             "score_scale_max": maximum_score,
-            "minimum_score_out_of_40": minimum_score,
+            "minimum_score_out_of_50": minimum_score,
             "component_score_scale_max": component_maximum_score,
             "indicator_component_score_scale_max": indicator_component_maximum_score,
             "strategy_score_label": "Weighted price contribution (NWE + DSS)",
@@ -95,7 +105,7 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "On a completed {timeframe} bar, a bullish DSS Bressert cross or approaching near-cross is LONG; a bearish cross or approaching near-cross is SHORT. A near-cross requires the DSS-to-trigger spread to approach zero within {:.1} points.",
             quant_core::DSS_BRESSERT_NEAR_SPREAD_THRESHOLD,
         );
-        let dss_basis = four_indicator_score_basis(
+        let dss_basis = five_indicator_score_basis(
             &dss_setup_description,
             timeframe,
             relative_volume_lookback,
@@ -116,14 +126,14 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "validation_status": "UNVALIDATED",
             "research_only": true,
             "implemented": true,
-            "indicator_ids": ["dss_bressert", quant_core::NWE_METHOD_ID, "relative_volume", "estimated_volume_delta_ohlcv"],
+            "indicator_ids": ["dss_bressert", quant_core::NWE_METHOD_ID, "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime"],
             "asset_category_ids": [quant_core::STOCKBIT_NWE_4H_ASSET_CATEGORY_ID],
             "exchange_ids": [quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID],
             "product_ids": [quant_core::STOCKBIT_NWE_4H_PRODUCT_ID],
             "timeframe": timeframe,
             "score_model_id": quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID,
             "score_scale_max": maximum_score,
-            "minimum_score_out_of_40": minimum_score,
+            "minimum_score_out_of_50": minimum_score,
             "component_score_scale_max": component_maximum_score,
             "indicator_component_score_scale_max": indicator_component_maximum_score,
             "strategy_score_label": "Weighted price contribution (NWE + DSS)",
@@ -138,7 +148,7 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
     changed
 }
 
-fn four_indicator_score_basis(
+fn five_indicator_score_basis(
     setup_description: &str,
     timeframe: &str,
     relative_volume_lookback: usize,
@@ -147,6 +157,6 @@ fn four_indicator_score_basis(
     indicator_component_maximum_score: f64,
 ) -> String {
     format!(
-        "{setup_description} The entry setup score uses four indicator readings, each scored 0–{indicator_component_maximum_score:.0}: NWE, DSS Bressert, {relative_volume_lookback}-bar relative volume, and estimated OHLCV volume delta. An active validated profile supplies learned weights when available; otherwise equal weights are used. The dashboard shows each raw /10 reading, its weight, and its weighted contribution. After-fee backtest metrics and profile-specific cutoffs are informational and never hide a signal; the base score floor remains {minimum_score:.1}/{maximum_score:.0}. Price and volume subtotals depend on the active weights. Relative volume compares the current bar against the preceding {relative_volume_lookback} same-source {timeframe} bars and awards points only when candle direction agrees with the signal. The delta proxy uses candle close location; it is not true aggressor-side trade delta. Missing/zero volume or insufficient history is labeled unavailable and contributes zero. Scores below the base floor are withheld. The score measures setup strength, not win probability or execution availability."
+        "{setup_description} The entry setup score has five readings scored /10: NWE, DSS Bressert, {relative_volume_lookback}-bar relative volume, estimated OHLCV volume delta, and Markov regime. The first four readings share 40 weight points; an active validated profile can redistribute those weights, while equal weighting gives 10 points each. Markov has a fixed 10-point weight and earns 10 when its causal current-bar regime aligns with the signal direction (bull trend/accumulation for LONG; bear trend/distribution for SHORT); opposing, neutral, or unavailable regimes earn zero. The score is out of {maximum_score:.0}; every raw /10 reading, weight, and contribution is shown. After-fee backtest metrics and profile-specific cutoffs are informational and never hide a signal; the base score floor remains {minimum_score:.1}/{maximum_score:.0}. Price and volume subtotals depend on the learned weights. Relative volume compares the current bar against the preceding {relative_volume_lookback} same-source {timeframe} bars and awards points only when candle direction agrees with the signal. The delta proxy uses candle close location; it is not true aggressor-side trade delta. Markov state alignment is not a forecast or win probability. Missing/zero volume or insufficient history contributes zero and remains labeled unavailable. Scores below the base floor are withheld. The score measures setup strength, not execution availability."
     )
 }

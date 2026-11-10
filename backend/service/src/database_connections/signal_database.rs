@@ -103,14 +103,14 @@ pub(in crate::database) fn validate_signal_layout(
                 |row| row.get(0),
             )
             .optional()?;
-        let supports_twenty_point_scores = score_schema_sql.as_deref().is_some_and(|sql| {
+        let supports_fifty_point_scores = score_schema_sql.as_deref().is_some_and(|sql| {
             sql.to_ascii_lowercase()
                 .chars()
                 .filter(|character| !character.is_whitespace())
                 .collect::<String>()
-                .contains("score<=40")
+                .contains("score<=50")
         });
-        if !supports_twenty_point_scores {
+        if !supports_fifty_point_scores {
             return Err(storage_error(
                 "signal score schema marker does not match the screener table",
             ));

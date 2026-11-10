@@ -1,4 +1,4 @@
-import { hasFourIndicatorScores, signalIndicatorScores, scoreWeightLabel, signalScoreComponentWeights, signalScorePresentation } from './signal-screener-model.js';
+import { hasFiveIndicatorScores, signalIndicatorScores, scoreWeightLabel, signalScoreComponentWeights, signalScorePresentation } from './signal-screener-model.js';
 
 export function createSignalScoreBasisMarkup({ escape, scoreModelFor }) {
     function componentLabel(component) {
@@ -21,7 +21,7 @@ export function createSignalScoreBasisMarkup({ escape, scoreModelFor }) {
         const basis = signal.score_basis || {};
         const scoreModel = scoreModelFor(signal);
         const presentation = signalScorePresentation(signal, scoreModel);
-        if (hasFourIndicatorScores(signal, scoreModel)) {
+        if (hasFiveIndicatorScores(signal, scoreModel)) {
             const factors = signalIndicatorScores(signal, scoreModel).map(item => {
                 const state = item.state.replaceAll('_', ' ').toLowerCase();
                 const value = typeof item.value === 'number' && Number.isFinite(item.value)
@@ -33,7 +33,7 @@ export function createSignalScoreBasisMarkup({ escape, scoreModelFor }) {
             }).join('');
             const version = signalIndicatorScores(signal, scoreModel).find(item => Number.isFinite(Number(item.profileVersion)))?.profileVersion;
             const profile = version === null || version === undefined ? 'Equal-weight profile' : `Scoring profile v${escape(version)}`;
-            return `<div class="signal-score-basis signal-score-basis-indicators"><div class="signal-indicator-grid" aria-label="Four indicators scored out of 10 with the displayed live weights">${factors}</div><small class="signal-scoring-profile">${profile}</small></div>`;
+            return `<div class="signal-score-basis signal-score-basis-indicators"><div class="signal-indicator-grid" aria-label="Five indicators scored out of 10 with the displayed live weights">${factors}</div><small class="signal-scoring-profile">${profile}</small></div>`;
         }
         const componentScaleMax = presentation.componentScoreScaleMax;
         const indicatorComponentScaleMax = presentation.indicatorComponentScoreScaleMax;

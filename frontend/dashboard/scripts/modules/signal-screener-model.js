@@ -31,6 +31,14 @@ export function signalScoreState(signal, nowEpochMs = Date.now()) {
             : { label: `MARKET ENTRY NOW · LATEST CLOSED ${timeframe}`, tone: 'current', current: true };
     }
     if (!signalPriceIsFresh(signal, nowEpochMs)) {
+        if (signal?.score_basis?.price_reference_only === true) {
+            const timeframe = String(signal.price_timeframe || signal.timeframe || '').toUpperCase();
+            return {
+                label: `SETUP · ${timeframe} CANDLE REFERENCE · NO MARKET ENTRY`,
+                tone: 'stale',
+                current: false,
+            };
+        }
         return { label: 'SETUP RETAINED · STALE PRICE · NOT A MARKET ENTRY', tone: 'stale', current: false };
     }
     return { label: 'MARKET ENTRY NOW · FRESH PRICE', tone: 'current', current: true };
@@ -118,6 +126,7 @@ export function signalPriceBarAgeLabel(priceBarTimeNs, nowEpochMs = Date.now()) 
 
 export function signalPriceIsFresh(signal, nowEpochMs = Date.now()) {
     if (signal?.persistent_score === true) return true;
+    if (signal?.price_is_fresh === false) return false;
     const freshUntilMs = Number(signal?.price_fresh_until_ms);
     if (!Number.isFinite(freshUntilMs) || freshUntilMs <= 0) return true;
     return Number.isFinite(nowEpochMs) && nowEpochMs <= freshUntilMs;
@@ -147,9 +156,11 @@ export function signalScorePresentation(signal, model) {
     );
     const basisIsCurrent = basis.score_model_status !== 'legacy'
         && (!basis.model_id || !model?.score_model_id || basis.model_id === model.score_model_id);
-    const minimumKey = scoreScaleMax === 40
-        ? 'minimum_score_out_of_40'
-        : scoreScaleMax === 20
+    const minimumKey = scoreScaleMax === 50
+        ? 'minimum_score_out_of_50'
+        : scoreScaleMax === 40
+            ? 'minimum_score_out_of_40'
+            : scoreScaleMax === 20
             ? 'minimum_score_out_of_20'
             : 'minimum_score_out_of_10';
     const minimumCandidate = scoreScaleMax >= 20
@@ -195,9 +206,9 @@ export function scoreWeightLabel(weight) {
     return Number.isFinite(weight) ? `${Math.round(weight * 100)}% weight` : 'weight unavailable';
 }
 
-export function hasFourIndicatorScores(signal, model) {
+export function hasFiveIndicatorScores(signal, model) {
     const presentation = signalScorePresentation(signal, model);
-    return presentation.scoreScaleMax === 40 && !presentation.legacy;
+    return presentation.scoreScaleMax === 50 && !presentation.legacy;
 }
 
 export const SIGNAL_SCORE_INDICATORS = Object.freeze([
@@ -205,20 +216,21 @@ export const SIGNAL_SCORE_INDICATORS = Object.freeze([
     { id: 'dss_bressert', indicator: 'DSS Bressert', label: 'DSS Bressert' },
     { id: 'relative_volume', indicator: 'Relative Volume', label: 'Relative volume' },
     { id: 'delta_proxy', indicator: 'Estimated Volume Delta (OHLCV proxy)', label: 'Delta proxy' },
+    { id: 'markov_regime', indicator: 'Markov Regime', label: 'Markov regime' },
 ]);
 
 export function signalIndicatorScores(signal, model) {
-    if (!hasFourIndicatorScores(signal, model)) return [];
+    if (!hasFiveIndicatorScores(signal, model)) return [];
     const components = Array.isArray(signal?.score_basis?.components) ? signal.score_basis.components : [];
-    return SIGNAL_SCORE_INDICATORS.map(({ id, indicator, label }) => {
+    return SIGNAL_SCORE_INDICATORS.map(({ id, indicator, label }, index) => {
         const component = components.find(item => item?.indicator === indicator);
         const value = component?.points;
         const points = typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 10 ? value : null;
         const weightPoints = typeof component?.weight_points === 'number' && Number.isFinite(component.weight_points)
-            ? component.weight_points : 40 / SIGNAL_SCORE_INDICATORS.length;
+            ? component.weight_points : 10;
         const weightedPoints = typeof component?.weighted_points === 'number' && Number.isFinite(component.weighted_points)
             ? component.weighted_points : points === null ? null : points * weightPoints / 10;
-        return { id, indicator, label, points, weightedPoints, scale: 10, weight: weightPoints / 40,
+        return { id, indicator, label, points, weightedPoints, scale: 10, weight: weightPoints / 50,
             profileVersion: component?.scoring_profile_version ?? null,
             state: String(component?.state || 'UNAVAILABLE'), value: component?.value };
     });
@@ -235,7 +247,7 @@ export function signalIndicatorScoreForFilter(signal, model, indicatorId) {
 const LOW_TOTAL_INDICATOR_POINTS = 10;
 
 export function signalTotalStrength(signal, model) {
-    if (!hasFourIndicatorScores(signal, model)) return null;
+    if (!hasFiveIndicatorScores(signal, model)) return null;
     const indicators = signalIndicatorScores(signal, model);
     const known = indicators.every(item => item.points !== null);
     const total = known ? indicators.reduce((sum, item) => sum + (item.weightedPoints ?? item.points), 0) : null;
@@ -245,8 +257,8 @@ export function signalTotalStrength(signal, model) {
     return {
         tone: !known ? 'unavailable' : low ? 'low' : 'standard',
         label: retained ? `Last recorded: ${label.toLowerCase()}` : label,
-        description: !known ? 'All four numeric indicator contributions are needed to classify total strength.'
-            : `The four indicator readings are each out of 10, then combined using the active weights to produce ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} weighted points.`,
+        description: !known ? 'All five numeric indicator contributions are needed to classify total strength.'
+            : `The five indicator readings are each out of 10, then combined using the active weights to produce ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} weighted points.`,
     };
 }
 
@@ -257,7 +269,7 @@ export function signalIndicatorSummary(signal, model) {
 }
 
 export function signalScoreWeightSummary(signal, model) {
-    if (hasFourIndicatorScores(signal, model)) return signalIndicatorScores(signal, model).map(item => `${item.label} ${Math.round(item.weight * 100)}%`).join(', ');
+    if (hasFiveIndicatorScores(signal, model)) return signalIndicatorScores(signal, model).map(item => `${item.label} ${Math.round(item.weight * 100)}%`).join(', ');
     const weights = signalScoreComponentWeights(signal, model);
     const strategyLabel = String(model?.strategy_score_label || 'Strategy');
     const confluenceLabel = String(model?.confluence_score_label || 'Confluence');
@@ -300,10 +312,12 @@ export function signalScoreSummary(signal, model, scoreState = null) {
                 ? 'closed'
                 : stateLabel.toLowerCase()}`
         : '';
-    if (hasFourIndicatorScores(signal, model)) {
+    if (hasFiveIndicatorScores(signal, model)) {
         const label = scoreState?.tone === 'stale' ? 'Last recorded indicator scores' : 'Indicator scores';
         const strength = signalTotalStrength(signal, model);
-        const indicators = `${label}: ${signalIndicatorSummary(signal, model)}${state}`;
+        const total = signalDisplayScore(signal);
+        const totalLabel = Number.isFinite(total) ? `Weighted total ${total.toFixed(1)}/50 · ` : '';
+        const indicators = `${totalLabel}${label}: ${signalIndicatorSummary(signal, model)}${state}`;
         const summary = strength.tone === 'low' ? `${strength.label} · ${indicators}` : `${indicators} · ${strength.label}`;
         return `${summary} · ${strength.description} · setup strength, not win probability or execution availability`;
     }

@@ -1,9 +1,9 @@
 /** Adds an illustrative points example and the deployment's existing model catalog. */
 export function exampleTotals(points) {
-    if (!Array.isArray(points) || points.length !== 4
+    if (!Array.isArray(points) || points.length !== 5
         || points.some(value => !Number.isFinite(value) || value < 0 || value > 10)) return null;
-    const [nwe, dss, volume, delta] = points;
-    return { price: nwe + dss, volume: volume + delta, total: nwe + dss + volume + delta };
+    const [nwe, dss, volume, delta, markov] = points;
+    return { price: nwe + dss, volume: volume + delta, markov, total: nwe + dss + volume + delta + markov };
 }
 
 function numericValue(value) {
@@ -41,7 +41,7 @@ export async function fetchGuideCatalog(fetchImpl = globalThis.fetch) {
 
 function setupExample(doc) {
     const form = doc.getElementById('score-example');
-    const factors = ['nwe', 'dss', 'volume', 'delta'];
+    const factors = ['nwe', 'dss', 'volume', 'delta', 'markov'];
     const inputs = factors.map(factor => doc.getElementById(`example-${factor}`));
     function update() {
         const points = inputs.map(input => Number(input.value));
@@ -53,6 +53,7 @@ function setupExample(doc) {
             doc.getElementById(`example-bar-${factors[index]}`).style.width = `${points[index] / Number(input.max) * 100}%`;
             doc.getElementById(`example-summary-${factors[index]}`).value = points[index].toFixed(1);
         });
+        doc.getElementById('example-total-value').value = totals.total.toFixed(1);
         doc.getElementById('example-mode').textContent = inputs.every(input => input.value === input.defaultValue)
             ? 'Worked example values'
             : 'Hypothetical points · candle example unchanged';
@@ -92,9 +93,9 @@ function renderModel(doc, model) {
     const metrics = element(doc, 'div', 'model-metrics');
     const scale = numericValue(model.score_scale_max);
     const minimum = numericValue(model[`minimum_score_out_of_${scale}`] ?? model.minimum_score);
-    metrics.append(element(doc, 'span', '', scale === 40 ? 'Four indicators · /10 each' : `Scale /${scale}`));
-    if (scale === 40) {
-        metrics.append(element(doc, 'span', '', '25% weight each'));
+    metrics.append(element(doc, 'span', '', scale === 50 ? 'Five indicators · /10 each' : `Scale /${scale}`));
+    if (scale === 50) {
+        metrics.append(element(doc, 'span', '', 'Markov fixed · 10 points'));
         if (minimum !== null) metrics.append(element(doc, 'span', '', `Eligibility floor: ${minimum} points across indicators`));
     }
     else if (minimum !== null) metrics.append(element(doc, 'span', '', `Minimum ${minimum}/${scale}`));
@@ -106,7 +107,7 @@ function renderModel(doc, model) {
     card.append(element(doc, 'p', 'model-id', context.join(' · ')));
     const details = element(doc, 'details');
     details.append(element(doc, 'summary', '', 'Read the registered rules'),
-        element(doc, 'p', '', scale === 40 ? 'NWE, DSS Bressert, relative volume, and estimated OHLCV delta are each scored out of 10 with equal 25% weight. Eligibility, history requirements, timeframe, and source must also match this registered model.' : model.score_basis_description || model.description || 'No additional description is supplied by this catalog.'));
+        element(doc, 'p', '', scale === 50 ? 'The five readings are NWE, DSS Bressert, relative volume, estimated OHLCV delta, and Markov regime. The first four weights total 40 and may be redistributed; Markov has a fixed 10-point weight. Eligibility, history requirements, timeframe, and source must also match this registered model.' : model.score_basis_description || model.description || 'No additional description is supplied by this catalog.'));
     card.append(details);
     return card;
 }

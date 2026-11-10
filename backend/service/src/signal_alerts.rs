@@ -19,9 +19,9 @@ pub(super) const SIGNAL_ALERT_HISTORY_RETENTION_SECONDS: i64 =
     2 * quant_core::SECONDS_PER_HOUR;
 pub(super) const SIGNAL_SCORE_SUM_TOLERANCE: f64 = 1e-10;
 pub(super) const SIGNAL_LAYOUT_VERSION: &str = "1";
-pub(super) const SIGNAL_SCORE_SCHEMA_VERSION: &str = "3";
+pub(super) const SIGNAL_SCORE_SCHEMA_VERSION: &str = "4";
 
-pub(super) fn is_four_indicator_score_model(score_model_id: &str) -> bool {
+pub(super) fn is_five_indicator_score_model(score_model_id: &str) -> bool {
     matches!(
         score_model_id,
         quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID
@@ -31,7 +31,7 @@ pub(super) fn is_four_indicator_score_model(score_model_id: &str) -> bool {
 
 pub(super) fn score_components_match(
     components: &[Value],
-    four_indicator_score_model: bool,
+    five_indicator_score_model: bool,
     component_points_max: f64,
     group_score_max: f64,
     strategy_strength: f64,
@@ -45,7 +45,9 @@ pub(super) fn score_components_match(
         || !confluence_score.is_finite()
         || confluence_score < 0.0
         || confluence_score > group_score_max
-        || (total_score - strategy_strength - confluence_score).abs() > SIGNAL_SCORE_SUM_TOLERANCE
+        || (!five_indicator_score_model
+            && (total_score - strategy_strength - confluence_score).abs()
+                > SIGNAL_SCORE_SUM_TOLERANCE)
     {
         return false;
     }
@@ -63,30 +65,50 @@ pub(super) fn score_components_match(
     else {
         return false;
     };
-    let component_points = if four_indicator_score_model {
-        let mut total_weight = 0_u16;
+    let component_points = if five_indicator_score_model {
+        const FIVE_INDICATOR_NAMES: [&str; 5] = [
+            "Nadaraya-Watson Envelope",
+            "DSS Bressert",
+            "Relative Volume",
+            "Estimated Volume Delta (OHLCV proxy)",
+            "Markov Regime",
+        ];
+        if components.len() != FIVE_INDICATOR_NAMES.len()
+            || components
+                .iter()
+                .zip(FIVE_INDICATOR_NAMES)
+                .any(|(component, expected)| {
+                    component.get("indicator").and_then(Value::as_str) != Some(expected)
+                })
+            || !matches!(raw_component_points[4], 0.0 | 10.0)
+        {
+            return false;
+        }
+        let mut learned_weight_total = 0_u16;
         let weighted = components
             .iter()
+            .enumerate()
             .zip(&raw_component_points)
-            .map(|(component, points)| {
+            .map(|((index, component), points)| {
                 let weight = component
                     .get("weight_points")
                     .and_then(Value::as_u64)
-                    .and_then(|value| u8::try_from(value).ok())
-                    .unwrap_or(10);
+                    .and_then(|value| u8::try_from(value).ok())?;
                 let contribution = component
                     .get("weighted_points")
-                    .and_then(Value::as_f64)
-                    .unwrap_or(*points);
-                total_weight = total_weight.saturating_add(u16::from(weight));
+                    .and_then(Value::as_f64)?;
+                if index < 4 {
+                    learned_weight_total = learned_weight_total.saturating_add(u16::from(weight));
+                }
                 (weight % 5 == 0
+                    && (index < 4 || weight == quant_core::MARKOV_REGIME_COMPONENT_WEIGHT)
                     && contribution.is_finite()
                     && (contribution - *points * f64::from(weight) / 10.0).abs()
                         <= SIGNAL_SCORE_SUM_TOLERANCE)
                     .then_some(contribution)
             })
             .collect::<Option<Vec<_>>>();
-        if total_weight != 40 {
+        if learned_weight_total != 40 {
             return false;
         }
         let Some(weighted) = weighted else {
@@ -103,8 +125,8 @@ pub(super) fn score_components_match(
             difference.abs() < SIGNAL_SCORE_SUM_TOLERANCE
         }
     };
-    let expected_component_count = if four_indicator_score_model { 4 } else { 2 };
-    let component_groups_match = if four_indicator_score_model {
+    let expected_component_count = if five_indicator_score_model { 5 } else { 2 };
+    let component_groups_match = if five_indicator_score_model {
         component_points.len() == expected_component_count
             && groups_match(component_points[0] + component_points[1] - strategy_strength)
             && groups_match(component_points[2] + component_points[3] - confluence_score)
@@ -229,7 +251,12 @@ pub(super) fn record_scan_signal_alerts<C: Borrow<Value>>(
 ) -> Result<Vec<Value>, rusqlite::Error> {
     persist_alerts(
         connection,
-        candidates.filter_map(|candidate| signal_alert_from_candidate(candidate.borrow())),
+        candidates.filter_map(|candidate| {
+            let candidate = candidate.borrow();
+            (candidate["Current_Price_Reference_Only"].as_bool() != Some(true))
+                .then(|| signal_alert_from_candidate(candidate))
+                .flatten()
+        }),
     )
 }
 
