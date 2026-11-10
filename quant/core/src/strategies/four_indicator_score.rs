@@ -73,7 +73,7 @@ pub fn add_markov_regime_score(
 }
 
 fn markov_regime_component(direction: &str, regime: Option<crate::RegimeId>) -> ScoreComponent {
-    let state = regime.map(crate::RegimeId::name).unwrap_or("UNAVAILABLE");
+    let state = regime.map(|regime| regime.name()).unwrap_or("UNAVAILABLE");
     let aligned_direction = match regime {
         Some(crate::RegimeId::BullTrend | crate::RegimeId::Accumulation) => Some("LONG"),
         Some(crate::RegimeId::BearTrend | crate::RegimeId::Distribution) => Some("SHORT"),
