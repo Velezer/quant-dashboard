@@ -615,7 +615,7 @@ export function installChartData() {
                 windowPanOffset = view.offset;
                 const zoomReadout = document.getElementById('chartZoomReadout');
                 if (zoomReadout) {
-                    const scaleLabel = `Current time scale: ${Math.round(activeWindowSize)} bars`;
+                    const scaleLabel = `Current date scale: ${Math.round(activeWindowSize)} bars`;
                     zoomReadout.textContent = `${Math.round(activeWindowSize)} bars`;
                     zoomReadout.setAttribute('aria-label', scaleLabel);
                 }

@@ -166,16 +166,15 @@
                             ⚙ Data
                         </button>
 
-                        <!-- TradingView-style time scale controls. These change the
-                             number of visible candles; price scale remains on the
-                             right axis and in chart tools. -->
-                        <div id="chart-time-scale-controls" role="group" aria-label="Time scale controls" class="tv-tool-group flex items-center gap-0 border-l border-gray-700 pl-2">
-                            <span class="text-[10px] text-gray-400 font-bold px-1.5 uppercase tracking-wider" title="Time scale controls how many candles are visible">TIME</span>
-                            <button id="timeScaleZoomInBtn" type="button" class="tv-icon-tool" data-dashboard-action="zoomChart" data-dashboard-action-argument="-8" aria-label="Zoom in time scale and show fewer candles" title="Time scale in · fewer candles">＋</button>
-                            <button id="timeScaleZoomOutBtn" type="button" class="tv-icon-tool" data-dashboard-action="zoomChart" data-dashboard-action-argument="8" aria-label="Zoom out time scale and show more candles" title="Time scale out · more candles">−</button>
-                            <button id="timeScaleFitBtn" type="button" class="tv-icon-tool" data-dashboard-action="resetChartAll" aria-label="Fit time scale to chart data" title="Fit time scale to chart data">Fit</button>
-                            <span id="chartZoomReadout" class="text-[10px] font-mono text-gray-500 px-2" role="status" aria-live="polite" aria-label="Current time scale: 45 bars">45 bars</span>
-                            <span class="tv-chart-help hidden xl:inline text-[10px] text-gray-500 border-l border-gray-700 pl-2">Scroll time · drag pan · Home fit</span>
+                        <!-- Date scale controls change the visible candle range;
+                             price scale remains on the right axis. -->
+                        <div id="chart-time-scale-controls" role="group" aria-label="Date scale controls" class="tv-tool-group flex items-center gap-0 border-l border-gray-700 pl-2">
+                            <span class="text-[10px] text-gray-400 font-bold px-1.5 uppercase tracking-wider" title="Drag the bottom date axis horizontally to scale the visible date range">DATE</span>
+                            <button id="timeScaleZoomInBtn" type="button" class="tv-icon-tool" data-dashboard-action="zoomChart" data-dashboard-action-argument="-8" aria-label="Zoom in date scale and show fewer candles" title="Date scale in · fewer candles">＋</button>
+                            <button id="timeScaleZoomOutBtn" type="button" class="tv-icon-tool" data-dashboard-action="zoomChart" data-dashboard-action-argument="8" aria-label="Zoom out date scale and show more candles" title="Date scale out · more candles">−</button>
+                            <button id="timeScaleFitBtn" type="button" class="tv-icon-tool" data-dashboard-action="resetChartAll" aria-label="Fit date scale to chart data" title="Fit date scale to chart data">Fit</button>
+                            <span id="chartZoomReadout" class="text-[10px] font-mono text-gray-500 px-2" role="status" aria-live="polite" aria-label="Current date scale: 45 bars">45 bars</span>
+                            <span class="tv-chart-help hidden xl:inline text-[10px] text-gray-500 border-l border-gray-700 pl-2">Scroll to zoom · drag date axis to scale · Home fit</span>
                         </div>
 
                     </div>
@@ -453,7 +452,7 @@
 
                 <!-- MAIN CHART: Candlesticks and research indicators -->
                 <div id="chartContainer" class="tv-price-pane relative w-full overflow-hidden h-[min(52vh,480px)] min-h-[320px] rounded-lg bg-gray-950/40 border border-gray-800/60 select-none">
-                    <canvas id="candleCanvas" tabindex="0" role="img" aria-label="Selected screener signal candlestick chart. Time scale buttons show fewer or more candles; arrow keys pan; Home fits. Scroll to zoom at cursor; drag to pan; drag right axis to scale price." class="w-full h-full block cursor-crosshair focus:outline focus:outline-2 focus:outline-blue-500" title="TIME + / − changes visible candles | Scroll to zoom at cursor | Drag to pan | Drag right axis to scale price | Double-click or Home to fit"></canvas>
+                    <canvas id="candleCanvas" tabindex="0" role="img" aria-label="Selected screener signal candlestick chart. Date scale buttons show fewer or more candles; arrow keys pan; Home fits. Scroll to zoom at cursor; drag to pan; drag bottom date axis horizontally to scale dates; drag right axis vertically to scale price." class="w-full h-full block cursor-crosshair focus:outline focus:outline-2 focus:outline-blue-500" title="DATE + / − changes visible candles | Scroll to zoom at cursor | Drag to pan | Drag bottom date axis horizontally to scale dates | Drag right axis vertically to scale price | Double-click or Home to fit"></canvas>
                     <div id="chart-status-overlay" class="hidden absolute inset-0 z-20 flex items-center justify-center p-4 pointer-events-none" role="status" aria-live="polite" aria-atomic="true">
                         <div class="rounded-lg p-4 pointer-events-auto">
                             <div class="flex items-center gap-2">
