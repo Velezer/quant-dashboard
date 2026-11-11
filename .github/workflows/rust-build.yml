@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_BUILD_JOBS: 1
-      BUILD_METRICS_DIR: ${{ runner.temp }}/quant-build-metrics
+      BUILD_METRICS_DIR: /tmp/quant-build-metrics
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -85,5 +85,5 @@ jobs:
         if: always()
         with:
           name: release-resource-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/quant-build-metrics
+          path: /tmp/quant-build-metrics
           retention-days: 7
