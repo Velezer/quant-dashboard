@@ -32,20 +32,20 @@ dashboard remains read-only with respect to execution.
 ## SQLite journal configuration
 
 `QUANT_SQLITE_JOURNAL_MODE` controls journals for the app, signal, and ticker
-stores and the explicit signal-snapshot migration. All runs default to `DELETE`
-rollback journals with `synchronous=FULL` when the variable is unset, avoiding
-WAL shared-memory operations on managed volumes without manual configuration.
-Explicit `WAL` uses `synchronous=NORMAL`. Only these two durable modes are
-accepted. Database paths,
-schema validation, transactions, busy timeouts, normal locking, and bounded
-page caches still apply. Rollback journals can block writers while readers
-hold transactions; they may reduce throughput compared with WAL.
+stores and the explicit signal-snapshot migration. All runs default to `WAL`
+with `synchronous=NORMAL` when the variable is unset. Explicit `DELETE` uses
+rollback journals with `synchronous=FULL`. Only these two durable modes are
+accepted. Database paths, schema validation, transactions, busy timeouts,
+normal locking, and bounded page caches still apply. WAL allows readers to
+continue while a writer appends changes, reducing common read/write contention.
 
 SQLite error `4874` (`SQLITE_IOERR_SHMSIZE`) means WAL failed enlarging its
-shared-memory file. It can indicate an incompatible filesystem operation or
-insufficient storage. For Blitz, keep `QUANT_SQLITE_JOURNAL_MODE=DELETE` in the
-Environment tab and rebuild with the current image. If the error persists,
-check the volume's free space, quota, and write permissions.
+shared-memory file. When WAL is the default and this specific error occurs,
+the service logs the failure and falls back to `DELETE` journals for the rest
+of the process; no environment setting is required. You can explicitly set
+`QUANT_SQLITE_JOURNAL_MODE=DELETE` to always use rollback journals. If the
+fallback also fails, check the volume's free space, quota, and write
+permissions.
 
 Stop other processes using these databases before changing journal mode. For
 `DELETE`, existing files are prepared once per process before attachment using
