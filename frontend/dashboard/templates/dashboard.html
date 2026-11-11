@@ -10,17 +10,30 @@
     <link rel="stylesheet" href="/web/styles/dashboard_workspace.css">
     <link rel="stylesheet" href="/web/styles/dashboard_components.css">
     <link rel="stylesheet" href="/web/styles/dashboard_mobile.css">
+    <link rel="stylesheet" href="/web/styles/dashboard_desktop.css">
 </head>
 <body class="tv-terminal bg-gray-950 text-gray-200 min-h-screen flex flex-col font-sans selection:bg-blue-500 selection:text-white p-4 md:p-6">
 
     <!-- TOP APP BAR -->
     <header id="top-app-bar" class="border-b border-gray-800 bg-gray-950/90 backdrop-blur sticky top-0 z-40 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-            <span id="sse-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800" title="App update stream status" aria-label="App update stream connected">
-                <span id="sse-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-live" aria-hidden="true"></span>
-                <span id="sse-status">EVENTS ON</span>
-            </span>
-            <span id="app-build-version" class="inline-flex items-center rounded border border-gray-700 bg-gray-900 px-2 py-1 text-[9px] font-mono text-gray-400" role="status" aria-live="polite" aria-label="Application build identifier loading">BUILD …</span>
+        <div class="topbar-leading">
+            <div class="topbar-status-group">
+                <a class="desktop-brand" href="/" aria-label="Quant Dashboard home">
+                    <span class="desktop-brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span class="desktop-brand-copy"><strong>QUANT DESK</strong><small>MARKET SIGNALS</small></span>
+                </a>
+                <span id="sse-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800" title="App update stream status" aria-label="App update stream connected">
+                    <span id="sse-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-live" aria-hidden="true"></span>
+                    <span id="sse-status">EVENTS ON</span>
+                </span>
+                <span id="app-build-version" class="inline-flex items-center rounded border border-gray-700 bg-gray-900 px-2 py-1 text-[9px] font-mono text-gray-400" role="status" aria-live="polite" aria-label="Application build identifier loading">BUILD …</span>
+            </div>
+            <nav class="desktop-primary-nav" aria-label="Primary navigation">
+                <a href="/" aria-current="page">Screener</a>
+                <a href="/entry-validation">Backtests</a>
+                <a href="/registry">Registry</a>
+                <a href="/scoring">Scoring</a>
+            </nav>
         </div>
 
         <div class="flex items-center gap-2">
@@ -510,7 +523,7 @@
 
         </div>
 
-        <div id="workspace-resizer" role="separator" aria-orientation="vertical" aria-label="Resize chart and signal screener panels" aria-valuemin="320" aria-valuemax="560" aria-valuenow="400" tabindex="0" title="Drag to resize the chart and signal screener panels"><span class="tv-resizer-grip" aria-hidden="true"></span></div>
+        <div id="workspace-resizer" role="separator" aria-orientation="vertical" aria-label="Resize chart and signal screener panels" aria-valuemin="390" aria-valuemax="560" aria-valuenow="430" tabindex="0" title="Drag to resize the chart and signal screener panels"><span class="tv-resizer-grip" aria-hidden="true"></span></div>
 
         <aside class="tv-watchlist-column tv-watchlist-panel lg:col-span-4 flex flex-col gap-3" aria-label="Signal screener">
             <section id="watchlistPanel" class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3">
@@ -523,7 +536,7 @@
                         <a href="/registry" class="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-[10px] font-semibold text-gray-300 hover:border-cyan-700 hover:text-cyan-200 focus:outline focus:outline-2 focus:outline-cyan-500">Registry</a>
                     </div>
                 </div>
-                <details class="screener-guidance" open>
+                <details class="screener-guidance">
                     <summary>Signal rules and scoring</summary>
                     <p class="text-[10px] leading-relaxed text-gray-400">Crypto NWE/DSS signals are recalculated each scan from the latest completed bar. Stockbit keeps a fresh zero-score row when a saved setup stops qualifying; it is labeled NO MARKET ENTRY and excluded from current signal and notification counts. The current strategy setup and base score floor determine which entry rows qualify; after-fee backtest metrics are shown as historical context and never filter signals. There is no separate signal-age expiry. A stale reference price remains labeled and is not a market entry. Score measures setup strength, not win probability or execution availability. <a href="/scoring" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2 hover:text-cyan-100 focus:outline focus:outline-2 focus:outline-cyan-400">How scoring works</a> · <a href="/entry-validation" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2">Validate entry models</a>. Price is a candle close, not live bid/ask; this is not an executable order and no order is placed.</p>
                 </details>
@@ -574,8 +587,8 @@
                         <button type="button" id="clearSearchBtn" class="signal-search-clear" disabled>Clear</button>
                     </div>
                 </div>
-                <details id="screenerMoreFilters" open>
-                    <summary>Product and score filters</summary>
+                <details id="screenerMoreFilters">
+                    <summary>Scoring filters</summary>
                     <div id="screener-product-filters" class="flex items-center gap-1.5 text-xs flex-wrap" role="group" aria-label="Filter by app product or asset category">
                         <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Category / product</span>
                         <button type="button" class="product-btn" data-product="all" aria-pressed="true">All</button>

@@ -130,3 +130,15 @@ lesson only when it will improve future tasks.
   old rows on their recorded scale and mark them stale/legacy. For Markov input,
   use the causal regime at the scored bar and document its fixed contribution;
   do not treat whole-history transition statistics as a signal-time forecast.
+- Keep the wide-screen dashboard's app, product, timeframe, search, and score
+  controls in the screener rail, with one scrollable signal list and a visible
+  availability summary. Hide desktop navigation at phone widths and verify the
+  selected chart at both a 1600×857 view and a 1280×720 view. When reading
+  persisted `URLSearchParams`, treat a missing value as missing before numeric
+  conversion: `Number(null)` is zero and can silently clamp a layout preference
+  to its minimum.
+- Show the current Markov contribution beside the screener total as well as in
+  the expanded five-factor breakdown. Normalize component identities so a
+  display label and a stable component ID resolve to the same indicator. For a
+  retained legacy row, say that Markov was not scored instead of assigning a
+  fabricated regime value.

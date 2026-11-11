@@ -29,6 +29,17 @@ export function createSignalScreenerCard({
             ? presentation.scoreScaleMax
             : 10;
         const fiveIndicators = hasFiveIndicatorScores(signal, scoreModel);
+        const markovScore = fiveIndicators
+            ? signalIndicatorScores(signal, scoreModel).find(item => item.id === 'markov_regime')
+            : null;
+        const currentModelScaleMax = Number(scoreModel?.score_scale_max);
+        const regimeSummary = markovScore
+            ? `<span class="signal-row-regime-score" title="Markov regime contributes a fixed 10-point weight to the current /50 scoring model"><span>Regime</span><strong>${markovScore.points === null ? '—' : markovScore.points.toFixed(1)}/10</strong><small>${escape(markovScore.state.replaceAll('_', ' ').toLowerCase())}</small></span>`
+            : currentModelScaleMax === 50
+                ? presentation.legacy && presentation.scoreScaleMax < 50
+                    ? `<span class="signal-row-regime-score signal-row-regime-legacy" title="This saved row uses the previous scoring model and has no recorded Markov regime score"><span>Regime</span><strong>Not scored</strong><small>legacy /${presentation.scoreScaleMax} row</small></span>`
+                    : `<span class="signal-row-regime-score signal-row-regime-unavailable" title="This row uses the current /50 scoring model, but its saved regime component is unavailable"><span>Regime</span><strong>Unavailable</strong><small>saved score basis</small></span>`
+                : '';
         const afterFeeGate = signal.score_basis?.after_fee_gate;
         const gateHoldout = afterFeeGate?.holdout || {};
         const gateWinRate = Number(gateHoldout.win_rate_after_fees_pct);
@@ -77,7 +88,7 @@ export function createSignalScreenerCard({
                 <span class="signal-row-top"><span class="signal-row-rank">#${rank}</span><span class="signal-row-symbol">${escape(signal.symbol)}</span><span class="signal-row-timeframe">${escape(signal.timeframe.toUpperCase())}</span></span>
                 <span class="signal-row-meta">${escape(rowContext)}</span>
                 ${scoreState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}" role="status">${escape(scoreState.label)} · ${signal.persistent_score === true ? 'strategy' : 'price'} bar ${escape(signalPriceBarAgeLabel(signal.persistent_score === true ? signal.score_bar_time : signal.price_bar_time))}</span>` : ''}
-                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${fiveIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded total' : 'Weighted total'} <strong>${scoreValue}</strong><span aria-hidden="true"> / 50</span> · five /10 indicators</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}</span>
+                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${fiveIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded total' : 'Weighted total'} <strong>${scoreValue}</strong><span aria-hidden="true"> / 50</span> · five /10 indicators</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}${regimeSummary}</span>
                 ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
                 ${totalStrength ? `<span class="signal-total-strength signal-total-strength-${totalStrength.tone}" title="${escape(totalStrength.description)}">${escape(totalStrength.label)}<small>${escape(totalStrength.description)}</small></span>` : ''}
                 ${afterFeeMetricText ? `<span class="signal-after-fee-metric" title="${escape(hasAfterFeeMetric ? 'Historical cohort evidence does not predict this individual signal.' : 'After-fee status is informational; it does not filter signals.')}">${escape(afterFeeMetricText)}<small>${hasAfterFeeMetric ? 'Historical cohort holdout evidence; not an individual win-rate forecast.' : 'This signal remains visible without a validated profile.'}</small></span>` : ''}
