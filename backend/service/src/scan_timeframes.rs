@@ -56,6 +56,7 @@ pub(super) fn append_timeframe_signal_plans(
     )
 }
 
+#[cfg(test)]
 pub(super) fn append_timeframe_signal_plans_with_readiness(
     input: TimeframeScanInput<'_>,
     running_plans: &mut Vec<Value>,

@@ -89,7 +89,6 @@ pub(super) fn ensure_crypto_signal_catalog(catalog: &mut Value) -> bool {
             nwe_minimum_history,
             minimum_score,
             score_scale_max,
-            indicator_component_score_scale_max,
         );
         let nwe_strategy = with_crypto_scope(
             json!({
@@ -114,7 +113,6 @@ pub(super) fn ensure_crypto_signal_catalog(catalog: &mut Value) -> bool {
             dss_minimum_history,
             minimum_score,
             score_scale_max,
-            indicator_component_score_scale_max,
         );
         let dss_strategy = with_crypto_scope(
             json!({
@@ -142,7 +140,6 @@ fn crypto_score_description(
     minimum_history_bars: usize,
     minimum_score: f64,
     score_scale_max: f64,
-    indicator_component_score_scale_max: f64,
 ) -> String {
     let volume_lookback_bars = quant_core::FOUR_INDICATOR_VOLUME_LOOKBACK_BARS;
     let timeframe_source_note = if timeframe == "30m" {

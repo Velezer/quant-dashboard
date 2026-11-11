@@ -8,10 +8,9 @@ mod stockbit_close;
 mod types;
 
 use stockbit_close::{
-    ensure_stockbit_close_checkpoint_schema, is_final_stockbit_close_bar,
+    ensure_stockbit_close_checkpoint_schema,
     expected_stockbit_closed_session_day, save_stockbit_close_scan_checkpoint,
     stockbit_close_checkpoint_is_saved, stockbit_closed_session_checkpoint,
-    StockbitCloseScanCheckpoint,
 };
 use types::{AppScanResult, RegisteredInstrument, ScanCycleOutput};
 
@@ -552,6 +551,7 @@ impl ScanWorker {
 }
 
 /// Cycle across nonempty app queues; exhausted apps do not block other apps.
+#[cfg(test)]
 pub(super) fn next_scan_worker(remaining: &[usize], cursor: &mut usize) -> Option<usize> {
     if remaining.is_empty() {
         return None;
