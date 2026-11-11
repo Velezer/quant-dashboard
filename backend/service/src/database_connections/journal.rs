@@ -1,15 +1,11 @@
 use rusqlite::Connection;
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Mutex, OnceLock,
-    },
+    sync::{Mutex, OnceLock},
 };
 
 const SQLITE_IOERR_SHMSIZE: i32 = 4874;
-static WAL_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum JournalMode {
@@ -42,18 +38,36 @@ pub(in crate::database) fn configure(
     schemas: &[&str],
 ) -> Result<(), rusqlite::Error> {
     let (mode, is_default) = configured_mode()?;
-    match configure_with_mode(connection, schemas, mode) {
-        Err(error)
-            if mode == JournalMode::Wal && is_default && is_wal_shared_memory_error(&error) =>
-        {
-            WAL_UNAVAILABLE.store(true, Ordering::Relaxed);
-            eprintln!(
-                "[SQLite] WAL shared-memory initialization failed (SQLite error {SQLITE_IOERR_SHMSIZE}); falling back to DELETE journals for this process."
-            );
-            configure_with_mode(connection, schemas, JournalMode::Delete)
-        }
-        result => result,
+    configure_with_policy(connection, schemas, mode, is_default)
+}
+
+fn configure_with_policy(
+    connection: &Connection,
+    schemas: &[&str],
+    mode: JournalMode,
+    is_default: bool,
+) -> Result<(), rusqlite::Error> {
+    if mode != JournalMode::Wal || !is_default {
+        return configure_with_mode(connection, schemas, mode);
     }
+    for schema in schemas {
+        if !matches!(*schema, "main" | "app" | "signals") {
+            return Err(super::storage_error("unsupported SQLite journal schema"));
+        }
+        let path: String = connection.query_row(
+            "SELECT file FROM pragma_database_list WHERE name=?1",
+            [schema],
+            |row| row.get(0),
+        )?;
+        let effective_mode = prepared_databases()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(&database_key(Path::new(&path)))
+            .copied()
+            .unwrap_or(mode);
+        configure_with_mode(connection, &[*schema], effective_mode)?;
+    }
+    Ok(())
 }
 
 fn configured_mode() -> Result<(JournalMode, bool), rusqlite::Error> {
@@ -67,19 +81,94 @@ fn configured_mode() -> Result<(JournalMode, bool), rusqlite::Error> {
             ));
         }
     };
-    let mode = if is_default && WAL_UNAVAILABLE.load(Ordering::Relaxed) {
-        JournalMode::Delete
-    } else {
-        JournalMode::parse(value)?
-    };
-    Ok((mode, is_default))
+    Ok((JournalMode::parse(value)?, is_default))
 }
 
 pub(in crate::database) fn prepare_database(
     path: &Path,
     create: bool,
 ) -> Result<(), rusqlite::Error> {
-    prepare_database_with_mode(path, create, configured_mode()?.0)
+    let (mode, is_default) = configured_mode()?;
+    if mode == JournalMode::Wal {
+        prepare_wal_database(path, create, is_default, probe_wal_database).map(|_| ())
+    } else {
+        prepare_database_with_mode(path, create, mode)
+    }
+}
+
+fn prepared_databases() -> &'static Mutex<HashMap<PathBuf, JournalMode>> {
+    static PREPARED_DATABASES: OnceLock<Mutex<HashMap<PathBuf, JournalMode>>> = OnceLock::new();
+    PREPARED_DATABASES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn database_key(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn is_persistent_database(path: &Path, create: bool) -> bool {
+    !path.as_os_str().is_empty()
+        && path != Path::new(":memory:")
+        && (create || path.is_file())
+}
+
+fn prepare_wal_database(
+    path: &Path,
+    create: bool,
+    allow_fallback: bool,
+    probe: impl FnOnce(&Path, bool) -> Result<(), rusqlite::Error>,
+) -> Result<JournalMode, rusqlite::Error> {
+    if !is_persistent_database(path, create) {
+        return Ok(JournalMode::Wal);
+    }
+    let mut prepared = prepared_databases()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if let Some(mode) = prepared.get(&database_key(path)).copied() {
+        if mode == JournalMode::Wal || allow_fallback {
+            return Ok(mode);
+        }
+    }
+    let mode = match probe(path, create) {
+        Ok(()) => JournalMode::Wal,
+        Err(error) if allow_fallback && is_wal_shared_memory_error(&error) => {
+            // The probe has closed its connection. Recover through a fresh
+            // exclusive connection before ATTACH can touch a shared wal-index.
+            recover_delete_database(path, create)?;
+            eprintln!(
+                "[SQLite] WAL shared-memory initialization failed for {}; using DELETE journaling for this database after recovery.",
+                path.display()
+            );
+            JournalMode::Delete
+        }
+        Err(error) => return Err(error),
+    };
+    prepared.insert(database_key(path), mode);
+    Ok(mode)
+}
+
+fn probe_wal_database(path: &Path, create: bool) -> Result<(), rusqlite::Error> {
+    let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+        | if create {
+            rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+        } else {
+            rusqlite::OpenFlags::empty()
+        };
+    let connection = Connection::open_with_flags(path, flags)?;
+    connection.busy_timeout(std::time::Duration::from_secs(5))?;
+    let result = configure_with_mode(&connection, &["main"], JournalMode::Wal).and_then(|()| {
+        // A read of an empty WAL database need not initialize shared memory.
+        // Take and roll back a write transaction without changing any rows.
+        connection.execute_batch(
+            "BEGIN IMMEDIATE; SELECT count(*) FROM main.sqlite_schema; ROLLBACK;",
+        )
+    });
+    match result {
+        Ok(()) => connection.close().map_err(|(_, error)| error),
+        Err(error) => {
+            drop(connection);
+            Err(error)
+        }
+    }
 }
 
 fn prepare_database_with_mode(
@@ -87,22 +176,21 @@ fn prepare_database_with_mode(
     create: bool,
     mode: JournalMode,
 ) -> Result<(), rusqlite::Error> {
-    if mode != JournalMode::Delete
-        || path.as_os_str().is_empty()
-        || path == Path::new(":memory:")
-        || (!create && !path.is_file())
-    {
+    if mode != JournalMode::Delete || !is_persistent_database(path, create) {
         return Ok(());
     }
-    static PREPARED_DATABASES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
-    let mut prepared = PREPARED_DATABASES
-        .get_or_init(|| Mutex::new(HashSet::new()))
+    let mut prepared = prepared_databases()
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    let key = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if prepared.contains(&key) {
+    if prepared.get(&database_key(path)) == Some(&JournalMode::Delete) {
         return Ok(());
     }
+    recover_delete_database(path, create)?;
+    prepared.insert(database_key(path), JournalMode::Delete);
+    Ok(())
+}
+
+fn recover_delete_database(path: &Path, create: bool) -> Result<(), rusqlite::Error> {
     let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
         | if create {
             rusqlite::OpenFlags::SQLITE_OPEN_CREATE
@@ -114,9 +202,8 @@ fn prepare_database_with_mode(
     // instead of the volume's shared-memory file. Closing releases every lock;
     // normal runtime connections retain their default NORMAL locking mode.
     connection.execute_batch("PRAGMA busy_timeout=5000; PRAGMA locking_mode=EXCLUSIVE;")?;
-    configure_with_mode(&connection, &["main"], mode)?;
+    configure_with_mode(&connection, &["main"], JournalMode::Delete)?;
     connection.close().map_err(|(_, error)| error)?;
-    prepared.insert(path.canonicalize().map_err(super::io_sqlite_error)?);
     Ok(())
 }
 
@@ -130,8 +217,8 @@ fn configure_with_mode(
         if !matches!(*schema, "main" | "app" | "signals") {
             return Err(super::storage_error("unsupported SQLite journal schema"));
         }
-        let actual: String = connection.query_row(
-            &format!("PRAGMA {schema}.journal_mode={journal}"),
+        let mut actual: String = connection.query_row(
+            &format!("PRAGMA {schema}.journal_mode"),
             [],
             |row| row.get(0),
         )?;
@@ -141,6 +228,13 @@ fn configure_with_mode(
                 [schema],
                 |row| row.get::<_, bool>(0),
             )?;
+        if !actual.eq_ignore_ascii_case(journal) && !is_in_memory {
+            actual = connection.query_row(
+                &format!("PRAGMA {schema}.journal_mode={journal}"),
+                [],
+                |row| row.get(0),
+            )?;
+        }
         if !actual.eq_ignore_ascii_case(journal) && !is_in_memory {
             return Err(super::storage_error(&format!(
                 "SQLite {schema} could not use requested {journal} journal mode: {actual}"

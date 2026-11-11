@@ -1,5 +1,25 @@
 use super::*;
 
+fn begin_signal_store_write(connection: &Connection) -> Result<(), rusqlite::Error> {
+    // These snapshot transactions modify only the signals store (and TEMP).
+    // BEGIN IMMEDIATE also reserves the attached app database, unnecessarily
+    // blocking candle ingestion and registry work. Reserve only the signals
+    // writer before any snapshot reads to avoid a WAL read-to-write upgrade.
+    connection.execute_batch("BEGIN DEFERRED")?;
+    if let Err(error) = connection.execute(
+        "UPDATE signals.signal_screener_status SET id=id WHERE 0",
+        [],
+    ) {
+        let _ = connection.execute_batch("ROLLBACK");
+        return Err(error);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "snapshot_transaction_tests.rs"]
+mod transaction_tests;
+
 #[cfg(test)]
 pub(crate) fn replace_signal_screener_snapshot(
     connection: &Connection,
@@ -121,7 +141,7 @@ fn publish_signal_screener_app_batch_attempt(
     score_updates: &[StockbitSignalScoreUpdate],
 ) -> Result<(), rusqlite::Error> {
     let now = now_secs() as i64;
-    connection.execute_batch("BEGIN IMMEDIATE")?;
+    begin_signal_store_write(connection)?;
     let result = (|| {
         let persistent_row_scope = stockbit_signal_score_row_scope_sql();
         if clear_app {
@@ -217,7 +237,7 @@ pub(crate) fn replace_signal_screener_instrument_snapshot(
     score_updates: &[StockbitSignalScoreUpdate],
 ) -> Result<(), rusqlite::Error> {
     crate::database::retry_sqlite_busy(|| {
-        connection.execute_batch("BEGIN IMMEDIATE")?;
+        begin_signal_store_write(connection)?;
         let result = (|| {
             let persistent_row_scope = stockbit_signal_score_row_scope_sql();
             connection.execute(
@@ -330,7 +350,7 @@ fn replace_signal_screener_app_snapshot_attempt(
     } else {
         "partial_stale"
     };
-    connection.execute_batch("BEGIN IMMEDIATE")?;
+    begin_signal_store_write(connection)?;
     let result = (|| {
         let persistent_row_scope = stockbit_signal_score_row_scope_sql();
         connection.execute(
@@ -491,7 +511,7 @@ fn replace_signal_screener_snapshot_attempt(
     } else {
         "partial_stale"
     };
-    connection.execute_batch("BEGIN IMMEDIATE")?;
+    begin_signal_store_write(connection)?;
     let result = (|| {
         if !preserved_stockbit.is_empty() {
             connection.execute_batch(
@@ -832,7 +852,7 @@ fn record_signal_screener_failure_attempt(
     connection: &Connection,
     error: &str,
 ) -> Result<(), rusqlite::Error> {
-    connection.execute_batch("BEGIN IMMEDIATE")?;
+    begin_signal_store_write(connection)?;
     let result = (|| {
         mark_stockbit_score_rows_stale(connection, None, false)?;
         let now = now_secs() as i64;

@@ -41,8 +41,11 @@ continue while a writer appends changes, reducing common read/write contention.
 
 SQLite error `4874` (`SQLITE_IOERR_SHMSIZE`) means WAL failed enlarging its
 shared-memory file. When WAL is the default and this specific error occurs,
-the service logs the failure and falls back to `DELETE` journals for the rest
-of the process; no environment setting is required. You can explicitly set
+the service probes compatibility before attachment, closes the failed probe,
+and recovers committed WAL through a fresh exclusive connection. It caches
+`DELETE` for the affected database path; compatible paths continue using WAL.
+No environment setting is required. Explicit WAL errors propagate instead of
+changing the requested journal policy. You can explicitly set
 `QUANT_SQLITE_JOURNAL_MODE=DELETE` to always use rollback journals. If the
 fallback also fails, check the volume's free space, quota, and write
 permissions.
@@ -57,6 +60,11 @@ committed data; startup does not copy, delete, or rebuild databases.
 Prepared paths are tracked for the process lifetime, so this small bookkeeping
 allocation grows with distinct database files opened, independently of the
 simultaneous-connection limit.
+
+Ordinary connections inspect the current journal and skip reassignment when
+it already matches. Main-only candle persistence resolves attached app metadata
+before a deferred transaction and mutates only `main.` tables. This avoids
+`BEGIN IMMEDIATE` reserving the shared app writer for unrelated ticker writes.
 If preparation still fails, stop the service and preserve the complete SQLite files and
 their WAL/journal sidecars. On compatible local storage, use SQLite to open and
 checkpoint each database, set `PRAGMA journal_mode=DELETE`, run

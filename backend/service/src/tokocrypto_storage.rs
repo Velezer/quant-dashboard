@@ -7,7 +7,7 @@
 #[cfg(test)]
 use super::master_data::tokenized_stock_symbols;
 use super::tokocrypto::{fetch_klines, MarketBar, VenueSymbol};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
 const SOURCE: &str = "tokocrypto_native";
 
@@ -368,40 +368,59 @@ fn persist_sync(
     instrument_kind: &str,
     series: &[(&str, &[MarketBar])],
 ) -> Result<(), String> {
-    connection
-        .execute_batch("BEGIN IMMEDIATE")
-        .map_err(|error| error.to_string())?;
-    let result = (|| {
-        let registered_instruments: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM instruments
-                  WHERE exchange_id='tokocrypto' AND storage_symbol=?1
-                    AND asset_category_id=?2 AND listing_status='venue_active'
-                    AND venue_verified=1 AND is_active=1",
-                params![storage_symbol, instrument_kind],
-                |row| row.get(0),
+    let registered = {
+        let mut statement = connection
+            .prepare(
+                "SELECT instrument_id,product_id FROM instruments
+                 WHERE exchange_id='tokocrypto' AND storage_symbol=?1
+                   AND asset_category_id=?2 AND listing_status='venue_active'
+                   AND venue_verified=1 AND is_active=1",
             )
             .map_err(|error| error.to_string())?;
-        if registered_instruments != 1 {
-            return Err(format!(
-                "Tokocrypto native candles require exactly one active, venue-verified registered instrument; found {registered_instruments}"
-            ));
-        }
-
+        let rows = statement
+            .query_map(params![storage_symbol, instrument_kind], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        rows
+    };
+    if registered.len() != 1 {
+        return Err(format!(
+            "Tokocrypto native candles require exactly one active, venue-verified registered instrument; found {}",
+            registered.len()
+        ));
+    }
+    let (instrument_id, product_id) = &registered[0];
+    // Registration is read before the ticker transaction. BEGIN IMMEDIATE
+    // would also reserve the shared app database attached to this connection.
+    connection
+        .execute_batch("BEGIN DEFERRED")
+        .map_err(|error| error.to_string())?;
+    let result = (|| {
         for (interval, bars) in series {
-            persist_series(connection, storage_symbol, interval, instrument_kind, bars)?;
+            persist_series(
+                connection,
+                storage_symbol,
+                interval,
+                instrument_kind,
+                Some(instrument_id.as_str()),
+                product_id,
+                bars,
+            )?;
         }
         Ok::<(), String>(())
     })();
-    match result {
-        Ok(()) => connection
+    let result = result.and_then(|()| {
+        connection
             .execute_batch("COMMIT")
-            .map_err(|error| error.to_string()),
-        Err(error) => {
-            let _ = connection.execute_batch("ROLLBACK");
-            Err(error)
-        }
+            .map_err(|error| error.to_string())
+    });
+    if result.is_err() {
+        let _ = connection.execute_batch("ROLLBACK");
     }
+    result
 }
 
 fn persist_series(
@@ -409,25 +428,14 @@ fn persist_series(
     symbol: &str,
     interval: &str,
     instrument_kind: &str,
+    instrument_id: Option<&str>,
+    product_id: &str,
     bars: &[MarketBar],
 ) -> Result<(), String> {
     let now = super::format_timestamp(super::now_secs());
-    let registered: Option<(String, String)> = connection
-        .query_row(
-            "SELECT instrument_id,product_id FROM instruments
-          WHERE exchange_id='tokocrypto' AND storage_symbol=?1
-            AND listing_status='venue_active' AND venue_verified=1 AND is_active=1 LIMIT 1",
-            [symbol],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()
-        .map_err(|error| error.to_string())?;
-    let (instrument_id, product_id) = registered
-        .map(|(id, product)| (Some(id), product))
-        .unwrap_or((None, String::new()));
     connection
         .execute(
-            "INSERT INTO series (
+            "INSERT INTO main.series (
                 symbol, interval, source, exchange_id, product_id, instrument_id, data_provider,
                 timezone, price_basis, instrument_kind, last_success, last_attempt, last_error
              ) VALUES (?1, ?2, ?3, 'tokocrypto', ?4, ?5, 'tokocrypto',
@@ -462,7 +470,7 @@ fn persist_series(
             .ok_or_else(|| "Tokocrypto candle timestamp overflow".to_string())?;
         connection
             .execute(
-                "INSERT INTO bars (
+                "INSERT INTO main.bars (
                     symbol, interval, source, ts, open, high, low, close, volume,
                     adj_close, dividends, splits, ingested_at
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL, NULL, NULL, ?10)
@@ -479,7 +487,7 @@ fn persist_series(
     }
     connection
         .execute(
-            "INSERT INTO ingestion_runs (
+            "INSERT INTO main.ingestion_runs (
                 symbol, interval, source, exchange_id, product_id, data_provider,
                 attempted_at, status, rows_received, error
              ) VALUES (?1, ?2, ?3, 'tokocrypto', ?4, 'tokocrypto', ?5, 'success', ?6, NULL)",

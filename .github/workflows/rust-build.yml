@@ -10,6 +10,7 @@ on:
       - "Cargo.lock"
       - "Dockerfile"
       - ".github/workflows/rust-build.yml"
+      - ".github/scripts/**"
   push:
     branches: ["**"]
     paths:
@@ -20,6 +21,7 @@ on:
       - "Cargo.lock"
       - "Dockerfile"
       - ".github/workflows/rust-build.yml"
+      - ".github/scripts/**"
   workflow_dispatch:
 
 permissions:
@@ -32,12 +34,56 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_BUILD_JOBS: 1
+      BUILD_METRICS_DIR: ${{ runner.temp }}/quant-build-metrics
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      - name: Prepare build resource evidence
+        run: mkdir -p "$BUILD_METRICS_DIR"
       - name: Build Pine runtime WASM
-        run: cargo build --locked --release --target wasm32-unknown-unknown -p quant_pine_runtime
+        run: |
+          /usr/bin/time -v -o "$BUILD_METRICS_DIR/wasm-time.txt" \
+            cargo build --locked --release --target wasm32-unknown-unknown -p quant_pine_runtime
       - name: Build service
-        run: cargo build --locked --release -p rust_chart_api
+        run: |
+          /usr/bin/time -v -o "$BUILD_METRICS_DIR/service-time.txt" \
+            cargo build --locked --release -p rust_chart_api
+      - name: Run SQLite journal regressions
+        run: |
+          set -o pipefail
+          /usr/bin/time -v -o "$BUILD_METRICS_DIR/journal-tests-time.txt" \
+            cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+              database::connections::journal::tests -- --test-threads=1 \
+            2>&1 | tee "$BUILD_METRICS_DIR/journal-tests.log"
+          grep -Eq 'test result: ok\. [1-9][0-9]* passed' "$BUILD_METRICS_DIR/journal-tests.log"
+      - name: Run SQLite write isolation regressions
+        run: |
+          set -o pipefail
+          for module in research_proxy::persistence_tests \
+            tokocrypto_storage::registry_tests tokocrypto_storage::tests \
+            pintu_storage::persistence_tests \
+            signal_alerts::screener::snapshot::transaction_tests; do
+            label="${module//::/-}"
+            cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+              "$module" -- --test-threads=1 \
+              2>&1 | tee "$BUILD_METRICS_DIR/$label.log"
+            grep -Eq 'test result: ok\. [1-9][0-9]* passed' "$BUILD_METRICS_DIR/$label.log"
+          done
+      - name: Build production Docker image
+        run: |
+          set -o pipefail
+          docker build --progress=plain --tag quant-dashboard:startup-smoke . \
+            2>&1 | tee "$BUILD_METRICS_DIR/docker-build.log"
+      - name: Check image startup and restart within 32 MiB
+        run: python3 .github/scripts/container_smoke.py
+      - name: Summarize build and startup evidence
+        if: always()
+        run: python3 .github/scripts/build_metrics.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-resource-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/quant-build-metrics
+          retention-days: 7
