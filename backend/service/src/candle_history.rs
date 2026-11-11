@@ -1,9 +1,11 @@
 use super::*;
 mod aggregation;
 pub(super) use aggregation::{
-    aggregate_candles_from_base_source, aggregate_candles_from_base_source_with_cap,
+    aggregate_candles_from_base_source_with_cap,
     aggregate_candles_from_base_source_with_cap_and_range, aggregate_candles_from_source,
 };
+#[cfg(test)]
+pub(super) use aggregation::aggregate_candles_from_base_source;
 #[cfg(test)]
 pub(super) use aggregation::required_aggregation_source_candles;
 

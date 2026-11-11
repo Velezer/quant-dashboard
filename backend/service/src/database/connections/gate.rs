@@ -39,6 +39,7 @@ impl MarketConnectionGate {
         (active.regular, active.signal_scan)
     }
 
+    #[cfg(test)]
     pub fn acquire(&self, kind: MarketConnectionKind) {
         self.acquire_inner(kind, None);
     }
@@ -83,6 +84,7 @@ impl MarketConnectionGate {
         }
     }
 
+    #[cfg(test)]
     pub fn release(&self, kind: MarketConnectionKind) {
         self.release_inner(kind, None);
     }

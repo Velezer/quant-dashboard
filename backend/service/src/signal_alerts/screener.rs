@@ -578,6 +578,7 @@ mod listing;
 #[cfg(test)]
 use listing::list_signal_screener;
 pub(crate) use listing::{
-    count_current_signal_screener_rows, list_signal_screener_page,
-    list_signal_screener_page_with_minimum_total_score,
+    count_current_signal_screener_rows, list_signal_screener_page_with_minimum_total_score,
 };
+#[cfg(test)]
+pub(crate) use listing::list_signal_screener_page;

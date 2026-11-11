@@ -72,6 +72,12 @@ lesson only when it will improve future tasks.
   Distinguish warnings from errors, and never call an in-progress, skipped, or
   partially completed workflow a verified build. Run tests only when the user
   asks to test or verify implementation.
+- Treat compiler warnings in release-build output as cleanup work. Remove
+  unused imports and parameters, and put helpers used only by unit tests behind
+  `#[cfg(test)]`; do not silence warning families with crate-wide allow
+  attributes. Recheck both release build steps after cleanup and confirm the
+  resulting warning list is gone or explicitly understood before marking the PR
+  verified.
 - Apply screener filters before pagination and compute filtered match counts on
   the server; a browser-only filter can make a matching signal appear absent
   from the first page.

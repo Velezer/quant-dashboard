@@ -7,7 +7,6 @@ pub(super) use entry_validation::{
     entry_validation_active_profile_snapshot, ActiveScoringProfile, ActiveScoringProfiles,
 };
 pub(crate) use entry_validation::ENTRY_VALIDATION_WORK;
-pub(crate) use entry_validation::signal_gate_is_qualified;
 
 pub(super) fn build_nwe_dss_research_report(
     market_database: &str,

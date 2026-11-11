@@ -124,7 +124,7 @@ fn has_verified_stockbit_close_reference(
     // When a provider omits the exchange's final candle, an older completed
     // Stockbit bar is still a valid score reference after the session closes.
     // It can keep a signal visible, but the caller marks it as non-executable.
-    let Some(price) = signal["current_price"]
+    let Some(_price) = signal["current_price"]
         .as_f64()
         .filter(|price| price.is_finite() && *price > 0.0)
     else {
@@ -314,6 +314,7 @@ pub(super) fn list_signal_screener(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn list_signal_screener_page(
     connection: &Connection,
     scan_interval_seconds: i64,

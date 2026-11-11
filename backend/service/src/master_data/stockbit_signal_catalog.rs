@@ -69,7 +69,6 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             relative_volume_lookback,
             minimum_score,
             maximum_score,
-            indicator_component_maximum_score,
         );
         let nwe_description = format!(
             "Stockbit IDX research market-entry signal on the latest {timeframe} bar, shown only when that bar qualifies and a fresh same-source 15m price is available. A forming-bar score is provisional and can change before close. {nwe_basis} Require at least {minimum_nwe_history} {timeframe} bars.{timeframe_source_note} The score measures setup strength, not win probability or execution availability; the 15m price is a candle close, not a live bid/ask. Direction is informational; IDX plans and execution remain long-only. Research only, unvalidated; proxy candles are not venue-native execution evidence. No order is placed."
@@ -111,7 +110,6 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             relative_volume_lookback,
             minimum_score,
             maximum_score,
-            indicator_component_maximum_score,
         );
         let dss_description = format!(
             "Stockbit IDX research market-entry signal on the latest {timeframe} bar, shown only when that bar qualifies and a fresh same-source 15m price is available. A forming-bar score is provisional and can change before close. {dss_basis} Require at least {minimum_dss_history} {timeframe} bars.{timeframe_source_note} The score measures setup strength, not win probability or execution availability; the 15m price is a candle close, not a live bid/ask. Direction is informational; IDX plans and execution remain long-only. Research only, unvalidated; proxy candles are not venue-native execution evidence. No order is placed."
@@ -154,7 +152,6 @@ fn five_indicator_score_basis(
     relative_volume_lookback: usize,
     minimum_score: f64,
     maximum_score: f64,
-    indicator_component_maximum_score: f64,
 ) -> String {
     format!(
         "{setup_description} The entry setup score has five readings scored /10: NWE, DSS Bressert, {relative_volume_lookback}-bar relative volume, estimated OHLCV volume delta, and Markov regime. The first four readings share 40 weight points; an active validated profile can redistribute those weights, while equal weighting gives 10 points each. Markov has a fixed 10-point weight and earns 10 when its causal current-bar regime aligns with the signal direction (bull trend/accumulation for LONG; bear trend/distribution for SHORT); opposing, neutral, or unavailable regimes earn zero. The score is out of {maximum_score:.0}; every raw /10 reading, weight, and contribution is shown. After-fee backtest metrics and profile-specific cutoffs are informational and never hide a signal; the base score floor remains {minimum_score:.1}/{maximum_score:.0}. Price and volume subtotals depend on the learned weights. Relative volume compares the current bar against the preceding {relative_volume_lookback} same-source {timeframe} bars and awards points only when candle direction agrees with the signal. The delta proxy uses candle close location; it is not true aggressor-side trade delta. Markov state alignment is not a forecast or win probability. Missing/zero volume or insufficient history contributes zero and remains labeled unavailable. Scores below the base floor are withheld. The score measures setup strength, not execution availability."
