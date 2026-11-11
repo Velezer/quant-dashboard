@@ -47,13 +47,20 @@ write immediately after `BEGIN DEFERRED`. Taking that reservation before reads
 retains writer serialization without locking the attached app database or
 attempting a later WAL snapshot upgrade.
 
+Registry sync, foreign-flow imports, and scoring-profile promotion write only
+the app store. Their transactions now begin deferred so their first app write
+does not also reserve the attached signal store. Market-history
+selection and Binance stream-history checks retry transient SQLite busy/locked
+errors before marking data unavailable; provider candle writes retry only the
+database-lock errors after rolling back the failed attempt.
+
 ## Decision trail
 
 1. Direct effect: reduce compiler working memory, align the image listener with
    its exposed port, and recover unsupported WAL storage before attachment.
 2. Immediate consequence: smaller LLVM modules trade artifact size for lower
    memory; startup performs a bounded compatibility probe per persistent path.
-3. Repeated operation: cache prepared paths and verify restart using the same
+3. Repeated operation: serialize journal preparation per path and verify restart using the same
    stored data rather than repeatedly changing journal mode.
 4. Interactions: Docker and CI share the release profile; recovery remains in
    the existing SQLite connection owner. Main-only provider transactions avoid
@@ -69,6 +76,6 @@ attempting a later WAL snapshot upgrade.
 8. Governance: no execution capability, new service, or storage engine is added.
 9. Longer-term hypothesis: measured builds and container checks should catch
    deployment failures earlier; subsequent host measurements must confirm this.
-10. Decision: retain changes with measured compiler improvement and successful
-    release, journal-recovery, and container checks. A startup exit without
-    runtime stderr remains unconfirmed rather than presumed to be OOM.
+10. Decision: retain changes with measured compiler improvement and require
+    release, journal-recovery, and container checks in CI. A startup exit
+    without runtime stderr remains unconfirmed rather than presumed to be OOM.

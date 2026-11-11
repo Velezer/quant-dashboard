@@ -162,6 +162,7 @@ fn merged_readiness_sums_product_and_timeframe_counts_and_preserves_time_bounds(
         evaluated_count: count,
         evaluated_model_count: count,
         qualifying_signal_count: count,
+        ..TimeframeReadiness::default()
     };
     let mut left = SignalReadiness {
         scan_started_at: 90,

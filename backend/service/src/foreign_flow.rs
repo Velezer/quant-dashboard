@@ -198,7 +198,9 @@ pub(super) fn import_payload(conn: &Connection, payload: &Value) -> Result<Value
         ));
     }
 
-    conn.execute_batch("BEGIN IMMEDIATE")
+    // Only the app database is written here; reserving every attached database
+    // would hold the signal store while foreign-flow rows are imported.
+    conn.execute_batch("BEGIN DEFERRED")
         .map_err(|error| error.to_string())?;
     let result = (|| {
         for (

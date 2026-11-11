@@ -176,3 +176,8 @@ lesson only when it will improve future tasks.
 - Signals-only snapshot transactions must reserve the signals writer before
   reads inside a deferred transaction; a no-op signals write avoids both an
   unrelated app writer lock and a later WAL read-to-write snapshot upgrade.
+- App-only registry and profile transactions should start deferred; the first
+  app write owns the app lock without reserving the attached signal store.
+  Retry transient busy/locked errors at the market-history read boundary and
+  after a failed, rolled-back provider write so temporary contention does not
+  become a false missing-history result.

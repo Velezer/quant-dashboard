@@ -368,6 +368,17 @@ fn persist_sync(
     instrument_kind: &str,
     series: &[(&str, &[MarketBar])],
 ) -> Result<(), String> {
+    crate::database::retry_sqlite_busy_message(|| {
+        persist_sync_once(connection, storage_symbol, instrument_kind, series)
+    })
+}
+
+fn persist_sync_once(
+    connection: &Connection,
+    storage_symbol: &str,
+    instrument_kind: &str,
+    series: &[(&str, &[MarketBar])],
+) -> Result<(), String> {
     let registered = {
         let mut statement = connection
             .prepare(

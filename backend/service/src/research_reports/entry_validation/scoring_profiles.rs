@@ -575,7 +575,14 @@ fn record_evaluation(
     let weights = weights.expect("promotion requires a complete vector");
     let weights_json = serde_json::to_string(&weights)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    connection.execute_batch("BEGIN IMMEDIATE")?;
+    // The signal store is attached to this app connection. Reserve the profile
+    // table's app writer before reading the next version without taking a
+    // writer lock on that unrelated store.
+    connection.execute_batch(
+        "BEGIN DEFERRED;
+         UPDATE app.entry_model_scoring_profiles
+            SET score_model_id=score_model_id WHERE 0;",
+    )?;
     let result = (|| {
         let version = connection.query_row(
             "SELECT COALESCE(MAX(version),0)+1 FROM app.entry_model_scoring_profiles

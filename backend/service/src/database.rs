@@ -125,7 +125,24 @@ pub(crate) fn retry_sqlite_busy<T>(
     unreachable!("the final SQLite retry returns without another retry")
 }
 
-fn is_sqlite_busy_or_locked(error: &rusqlite::Error) -> bool {
+pub(crate) fn retry_sqlite_busy_message<T>(
+    mut operation: impl FnMut() -> Result<T, String>,
+) -> Result<T, String> {
+    const RETRY_DELAYS_MS: [u64; 2] = [100, 300];
+    for attempt in 0..=RETRY_DELAYS_MS.len() {
+        match operation() {
+            Err(error)
+                if attempt < RETRY_DELAYS_MS.len() && is_sqlite_busy_message(&error) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAYS_MS[attempt]));
+            }
+            result => return result,
+        }
+    }
+    unreachable!("the final SQLite retry returns without another retry")
+}
+
+pub(crate) fn is_sqlite_busy_or_locked(error: &rusqlite::Error) -> bool {
     matches!(
         error,
         rusqlite::Error::SqliteFailure(code, _)
@@ -134,6 +151,17 @@ fn is_sqlite_busy_or_locked(error: &rusqlite::Error) -> bool {
                 rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
             )
     )
+}
+
+fn is_sqlite_busy_message(error: &str) -> bool {
+    [
+        "database is locked",
+        "database is busy",
+        "database table is locked",
+        "database schema is locked",
+    ]
+    .iter()
+    .any(|message| error.contains(message))
 }
 
 #[cfg(not(test))]

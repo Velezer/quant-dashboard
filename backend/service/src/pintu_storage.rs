@@ -343,6 +343,24 @@ fn persist_sync(
     asset_category_id: &str,
     intervals: &[(&str, &[PintuCandle])],
 ) -> Result<(), String> {
+    crate::database::retry_sqlite_busy_message(|| {
+        persist_sync_once(
+            connection,
+            storage_symbol,
+            product_id,
+            asset_category_id,
+            intervals,
+        )
+    })
+}
+
+fn persist_sync_once(
+    connection: &Connection,
+    storage_symbol: &str,
+    product_id: &str,
+    asset_category_id: &str,
+    intervals: &[(&str, &[PintuCandle])],
+) -> Result<(), String> {
     // Finish the shared registry read before starting the ticker-only write.
     // BEGIN IMMEDIATE would reserve the attached app store as well as main.
     let instrument_ids = {

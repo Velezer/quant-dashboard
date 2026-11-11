@@ -475,6 +475,34 @@ pub(in crate::research_proxy) fn persist(
     price_basis: &str,
     bars: &[Bar],
 ) -> Result<(), String> {
+    crate::database::retry_sqlite_busy_message(|| {
+        persist_once(
+            connection,
+            symbol,
+            kind,
+            exchange,
+            provider,
+            source,
+            request_symbol,
+            interval,
+            price_basis,
+            bars,
+        )
+    })
+}
+
+fn persist_once(
+    connection: &Connection,
+    symbol: &str,
+    kind: &str,
+    exchange: &str,
+    provider: &str,
+    source: &str,
+    request_symbol: &str,
+    interval: &str,
+    price_basis: &str,
+    bars: &[Bar],
+) -> Result<(), String> {
     let now = super::format_timestamp(super::now_secs());
     let timezone = if request_symbol.ends_with(".JK") {
         "Asia/Jakarta"

@@ -2,7 +2,7 @@ use rusqlite::Connection;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 const SQLITE_IOERR_SHMSIZE: i32 = 4874;
@@ -59,12 +59,7 @@ fn configure_with_policy(
             [schema],
             |row| row.get(0),
         )?;
-        let effective_mode = prepared_databases()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .get(&database_key(Path::new(&path)))
-            .copied()
-            .unwrap_or(mode);
+        let effective_mode = prepared_mode(Path::new(&path)).unwrap_or(mode);
         configure_with_mode(connection, &[*schema], effective_mode)?;
     }
     Ok(())
@@ -96,13 +91,53 @@ pub(in crate::database) fn prepare_database(
     }
 }
 
-fn prepared_databases() -> &'static Mutex<HashMap<PathBuf, JournalMode>> {
-    static PREPARED_DATABASES: OnceLock<Mutex<HashMap<PathBuf, JournalMode>>> = OnceLock::new();
+type DatabasePreparation = Arc<Mutex<Option<JournalMode>>>;
+
+fn prepared_databases() -> &'static Mutex<HashMap<PathBuf, DatabasePreparation>> {
+    static PREPARED_DATABASES: OnceLock<Mutex<HashMap<PathBuf, DatabasePreparation>>> = OnceLock::new();
     PREPARED_DATABASES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn database_key(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    if let Ok(path) = path.canonicalize() {
+        return path;
+    }
+    // Before first creation, resolve the existing parent so this key matches
+    // the canonical filename SQLite returns later through database_list.
+    if let (Some(parent), Some(filename)) = (path.parent(), path.file_name()) {
+        let parent = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+        if let Ok(parent) = parent.canonicalize() {
+            return parent.join(filename);
+        }
+    }
+    path.to_path_buf()
+}
+
+fn database_preparation(path: &Path) -> DatabasePreparation {
+    let key = database_key(path);
+    prepared_databases()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .entry(key)
+        .or_insert_with(|| Arc::new(Mutex::new(None)))
+        .clone()
+}
+
+fn prepared_mode(path: &Path) -> Option<JournalMode> {
+    let key = database_key(path);
+    let preparation = prepared_databases()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .get(&key)
+        .cloned()?;
+    let mode = *preparation
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    mode
 }
 
 fn is_persistent_database(path: &Path, create: bool) -> bool {
@@ -120,10 +155,11 @@ fn prepare_wal_database(
     if !is_persistent_database(path, create) {
         return Ok(JournalMode::Wal);
     }
-    let mut prepared = prepared_databases()
+    let preparation = database_preparation(path);
+    let mut prepared = preparation
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    if let Some(mode) = prepared.get(&database_key(path)).copied() {
+    if let Some(mode) = *prepared {
         if mode == JournalMode::Wal || allow_fallback {
             return Ok(mode);
         }
@@ -142,7 +178,7 @@ fn prepare_wal_database(
         }
         Err(error) => return Err(error),
     };
-    prepared.insert(database_key(path), mode);
+    *prepared = Some(mode);
     Ok(mode)
 }
 
@@ -179,14 +215,15 @@ fn prepare_database_with_mode(
     if mode != JournalMode::Delete || !is_persistent_database(path, create) {
         return Ok(());
     }
-    let mut prepared = prepared_databases()
+    let preparation = database_preparation(path);
+    let mut prepared = preparation
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    if prepared.get(&database_key(path)) == Some(&JournalMode::Delete) {
+    if *prepared == Some(JournalMode::Delete) {
         return Ok(());
     }
     recover_delete_database(path, create)?;
-    prepared.insert(database_key(path), JournalMode::Delete);
+    *prepared = Some(JournalMode::Delete);
     Ok(())
 }
 

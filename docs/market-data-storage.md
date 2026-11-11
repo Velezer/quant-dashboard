@@ -65,6 +65,12 @@ Ordinary connections inspect the current journal and skip reassignment when
 it already matches. Main-only candle persistence resolves attached app metadata
 before a deferred transaction and mutates only `main.` tables. This avoids
 `BEGIN IMMEDIATE` reserving the shared app writer for unrelated ticker writes.
+Registry refreshes and profile updates also use deferred transactions when
+they write only the app store, so a registry update does not reserve the signal
+store for the duration of its listing reconciliation. Market-history reads
+retry transient `SQLITE_BUSY` and `SQLITE_LOCKED` failures before classifying a
+ticker as unavailable, and provider writes retry after rolling back the failed
+transaction.
 If preparation still fails, stop the service and preserve the complete SQLite files and
 their WAL/journal sidecars. On compatible local storage, use SQLite to open and
 checkpoint each database, set `PRAGMA journal_mode=DELETE`, run

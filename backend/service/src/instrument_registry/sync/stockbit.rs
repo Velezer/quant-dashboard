@@ -48,7 +48,10 @@ pub(crate) fn reconcile_stockbit(
             error: Some(error),
         };
     }
-    if let Err(error) = conn.execute_batch("BEGIN IMMEDIATE") {
+    // This app connection also has the signal store attached. A deferred
+    // transaction takes its writer lock on `app.instruments`, avoiding an
+    // unrelated reservation of the signal database during a full refresh.
+    if let Err(error) = conn.execute_batch("BEGIN DEFERRED") {
         return SyncResult {
             exchange_id,
             inserted: 0,

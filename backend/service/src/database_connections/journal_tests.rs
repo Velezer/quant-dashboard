@@ -238,6 +238,55 @@ fn preparation_recovers_unclean_wal_and_releases_exclusive_locks() {
     connection.execute_batch("ROLLBACK;").unwrap();
 }
 
+#[test]
+fn a_cold_database_probe_does_not_block_an_unrelated_market_database() {
+    let files = Databases::new("parallel-journal-preparation");
+    drop(files.open());
+
+    let first_path = files.0[0].clone();
+    let (probe_started_tx, probe_started_rx) = std::sync::mpsc::channel();
+    let (release_probe_tx, release_probe_rx) = std::sync::mpsc::channel();
+    let first = std::thread::spawn(move || {
+        prepare_wal_database(
+            std::path::Path::new(&first_path),
+            false,
+            true,
+            |_, _| {
+                probe_started_tx.send(()).unwrap();
+                release_probe_rx.recv().unwrap();
+                Ok(())
+            },
+        )
+    });
+    probe_started_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("first database probe should start");
+
+    let second_path = files.0[1].clone();
+    let (second_done_tx, second_done_rx) = std::sync::mpsc::channel();
+    let second = std::thread::spawn(move || {
+        let prepared = prepare_wal_database(
+            std::path::Path::new(&second_path),
+            false,
+            true,
+            |_, _| Ok(()),
+        )
+        .is_ok();
+        let _ = second_done_tx.send(prepared);
+    });
+    let second_finished_independently = second_done_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .unwrap_or(false);
+
+    release_probe_tx.send(()).unwrap();
+    assert!(first.join().unwrap().is_ok());
+    second.join().unwrap();
+    assert!(
+        second_finished_independently,
+        "journal setup for one ticker must not hold the preparation lock for every ticker"
+    );
+}
+
 fn leave_committed_wal(files: &Databases) {
     let status = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
