@@ -58,18 +58,19 @@ export function installDashboardFoundation() {
             let cognitiveFocusMode = true;
 
             const LAYOUT_STORAGE_KEY = 'quant.dashboard.layout.v1';
-            const WATCHLIST_MIN_WIDTH = 320;
+            const WATCHLIST_MIN_WIDTH = 390;
             const WATCHLIST_MAX_WIDTH = 560;
             const INDICATOR_PANE_MIN_HEIGHT = 130;
             const INDICATOR_PANE_MAX_HEIGHT = 360;
             const layoutSettings = {
-                watchlistWidth: 400,
+                watchlistWidth: 430,
                 indicatorPaneHeight: 180,
             };
             let layoutResizeState = null;
             let layoutRedrawPending = false;
 
             function clampLayoutValue(value, min, max, fallback) {
+                if (value === null || value === undefined || String(value).trim() === '') return fallback;
                 const number = Number(value);
                 return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
             }

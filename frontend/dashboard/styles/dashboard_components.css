@@ -706,6 +706,13 @@
 .signal-row-price { color: #f3f4f6; font: 600 12px ui-monospace, monospace; }
 .signal-row-score { color: #9ca3af; font-size: 10px; }
 .signal-row-score strong { color: #f9fafb; font: 700 14px ui-monospace, monospace; }
+.signal-row-regime-score { display:inline-grid; grid-template-columns:auto auto minmax(0,1fr); align-items:center; gap:.25rem; max-width:100%; border:1px solid #4c3b78; border-radius:.35rem; background:#211a35; padding:.2rem .4rem; color:#ddd6fe; font:600 9px/1.35 ui-monospace,monospace; }
+.signal-row-regime-score > span { color:#c4b5fd; text-transform:uppercase; letter-spacing:.04em; }
+.signal-row-regime-score strong { color:#f5f3ff; white-space:nowrap; }
+.signal-row-regime-score small { min-width:0; overflow:hidden; color:#b8a9d9; text-overflow:ellipsis; white-space:nowrap; }
+.signal-row-regime-legacy,.signal-row-regime-unavailable { border-color:#475569; background:#1f2937; color:#cbd5e1; }
+.signal-row-regime-legacy > span,.signal-row-regime-legacy small,.signal-row-regime-unavailable > span,.signal-row-regime-unavailable small { color:#9ca3af; }
+.signal-row-regime-legacy strong,.signal-row-regime-unavailable strong { color:#e2e8f0; }
 .signal-exit-cue { display:flex; flex-direction:column; gap:.2rem; border:1px solid #a16207; border-radius:.4rem; padding:.4rem .5rem; background:#291d0e; color:#fde68a; font-size:11px; line-height:1.4; }
 .signal-exit-cue small { color:#e2d1a5; font-size:10px; }
 .signal-score-state { align-self: flex-start; border: 1px solid; border-radius: 999px; padding: .1rem .4rem; font: 700 9px/1.4 ui-monospace, monospace; }

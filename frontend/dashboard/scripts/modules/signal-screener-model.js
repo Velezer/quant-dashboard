@@ -219,11 +219,27 @@ export const SIGNAL_SCORE_INDICATORS = Object.freeze([
     { id: 'markov_regime', indicator: 'Markov Regime', label: 'Markov regime' },
 ]);
 
+function normalizedIndicatorIdentity(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function componentMatchesIndicator(component, indicator) {
+    const expected = normalizedIndicatorIdentity(indicator.indicator);
+    const accepted = new Set([expected, normalizedIndicatorIdentity(indicator.id)]);
+    if (indicator.id === 'markov_regime') {
+        accepted.add('markov');
+        accepted.add('regime');
+        accepted.add('markovstate');
+    }
+    return [component?.indicator, component?.indicator_id, component?.id, component?.key]
+        .some(identity => accepted.has(normalizedIndicatorIdentity(identity)));
+}
+
 export function signalIndicatorScores(signal, model) {
     if (!hasFiveIndicatorScores(signal, model)) return [];
     const components = Array.isArray(signal?.score_basis?.components) ? signal.score_basis.components : [];
-    return SIGNAL_SCORE_INDICATORS.map(({ id, indicator, label }, index) => {
-        const component = components.find(item => item?.indicator === indicator);
+    return SIGNAL_SCORE_INDICATORS.map(({ id, indicator, label }) => {
+        const component = components.find(item => componentMatchesIndicator(item, { id, indicator }));
         const value = component?.points;
         const points = typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 10 ? value : null;
         const weightPoints = typeof component?.weight_points === 'number' && Number.isFinite(component.weight_points)
