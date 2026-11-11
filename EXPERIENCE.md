@@ -153,3 +153,9 @@ lesson only when it will improve future tasks.
   display label and a stable component ID resolve to the same indicator. For a
   retained legacy row, say that Markov was not scored instead of assigning a
   fabricated regime value.
+- Write HTTP headers and an existing response body separately. Concatenating
+  them with `format!` duplicates every large chart/API payload at peak; concurrent
+  request handlers multiply that avoidable memory spike.
+- Stream lower-timeframe rows into bounded rollup output. A 100,000-candle
+  source cap can otherwise become a large per-request allocation when many
+  higher-timeframe chart requests arrive together.
