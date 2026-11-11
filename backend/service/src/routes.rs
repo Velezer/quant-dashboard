@@ -30,7 +30,7 @@ fn respond(mut stream: TcpStream, body: String, status: &str) {
         "HTTP/1.1 {status}\r\nContent-Type: application/json; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
-    let _ = stream.write_all(format!("{head}{body}").as_bytes());
+    write_response_parts(&mut stream, &head, &body);
 }
 
 fn respond_html(mut stream: TcpStream, body: String, status: &str) {
@@ -38,7 +38,15 @@ fn respond_html(mut stream: TcpStream, body: String, status: &str) {
         "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
-    let _ = stream.write_all(format!("{head}{body}").as_bytes());
+    write_response_parts(&mut stream, &head, &body);
+}
+
+// Avoid allocating a second copy of large JSON or HTML response bodies while
+// many request handlers are active at once.
+fn write_response_parts(stream: &mut TcpStream, head: &str, body: &str) {
+    let _ = stream
+        .write_all(head.as_bytes())
+        .and_then(|()| stream.write_all(body.as_bytes()));
 }
 
 fn api_error(stream: TcpStream, status: &str, message: impl std::fmt::Display) {
@@ -290,7 +298,7 @@ fn respond_status(mut stream: TcpStream, body: String, status: &str) {
         "HTTP/1.1 {status}\r\nContent-Type: application/json; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
-    let _ = stream.write_all(format!("{head}{body}").as_bytes());
+    write_response_parts(&mut stream, &head, &body);
 }
 
 fn read_initial_request(
