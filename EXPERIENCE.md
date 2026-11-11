@@ -65,8 +65,13 @@ lesson only when it will improve future tasks.
   Shared Spot reference charts for Futures must not receive index-aligned
   indicators calculated from Futures-specific candles; return overlays with
   the chart bundle and preserve them during later indicator hydration.
-- Use GitHub Actions to compile changes when the workspace cannot run commands.
-  Run tests only when the user asks to test or verify implementation.
+- Before opening a code PR, verify both locked release builds:
+  `cargo build --locked --release --target wasm32-unknown-unknown -p quant_pine_runtime`
+  and `cargo build --locked --release -p rust_chart_api`. If Cargo is unavailable,
+  use the Rust build workflow and wait for both steps to finish successfully.
+  Distinguish warnings from errors, and never call an in-progress, skipped, or
+  partially completed workflow a verified build. Run tests only when the user
+  asks to test or verify implementation.
 - Apply screener filters before pagination and compute filtered match counts on
   the server; a browser-only filter can make a matching signal appear absent
   from the first page.
