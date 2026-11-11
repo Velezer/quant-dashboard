@@ -8,7 +8,7 @@ resolver = "2"
 
 [profile.release]
 opt-level = "s"       # Optimize for minimum binary size and RAM footprint
-lto = true             # Link-time optimization: eliminates dead code across crates
+lto = "thin"           # Keep cross-crate optimization without fat-LTO peak memory
 codegen-units = 1      # Maximize whole-program optimization
 panic = "abort"        # Eliminates unwinding landing pads and EH frame tables
 strip = true           # Strip all debug symbols and names from final binary

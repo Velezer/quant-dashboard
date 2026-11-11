@@ -159,3 +159,5 @@ lesson only when it will improve future tasks.
 - Stream lower-timeframe rows into bounded rollup output. A 100,000-candle
   source cap can otherwise become a large per-request allocation when many
   higher-timeframe chart requests arrive together.
+- Use one Cargo build job and thin LTO when the managed builder's memory ceiling
+  is tight; its available CPU count can exceed safe compile parallelism.
