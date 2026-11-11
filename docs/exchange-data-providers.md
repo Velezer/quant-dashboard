@@ -375,14 +375,14 @@ identifies the upstream candle provider.
 The market-data worker runs independently of dashboard heartbeats. It refreshes
 registered-product `15m` and `1h` candles in a rotating batch sized to cover the
 current registry in twelve scheduler ticks, rounded up. Each bounded wave has
-at most eight targets and two concurrent workers. With 2,911 active products,
+at most eight targets and four concurrent workers. With 2,911 active products,
 a tick attempts 243 products. Batch duration and refreshed interval count are
 logged. Each product keeps its own SQLite history file and app-product cursor.
 Intraday batches target a one-minute tick independently of daily work; if a
 batch runs longer, the next starts immediately after it finishes. A shared
 per-symbol gate serializes intraday and daily writes to the same history file.
-The database gate caps all open market histories at eleven: nine regular
-connections and two slots reserved for signal scans.
+The database gate caps all open market histories at thirteen: nine regular
+connections and four slots reserved for signal scans.
 
 Completed signal snapshots target 13-minute spacing to leave a two-minute
 margin inside the 15-minute freshness window, independent of dashboard
