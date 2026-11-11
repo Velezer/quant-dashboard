@@ -2,6 +2,121 @@ use super::{persist, Bar};
 use crate::main_test_support::{remove_temporary_database, temporary_database_path};
 
 #[test]
+fn candle_persistence_does_not_reserve_the_shared_registry_writer() {
+    for journal in ["WAL", "DELETE"] {
+        let app_path = temporary_database_path(&format!("proxy-registry-writer-{journal}"));
+        let writer = rusqlite::Connection::open(&app_path).unwrap();
+        writer
+            .execute_batch(&format!(
+                "PRAGMA journal_mode={journal};
+                 CREATE TABLE instruments(instrument_id TEXT,exchange_id TEXT,product_id TEXT,
+                     storage_symbol TEXT,symbol TEXT);
+                 INSERT INTO instruments VALUES('btc','pluang','pluang_spot','BTC-USD','BTC');"
+            ))
+            .unwrap();
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+        crate::database::initialize_empty_market_schema(&connection).unwrap();
+        connection
+            .execute("ATTACH DATABASE ?1 AS app", [&app_path])
+            .unwrap();
+        connection
+            .busy_timeout(std::time::Duration::ZERO)
+            .unwrap();
+        writer.execute_batch("BEGIN IMMEDIATE;").unwrap();
+
+        persist(
+            &connection,
+            "BTC-USD",
+            "crypto_spot",
+            "pluang",
+            "binance",
+            "pluang_spot_binance_spot_proxy",
+            "BTCUSDT",
+            "15m",
+            "binance_usdt_reference",
+            &[Bar {
+                ts: 1_700_000_000,
+                open: 100.0,
+                high: 102.0,
+                low: 99.0,
+                close: 101.0,
+                volume: 10.0,
+            }],
+        )
+        .unwrap_or_else(|error| panic!("{journal} registry writer blocked candles: {error}"));
+        assert!(connection.is_autocommit());
+        assert!(!writer.is_autocommit(), "the registry writer remains active");
+        let stored: (i64, Option<String>) = connection
+            .query_row(
+                "SELECT COUNT(*),MAX(instrument_id) FROM main.series",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, (1, Some("btc".into())));
+        let candles: i64 = connection
+            .query_row("SELECT COUNT(*) FROM main.bars", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(candles, 1);
+        writer.execute_batch("ROLLBACK;").unwrap();
+        drop(connection);
+        drop(writer);
+        remove_temporary_database(&app_path);
+    }
+}
+
+#[test]
+fn failed_proxy_commit_releases_the_ticker_transaction() {
+    let path = temporary_database_path("proxy-commit-lock-release");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    crate::database::initialize_empty_market_schema(&connection).unwrap();
+    connection
+        .execute_batch(
+            "PRAGMA main.journal_mode=DELETE;
+             ATTACH ':memory:' AS app;
+             CREATE TABLE app.instruments(instrument_id TEXT,exchange_id TEXT,product_id TEXT,
+                 storage_symbol TEXT,symbol TEXT);",
+        )
+        .unwrap();
+    connection
+        .busy_timeout(std::time::Duration::ZERO)
+        .unwrap();
+    let reader = rusqlite::Connection::open(&path).unwrap();
+    reader
+        .execute_batch("BEGIN; SELECT COUNT(*) FROM main.bars;")
+        .unwrap();
+    let result = persist(
+        &connection,
+        "BTC-USD",
+        "crypto_spot",
+        "pluang",
+        "binance",
+        "pluang_spot_binance_spot_proxy",
+        "BTCUSDT",
+        "15m",
+        "binance_usdt_reference",
+        &[Bar {
+            ts: 1_700_000_000,
+            open: 100.0,
+            high: 102.0,
+            low: 99.0,
+            close: 101.0,
+            volume: 10.0,
+        }],
+    );
+    assert!(result.unwrap_err().contains("database is locked"));
+    assert!(connection.is_autocommit(), "failed commit must release its write lock");
+    reader.execute_batch("ROLLBACK;").unwrap();
+    let stored: i64 = connection
+        .query_row("SELECT COUNT(*) FROM main.series", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(stored, 0, "the entire failed page must roll back");
+    drop(reader);
+    drop(connection);
+    remove_temporary_database(&path);
+}
+
+#[test]
 fn repeated_product_proxy_refresh_does_not_reinsert_known_provider() {
     let path = temporary_database_path("proxy-provider-upsert");
     let connection =

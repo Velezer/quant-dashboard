@@ -65,7 +65,9 @@ pub(crate) fn reconcile_tokocrypto(
             error: Some(error),
         };
     }
-    if let Err(error) = conn.execute_batch("BEGIN IMMEDIATE") {
+    // This app connection also has the signal store attached. Reserve only the
+    // app writer when the first registry update runs.
+    if let Err(error) = conn.execute_batch("BEGIN DEFERRED") {
         return SyncResult {
             exchange_id,
             inserted: 0,

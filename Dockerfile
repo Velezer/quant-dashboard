@@ -15,7 +15,8 @@ WORKDIR /app
 COPY --from=build /build/target/release/rust_chart_api /app/rust_chart_api
 COPY --from=build /build/target/wasm32-unknown-unknown/release/quant_pine_runtime.wasm /app/target/wasm32-unknown-unknown/release/quant_pine_runtime.wasm
 COPY frontend/dashboard /app/frontend/dashboard
-ENV QUANT_MARKET_DIR=/data/market/tickers \
+ENV PORT=8080 \
+    QUANT_MARKET_DIR=/data/market/tickers \
     QUANT_APP_DB=/data/app/app.sqlite3 \
     QUANT_SIGNAL_DB=/data/signals/signals.sqlite3 \
     MALLOC_ARENA_MAX=2 \

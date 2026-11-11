@@ -1,5 +1,55 @@
 use super::*;
 
+#[test]
+fn native_candles_do_not_reserve_the_shared_app_writer() {
+    use crate::main_test_support::{remove_temporary_database, temporary_database_path};
+    for journal in ["WAL", "DELETE"] {
+        let path = temporary_database_path(&format!("tokocrypto-app-writer-{journal}"));
+        let connection = registry_fixture();
+        connection
+            .execute("ATTACH DATABASE ?1 AS app", [&path])
+            .unwrap();
+        connection
+            .execute_batch(&format!(
+                "PRAGMA app.journal_mode={journal};
+                 CREATE TABLE app.instruments AS SELECT * FROM main.instruments;
+                 DROP TABLE main.instruments;
+                 INSERT INTO app.instruments(instrument_id,exchange_id,product_id,
+                     asset_category_id,storage_symbol,listing_status,venue_verified,is_active)
+                 VALUES('btc','tokocrypto','tokocrypto_spot','crypto_spot',
+                     'TOKOCRYPTO:SPOT:BTC_IDR','venue_active',1,1);"
+            ))
+            .unwrap();
+        connection
+            .busy_timeout(std::time::Duration::ZERO)
+            .unwrap();
+        let writer = Connection::open(&path).unwrap();
+        writer.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        persist_sync(
+            &connection,
+            "TOKOCRYPTO:SPOT:BTC_IDR",
+            "crypto_spot",
+            &[("15m", &[sample_bar()])],
+        )
+        .unwrap_or_else(|error| panic!("{journal} app writer blocked candles: {error}"));
+        assert!(connection.is_autocommit());
+        assert!(!writer.is_autocommit());
+        let stored: (String, String, i64) = connection
+            .query_row(
+                "SELECT instrument_id,product_id,(SELECT COUNT(*) FROM main.bars)
+                 FROM main.series",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, ("btc".into(), "tokocrypto_spot".into(), 1));
+        writer.execute_batch("ROLLBACK;").unwrap();
+        drop(writer);
+        drop(connection);
+        remove_temporary_database(&path);
+    }
+}
+
 fn registry_fixture() -> Connection {
     let connection = Connection::open_in_memory().unwrap();
     connection

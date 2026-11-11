@@ -475,6 +475,34 @@ pub(in crate::research_proxy) fn persist(
     price_basis: &str,
     bars: &[Bar],
 ) -> Result<(), String> {
+    crate::database::retry_sqlite_busy_message(|| {
+        persist_once(
+            connection,
+            symbol,
+            kind,
+            exchange,
+            provider,
+            source,
+            request_symbol,
+            interval,
+            price_basis,
+            bars,
+        )
+    })
+}
+
+fn persist_once(
+    connection: &Connection,
+    symbol: &str,
+    kind: &str,
+    exchange: &str,
+    provider: &str,
+    source: &str,
+    request_symbol: &str,
+    interval: &str,
+    price_basis: &str,
+    bars: &[Bar],
+) -> Result<(), String> {
     let now = super::format_timestamp(super::now_secs());
     let timezone = if request_symbol.ends_with(".JK") {
         "Asia/Jakarta"
@@ -502,12 +530,14 @@ pub(in crate::research_proxy) fn persist(
             .optional()
             .map_err(|e| e.to_string())?
     };
+    // This connection also attaches the shared app store. Reserve only the
+    // ticker database on its first write, rather than every attached database.
     connection
-        .execute_batch("BEGIN IMMEDIATE")
+        .execute_batch("BEGIN DEFERRED")
         .map_err(|e| e.to_string())?;
     let result = (|| {
         connection.execute(
-            "INSERT INTO series(symbol,interval,source,exchange_id,product_id,instrument_id,data_provider,timezone,price_basis,instrument_kind,last_success,last_attempt,last_error)
+            "INSERT INTO main.series(symbol,interval,source,exchange_id,product_id,instrument_id,data_provider,timezone,price_basis,instrument_kind,last_success,last_attempt,last_error)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11,NULL)
              ON CONFLICT(symbol,interval,source) DO UPDATE SET
                 exchange_id=excluded.exchange_id,product_id=excluded.product_id,
@@ -524,7 +554,7 @@ pub(in crate::research_proxy) fn persist(
                 .checked_mul(NANOS_PER_SECOND)
                 .ok_or("market-data timestamp overflow")?;
             connection.execute(
-                "INSERT INTO bars(symbol,interval,source,ts,open,high,low,close,volume,ingested_at)
+                "INSERT INTO main.bars(symbol,interval,source,ts,open,high,low,close,volume,ingested_at)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
                  ON CONFLICT(symbol,interval,source,ts) DO UPDATE SET
                     open=excluded.open,high=excluded.high,low=excluded.low,
@@ -533,21 +563,21 @@ pub(in crate::research_proxy) fn persist(
             ).map_err(|e| e.to_string())?;
         }
         connection.execute(
-            "INSERT INTO ingestion_runs(symbol,interval,source,exchange_id,product_id,data_provider,attempted_at,status,rows_received,error)
+            "INSERT INTO main.ingestion_runs(symbol,interval,source,exchange_id,product_id,data_provider,attempted_at,status,rows_received,error)
              VALUES (?1,?2,?3,?4,?5,?6,?7,'success',?8,NULL)",
             params![symbol,interval,source,app_id,product_id,provider,now,bars.len() as i64],
         ).map_err(|e| e.to_string())?;
         Ok::<(), String>(())
     })();
-    match result {
-        Ok(()) => connection
+    let result = result.and_then(|()| {
+        connection
             .execute_batch("COMMIT")
-            .map_err(|e| e.to_string()),
-        Err(error) => {
-            let _ = connection.execute_batch("ROLLBACK");
-            Err(error)
-        }
+            .map_err(|error| error.to_string())
+    });
+    if result.is_err() {
+        let _ = connection.execute_batch("ROLLBACK");
     }
+    result
 }
 
 pub(crate) fn background_binance_kline_stream_loop(market_directory: String) {

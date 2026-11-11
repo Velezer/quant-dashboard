@@ -7,11 +7,14 @@ mod shared_market_history_tests;
 mod stockbit_close;
 mod types;
 
+#[cfg(not(test))]
 use stockbit_close::{
-    ensure_stockbit_close_checkpoint_schema,
-    expected_stockbit_closed_session_day, save_stockbit_close_scan_checkpoint,
+    ensure_stockbit_close_checkpoint_schema, save_stockbit_close_scan_checkpoint,
     stockbit_close_checkpoint_is_saved, stockbit_closed_session_checkpoint,
 };
+#[cfg(test)]
+use stockbit_close::is_final_stockbit_close_bar;
+use stockbit_close::expected_stockbit_closed_session_day;
 use types::{AppScanResult, RegisteredInstrument, ScanCycleOutput};
 
 const SIGNAL_SCAN_APP_ORDER: [&str; 4] = ["pintu", "pluang", "tokocrypto", "stockbit"];
@@ -599,6 +602,28 @@ fn open_scan_market_history(
     storage_symbol: &str,
     underlying_symbol: &str,
 ) -> Result<Option<(SignalScanConnection, String)>, rusqlite::Error> {
+    crate::database::retry_sqlite_busy(|| {
+        open_scan_market_history_once(
+            app_connection,
+            market_database,
+            exchange,
+            product,
+            category,
+            storage_symbol,
+            underlying_symbol,
+        )
+    })
+}
+
+fn open_scan_market_history_once(
+    app_connection: &Connection,
+    market_database: &str,
+    exchange: &str,
+    product: &str,
+    category: &str,
+    storage_symbol: &str,
+    underlying_symbol: &str,
+) -> Result<Option<(SignalScanConnection, String)>, rusqlite::Error> {
     let now_seconds = now_secs().min(i64::MAX as u64) as i64;
     let now_ns = now_seconds.saturating_mul(NANOS_PER_SECOND);
     let mut own_database_exists = false;
@@ -660,14 +685,19 @@ fn open_scan_market_history(
             rows
         };
         for candidate_symbol in candidates {
-            let Ok(Some(connection)) = open_market_history_for_signal_scan(
+            let connection = match open_market_history_for_signal_scan(
                 market_database,
                 &candidate_symbol,
                 false,
-            ) else {
-                continue;
+            ) {
+                Ok(Some(connection)) => connection,
+                Ok(None) => continue,
+                Err(error) if crate::database::is_sqlite_busy_or_locked(&error) => {
+                    return Err(error);
+                }
+                Err(_) => continue,
             };
-            if let Ok(state) = product_candle_scan_state_at(
+            match product_candle_scan_state_at(
                 &connection,
                 &candidate_symbol,
                 exchange,
@@ -675,15 +705,21 @@ fn open_scan_market_history(
                 "15m",
                 now_seconds,
             ) {
-                if scan_state_has_fresh_price(
+                Ok(state)
+                    if scan_state_has_fresh_price(
                     &state,
                     &candidate_symbol,
                     category,
                     now_ns,
                     true,
-                ) {
+                ) => {
                     return Ok(Some((connection, candidate_symbol)));
                 }
+                Ok(_) => {}
+                Err(error) if crate::database::is_sqlite_busy_or_locked(&error) => {
+                    return Err(error);
+                }
+                Err(_) => {}
             }
         }
     }

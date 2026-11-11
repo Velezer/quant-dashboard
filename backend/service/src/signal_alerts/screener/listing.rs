@@ -307,8 +307,6 @@ pub(super) fn list_signal_screener(
         timeframe_filter,
         None,
         None,
-        None,
-        None,
         0,
         MAX_SIGNAL_SCREENER_ROWS,
     )
@@ -316,6 +314,31 @@ pub(super) fn list_signal_screener(
 
 #[cfg(test)]
 pub(crate) fn list_signal_screener_page(
+    connection: &Connection,
+    scan_interval_seconds: i64,
+    exchange_filter: Option<&str>,
+    timeframe_filter: Option<&str>,
+    product_filter: Option<&str>,
+    search_filter: Option<&str>,
+    offset: usize,
+    limit: usize,
+) -> Result<Value, rusqlite::Error> {
+    list_signal_screener_page_with_filters(
+        connection,
+        scan_interval_seconds,
+        exchange_filter,
+        timeframe_filter,
+        product_filter,
+        search_filter,
+        None,
+        None,
+        offset,
+        limit,
+    )
+}
+
+#[cfg(test)]
+fn list_signal_screener_page_with_filters(
     connection: &Connection,
     scan_interval_seconds: i64,
     exchange_filter: Option<&str>,

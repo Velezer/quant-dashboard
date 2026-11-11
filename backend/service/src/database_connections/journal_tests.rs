@@ -1,4 +1,7 @@
-use super::{configure_with_mode, prepare_database_with_mode, JournalMode};
+use super::{
+    configure_with_mode, configure_with_policy, prepare_database_with_mode,
+    prepare_wal_database, probe_wal_database, JournalMode,
+};
 use crate::main_test_support::{remove_temporary_database, temporary_database_path};
 use rusqlite::Connection;
 
@@ -128,6 +131,23 @@ fn switching_existing_wal_stores_preserves_committed_rows() {
 }
 
 #[test]
+fn matching_wal_configuration_allows_a_writer_on_another_connection() {
+    let files = Databases::new("wal-reopen-during-write");
+    let writer = files.open();
+    configure_with_mode(&writer, &SCHEMAS, JournalMode::Wal).unwrap();
+    writer.execute_batch("CREATE TABLE main.saved(value); INSERT INTO main.saved VALUES(1);").unwrap();
+    writer.execute_batch("BEGIN IMMEDIATE; UPDATE main.saved SET value=2;").unwrap();
+    let reader = files.open();
+    configure_with_mode(&reader, &SCHEMAS, JournalMode::Wal).unwrap();
+    assert_settings(&reader, "wal", 1);
+    assert_eq!(
+        reader.query_row("SELECT value FROM main.saved", [], |row| row.get::<_, i64>(0)).unwrap(),
+        1
+    );
+    writer.execute_batch("ROLLBACK;").unwrap();
+}
+
+#[test]
 fn in_memory_stores_keep_memory_journals() {
     let connection = Connection::open_in_memory().unwrap();
     connection
@@ -187,17 +207,7 @@ fn unclean_wal_fixture() {
 #[test]
 fn preparation_recovers_unclean_wal_and_releases_exclusive_locks() {
     let files = Databases::new("unclean-wal-preparation");
-    let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "database::connections::journal::tests::unclean_wal_fixture",
-        ])
-        .env("QUANT_JOURNAL_TEST_MAIN", &files.0[0])
-        .env("QUANT_JOURNAL_TEST_APP", &files.0[1])
-        .env("QUANT_JOURNAL_TEST_SIGNALS", &files.0[2])
-        .status()
-        .unwrap();
-    assert!(status.success());
+    leave_committed_wal(&files);
     for path in &files.0 {
         assert!(std::fs::metadata(format!("{path}-wal")).unwrap().len() > 0);
         prepare_database_with_mode(std::path::Path::new(path), false, JournalMode::Delete).unwrap();
@@ -226,4 +236,157 @@ fn preparation_recovers_unclean_wal_and_releases_exclusive_locks() {
     )
     .unwrap();
     connection.execute_batch("ROLLBACK;").unwrap();
+}
+
+#[test]
+fn a_cold_database_probe_does_not_block_an_unrelated_market_database() {
+    let files = Databases::new("parallel-journal-preparation");
+    drop(files.open());
+
+    let first_path = files.0[0].clone();
+    let (probe_started_tx, probe_started_rx) = std::sync::mpsc::channel();
+    let (release_probe_tx, release_probe_rx) = std::sync::mpsc::channel();
+    let first = std::thread::spawn(move || {
+        prepare_wal_database(
+            std::path::Path::new(&first_path),
+            false,
+            true,
+            |_, _| {
+                probe_started_tx.send(()).unwrap();
+                release_probe_rx.recv().unwrap();
+                Ok(())
+            },
+        )
+    });
+    probe_started_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("first database probe should start");
+
+    let second_path = files.0[1].clone();
+    let (second_done_tx, second_done_rx) = std::sync::mpsc::channel();
+    let second = std::thread::spawn(move || {
+        let prepared = prepare_wal_database(
+            std::path::Path::new(&second_path),
+            false,
+            true,
+            |_, _| Ok(()),
+        )
+        .is_ok();
+        let _ = second_done_tx.send(prepared);
+    });
+    let second_finished_independently = second_done_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .unwrap_or(false);
+
+    release_probe_tx.send(()).unwrap();
+    assert!(first.join().unwrap().is_ok());
+    second.join().unwrap();
+    assert!(
+        second_finished_independently,
+        "journal setup for one ticker must not hold the preparation lock for every ticker"
+    );
+}
+
+fn leave_committed_wal(files: &Databases) {
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "database::connections::journal::tests::unclean_wal_fixture",
+        ])
+        .env("QUANT_JOURNAL_TEST_MAIN", &files.0[0])
+        .env("QUANT_JOURNAL_TEST_APP", &files.0[1])
+        .env("QUANT_JOURNAL_TEST_SIGNALS", &files.0[2])
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+fn injected_sqlite_error(code: i32) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(code),
+        Some("injected journal probe failure".into()),
+    )
+}
+
+#[test]
+fn default_wal_preparation_recovers_shared_memory_failure_before_attach() {
+    let files = Databases::new("default-wal-before-attach");
+    leave_committed_wal(&files);
+    for path in &files.0[..2] {
+        assert!(std::fs::metadata(format!("{path}-wal")).unwrap().len() > 0);
+        let mode = prepare_wal_database(std::path::Path::new(path), false, true, |_, _| {
+            Err(injected_sqlite_error(super::SQLITE_IOERR_SHMSIZE))
+        })
+        .unwrap();
+        assert_eq!(mode, JournalMode::Delete);
+        assert_eq!(
+            prepare_wal_database(std::path::Path::new(path), false, true, |_, _| {
+                panic!("a prepared database must not repeat WAL probing")
+            })
+            .unwrap(),
+            JournalMode::Delete
+        );
+    }
+    assert_eq!(
+        prepare_wal_database(
+            std::path::Path::new(&files.0[2]),
+            false,
+            true,
+            probe_wal_database,
+        )
+        .unwrap(),
+        JournalMode::Wal
+    );
+    // ATTACH happens only after unsupported WAL files have been recovered.
+    let connection = files.open();
+    configure_with_policy(&connection, &SCHEMAS, JournalMode::Wal, true).unwrap();
+    for (index, schema) in SCHEMAS.iter().enumerate() {
+        let value: String = connection
+            .query_row(&format!("SELECT value FROM {schema}.saved"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(value, "wal-only");
+        let journal: String = connection
+            .query_row(&format!("PRAGMA {schema}.journal_mode"), [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(journal, if index < 2 { "delete" } else { "wal" });
+        let locking: String = connection
+            .query_row(&format!("PRAGMA {schema}.locking_mode"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(locking, "normal");
+    }
+}
+
+#[test]
+fn journal_probe_preserves_explicit_wal_and_unrelated_failures() {
+    for (label, allow_fallback, error_code) in [
+        ("explicit-wal-probe-error", false, super::SQLITE_IOERR_SHMSIZE),
+        ("default-wal-busy-error", true, rusqlite::ffi::SQLITE_BUSY),
+    ] {
+        let files = Databases::new(label);
+        let original = files.open();
+        configure_with_mode(&original, &SCHEMAS, JournalMode::Wal).unwrap();
+        original.execute_batch("CREATE TABLE main.saved(value); INSERT INTO main.saved VALUES(7);").unwrap();
+        drop(original);
+        let error = prepare_wal_database(
+            std::path::Path::new(&files.0[0]),
+            false,
+            allow_fallback,
+            |_, _| Err(injected_sqlite_error(error_code)),
+        )
+        .unwrap_err();
+        assert!(matches!(error, rusqlite::Error::SqliteFailure(code, _) if code.extended_code == error_code));
+        let reopened = files.open();
+        let journal: String = reopened
+            .query_row("PRAGMA main.journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(journal, "wal");
+        assert_eq!(
+            reopened.query_row("SELECT value FROM main.saved", [], |row| row.get::<_, i64>(0)).unwrap(),
+            7
+        );
+    }
 }

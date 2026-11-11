@@ -159,5 +159,25 @@ lesson only when it will improve future tasks.
 - Stream lower-timeframe rows into bounded rollup output. A 100,000-candle
   source cap can otherwise become a large per-request allocation when many
   higher-timeframe chart requests arrive together.
-- Use one Cargo build job and thin LTO when the managed builder's memory ceiling
-  is tight; its available CPU count can exceed safe compile parallelism.
+- Measure compiler RSS before claiming builder-memory improvement. With one Cargo
+  job, LTO off and sixteen codegen units reduced service compiler peak 37.4%
+  versus thin LTO/one unit in clean builds; the binary grew 11.4%. Compiler RSS,
+  Blitz whole-builder peak, and running-service memory are separate metrics.
+- Exercise the built Docker image's defaults on first boot and reused storage.
+  EXPOSE does not set the service's listener; the image must default PORT to 8080.
+- Probe default WAL before ATTACH. On exact SQLite error 4874, close the failed
+  probe before exclusive recovery through a fresh connection; preserve committed
+  WAL and cache the effective journal per path. Matching-mode connections should
+  not reassign journals while other workers hold transactions.
+- BEGIN IMMEDIATE reserves writers on all attached databases. For main-only
+  candle persistence, resolve app metadata before a deferred transaction and
+  qualify main writes, so unrelated tickers do not compete for the shared app
+  writer. Retain immediate transactions where multiple stores are mutated.
+- Signals-only snapshot transactions must reserve the signals writer before
+  reads inside a deferred transaction; a no-op signals write avoids both an
+  unrelated app writer lock and a later WAL read-to-write snapshot upgrade.
+- App-only registry and profile transactions should start deferred; the first
+  app write owns the app lock without reserving the attached signal store.
+  Retry transient busy/locked errors at the market-history read boundary and
+  after a failed, rolled-back provider write so temporary contention does not
+  become a false missing-history result.

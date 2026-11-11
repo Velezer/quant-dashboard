@@ -231,12 +231,22 @@ fn has_streamable_history(
     storage_symbol: &str,
     source: &str,
 ) -> Result<bool, String> {
+    crate::database::retry_sqlite_busy(|| {
+        has_streamable_history_once(market_directory, storage_symbol, source)
+    })
+    .map_err(|error| error.to_string())
+}
+
+fn has_streamable_history_once(
+    market_directory: &str,
+    storage_symbol: &str,
+    source: &str,
+) -> Result<bool, rusqlite::Error> {
     let Some(connection) = crate::open_market_history_for_symbol(
         market_directory,
         storage_symbol,
         false,
-    )
-    .map_err(|error| error.to_string())?
+    )?
     else {
         return Ok(false);
     };
@@ -253,7 +263,6 @@ fn has_streamable_history(
             params![storage_symbol, source, shared::SOURCE_EXCHANGE_ID, "binance"],
             |row| row.get(0),
         )
-        .map_err(|error| error.to_string())
 }
 
 fn run_stream_batch_until(market_directory: &str, batch: StreamBatch, deadline: Instant) {

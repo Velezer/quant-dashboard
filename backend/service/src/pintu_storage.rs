@@ -343,11 +343,27 @@ fn persist_sync(
     asset_category_id: &str,
     intervals: &[(&str, &[PintuCandle])],
 ) -> Result<(), String> {
-    let now = super::format_timestamp(super::now_secs());
-    connection
-        .execute_batch("BEGIN IMMEDIATE")
-        .map_err(|error| error.to_string())?;
-    let result = (|| {
+    crate::database::retry_sqlite_busy_message(|| {
+        persist_sync_once(
+            connection,
+            storage_symbol,
+            product_id,
+            asset_category_id,
+            intervals,
+        )
+    })
+}
+
+fn persist_sync_once(
+    connection: &Connection,
+    storage_symbol: &str,
+    product_id: &str,
+    asset_category_id: &str,
+    intervals: &[(&str, &[PintuCandle])],
+) -> Result<(), String> {
+    // Finish the shared registry read before starting the ticker-only write.
+    // BEGIN IMMEDIATE would reserve the attached app store as well as main.
+    let instrument_ids = {
         let mut statement = connection
             .prepare(
                 "SELECT instrument_id FROM app.instruments
@@ -356,21 +372,27 @@ fn persist_sync(
                 AND venue_verified=1 AND is_active=1",
             )
             .map_err(|error| error.to_string())?;
-        let instrument_ids = statement
+        let rows = statement
             .query_map(
                 params![product_id, asset_category_id, storage_symbol],
                 |row| row.get::<_, String>(0),
             )
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
-        if instrument_ids.len() != 1 {
-            return Err(format!(
-                "Pintu native candles require one active verified listing for {storage_symbol}; found {}",
-                instrument_ids.len()
-            ));
-        }
-        let instrument_id = &instrument_ids[0];
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?
+    };
+    if instrument_ids.len() != 1 {
+        return Err(format!(
+            "Pintu native candles require one active verified listing for {storage_symbol}; found {}",
+            instrument_ids.len()
+        ));
+    }
+    let instrument_id = &instrument_ids[0];
+    let now = super::format_timestamp(super::now_secs());
+    connection
+        .execute_batch("BEGIN DEFERRED")
+        .map_err(|error| error.to_string())?;
+    let result = (|| {
         for (interval, candles) in intervals {
             persist_series(
                 connection,
@@ -386,9 +408,13 @@ fn persist_sync(
         Ok::<(), String>(())
     })();
     match result {
-        Ok(()) => connection
-            .execute_batch("COMMIT")
-            .map_err(|error| error.to_string()),
+        Ok(()) => match connection.execute_batch("COMMIT") {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = connection.execute_batch("ROLLBACK");
+                Err(error.to_string())
+            }
+        },
         Err(error) => {
             let _ = connection.execute_batch("ROLLBACK");
             Err(error)
@@ -408,7 +434,7 @@ fn persist_series(
 ) -> Result<(), String> {
     connection
         .execute(
-            "INSERT INTO series (
+            "INSERT INTO main.series (
                 symbol,interval,source,exchange_id,product_id,instrument_id,data_provider,
                 timezone,price_basis,instrument_kind,last_success,last_attempt,last_error
              ) VALUES (?1,?2,?3,'pintu',?4,?5,'pintu','UTC','venue_native',?6,?7,?7,NULL)
@@ -436,7 +462,7 @@ fn persist_series(
             .ok_or_else(|| "Pintu candle timestamp overflow".to_string())?;
         connection
             .execute(
-                "INSERT INTO bars (
+                "INSERT INTO main.bars (
                     symbol,interval,source,ts,open,high,low,close,volume,
                     adj_close,dividends,splits,ingested_at
                  ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,NULL,NULL,NULL,?10)
@@ -460,7 +486,7 @@ fn persist_series(
     }
     connection
         .execute(
-            "INSERT INTO ingestion_runs (
+            "INSERT INTO main.ingestion_runs (
                 symbol,interval,source,exchange_id,product_id,data_provider,
                 attempted_at,status,rows_received,error
              ) VALUES (?1,?2,?3,'pintu',?4,'pintu',?5,'success',?6,NULL)",
@@ -486,10 +512,14 @@ fn record_failure(
 ) {
     let now = super::format_timestamp(super::now_secs());
     let _ = connection.execute(
-        "INSERT INTO ingestion_runs (
+        "INSERT INTO main.ingestion_runs (
             symbol,interval,source,exchange_id,product_id,data_provider,
             attempted_at,status,rows_received,error
          ) VALUES (?1,?2,?3,'pintu',?4,'pintu',?5,'error',0,?6)",
         params![storage_symbol, interval, SOURCE, product_id, now, error],
     );
 }
+
+#[cfg(test)]
+#[path = "pintu_storage_persistence_tests.rs"]
+mod persistence_tests;

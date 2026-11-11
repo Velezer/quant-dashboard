@@ -121,6 +121,8 @@ fn persists_native_bar_rows_without_a_file_payload() {
         "TOKOCRYPTO:SPOT:BTC_IDR",
         "15m",
         "crypto_spot",
+        None,
+        "",
         &bars,
     )
     .unwrap();
