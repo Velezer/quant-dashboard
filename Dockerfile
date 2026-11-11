@@ -1,5 +1,7 @@
 FROM rust:1-bookworm AS build
 WORKDIR /build
+# The managed builder may expose more CPUs than its memory budget can sustain.
+ENV CARGO_BUILD_JOBS=1
 RUN rustup target add wasm32-unknown-unknown
 COPY . .
 RUN cargo build --release --target wasm32-unknown-unknown -p quant_pine_runtime \
