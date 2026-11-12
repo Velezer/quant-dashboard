@@ -21,8 +21,9 @@ the service binary grew 1.4%. These are small compiler-process changes compared
 with the 35% reduction from the slim builder. The next Blitz build is still
 needed to measure the whole-builder effect.
 
-Clean GitHub Actions builds compared the same source with the current profile
-and the bounded candidate (LTO off, sixteen codegen units, one Cargo job):
+A prior clean GitHub Actions comparison used the same source to compare the
+thin-LTO, one-codegen-unit profile with LTO off, sixteen codegen units, and one
+Cargo job:
 
 | Artifact | Previous peak compiler RSS | New peak compiler RSS | Previous / new size |
 | --- | ---: | ---: | ---: |
