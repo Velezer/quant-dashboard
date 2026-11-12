@@ -1,4 +1,4 @@
-FROM rust:1-bookworm AS build
+FROM rust:1-slim-bookworm AS build
 WORKDIR /build
 # The managed builder may expose more CPUs than its memory budget can sustain.
 ENV CARGO_BUILD_JOBS=1
