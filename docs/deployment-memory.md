@@ -4,6 +4,11 @@
 compilation and image work. The container's stderr and exit/OOM status identify
 a subsequent startup failure. The uploaded build for `f35a65c` completed with a
 builder peak of 3,773,493,248 bytes using one Cargo job and thin LTO.
+After switching the build stage to `rust:1-slim-bookworm`, Blitz reported a
+builder peak of 2,260,475,904 bytes (about 35% lower than the earlier
+3,497,357,312-byte build). That confirms the smaller build image reduced the
+host-reported peak. A subsequent GitHub Actions comparison will check whether
+the higher codegen-unit count below lowers compiler RSS as well.
 
 Clean GitHub Actions builds compared the same source with the current profile
 and the bounded candidate (LTO off, sixteen codegen units, one Cargo job):
