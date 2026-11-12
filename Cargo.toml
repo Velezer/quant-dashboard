@@ -7,8 +7,8 @@ members = [
 resolver = "2"
 
 [profile.release]
-opt-level = "s"       # Optimize for minimum binary size and RAM footprint
+opt-level = 1          # Reduce LLVM optimization work during managed builds
 lto = "off"            # Avoid whole-program LLVM memory during managed builds
-codegen-units = 32     # Bound per-module LLVM work during release compilation
+codegen-units = 64     # Bound per-module LLVM work during release compilation
 panic = "abort"        # Eliminates unwinding landing pads and EH frame tables
 strip = true           # Strip all debug symbols and names from final binary
