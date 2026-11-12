@@ -787,6 +787,9 @@ pub(super) fn background_registry_sync_loop(state: Arc<AppState>) {
             match open_app_db_for_market_directory(&state.market_database) {
                 Ok(conn) => {
                     let results = instrument_registry::sync_from_live_sources(&conn);
+                    let stockbit_synced = results
+                        .iter()
+                        .any(|result| result.exchange_id == "stockbit" && result.error.is_none());
                     let mut exchanges = serde_json::json!([]);
                     let mut total_inserted = 0usize;
                     let mut total_deactivated = 0usize;
@@ -829,6 +832,13 @@ pub(super) fn background_registry_sync_loop(state: Arc<AppState>) {
                         "exchanges": exchanges,
                     });
                     state.broadcast("registry_synced", &event);
+                    if stockbit_synced {
+                        // The startup scan can run before the first live registry
+                        // refresh has populated a fresh volume. Queue an app-only
+                        // rescan so registered Stockbit tickers do not wait for
+                        // the next full scan interval.
+                        state.request_scan_for_app("stockbit");
+                    }
                     let _ = conn.execute_batch("PRAGMA shrink_memory;");
                     eprintln!("[Registry] Daily sync complete.");
                 }

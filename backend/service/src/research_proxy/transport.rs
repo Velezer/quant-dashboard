@@ -19,6 +19,7 @@ pub(crate) fn fetch_bounded_url(url: &str) -> Result<Vec<u8>, String> {
             accept: "application/json",
             user_agent: Some("Mozilla/5.0"),
             accept_encoding: None,
+            referer: None,
         },
     )?;
     if response.status >= 400 {

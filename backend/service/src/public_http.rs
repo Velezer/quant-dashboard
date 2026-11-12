@@ -18,6 +18,7 @@ pub(crate) struct RequestOptions<'a> {
     pub accept: &'a str,
     pub user_agent: Option<&'a str>,
     pub accept_encoding: Option<&'a str>,
+    pub referer: Option<&'a str>,
 }
 
 pub(crate) struct BoundedResponse {
@@ -49,6 +50,9 @@ pub(crate) fn get_bounded(
     }
     if let Some(accept_encoding) = options.accept_encoding {
         request = request.header("Accept-Encoding", accept_encoding);
+    }
+    if let Some(referer) = options.referer {
+        request = request.header("Referer", referer);
     }
     let mut response = request
         .call()
