@@ -7,8 +7,19 @@ builder peak of 3,773,493,248 bytes using one Cargo job and thin LTO.
 After switching the build stage to `rust:1-slim-bookworm`, Blitz reported a
 builder peak of 2,260,475,904 bytes (about 35% lower than the earlier
 3,497,357,312-byte build). That confirms the smaller build image reduced the
-host-reported peak. A subsequent GitHub Actions comparison will check whether
-the higher codegen-unit count below lowers compiler RSS as well.
+host-reported peak.
+
+A same-source GitHub Actions comparison tested 32 codegen units against 16:
+
+| Artifact | 16 units peak RSS | 32 units peak RSS | 16 / 32 artifact bytes |
+| --- | ---: | ---: | ---: |
+| Native service | 588,372 KiB | 581,496 KiB | 7,222,944 / 7,321,728 |
+| Pine WASM | 316,712 KiB | 314,700 KiB | 462,576 / 462,098 |
+
+The 32-unit profile lowered service compiler RSS by 1.2% and WASM RSS by 0.6%;
+the service binary grew 1.4%. These are small compiler-process changes compared
+with the 35% reduction from the slim builder. The next Blitz build is still
+needed to measure the whole-builder effect.
 
 Clean GitHub Actions builds compared the same source with the current profile
 and the bounded candidate (LTO off, sixteen codegen units, one Cargo job):
