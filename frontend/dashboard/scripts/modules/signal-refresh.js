@@ -73,7 +73,8 @@ export function installSignalRefresh() {
             const response = await fetch(`/api/signals?${params}`, { cache: 'no-store', signal: controller.signal });
             const payload = await readApiResponse(response);
             if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
-            if (!payload || !Array.isArray(payload.signals) || typeof payload.summary !== 'object'
+            if (!payload || !Array.isArray(payload.signals)
+                || !payload.summary || typeof payload.summary !== 'object' || Array.isArray(payload.summary)
                 || !Array.isArray(payload.available_timeframes) || payload.available_timeframes.length === 0
                 || payload.available_timeframes.some(frame => typeof frame !== 'string' || !frame.trim())) {
                 throw new Error('The signal service returned an incomplete screener snapshot.');
