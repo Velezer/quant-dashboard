@@ -10,6 +10,7 @@ on:
       - "Cargo.lock"
       - "Dockerfile"
       - ".github/workflows/rust-build.yml"
+      - ".github/workflows/publish-container.yml"
       - ".github/scripts/**"
   push:
     branches: ["**"]
@@ -21,6 +22,7 @@ on:
       - "Cargo.lock"
       - "Dockerfile"
       - ".github/workflows/rust-build.yml"
+      - ".github/workflows/publish-container.yml"
       - ".github/scripts/**"
   workflow_dispatch:
 
