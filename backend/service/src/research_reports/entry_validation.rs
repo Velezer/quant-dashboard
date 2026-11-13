@@ -373,7 +373,7 @@ fn build_report(
             let requirements = [
                 ("registered_identity","Exact verified app/product/ticker identity is required."),
                 ("holdout_sample_sufficient","The untouched holdout needs more completed entry outcomes."),
-                ("holdout_span_sufficient","The actual evaluated holdout does not meet the minimum calendar-day coverage."),
+                ("history_span_sufficient","The full completed history does not meet the minimum calendar-day coverage."),
                 ("profitable_holdout","The selected exit has not demonstrated positive held-out expectancy and profit factor."),
                 ("score_discrimination_supported","Score bands do not have enough separated held-out evidence to support score discrimination."),
                 ("venue_native_history","Venue-native history is required; research proxies cannot establish execution evidence."),

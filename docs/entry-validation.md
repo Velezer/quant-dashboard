@@ -104,10 +104,12 @@ not predictive accuracy; trade spacing is irregular and is not treated as an
 equal-time series.
 
 **Backtest complete** means the evaluator produced a report. **Validated
-holdout evidence** has additional minimum sample and calendar-span, positive
-holdout return and profit factor, separated score-band evidence, verified
-registered identity, venue-native candles, known product fees, and complete
-execution-cost checks. Live scoring profile promotion is a separate gate; it
+holdout evidence** has at least 730 calendar days across the full chronological
+history, sufficient trades in the untouched 20% holdout, positive holdout
+return and profit factor, separated score-band evidence, verified registered
+identity, venue-native candles, known product fees, and complete execution-cost
+checks. The calendar minimum applies to the full sample, not only the final
+holdout segment. Live scoring profile promotion is a separate gate; it
 subtracts configured transaction fees but does not imply spread, slippage,
 funding, borrow, or market impact are covered.
 
