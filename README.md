@@ -56,6 +56,14 @@ The free plan has a 512 MB memory pool and 10 GB of account storage; a Docker ap
 
 The free Blitz address is public, while this dashboard does not have authentication, so keep access private with a supported private network or add an authenticated access layer before using the public address.
 
+### Bypass the Blitz source-build queue
+
+`.github/workflows/publish-container.yml` can build the Docker image on GitHub Actions and publish `ghcr.io/velezer/quant-dashboard:latest`. This moves Rust compilation off Blitz's builder. The first published GHCR package must be set to **Public** in GitHub package settings because Blitz accepts public images.
+
+Use Blitz's **Host something new → An app from Docker Hub** flow with `ghcr.io/velezer/quant-dashboard:latest`. The image declares `/data` as a kept volume and defaults the SQLite paths, port, and journal mode. Blitz checks a moving GHCR tag for new images nightly, so updates do not enter the source-build queue.
+
+This creates a separate Docker-image app with its own empty `/data` volume. Keep the current app live while you export its kept `/data` files through Blitz FileBrowser and import them into the new app. Verify the new app's signals and charts before changing users over. A new app has its own `prod.page` address; the current address remains attached to the source-build app until you remove it.
+
 To carry over Railway history, stop the Railway service, export and validate the three SQLite stores and all ticker databases, then upload them into the new app's `/data` folder before its first start. Do not point the app database and signal database at the same file. If the Railway volume cannot be exported and validated, start with empty stores and explicitly regather market history; the workspace does not contain a copy of the production databases.
 
 ## Volume Delta study
