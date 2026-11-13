@@ -187,6 +187,7 @@ pub(super) fn get_public_document(
             accept,
             user_agent: None,
             accept_encoding: Some("gzip, br"),
+            referer: None,
         },
     )?;
     if let Some(error) = public_provider_status_error(response.status, response.retry_after_seconds)

@@ -181,3 +181,8 @@ lesson only when it will improve future tasks.
   Retry transient busy/locked errors at the market-history read boundary and
   after a failed, rolled-back provider write so temporary contention does not
   become a false missing-history result.
+- IDX Stockbit registration must use the paginated `GetCompanyProfiles` JSON
+  endpoint rather than assume the public HTML page embeds Nuxt state. Validate
+  the declared total and each page before reconciliation, and queue an
+  app-scoped rescan after a successful live registry refresh so a first-boot
+  scan against an empty registry is not the only scan until the next interval.
