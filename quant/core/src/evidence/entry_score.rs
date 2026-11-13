@@ -15,6 +15,7 @@ const SCORE_WEIGHT_STEP: u8 = 5;
 const SCORE_WEIGHT_SCALE: f64 = 10.0;
 const MIN_WEIGHT_FIT_TRADES: usize = 30;
 pub const ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT: f64 = 50.0;
+pub const ENTRY_SCORE_MIN_HISTORY_DAYS: i64 = 1_000;
 const MIN_HOUR_SELECTION_TRADES: usize = crate::MIN_EVIDENCE_SAMPLE_TRADES;
 const WEIGHT_FIT_EXIT_BARS: usize = 8;
 const BASELINE_WEIGHTS: [u8; 4] = [10; 4];
@@ -29,7 +30,7 @@ const FACTOR_NAMES: [&str; 4] = [
     "Estimated Volume Delta (OHLCV proxy)",
 ];
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
-    "entry_five_factor_weight_fit_markov_fixed_10_after_fee_target_50_v8";
+    "entry_five_factor_weight_fit_markov_fixed_10_after_fee_target_50_v9";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {
@@ -935,11 +936,11 @@ pub fn evaluate_entry_score_backtest(
         "holdout_factor_bands": holdout_factor_bands,
         "weight_learning": weight_learning,
         "checks": { "holdout_sample_sufficient": holdout.overall.trades >= crate::MIN_EVIDENCE_SAMPLE_TRADES,
-            "history_span_sufficient": !invalid && history_days >= crate::MIN_EVIDENCE_SAMPLE_DAYS,
+            "history_span_sufficient": !invalid && history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS,
             "profitable_holdout": profitable,
             "score_discrimination_supported": score_discrimination_supported(&holdout.total_bands) },
         "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
-        "minimum_history_days": crate::MIN_EVIDENCE_SAMPLE_DAYS,
+        "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
         "fees_known": fees_known,
         "weight_promotion_target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
         "selection_metric": "Equal-weight baseline exit: highest validation mean return; ties favor the shorter maximum hold, then fixed timeout. Fee-unknown results are gross only.",
