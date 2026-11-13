@@ -100,9 +100,9 @@ lesson only when it will improve future tasks.
   weights on training data, select exits and WIB hour pairs on validation, and
   keep the chronological holdout read-only. Report score and consecutive-trade
   return autocorrelation with pair counts; it describes dependence, not accuracy.
-- Apply the 730-day validation minimum to the full chronological history, not
-  the 20% holdout tail. Requiring 730 days inside that tail would require about
-  ten years of stored data and conflict with the bounded 100,000-candle report
+- Apply the 1,000-day validation minimum to the full chronological history, not
+  the 20% holdout tail. Requiring 1,000 days inside that tail would require about
+  fourteen years of stored data and exceed the bounded 100,000-candle report
   read; keep the holdout's trade-count requirement as a separate check.
 - A daily all-ticker backtest must be sequential, resumable, and visible on its
   research page. Persist its ticker/timeframe cursor and status, share the lock

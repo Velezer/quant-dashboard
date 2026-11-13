@@ -63,7 +63,8 @@ pub use day_trade::compute_day_trade_profile;
 pub use evidence::{
     day_trade_minimum_win_rate_pct, evaluate_historical_evidence,
     evaluate_historical_evidence_with_fees, evaluate_nwe_dss_exit_selection,
-    evaluate_entry_score_backtest, ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
+    evaluate_entry_score_backtest, ENTRY_SCORE_MIN_HISTORY_DAYS,
+    ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
     ENTRY_SCORE_CALIBRATION_BAND_COUNT, ENTRY_SCORE_CALIBRATION_BAND_WIDTH,
     ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
     historical_evidence_minimum_cagr_pct, historical_evidence_minimum_calendar_month_return_pct,
