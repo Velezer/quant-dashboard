@@ -83,24 +83,62 @@ pub(super) fn instrument(conn: &Connection, instrument_id: &str) -> Result<Optio
 }
 
 fn report_summary(report: &Value) -> Value {
-    let models = report.get("models").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[])
-        .iter().map(|model| json!({
-            "kind": model.get("kind"), "label": model.get("label"),
-            "score_model_id": model.get("score_model_id"),
-            "entry_validation_status": model.get("entry_validation_status"),
-            "holdout_trades": model.pointer("/backtest/holdout/trades"),
-            "holdout_win_rate_pct": model.pointer("/backtest/holdout/win_rate_pct"),
-            "holdout_payoff_ratio": model.pointer("/backtest/holdout/payoff_ratio"),
-            "holdout_mean_return_pct": model.pointer("/backtest/holdout/mean_return_pct"),
-            "risk_reward_status": model.pointer("/backtest/risk_reward_rule/status"),
-            "risk_reward_holdout_trades": model.pointer("/backtest/risk_reward_rule/candidate/holdout/trades"),
-            "risk_reward_validation_win_rate_pct": model.pointer("/backtest/risk_reward_rule/candidate/validation/win_rate_after_fees_pct"),
-            "risk_reward_holdout_win_rate_pct": model.pointer("/backtest/risk_reward_rule/candidate/holdout/win_rate_after_fees_pct"),
-            "risk_reward_holdout_payoff_ratio": model.pointer("/backtest/risk_reward_rule/candidate/holdout/payoff_ratio"),
-            "risk_reward_holdout_mean_return_pct": model.pointer("/backtest/risk_reward_rule/candidate/holdout/mean_net_return_pct"),
-            "selected_exit_bars": model.pointer("/backtest/selected_exit_bars"),
-            "blocking_reasons": model.get("blocking_reasons"),
-        })).collect::<Vec<_>>();
+    let models = report
+        .get("models")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .map(|model| {
+            let risk_reward_is_current = model
+                .pointer("/backtest/risk_reward_rule/protocol_id")
+                .and_then(Value::as_str)
+                == Some(quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID);
+            let risk_reward_must_refresh = report.get("timeframe").and_then(Value::as_str)
+                == Some("4h")
+                && !risk_reward_is_current;
+            json!({
+                "kind": model.get("kind"),
+                "label": model.get("label"),
+                "score_model_id": model.get("score_model_id"),
+                "entry_validation_status": if risk_reward_must_refresh {
+                    Some(json!("VALIDATION_PENDING"))
+                } else {
+                    model.get("entry_validation_status").cloned()
+                },
+                "holdout_trades": model.pointer("/backtest/holdout/trades"),
+                "holdout_win_rate_pct": model.pointer("/backtest/holdout/win_rate_pct"),
+                "holdout_payoff_ratio": model.pointer("/backtest/holdout/payoff_ratio"),
+                "holdout_mean_return_pct": model.pointer("/backtest/holdout/mean_return_pct"),
+                "risk_reward_protocol_id": model.pointer("/backtest/risk_reward_rule/protocol_id"),
+                "risk_reward_status": if risk_reward_is_current {
+                    model.pointer("/backtest/risk_reward_rule/status")
+                } else {
+                    None
+                },
+                "risk_reward_holdout_trades": model
+                    .pointer("/backtest/risk_reward_rule/candidate/holdout/trades")
+                    .filter(|_| risk_reward_is_current),
+                "risk_reward_validation_win_rate_pct": model
+                    .pointer("/backtest/risk_reward_rule/candidate/validation/win_rate_after_fees_pct")
+                    .filter(|_| risk_reward_is_current),
+                "risk_reward_holdout_win_rate_pct": model
+                    .pointer("/backtest/risk_reward_rule/candidate/holdout/win_rate_after_fees_pct")
+                    .filter(|_| risk_reward_is_current),
+                "risk_reward_holdout_payoff_ratio_after_fees": model
+                    .pointer("/backtest/risk_reward_rule/candidate/holdout/payoff_ratio_after_fees")
+                    .or_else(|| {
+                        model.pointer("/backtest/risk_reward_rule/candidate/holdout/payoff_ratio")
+                    })
+                    .filter(|_| risk_reward_is_current),
+                "risk_reward_holdout_mean_return_pct": model
+                    .pointer("/backtest/risk_reward_rule/candidate/holdout/mean_net_return_pct")
+                    .filter(|_| risk_reward_is_current),
+                "selected_exit_bars": model.pointer("/backtest/selected_exit_bars"),
+                "blocking_reasons": model.get("blocking_reasons"),
+            })
+        })
+        .collect::<Vec<_>>();
     json!({
         "computed_at": report.get("computed_at"), "protocol_id": report.get("protocol_id"),
         "status": report.get("status"), "source": report.pointer("/source/id"),

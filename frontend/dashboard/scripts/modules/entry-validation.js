@@ -2,6 +2,7 @@ import { requestJson } from './api.js';
 
 const PAGE_SIZE = 50;
 const APP_LABELS = { stockbit: 'Stockbit', pintu: 'Pintu', pluang: 'Pluang', tokocrypto: 'Tokocrypto' };
+const RISK_REWARD_PROTOCOL_ID = 'entry_score_risk_reward_after_fee_net_r_v1';
 
 function numeric(value) {
     if (!['number', 'string'].includes(typeof value) || (typeof value === 'string' && !value.trim())) return null;
@@ -14,8 +15,12 @@ export function metric(value, suffix = '', digits = 2) {
     return number === null ? '—' : `${number.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}${suffix}`;
 }
 
-export function reportModelState(model, currentProtocol, reportProtocol) {
+export function reportModelState(model, currentProtocol, reportProtocol, timeframe = null) {
     if (reportProtocol && currentProtocol && reportProtocol !== currentProtocol) return { label: 'Outdated protocol', tone: 'pending' };
+    const riskRewardProtocol = model?.risk_reward_protocol_id || model?.backtest?.risk_reward_rule?.protocol_id;
+    if (timeframe === '4h' && riskRewardProtocol !== RISK_REWARD_PROTOCOL_ID) {
+        return { label: 'R:R must be rerun', tone: 'pending' };
+    }
     if (model?.entry_validation_status === 'VALIDATED_HOLDOUT') return { label: 'Validated holdout evidence', tone: 'valid' };
     const status = model?.backtest?.status || model?.status;
     const labels = {
@@ -374,7 +379,7 @@ export function initializeEntryValidation(doc = document) {
             else if (!evidence) stateCell.append(element('span', 'Not backtested', 'state-badge'));
             else if (!models.length) stateCell.append(element('span', human(evidence.status) || 'No model evidence', 'state-badge pending'));
             else for (const model of models) {
-                const modelState = reportModelState(model, protocol, evidence.protocol_id);
+                const modelState = reportModelState(model, protocol, evidence.protocol_id, scope.timeframe);
                 const line = element('span', '', 'mini-model');
                 line.append(element('b', `${model.kind === 'dss' ? 'DSS' : 'NWE'} `), element('span', modelState.label, `state-badge ${modelState.tone}`));
                 stateCell.append(line);
@@ -391,7 +396,7 @@ export function initializeEntryValidation(doc = document) {
             button.addEventListener('click', () => { void selectTicker(item); }); action.append(button);
             row.append(identity, stateCell, miniCell(models, model => {
                 const usesBracket = numeric(model.risk_reward_holdout_trades) !== null;
-                return `${usesBracket ? '4h rule' : 'Baseline exit'} · ${metric(usesBracket ? model.risk_reward_holdout_trades : model.holdout_trades, '', 0)} trades · ${metric(usesBracket ? model.risk_reward_holdout_win_rate_pct : model.holdout_win_rate_pct, '%', 1)} · payoff ${metric(usesBracket ? model.risk_reward_holdout_payoff_ratio : model.holdout_payoff_ratio, '×', 2)}`;
+                return `${usesBracket ? '4h rule' : 'Baseline exit'} · ${metric(usesBracket ? model.risk_reward_holdout_trades : model.holdout_trades, '', 0)} trades · ${metric(usesBracket ? model.risk_reward_holdout_win_rate_pct : model.holdout_win_rate_pct, '%', 1)} · ${usesBracket ? 'payoff after fees' : 'payoff'} ${metric(usesBracket ? model.risk_reward_holdout_payoff_ratio_after_fees : model.holdout_payoff_ratio, '×', 2)}`;
             }), miniCell(models, model => {
                 const usesBracket = numeric(model.risk_reward_holdout_trades) !== null;
                 return `${usesBracket ? '4h rule' : 'Baseline exit'} · ${metric(usesBracket ? model.risk_reward_holdout_mean_return_pct : model.holdout_mean_return_pct, '%')}`;
@@ -459,7 +464,10 @@ export function initializeEntryValidation(doc = document) {
         }
     }
     function renderChecks(model) {
-        const checks = model.checks || model.backtest?.checks || {};
+        const checks = { ...(model.checks || model.backtest?.checks || {}) };
+        const oldFeeBasis = report?.timeframe === '4h'
+            && model.backtest?.risk_reward_rule?.protocol_id !== RISK_REWARD_PROTOCOL_ID;
+        if (oldFeeBasis) checks.asymmetric_risk_reward_rule = false;
         const labels = {
             registered_identity: 'Registered ticker and model identity match',
             holdout_sample_sufficient: 'Enough completed holdout trades', history_span_sufficient: 'Enough total calendar history',
@@ -481,7 +489,8 @@ export function initializeEntryValidation(doc = document) {
             row.append(marker, copy); return row;
         }));
         $('model-blockers').replaceChildren();
-        const reasons = Array.isArray(model.blocking_reasons) ? model.blocking_reasons : [];
+        const reasons = Array.isArray(model.blocking_reasons) ? [...model.blocking_reasons] : [];
+        if (oldFeeBasis) reasons.push('The saved 4h rule used gross target R multiples. Rerun to validate target-to-stop R after configured entry and exit fees.');
         if (reasons.length) {
             $('model-blockers').append(element('p', 'What still blocks validation:'));
             const list = element('ul'); reasons.forEach(reason => list.append(element('li', reason))); $('model-blockers').append(list);
@@ -601,17 +610,22 @@ export function initializeEntryValidation(doc = document) {
             PREFERRED_TIMEFRAME_IS_4H: '4h preferred',
             WEIGHTS_UNAVAILABLE: 'Weights unavailable',
         };
-        const candidate = rule?.candidate;
-        const stateLabel = labels[rule?.status] || 'Evidence unavailable';
+        const feeAdjustedTargetProtocol = rule?.protocol_id === RISK_REWARD_PROTOCOL_ID;
+        const candidate = feeAdjustedTargetProtocol ? rule?.candidate : null;
+        const stateLabel = feeAdjustedTargetProtocol ? (labels[rule?.status] || 'Evidence unavailable') : 'Rerun for fee-aware target';
         text('risk-reward-state', stateLabel);
-        state.className = `state-badge ${rule?.status === 'QUALIFIED' ? 'valid' : rule?.status === 'HOLDOUT_FAILED' ? 'error' : 'pending'}`;
+        state.className = `state-badge ${feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? 'valid' : feeAdjustedTargetProtocol && rule?.status === 'HOLDOUT_FAILED' ? 'error' : 'pending'}`;
         const targetRate = metric(rule?.target_after_fee_win_rate_pct, '% after fees', 0);
         const minimumPayoff = metric(rule?.minimum_after_fee_payoff_ratio, '× payoff', 2);
-        const message = rule?.reason || 'This saved report predates the current 4h risk/reward protocol. Rerun it to calculate candidate rules.';
+        const message = feeAdjustedTargetProtocol
+            ? (rule?.reason || 'This saved report predates the current 4h risk/reward protocol. Rerun it to calculate candidate rules.')
+            : 'This saved 4h report used gross target R multiples. Rerun the ticker to calculate target levels and asymmetric R:R after configured entry and exit fees.';
         const search = rule?.search_space || {};
         const values = (items, suffix = '', digits = 2) => Array.isArray(items) ? items.map(value => `${metric(value, '', digits)}${suffix}`).join(' / ') : 'unavailable';
-        const searchDescription = `Search grid: ${values(search.atr14_stop_multiples, ' × ATR14')} stops; ${values(search.target_r_multiples, 'R')} targets; ${values(search.maximum_hold_bars, ' bars', 0)} maximum holds; score floors ${values(search.score_floors_out_of_50, '/50', 0)}`;
-        status('risk-reward-status', `${message} Target: ${targetRate}, with its 95% Wilson lower bound also at target, and at least ${minimumPayoff}.`, rule?.status === 'QUALIFIED' ? '' : 'pending');
+        const targetValues = search.target_after_fee_r_multiples ?? search.target_r_multiples;
+        const targetSuffix = Array.isArray(search.target_after_fee_r_multiples) ? '× net risk after fees' : ' gross R';
+        const searchDescription = `Search grid: ${values(search.atr14_stop_multiples, ' × ATR14')} stops; ${values(targetValues, targetSuffix)} targets; ${values(search.maximum_hold_bars, ' bars', 0)} maximum holds; score floors ${values(search.score_floors_out_of_50, '/50', 0)}`;
+        status('risk-reward-status', `${message} Target: ${targetRate}, with its 95% Wilson lower bound also at target, and at least ${minimumPayoff}.`, feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? '' : 'pending');
         if (!candidate) {
             text('risk-reward-description', `${metric(rule?.eligible_validation_candidate_count, '', 0)} of ${metric(rule?.candidate_count, '', 0)} bracket combinations had enough validation trades. No rule was selected from holdout data.`);
             metrics.replaceChildren(metricCard('Rule candidate', 'Unavailable', `${metric(rule?.minimum_validation_trades, ' trades minimum', 0)} per validation and holdout`));
@@ -620,17 +634,21 @@ export function initializeEntryValidation(doc = document) {
         }
         const validation = candidate.validation || {};
         const holdout = candidate.holdout || {};
+        const afterFeeTarget = numeric(candidate.target_after_fee_r_multiple);
+        const targetDescription = afterFeeTarget === null
+            ? `Legacy gross target ${metric(candidate.target_r_multiple, 'R', 2)}`
+            : `target ${metric(afterFeeTarget, '× net risk after fees', 2)}`;
         const verdict = candidate.qualified === true ? 'Passed history, validation, and holdout checks.' : `Validation ${candidate.validation_passed === true ? 'passed' : 'failed'} · holdout ${candidate.holdout_passed === true ? 'passed' : 'failed'} · 1,000-day minimum ${candidate.history_span_passed === true ? 'passed' : 'not met'}.`;
         const wilsonLower = summary => Array.isArray(summary.win_rate_after_fees_wilson_95_pct) ? summary.win_rate_after_fees_wilson_95_pct[0] : null;
-        text('risk-reward-description', `${candidate.entry_rule || '4h NWE/DSS entry'} Score floor ${metric(candidate.minimum_score_out_of_50, '/50', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; target ${metric(candidate.target_r_multiple, 'R', 2)}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
+        text('risk-reward-description', `${candidate.entry_rule || '4h NWE/DSS entry'} Score floor ${metric(candidate.minimum_score_out_of_50, '/50', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; ${targetDescription}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
         metrics.replaceChildren(
             metricCard('Validation win rate', metric(validation.win_rate_after_fees_pct, '%', 1), `${metric(validation.trades, ' trades', 0)} · target ${targetRate}`),
             metricCard('Validation 95% lower bound', metric(wilsonLower(validation), '%', 1), `Must also reach ${targetRate}`),
-            metricCard('Validation payoff', metric(validation.payoff_ratio, '×', 2), `Average after-fee win / loss · minimum ${minimumPayoff}`),
+            metricCard('Validation payoff after fees', metric(validation.payoff_ratio_after_fees ?? validation.payoff_ratio, '×', 2), `Average net win / net loss · minimum ${minimumPayoff}`),
             metricCard('Validation mean net', metric(validation.mean_net_return_pct, '%'), validation.return_basis || 'Configured fees applied'),
             metricCard('Untouched holdout win', metric(holdout.win_rate_after_fees_pct, '%', 1), `${metric(holdout.trades, ' trades', 0)} · not used to select rule`),
             metricCard('Holdout 95% lower bound', metric(wilsonLower(holdout), '%', 1), `Must also reach ${targetRate}`),
-            metricCard('Untouched holdout payoff', metric(holdout.payoff_ratio, '×', 2), `Mean net ${metric(holdout.mean_net_return_pct, '%')}`),
+            metricCard('Untouched holdout payoff after fees', metric(holdout.payoff_ratio_after_fees ?? holdout.payoff_ratio, '×', 2), `Average net win / net loss · mean net ${metric(holdout.mean_net_return_pct, '%')}`),
         );
         text('risk-reward-limits', `Selected from ${metric(rule.candidate_count, '', 0)} predeclared 4h combinations. ${searchDescription}. ${metric(rule.eligible_validation_candidate_count, '', 0)} had enough validation trades. ${rule.fill_assumptions || ''} Configured fees are included; spread, slippage, impact, funding and borrow costs are not. Research does not change live weights or signals.`);
     }
@@ -731,7 +749,7 @@ export function initializeEntryValidation(doc = document) {
         $('model-evidence').setAttribute('aria-labelledby', `model-tab-${modelKind}`);
         const backtest = model.backtest || {};
         const holdout = backtest.holdout || {};
-        const modelState = reportModelState(model, protocol, report.protocol_id);
+        const modelState = reportModelState(model, protocol, report.protocol_id, report.timeframe);
         text('model-title', model.label || (modelKind === 'dss' ? 'DSS-led entry' : 'NWE-led entry'));
         text('model-version', `${model.score_model_id || 'Score model identity unavailable'} · ${model.signal_strategy_id || 'Entry strategy unavailable'}`);
         text('model-state', modelState.label); $('model-state').className = `state-badge ${modelState.tone}`;

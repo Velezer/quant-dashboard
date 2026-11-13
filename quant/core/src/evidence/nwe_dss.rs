@@ -204,6 +204,7 @@ impl TradeSummary {
             "average_win_pct": average_win,
             "average_loss_pct": average_loss,
             "payoff_ratio": self.payoff_ratio(),
+            "payoff_ratio_after_fees": fees_known.then(|| self.payoff_ratio()).flatten(),
             "min_return_pct": self.min_return_pct,
             "max_return_pct": self.max_return_pct,
             "downside_deviation_pct": (self.trades > 0).then(|| (self.negative_squared_returns_pct / self.trades as f64).sqrt()),

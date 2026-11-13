@@ -34,6 +34,7 @@ const FACTOR_NAMES: [&str; 4] = [
 ];
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
     "entry_five_factor_weight_fit_markov_fixed_10_after_fee_target_50_asymmetric_4h_v10";
+pub const ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID: &str = risk_reward::PROTOCOL_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {

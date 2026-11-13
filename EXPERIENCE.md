@@ -214,3 +214,9 @@ lesson only when it will improve future tasks.
   average net win/loss payoff and positive expectancy; show the measured
   evidence and missing coverage without claiming a rule was proven. A 4h
   preference must not block otherwise valid research at other timeframes.
+- For asymmetric brackets, define target R as planned net reward divided by
+  planned net stop loss after configured entry and exit fees. Solve the target
+  price from the fee-adjusted stop, and separately gate the realized average
+  net win/loss ratio because stop gaps and timed exits can change the observed
+  payoff. Version this rule protocol and mark older gross-target reports for
+  rerun without invalidating unrelated score-weight evidence.
