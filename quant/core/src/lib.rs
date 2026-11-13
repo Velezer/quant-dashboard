@@ -66,7 +66,7 @@ pub use evidence::{
     evaluate_entry_score_backtest, ENTRY_SCORE_MIN_HISTORY_DAYS,
     ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
     ENTRY_SCORE_CALIBRATION_BAND_COUNT, ENTRY_SCORE_CALIBRATION_BAND_WIDTH,
-    ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
+    ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID, ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
     historical_evidence_minimum_cagr_pct, historical_evidence_minimum_calendar_month_return_pct,
     historical_evidence_profile, HistoricalEvidenceProfile, MIN_ASYMMETRIC_DAY_TRADE_WIN_RATE_PCT,
     MIN_ASYMMETRIC_REWARD_RISK, MIN_DAY_TRADE_PROFIT_FACTOR, MIN_DAY_TRADE_WIN_RATE_PCT,

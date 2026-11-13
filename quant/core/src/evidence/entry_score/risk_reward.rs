@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 const ATR_LOOKBACK_BARS: usize = 14;
 const STOP_ATR_MULTIPLIERS: [f64; 3] = [0.75, 1.0, 1.5];
-const TARGET_R_MULTIPLES: [f64; 3] = [1.5, 2.0, 2.5];
+const TARGET_AFTER_FEE_R_MULTIPLES: [f64; 3] = [1.5, 2.0, 2.5];
 const MAXIMUM_HOLD_BARS: [usize; 3] = [4, 8, 12];
 const SCORE_FLOORS_OUT_OF_50: [f64; 3] = [
     crate::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50,
@@ -16,11 +16,12 @@ const SCORE_FLOORS_OUT_OF_50: [f64; 3] = [
     20.0,
 ];
 const RISK_REWARD_INTERVAL_NS: i64 = 4 * crate::SECONDS_PER_HOUR * crate::NANOS_PER_SECOND;
+pub(super) const PROTOCOL_ID: &str = "entry_score_risk_reward_after_fee_net_r_v1";
 
 #[derive(Clone, Copy)]
 struct BracketRule {
     stop_atr_multiple: f64,
-    target_r_multiple: f64,
+    target_after_fee_r_multiple: f64,
     maximum_hold_bars: usize,
     minimum_score: f64,
 }
@@ -94,6 +95,76 @@ fn bracket_exit(
     (last_index, bars[last_index].close)
 }
 
+fn after_fee_target_price(
+    entry_price: f64,
+    stop_price: f64,
+    long: bool,
+    target_after_fee_r_multiple: f64,
+    policy: EvaluationPolicy,
+) -> Option<f64> {
+    // The R grid is net reward / net stop loss; solve for the price target after both fees.
+    if !entry_price.is_finite()
+        || entry_price <= 0.0
+        || !stop_price.is_finite()
+        || stop_price <= 0.0
+        || !target_after_fee_r_multiple.is_finite()
+        || target_after_fee_r_multiple <= 0.0
+        || !policy.buy_fee_pct.is_finite()
+        || !policy.sell_fee_pct.is_finite()
+        || policy.buy_fee_pct < 0.0
+        || policy.sell_fee_pct < 0.0
+        || policy.buy_fee_pct >= 100.0
+        || policy.sell_fee_pct >= 100.0
+    {
+        return None;
+    }
+    let (entry_fee_pct, exit_fee_pct) = if long {
+        (policy.buy_fee_pct, policy.sell_fee_pct)
+    } else {
+        (policy.sell_fee_pct, policy.buy_fee_pct)
+    };
+    let stop_gross_return_pct = if long {
+        (stop_price - entry_price) / entry_price * 100.0
+    } else {
+        (entry_price - stop_price) / entry_price * 100.0
+    };
+    let stop_net_return_pct = crate::venue_rules::net_return_after_transaction_fees(
+        stop_gross_return_pct,
+        stop_price / entry_price,
+        entry_fee_pct,
+        exit_fee_pct,
+    );
+    let net_risk_pct = -stop_net_return_pct;
+    if !net_risk_pct.is_finite() || net_risk_pct <= 0.0 {
+        return None;
+    }
+
+    let target_net_return_pct = net_risk_pct * target_after_fee_r_multiple;
+    let exit_price_multiple = if long {
+        let denominator = 100.0 - exit_fee_pct;
+        if denominator <= 0.0 {
+            return None;
+        }
+        (100.0 + entry_fee_pct + target_net_return_pct) / denominator
+    } else {
+        let numerator = 100.0 - entry_fee_pct - target_net_return_pct;
+        let denominator = 100.0 + exit_fee_pct;
+        if numerator <= 0.0 || denominator <= 0.0 {
+            return None;
+        }
+        numerator / denominator
+    };
+    let target_price = entry_price * exit_price_multiple;
+    (target_price.is_finite()
+        && target_price > 0.0
+        && if long {
+            target_price > entry_price
+        } else {
+            target_price < entry_price
+        })
+    .then_some(target_price)
+}
+
 fn evaluate_rule(
     bars: &[StrategyBar],
     observations: &[Option<Observation>],
@@ -141,20 +212,23 @@ fn evaluate_rule(
         if !entry_price.is_finite() || entry_price <= 0.0 || !risk_distance.is_finite() {
             continue;
         }
-        let (stop_price, target_price) = if observation.long {
-            (
-                entry_price - risk_distance,
-                entry_price + risk_distance * rule.target_r_multiple,
-            )
+        let stop_price = if observation.long {
+            entry_price - risk_distance
         } else {
-            (
-                entry_price + risk_distance,
-                entry_price - risk_distance * rule.target_r_multiple,
-            )
+            entry_price + risk_distance
         };
-        if stop_price <= 0.0 || target_price <= 0.0 {
+        if stop_price <= 0.0 {
             continue;
         }
+        let Some(target_price) = after_fee_target_price(
+            entry_price,
+            stop_price,
+            observation.long,
+            rule.target_after_fee_r_multiple,
+            policy,
+        ) else {
+            continue;
+        };
         let (exit_index, exit_price) = bracket_exit(
             bars,
             entry_index,
@@ -234,7 +308,7 @@ fn candidate_json(
         "atr_lookback_bars": ATR_LOOKBACK_BARS,
         "stop_distance": format!("{} × 4h ATR", candidate.rule.stop_atr_multiple),
         "stop_atr_multiple": candidate.rule.stop_atr_multiple,
-        "target_r_multiple": candidate.rule.target_r_multiple,
+        "target_after_fee_r_multiple": candidate.rule.target_after_fee_r_multiple,
         "maximum_hold_bars": candidate.rule.maximum_hold_bars,
         "validation": summary_json(validation, fees_known),
         "holdout": summary_json(holdout, fees_known),
@@ -257,11 +331,12 @@ pub(super) fn report(
     bar_interval_ns: i64,
 ) -> Value {
     let candidate_count = STOP_ATR_MULTIPLIERS.len()
-        * TARGET_R_MULTIPLES.len()
+        * TARGET_AFTER_FEE_R_MULTIPLES.len()
         * MAXIMUM_HOLD_BARS.len()
         * SCORE_FLOORS_OUT_OF_50.len();
     let empty = |status: &str, reason: &str| {
         json!({
+            "protocol_id": PROTOCOL_ID,
             "status": status,
             "reason": reason,
             "preferred_timeframe": "4h",
@@ -273,10 +348,11 @@ pub(super) fn report(
             "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
             "search_space": {
                 "atr14_stop_multiples": STOP_ATR_MULTIPLIERS,
-                "target_r_multiples": TARGET_R_MULTIPLES,
+                "target_after_fee_r_multiples": TARGET_AFTER_FEE_R_MULTIPLES,
                 "maximum_hold_bars": MAXIMUM_HOLD_BARS,
                 "score_floors_out_of_50": SCORE_FLOORS_OUT_OF_50,
             },
+            "target_r_basis": "after configured entry and exit fees",
             "fees_applied": template.fees_known,
             "candidate": Value::Null,
             "selection_uses_holdout": false,
@@ -316,12 +392,12 @@ pub(super) fn report(
     let mut selected: Option<ValidationCandidate> = None;
     let mut eligible_candidates = 0;
     for stop_atr_multiple in STOP_ATR_MULTIPLIERS {
-        for target_r_multiple in TARGET_R_MULTIPLES {
+        for target_after_fee_r_multiple in TARGET_AFTER_FEE_R_MULTIPLES {
             for maximum_hold_bars in MAXIMUM_HOLD_BARS {
                 for minimum_score in SCORE_FLOORS_OUT_OF_50 {
                     let rule = BracketRule {
                         stop_atr_multiple,
-                        target_r_multiple,
+                        target_after_fee_r_multiple,
                         maximum_hold_bars,
                         minimum_score,
                     };
@@ -392,6 +468,7 @@ pub(super) fn report(
         _ => "The frozen 4h rule met the after-fee confidence, payoff, and expectancy targets on validation and untouched holdout data.",
     };
     json!({
+        "protocol_id": PROTOCOL_ID,
         "status": status,
         "reason": reason,
         "preferred_timeframe": "4h",
@@ -400,7 +477,7 @@ pub(super) fn report(
         "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
         "search_space": {
             "atr14_stop_multiples": STOP_ATR_MULTIPLIERS,
-            "target_r_multiples": TARGET_R_MULTIPLES,
+            "target_after_fee_r_multiples": TARGET_AFTER_FEE_R_MULTIPLES,
             "maximum_hold_bars": MAXIMUM_HOLD_BARS,
             "score_floors_out_of_50": SCORE_FLOORS_OUT_OF_50,
         },
@@ -408,8 +485,9 @@ pub(super) fn report(
         "eligible_validation_candidate_count": eligible_candidates,
         "minimum_validation_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
         "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
-        "selection_method": "Predeclared ATR stop, R-multiple target, max-hold, and score-floor grid; selection uses validation net return among candidates whose after-fee win rate and 95% Wilson lower bound both reach the target, with the required asymmetric payoff and positive expectancy. The selected rule is evaluated once on untouched holdout data.",
-        "fill_assumptions": "Enter at the next 4h open. Stops fill at the stop or worse after a gap. Targets fill at the target. If both stop and target are inside one bar, assume the stop fills first. Untriggered rules exit at the max-hold bar close.",
+        "selection_method": "Predeclared ATR stop, target-to-stop net R after configured entry and exit fees, max-hold, and score-floor grid; selection uses validation net return among candidates whose realized after-fee win rate and 95% Wilson lower bound both reach the target, with the required realized average net win/loss payoff and positive expectancy. The selected rule is evaluated once on untouched holdout data.",
+        "fill_assumptions": "Enter at the next 4h open. The target price is solved so planned target reward divided by planned stop loss is the selected R multiple after configured entry and exit fees. Stops fill at the stop or worse after a gap, so gaps can reduce realized payoff. Targets fill at the target. If both stop and target are inside one bar, assume the stop fills first. Untriggered rules exit at the max-hold bar close. Observed validation and holdout payoff uses realized net trade returns after fees.",
+        "target_r_basis": "after configured entry and exit fees",
         "fees_applied": true,
         "excluded_costs": ["Spread", "Slippage", "Market impact", "Funding or borrow costs"],
         "selected_score_weights": weights,
