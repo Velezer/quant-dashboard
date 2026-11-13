@@ -191,3 +191,7 @@ lesson only when it will improve future tasks.
   order can let a larger app consume every bounded batch and leave another
   app's registered instruments without candles, making its signal scan
   correctly but uselessly report missing history.
+- After a first Stockbit candle is stored on a fresh deployment, queue one
+  Stockbit-only rescan. A successful registry refresh can happen before the
+  bounded candle worker has ingested any prices, so a registry-only rescan still
+  leaves the UI empty until the next periodic interval.

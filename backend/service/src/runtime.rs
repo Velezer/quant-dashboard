@@ -302,6 +302,9 @@ pub(super) struct AppState {
     pub(super) stale_daily_sync_priority: Mutex<Option<StaleSignalSyncPriority>>,
     /// Unix-second epoch of the last daily registry sync. Zero means never run.
     pub(super) last_registry_sync_epoch: AtomicU64,
+    /// Avoid a startup scan before Stockbit candles arrive being the only
+    /// Stockbit refresh until the next scheduled scan interval.
+    stockbit_market_data_scan_requested: AtomicBool,
 }
 
 impl AppState {
@@ -328,6 +331,7 @@ impl AppState {
             stale_intraday_sync_priority: Mutex::new(StaleSignalSyncPriorityQueue::default()),
             stale_daily_sync_priority: Mutex::new(None),
             last_registry_sync_epoch: AtomicU64::new(0),
+            stockbit_market_data_scan_requested: AtomicBool::new(false),
         })
     }
 
@@ -597,6 +601,16 @@ impl AppState {
 
     pub(super) fn request_scan_for_app(&self, exchange_id: &str) {
         self.queue_scan(Some(exchange_id.to_string()));
+    }
+
+    pub(super) fn request_stockbit_scan_after_market_data(&self) {
+        if self
+            .stockbit_market_data_scan_requested
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            self.request_scan_for_app("stockbit");
+        }
     }
 
     pub(super) fn request_scan_for_selected_signal(&self, target: SelectedSignalScanTarget) {
