@@ -3,7 +3,7 @@ import { QuantChart } from './chart-math.js';
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
 import { drawMomentumPane } from './chart-momentum-renderer.js';
 import { pineChartPlots } from './pine-chart-output.js';
-import { isIntradayChartTimeframe } from './chart-candle-time.js';
+import { formatChartCandleTimestamp, isIntradayChartTimeframe } from './chart-candle-time.js';
 import { estimateVolumeDeltaBars, volumeDeltaExtent } from './volume-delta.js';
 
 export function withChartPricePaneClip(ctx, bounds, render) {
@@ -35,10 +35,41 @@ export function visibleOverlayPriceRange(plots, startIndex, endIndex) {
     return { min, max };
 }
 
+function formatChartGapDuration(milliseconds) {
+    const hours = Math.max(0, Number(milliseconds) || 0) / 3_600_000;
+    if (hours >= 48) return `${Math.round(hours / 24).toLocaleString()}d`;
+    if (hours >= 1) return `${Math.round(hours).toLocaleString()}h`;
+    return `${Math.max(1, Math.round(hours * 60))}m`;
+}
+
+function updateChartContinuityWarning(context, signal, timeframe) {
+    const badge = document.getElementById('chart-continuity-warning');
+    if (!badge) return;
+    if (!context?.hasGap) {
+        badge.className = 'hidden max-w-[340px] px-2 py-0.5 rounded border text-[10px] font-bold leading-tight';
+        badge.textContent = '';
+        badge.removeAttribute('title');
+        badge.removeAttribute('aria-label');
+        return;
+    }
+    const timeframeLabel = String(timeframe || '--').toUpperCase();
+    const symbol = signal?.asset || signal?.symbol || 'Crypto asset';
+    const from = formatChartCandleTimestamp(context.gapFrom?.time, timeframe, { includeWib: true }) || context.gapFrom?.date || 'earlier history';
+    const to = formatChartCandleTimestamp(context.gapTo?.time, timeframe, { includeWib: true }) || context.gapTo?.date || 'latest history';
+    const duration = formatChartGapDuration(context.gapMilliseconds);
+    const detail = `${symbol} ${timeframeLabel} has a ${duration} gap between ${from} and ${to}. Showing ${context.candles.length} latest consecutive bars and omitting ${context.omittedBars} older bars from this view; the stored candles are unchanged. Price overlays and regime states are suppressed until the visible history is continuous.`;
+    badge.className = 'inline-flex max-w-[340px] px-2 py-0.5 rounded border border-amber-700/80 bg-amber-950/70 text-amber-300 text-[10px] font-bold leading-tight';
+    badge.textContent = `DATA GAP · ${context.candles.length} recent bars · ${context.omittedBars} older hidden`;
+    badge.setAttribute('aria-label', detail);
+    badge.title = detail;
+}
+
 /** Draws the selected signal's candles, current price, and indicator pane. */
 export function installChartRenderer() {
             function drawCandleChartNow(signal) {
                 if (!signal || (selectedSignal && !isSelectedSignal(signal))) return;
+                const chartCandleContext = getDashboardBinding('getChartCandleContext')?.(signal)
+                    || { candles: getChartCandles(signal), hasGap: false, omittedBars: 0 };
                 getDashboardBinding('updateMarkovRegimeStatus')?.(signal);
                 const canvas = document.getElementById('candleCanvas');
                 const dssCanvas = document.getElementById('dssCanvas');
@@ -72,10 +103,14 @@ export function installChartRenderer() {
                 const venue = executionVenueMeta(signal);
                 const signalTimeframe = String(signal.timeframe || '--').toUpperCase();
                 const volumeDeltaEnabled = getDashboardBinding('showVolumeDelta') === true;
-                const latestMarkovState = signal.markov_regimes_by_tf?.[activeTimeframe]?.at(-1)?.state;
+                const latestMarkovState = chartCandleContext.hasGap
+                    ? null
+                    : signal.markov_regimes_by_tf?.[activeTimeframe]?.at(-1)?.state;
                 const markovDescription = getDashboardBinding('showMarkovRegimeIndicator') === false
                     ? 'Markov regime ribbon hidden.'
-                    : `Markov regime ribbon shows causal historical states; latest is ${latestMarkovState?.replaceAll('_', ' ') || 'warming up or unavailable'}.`;
+                    : chartCandleContext.hasGap
+                        ? 'Markov regime ribbon is suppressed because the selected crypto history has a long gap.'
+                        : `Markov regime ribbon shows causal historical states; latest is ${latestMarkovState?.replaceAll('_', ' ') || 'warming up or unavailable'}.`;
                 canvas.setAttribute('aria-label', `${venue.label} · ${signal.asset || signal.symbol || 'Selected asset'} · ${activeTimeframe.toUpperCase()} chart. Signal timeframe ${signalTimeframe}. Signal price ${validCurrentPrice === null ? 'unavailable' : formatPrice(validCurrentPrice)}. ${volumeDeltaEnabled ? 'Volume delta estimate from chart-bar direction.' : 'Synchronized volume histogram.'} ${markovDescription} Plus/minus zoom, arrows pan, Home fits. Drag the bottom date axis horizontally to scale dates and the right price axis vertically to scale price.`);
                 if (typeof updateChartDataWarning === 'function') updateChartDataWarning(signal);
 
@@ -99,7 +134,8 @@ export function installChartRenderer() {
                 const height = rect.height;
                 ctx.clearRect(0, 0, width, height);
 
-                const allCandles = getChartCandles(signal);
+                updateChartContinuityWarning(chartCandleContext, signal, activeTimeframe);
+                const allCandles = chartCandleContext.candles;
                 const allVolumeDeltaBars = estimateVolumeDeltaBars(allCandles);
                 getDashboardBinding('updateVolumeDeltaStatus')?.(allCandles, signal);
                 if (allCandles.length === 0) {
@@ -147,7 +183,7 @@ export function installChartRenderer() {
                 }
                 const view = QuantChart.viewport(totalBars, activeWindowSize, windowPanOffset);
                 const windowSize = view.size;
-                activeWindowSize = view.size;
+                if (totalBars >= activeWindowSize) activeWindowSize = view.size;
                 windowPanOffset = view.offset;
                 const endIndex = Math.min(totalBars, Math.ceil(view.right));
                 const startIndex = Math.max(0, Math.floor(view.left));
@@ -194,7 +230,9 @@ export function installChartRenderer() {
                     });
                 }
 
-                const pinePlots = pineChartPlots(signal.pine_indicator_outputs, activeTimeframe, allCandles.length);
+                const pinePlots = chartCandleContext.hasGap
+                    ? { overlayPlots: [], panePlots: [], hasDssBressert: false, dssOutput: null, nweOutsideDistanceOutput: null, paneOutput: null }
+                    : pineChartPlots(signal.pine_indicator_outputs, activeTimeframe, allCandles.length);
                 const pineOverlayRange = visibleOverlayPriceRange(pinePlots.overlayPlots, startIndex, endIndex);
                 if (Number.isFinite(pineOverlayRange.min) && Number.isFinite(pineOverlayRange.max)) {
                     minP = Math.min(minP, pineOverlayRange.min);
@@ -264,7 +302,7 @@ export function installChartRenderer() {
                 }
 
                 const n = candles.length;
-                const barW = Math.max(0.6, plotW / windowSize * 0.65);
+                const barW = Math.max(0.6, Math.min(18, plotW / windowSize * 0.65));
                 const stepX = plotW / windowSize;
                 const indicatorX = index => padding.left + (index - barFraction) * stepX + stepX / 2;
 
@@ -416,7 +454,7 @@ export function installChartRenderer() {
                 ctx.stroke();
 
                 if (getDashboardBinding('showMarkovRegimeIndicator') !== false) {
-                    const history = signal.markov_regimes_by_tf?.[activeTimeframe];
+                    const history = chartCandleContext.hasGap ? [] : signal.markov_regimes_by_tf?.[activeTimeframe];
                     const regimeColors = {
                         BULL_TREND: '#10b981',
                         BEAR_TREND: '#f43f5e',
@@ -828,7 +866,9 @@ export function installChartRenderer() {
                     barW,
                     chartCrosshair,
                     registeredPaneOutput: pinePlots.paneOutput,
-                    registeredPaneState: signal.pine_indicator_ui_state,
+                    registeredPaneState: chartCandleContext.hasGap && signal.pine_indicator_ui_state
+                        ? { ...signal.pine_indicator_ui_state, state: 'error', message: 'Suppressed because the selected crypto candle history has a long gap.' }
+                        : signal.pine_indicator_ui_state,
                     chartTimeframe: activeTimeframe,
                     chartIndicatorScale,
                 });

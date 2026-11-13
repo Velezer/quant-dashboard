@@ -195,3 +195,8 @@ lesson only when it will improve future tasks.
   Stockbit-only rescan. A successful registry refresh can happen before the
   bounded candle worker has ingested any prices, so a registry-only rescan still
   leaves the UI empty until the next periodic interval.
+- Before drawing continuous-market crypto candles, check timestamp continuity.
+  A short recent segment after a large history gap must not be index-spaced
+  against old candles or inherit their NWE/Markov state. Label omitted stored
+  bars, scale to the latest continuous segment, and keep absent oscillator
+  values unavailable instead of plotting a neutral 50.

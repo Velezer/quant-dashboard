@@ -214,12 +214,13 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
             return Number.isFinite(value) ? value : null;
         };
         const lastVisibleIndex = startIndex + candles.length - 1;
+        const lastCandle = candles[candles.length - 1];
         const currentDss = isRegisteredDss
             ? valueAt(customDssPlot, lastVisibleIndex)
-            : ((candles[candles.length - 1]?.dss !== undefined) ? candles[candles.length - 1].dss : 50.0);
+            : (Number.isFinite(lastCandle?.dss) ? lastCandle.dss : null);
         const currentTrigger = isRegisteredDss
             ? valueAt(customTriggerPlot, lastVisibleIndex)
-            : ((candles[candles.length - 1]?.trigger !== undefined) ? candles[candles.length - 1].trigger : 50.0);
+            : (Number.isFinite(lastCandle?.trigger) ? lastCandle.trigger : null);
 
         // TradingView Right Axis Separator Line
         dCtx.strokeStyle = '#2a2e39';
@@ -232,13 +233,17 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
         // DSS Gradient Momentum Histogram & Turning Point Markers
         const dssGradZeroY = dHeight - 34;
         if (!isRegisteredPaneOutput) candles.forEach((c, i) => {
+            if (!Number.isFinite(c.dss)) return;
             const x = dssPadding.left + (i - barFraction) * stepX + stepX / 2;
             const prevC = i > 0 ? candles[i - 1] : c;
             const prev2C = i > 1 ? candles[i - 2] : prevC;
-            const dssVal = c.dss !== undefined ? c.dss : 50;
-
-            const grad = c.gradient !== undefined ? c.gradient : (dssVal - (prevC.dss !== undefined ? prevC.dss : 50));
-            const prevGrad = prevC.gradient !== undefined ? prevC.gradient : ((prevC.dss !== undefined ? prevC.dss : 50) - (prev2C.dss !== undefined ? prev2C.dss : 50));
+            const dssVal = c.dss;
+            const previousDss = Number.isFinite(prevC.dss) ? prevC.dss : null;
+            const previousPreviousDss = Number.isFinite(prev2C.dss) ? prev2C.dss : null;
+            const grad = Number.isFinite(c.gradient) ? c.gradient : (previousDss === null ? 0 : dssVal - previousDss);
+            const prevGrad = Number.isFinite(prevC.gradient)
+                ? prevC.gradient
+                : (previousDss === null || previousPreviousDss === null ? 0 : previousDss - previousPreviousDss);
 
             // Mini gradient bar
             const gradBarH = Math.min(10, Math.max(1.5, Math.abs(grad) * 2.2));
@@ -275,7 +280,6 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
             }
         });
 
-        const lastCandle = candles[candles.length - 1];
         if (isRegisteredPaneOutput) {
             for (const plot of panePlots) {
                 if (plot.kind === 'hline') {
@@ -339,7 +343,7 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
             dCtx.beginPath();
             let trigStarted = false;
             candles.forEach((c, i) => {
-                if (c.trigger !== undefined && !isNaN(c.trigger)) {
+                if (Number.isFinite(c.trigger)) {
                     const x = dssPadding.left + (i - barFraction) * stepX + stepX / 2;
                     const y = getDssY(c.trigger);
                     if (!trigStarted) {
@@ -359,7 +363,7 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
             dCtx.beginPath();
             let dssStarted = false;
             candles.forEach((c, i) => {
-                if (c.dss !== undefined && !isNaN(c.dss)) {
+                if (Number.isFinite(c.dss)) {
                     const x = dssPadding.left + (i - barFraction) * stepX + stepX / 2;
                     const y = getDssY(c.dss);
                     if (!dssStarted) {
@@ -372,6 +376,14 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
             });
             dCtx.stroke();
             dCtx.restore();
+        }
+
+        const hasNativeMomentumValues = candles.some(candle => Number.isFinite(candle.dss) || Number.isFinite(candle.trigger));
+        if (!isRegisteredPaneSelected && !hasNativeMomentumValues) {
+            dCtx.fillStyle = '#9ca3af';
+            dCtx.font = '11px sans-serif';
+            dCtx.textAlign = 'center';
+            dCtx.fillText('No momentum reading · more continuous history needed', dWidth / 2, dHeight / 2);
         }
 
         const hasVisiblePaneValues = panePlots.some(plot => plot.kind !== 'hline'
@@ -470,17 +482,17 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
         const targetC = (chartCrosshair.active && chartCrosshair.candle) ? chartCrosshair.candle : (lastCandle || {});
         const curDss = isRegisteredDss
             ? valueAt(customDssPlot, paneReadoutIndex)
-            : (targetC.dss !== undefined ? targetC.dss : currentDss);
+            : (Number.isFinite(targetC.dss) ? targetC.dss : currentDss);
         const curTrig = isRegisteredDss
             ? valueAt(customTriggerPlot, paneReadoutIndex)
-            : (targetC.trigger !== undefined ? targetC.trigger : currentTrigger);
+            : (Number.isFinite(targetC.trigger) ? targetC.trigger : currentTrigger);
         const priorDss = isRegisteredDss
             ? valueAt(customDssPlot, Math.max(startIndex, paneReadoutIndex - 1))
             : null;
         const curGrad = isRegisteredDss && Number.isFinite(curDss) && Number.isFinite(priorDss)
             ? curDss - priorDss
-            : (targetC.gradient !== undefined ? targetC.gradient : 0.0);
-        const curAccel = targetC.accel !== undefined ? targetC.accel : 0.0;
+            : (Number.isFinite(targetC.gradient) ? targetC.gradient : null);
+        const curAccel = Number.isFinite(targetC.accel) ? targetC.accel : null;
 
         const dssReadoutEl = document.getElementById('dssLiveReadout');
         const dssBadgeEl = document.getElementById('dssStatusBadge');
@@ -501,6 +513,10 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
                 dssReadoutEl.textContent = `DSS ${dssText} · Trig ${triggerText}`;
                 dssReadoutEl.title = `${registeredDisplayName} by ${registeredAuthor} · Browser WASM · ${sourceContext}`;
                 dssReadoutEl.setAttribute('aria-label', `${registeredDisplayName} ${dssText}; Trigger ${triggerText}; Browser WASM; ${sourceContext}`);
+            } else if (!Number.isFinite(curDss) || !Number.isFinite(curTrig)) {
+                dssReadoutEl.textContent = 'No reading';
+                dssReadoutEl.title = 'Momentum is unavailable until enough continuous chart history is stored.';
+                dssReadoutEl.setAttribute('aria-label', 'No momentum reading. More continuous chart history is required.');
             } else {
                 const direction = curDss >= curTrig ? 'rising' : 'falling';
                 dssReadoutEl.textContent = `${curDss.toFixed(1)} · ${direction}`;
@@ -515,27 +531,31 @@ export function drawMomentumPane({ dssCanvas, pixelRatio, candles, allCandles, s
                     : `Pine WASM · ${String(sourceTimeframe || registeredPaneOutput.timeframe).toUpperCase()}`;
                 dssBadgeEl.title = sourceContext;
                 dssBadgeEl.className = 'dss-signal-status text-[10px] font-semibold px-2 py-0.5 rounded border bg-gray-900 text-gray-300 border-gray-700';
+            } else if (!Number.isFinite(curDss) || !Number.isFinite(curTrig)) {
+                dssBadgeEl.textContent = 'No reading';
+                dssBadgeEl.title = 'Momentum needs enough continuous stored bars to produce a valid DSS value.';
+                dssBadgeEl.className = 'dss-signal-status text-[10px] font-semibold px-2 py-0.5 rounded border bg-gray-800 text-gray-400 border-gray-700';
             } else {
-            let signalLabel = 'Momentum falling';
-            let signalStyle = 'bg-rose-950/70 text-rose-300 border-rose-800';
-            if (curDss <= 30 && curGrad > 0) {
-                signalLabel = 'Low · turning up';
-                signalStyle = 'bg-emerald-950/70 text-emerald-300 border-emerald-800';
-            } else if (curDss >= 75 && curGrad < 0) {
-                signalLabel = 'High · turning down';
-                signalStyle = 'bg-rose-950/70 text-rose-300 border-rose-800';
-            } else if (curDss <= 30) {
-                signalLabel = 'Low momentum';
-                signalStyle = 'bg-amber-950/70 text-amber-300 border-amber-800';
-            } else if (curDss >= 80) {
-                signalLabel = 'High momentum';
-                signalStyle = 'bg-amber-950/70 text-amber-300 border-amber-800';
-            } else if (curDss >= curTrig) {
-                signalLabel = 'Momentum rising';
-                signalStyle = 'bg-emerald-950/70 text-emerald-300 border-emerald-800';
-            }
-            dssBadgeEl.textContent = signalLabel;
-            dssBadgeEl.className = `dss-signal-status text-[10px] font-semibold px-2 py-0.5 rounded border ${signalStyle}`;
+                let signalLabel = 'Momentum falling';
+                let signalStyle = 'bg-rose-950/70 text-rose-300 border-rose-800';
+                if (curDss <= 30 && curGrad > 0) {
+                    signalLabel = 'Low · turning up';
+                    signalStyle = 'bg-emerald-950/70 text-emerald-300 border-emerald-800';
+                } else if (curDss >= 75 && curGrad < 0) {
+                    signalLabel = 'High · turning down';
+                    signalStyle = 'bg-rose-950/70 text-rose-300 border-rose-800';
+                } else if (curDss <= 30) {
+                    signalLabel = 'Low momentum';
+                    signalStyle = 'bg-amber-950/70 text-amber-300 border-amber-800';
+                } else if (curDss >= 80) {
+                    signalLabel = 'High momentum';
+                    signalStyle = 'bg-amber-950/70 text-amber-300 border-amber-800';
+                } else if (curDss >= curTrig) {
+                    signalLabel = 'Momentum rising';
+                    signalStyle = 'bg-emerald-950/70 text-emerald-300 border-emerald-800';
+                }
+                dssBadgeEl.textContent = signalLabel;
+                dssBadgeEl.className = `dss-signal-status text-[10px] font-semibold px-2 py-0.5 rounded border ${signalStyle}`;
             }
         }
         const computeBadge = document.getElementById('dssIndicatorComputeStatus');
