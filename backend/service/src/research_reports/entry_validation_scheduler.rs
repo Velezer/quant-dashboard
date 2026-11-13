@@ -7,6 +7,8 @@ const DAILY_REFRESH_RETRY_SECONDS: u64 = 15 * quant_core::SECONDS_PER_MINUTE as 
 const DAILY_REFRESH_WAIT_SECONDS: u64 = 5;
 const DAILY_REFRESH_PAUSE_MILLISECONDS: u64 = 100;
 const PROFILE_EVALUATION_RETRY_PAIRS: usize = 500;
+const DAILY_REFRESH_TIMEFRAME_PRIORITY: [&str; 7] =
+    ["4h", "1h", "30m", "2h", "15m", "1d", "1w"];
 
 static DAILY_REFRESH_WAKE: (DailyRefreshMutex<bool>, Condvar) =
     (DailyRefreshMutex::new(false), Condvar::new());
@@ -42,6 +44,13 @@ fn required_profile_coverage_pairs(total_pairs: usize) -> usize {
         .saturating_mul(PROFILE_MIN_COHORT_COVERAGE_PCT)
         .saturating_add(99)
         / 100
+}
+
+fn timeframe_priority(timeframe: &str) -> usize {
+    DAILY_REFRESH_TIMEFRAME_PRIORITY
+        .iter()
+        .position(|candidate| *candidate == timeframe)
+        .unwrap_or(usize::MAX)
 }
 
 fn evaluate_scoring_profiles(
@@ -113,6 +122,11 @@ fn refresh_targets(connection: &Connection) -> Result<Vec<RefreshTarget>, String
             });
         }
     }
+    targets.sort_by(|left, right| {
+        timeframe_priority(&left.timeframe)
+            .cmp(&timeframe_priority(&right.timeframe))
+            .then_with(|| left.instrument_id.cmp(&right.instrument_id))
+    });
     Ok(targets)
 }
 
@@ -195,17 +209,11 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
                 && target.timeframe.as_str() == resume_timeframe.as_str()
         });
         let next_position = || {
-            let frame_rank = SIGNAL_SCREENER_TIMEFRAMES
-                .iter()
-                .position(|frame| *frame == resume_timeframe.as_str())
-                .unwrap_or(usize::MAX);
+            let frame_rank = timeframe_priority(resume_timeframe);
             targets.iter().position(|target| {
-                target.instrument_id.as_str() > resume_instrument_id.as_str()
-                    || (target.instrument_id.as_str() == resume_instrument_id.as_str()
-                        && SIGNAL_SCREENER_TIMEFRAMES
-                            .iter()
-                            .position(|frame| *frame == target.timeframe.as_str())
-                            .is_some_and(|rank| rank > frame_rank))
+                timeframe_priority(&target.timeframe) > frame_rank
+                    || (timeframe_priority(&target.timeframe) == frame_rank
+                        && target.instrument_id.as_str() > resume_instrument_id.as_str())
             })
         };
         (

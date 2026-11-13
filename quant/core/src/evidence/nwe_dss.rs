@@ -83,6 +83,29 @@ impl TradeSummary {
     ) {
         let entry_price = bars[entry].open;
         let exit_price = bars[exit].close;
+        self.add_prices(
+            bars[entry].time,
+            bars[exit].time,
+            entry_price,
+            exit_price,
+            direction,
+            buy_fee_pct,
+            sell_fee_pct,
+            fees_known,
+        );
+    }
+
+    pub(super) fn add_prices(
+        &mut self,
+        entry_time: i64,
+        exit_time: i64,
+        entry_price: f64,
+        exit_price: f64,
+        direction: &str,
+        buy_fee_pct: f64,
+        sell_fee_pct: f64,
+        fees_known: bool,
+    ) {
         if !entry_price.is_finite() || !exit_price.is_finite() || entry_price <= 0.0 {
             return;
         }
@@ -130,16 +153,40 @@ impl TradeSummary {
         if net < 0.0 {
             self.negative_returns_pct += net.abs();
         }
-        self.first_time.get_or_insert(bars[entry].time);
-        self.last_time = Some(bars[exit].time);
+        self.first_time.get_or_insert(entry_time);
+        self.last_time = Some(exit_time);
     }
 
     pub(super) fn mean_net(self) -> Option<f64> {
         (self.trades > 0).then(|| self.net_sum_pct / self.trades as f64)
     }
 
+    pub(super) fn win_rate(self) -> Option<f64> {
+        (self.trades > 0).then(|| self.wins as f64 / self.trades as f64 * 100.0)
+    }
+
+    pub(super) fn profit_factor(self) -> Option<f64> {
+        if self.negative_returns_pct > 0.0 {
+            Some(self.positive_returns_pct / self.negative_returns_pct)
+        } else if self.positive_returns_pct > 0.0 {
+            Some(99.0)
+        } else {
+            None
+        }
+    }
+
     pub(super) fn return_autocorrelation_json(self) -> Value {
         self.lag_one_returns.to_json("Consecutive non-overlapping trade returns in chronological order; equal time spacing is not assumed.")
+    }
+
+    pub(super) fn payoff_ratio(self) -> Option<f64> {
+        let average_win = (self.wins > 0).then(|| self.positive_returns_pct / self.wins as f64);
+        let average_loss =
+            (self.losses > 0).then(|| self.negative_returns_pct / self.losses as f64);
+        average_win
+            .zip(average_loss)
+            .map(|(win, loss)| win / loss)
+            .filter(|ratio| ratio.is_finite())
     }
 
     pub(super) fn to_json(self, fees_known: bool) -> Value {
@@ -152,12 +199,11 @@ impl TradeSummary {
         let profit_factor_unbounded =
             self.positive_returns_pct > 0.0 && self.negative_returns_pct == 0.0;
         let average_win = (self.wins > 0).then(|| self.positive_returns_pct / self.wins as f64);
-        let average_loss =
-            (self.losses > 0).then(|| self.negative_returns_pct / self.losses as f64);
+        let average_loss = (self.losses > 0).then(|| self.negative_returns_pct / self.losses as f64);
         json!({
             "average_win_pct": average_win,
             "average_loss_pct": average_loss,
-            "payoff_ratio": average_win.zip(average_loss).map(|(win, loss)| win / loss),
+            "payoff_ratio": self.payoff_ratio(),
             "min_return_pct": self.min_return_pct,
             "max_return_pct": self.max_return_pct,
             "downside_deviation_pct": (self.trades > 0).then(|| (self.negative_squared_returns_pct / self.trades as f64).sqrt()),

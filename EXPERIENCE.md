@@ -103,7 +103,9 @@ lesson only when it will improve future tasks.
 - Apply the 1,000-day validation minimum to the full chronological history, not
   the 20% holdout tail. Requiring 1,000 days inside that tail would require about
   fourteen years of stored data and exceed the bounded 100,000-candle report
-  read; keep the holdout's trade-count requirement as a separate check.
+  read; keep the holdout's trade-count requirement as a separate check. Treat
+  1,000 days as a minimum, never a maximum history horizon; use all completed
+  candles in the report sample and disclose the separate candle-read cap.
 - A daily all-ticker backtest must be sequential, resumable, controllable, and
   visible on its research page. Provide run-now, pause-after-current, and resume
   controls there; persist its ticker/timeframe cursor and controls, wake the
@@ -206,3 +208,9 @@ lesson only when it will improve future tasks.
   against old candles or inherit their NWE/Markov state. Label omitted stored
   bars, scale to the latest continuous segment, and keep absent oscillator
   values unavailable instead of plotting a neutral 50.
+- A preferred-timeframe rule search must use a predeclared grid, select only on
+  chronological validation data, and score its frozen choice once on holdout.
+  Require the after-fee win rate and its 95% lower confidence bound, plus
+  average net win/loss payoff and positive expectancy; show the measured
+  evidence and missing coverage without claiming a rule was proven. A 4h
+  preference must not block otherwise valid research at other timeframes.

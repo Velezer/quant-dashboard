@@ -386,7 +386,7 @@ fn build_report(
                 json!(source["venue_native"] == true && source["is_proxy"] != true);
             checks["fees_known"] = json!(fees_known);
             checks["execution_costs_complete"] = json!(false);
-            let requirements = [
+            let mut requirements = vec![
                 ("registered_identity","Exact verified app/product/ticker identity is required."),
                 ("holdout_sample_sufficient","The untouched holdout needs more completed entry outcomes."),
                 ("history_span_sufficient","The full completed history does not meet the 1,000-day minimum."),
@@ -396,6 +396,22 @@ fn build_report(
                 ("fees_known","The exact app/product fee policy is unknown."),
                 ("execution_costs_complete","Slippage, depth, impact and applicable funding/borrow costs are not fully modeled."),
             ];
+            if backtest
+                .pointer("/risk_reward_rule/preferred_timeframe")
+                .and_then(Value::as_str)
+                == Some(timeframe)
+            {
+                checks["asymmetric_risk_reward_rule"] = json!(
+                    backtest
+                        .pointer("/risk_reward_rule/candidate/qualified")
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                );
+                requirements.push((
+                    "asymmetric_risk_reward_rule",
+                    "The 4h after-fee stop/target rule has not passed validation and untouched holdout checks.",
+                ));
+            }
             let blocking_reasons: Vec<&str> = requirements
                 .iter()
                 .filter(|(key, _)| checks[*key] != true)
