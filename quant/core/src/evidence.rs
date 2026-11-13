@@ -26,7 +26,8 @@ use profile::{resolve_evidence_strategy, EvidenceStrategy};
 use serde_json::{json, Value};
 
 pub use entry_score::{
-    evaluate_entry_score_backtest, ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
+    evaluate_entry_score_backtest, ENTRY_SCORE_MIN_HISTORY_DAYS,
+    ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
     ENTRY_SCORE_CALIBRATION_BAND_COUNT, ENTRY_SCORE_CALIBRATION_BAND_WIDTH,
     ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
 };

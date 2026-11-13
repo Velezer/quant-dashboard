@@ -410,8 +410,8 @@ fn candidate_decision(
     if coverage_pct + f64::EPSILON < PROFILE_MIN_COHORT_COVERAGE_PCT as f64 {
         blockers.push("The candidate vector does not cover at least 80% of the refreshed cohort.");
     }
-    if evidence.minimum_history_days < quant_core::MIN_EVIDENCE_SAMPLE_DAYS {
-        blockers.push("Every included instrument needs at least 730 calendar days of stored history.");
+    if evidence.minimum_history_days < quant_core::ENTRY_SCORE_MIN_HISTORY_DAYS {
+        blockers.push("Every included instrument needs at least 1,000 calendar days of stored history.");
     }
     if !evidence.validation.target_passes() {
         blockers.push("Validation does not meet the 50% after-fee win-rate target with a 95% Wilson lower bound.");
@@ -464,8 +464,8 @@ fn candidate_decision(
             if !validation.target_passes() || !holdout.target_passes() {
                 slice_blockers.push("validation or holdout misses the 50% after-fee target".to_string());
             }
-            if minimum_history_days < quant_core::MIN_EVIDENCE_SAMPLE_DAYS {
-                slice_blockers.push("history is shorter than 730 days".to_string());
+            if minimum_history_days < quant_core::ENTRY_SCORE_MIN_HISTORY_DAYS {
+                slice_blockers.push("history is shorter than 1,000 days".to_string());
             }
             if slice
                 .is_none_or(|slice| {

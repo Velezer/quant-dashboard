@@ -34,7 +34,7 @@ category, timeframe, and candle source family. It can promote one exact vector
 only when it is shared by at least five instruments and covers at least 80% of
 the refreshed cohort and each app/product slice.
 
-Live profile promotion requires known transaction fees, at least 730 days of
+Live profile promotion requires known transaction fees, at least 1,000 days of
 history, positive net expectancy and profit factor above 1, and both validation
 and untouched holdout to meet the 50% after-fee win-rate target with a 95%
 Wilson lower bound at or above 50%. It must also improve mean net return over
@@ -104,7 +104,7 @@ not predictive accuracy; trade spacing is irregular and is not treated as an
 equal-time series.
 
 **Backtest complete** means the evaluator produced a report. **Validated
-holdout evidence** has at least 730 calendar days across the full chronological
+holdout evidence** has at least 1,000 calendar days across the full chronological
 history, sufficient trades in the untouched 20% holdout, positive holdout
 return and profit factor, separated score-band evidence, verified registered
 identity, venue-native candles, known product fees, and complete execution-cost
