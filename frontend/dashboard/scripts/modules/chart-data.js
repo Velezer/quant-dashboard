@@ -5,7 +5,7 @@ import { pineChartPlots } from './pine-chart-output.js';
 import { NWE_MAX_OUTSIDE_DISTANCE_ID } from './pine-sources.js';
 import { marketSymbolForSignal, marketVenueForSignal } from './chart-market-identity.js';
 import { CHART_INDICATOR_IDS, finiteChartIndicatorValue, normalizeChartIndicators } from './chart-indicator-data.js';
-import { formatChartCandleTimestamp } from './chart-candle-time.js';
+import { formatChartCandleTimestamp, latestContinuousCandleSegment } from './chart-candle-time.js';
 import { describeMarkovRegimeStatus, describeNweEnvelopeStatus } from './chart-indicator-status.js';
 
 export const CHART_BUNDLE_HISTORY_BARS = 500;
@@ -13,6 +13,9 @@ export { CHART_INDICATOR_IDS } from './chart-indicator-data.js';
 
 /** Initializes the chart data dashboard feature. */
 export function installChartData() {
+            const chartCandleContextCache = new WeakMap();
+            const DSS_PDS = 10;
+            const DSS_MINIMUM_HISTORY_BARS = DSS_PDS * 2 - 1;
             let windowPanOffset = 0;
             let showMarkovRegimeIndicator = true;
             let showVolumeDelta = false;
@@ -67,6 +70,15 @@ export function installChartData() {
                     button.classList.toggle('border-gray-600/50', !showMarkovRegimeIndicator);
                 }
                 if (!status) return;
+                if (signal && getChartCandleContext(signal).hasGap) {
+                    const timeframe = String(activeTimeframe || '--').toUpperCase();
+                    const text = `Markov ${timeframe}: waiting for continuous history`;
+                    const ariaLabel = `Markov regime history for ${timeframe} is suppressed because the selected crypto candles contain a long gap.`;
+                    status.textContent = text;
+                    status.setAttribute('aria-label', ariaLabel);
+                    status.title = ariaLabel;
+                    return;
+                }
                 const description = describeMarkovRegimeStatus({
                     enabled: showMarkovRegimeIndicator,
                     signal,
@@ -112,6 +124,51 @@ export function installChartData() {
             function nadarayaWatsonRepaintingEnabled(signal = selectedSignal) {
                 if (typeof nweRepaintingMode === 'boolean') return nweRepaintingMode;
                 return signal?.chart_indicator_config?.nadaraya_watson_envelope?.repainting_default === true;
+            }
+
+            function isContinuousCryptoMarket(signal) {
+                const category = String(signal?.asset_category_id || '').trim().toLowerCase();
+                const assetClass = String(signal?.class || signal?.asset_class || '').trim().toLowerCase();
+                return category.startsWith('crypto') || assetClass === 'crypto';
+            }
+
+            function getChartCandleContext(signal = selectedSignal) {
+                if (!signal || typeof signal !== 'object') {
+                    return { candles: [], sourceCandles: [], startIndex: 0, omittedBars: 0, gapMilliseconds: 0, gapFrom: null, gapTo: null, hasGap: false };
+                }
+                const map = signal.candles_by_tf || {};
+                const sourceCandles = Array.isArray(map[activeTimeframe])
+                    ? map[activeTimeframe]
+                    : (activeTimeframe === (signal.timeframe || '1d') ? (signal.candles || []) : []);
+                if (!Array.isArray(sourceCandles)) {
+                    return { candles: [], sourceCandles: [], startIndex: 0, omittedBars: 0, gapMilliseconds: 0, gapFrom: null, gapTo: null, hasGap: false };
+                }
+
+                let byTimeframe = chartCandleContextCache.get(signal);
+                const cached = byTimeframe?.get(activeTimeframe);
+                if (cached?.sourceCandles === sourceCandles) return cached;
+
+                const segment = isContinuousCryptoMarket(signal)
+                    ? latestContinuousCandleSegment(sourceCandles, activeTimeframe)
+                    : { candles: sourceCandles, startIndex: 0, omittedBars: 0, gapMilliseconds: 0, gapFrom: null, gapTo: null };
+                const hasGap = segment.startIndex > 0;
+                const candles = hasGap
+                    ? segment.candles.map(candle => ({
+                        ...candle,
+                        dss: null,
+                        trigger: null,
+                        gradient: null,
+                        accel: null,
+                        indicators: {},
+                    }))
+                    : segment.candles;
+                const context = { ...segment, candles, sourceCandles, hasGap };
+                if (!byTimeframe) {
+                    byTimeframe = new Map();
+                    chartCandleContextCache.set(signal, byTimeframe);
+                }
+                byTimeframe.set(activeTimeframe, context);
+                return context;
             }
 
             function activeNadarayaWatsonSeries(candle) {
@@ -189,6 +246,12 @@ export function installChartData() {
                     status.setAttribute('aria-label', 'Select a signal to show the Nadaraya-Watson research study.');
                     return;
                 }
+                if (getChartCandleContext(signal).hasGap) {
+                    const timeframe = String(activeTimeframe || '--').toUpperCase();
+                    status.textContent = `Latest NWE ${timeframe} · unavailable · chart history gap`;
+                    status.setAttribute('aria-label', `Nadaraya-Watson values are suppressed on ${timeframe} because a long gap in crypto candle history would make the indicator misleading.`);
+                    return;
+                }
                 const description = describeNweEnvelopeStatus({
                     candles,
                     envelope: activeNadarayaWatsonSeries(candles[candles.length - 1]),
@@ -222,8 +285,7 @@ export function installChartData() {
                 if (!signal) return [];
                 const meta = signal.chart_freshness?.[activeTimeframe];
                 if (String(meta?.chart_status || '').toLowerCase() === 'insufficient_data') return [];
-                const map = signal.candles_by_tf || {};
-                return Array.isArray(map[activeTimeframe]) ? map[activeTimeframe] : (activeTimeframe === (signal.timeframe || '1d') ? (signal.candles || []) : []);
+                return getChartCandleContext(signal).candles;
             }
 
             function setChartStatus(state = 'ready', detail = '', options = {}) {
@@ -535,12 +597,15 @@ export function installChartData() {
                     setIndicatorComputeStatus('ready', 'Registered Pine WASM output');
                     return true;
                 }
-                const map = signal.candles_by_tf || {};
-                const candles = Array.isArray(map[activeTimeframe])
-                    ? map[activeTimeframe]
-                    : (activeTimeframe === (signal.timeframe || '1d') ? (signal.candles || []) : []);
+                const chartContext = getChartCandleContext(signal);
+                const candles = chartContext.candles;
                 if (!candles.length) {
                     clearMomentumSummary();
+                    return false;
+                }
+                if (candles.length < DSS_MINIMUM_HISTORY_BARS) {
+                    clearMomentumSummary();
+                    setIndicatorComputeStatus('waiting', `${candles.length} continuous bars · ${DSS_MINIMUM_HISTORY_BARS} needed`);
                     return false;
                 }
                 signal._rustIndicatorCache = signal._rustIndicatorCache || {};
@@ -561,7 +626,7 @@ export function installChartData() {
                     exchange: String(signal.exchange || signal.Exchange || signal.venue || signal.Venue || '').trim().toLowerCase(),
                     asset_class: String(signal.class || signal.asset_class || signal.Class || '').trim().toLowerCase(),
                     limit: String(Math.min(5000, candles.length)),
-                    pds: '10',
+                    pds: String(DSS_PDS),
                     ema_len: '9',
                     trigger_len: '5'
                 });
@@ -583,7 +648,9 @@ export function installChartData() {
                         if (point.trigger != null && Number.isFinite(Number(point.trigger))) candle.trigger = Number(point.trigger);
                         if (point.gradient != null && Number.isFinite(Number(point.gradient))) candle.gradient = Number(point.gradient);
                         const hydratedIndicators = normalizeChartIndicators(point.indicators);
-                        const chartEnvelope = candle.indicators?.[CHART_INDICATOR_IDS.nadarayaWatsonEnvelope];
+                        const chartEnvelope = chartContext.hasGap
+                            ? null
+                            : candle.indicators?.[CHART_INDICATOR_IDS.nadarayaWatsonEnvelope];
                         if (chartEnvelope) {
                             hydratedIndicators[CHART_INDICATOR_IDS.nadarayaWatsonEnvelope] = chartEnvelope;
                         }
@@ -610,8 +677,9 @@ export function installChartData() {
 
             function setChartWindowSize(size, anchor = 0.5) {
                 const maxB = getChartCandles().length || 120;
-                const view = QuantChart.zoom(maxB, activeWindowSize, windowPanOffset, size === 'all' ? maxB : Number(size) || 45, anchor);
-                activeWindowSize = view.size;
+                const requestedSize = size === 'all' ? maxB : Number(size) || 45;
+                const view = QuantChart.zoom(maxB, activeWindowSize, windowPanOffset, requestedSize, anchor);
+                activeWindowSize = maxB < requestedSize && size !== 'all' ? requestedSize : view.size;
                 windowPanOffset = view.offset;
                 const zoomReadout = document.getElementById('chartZoomReadout');
                 if (zoomReadout) {
@@ -710,13 +778,14 @@ export function installChartData() {
             }
 
             function resetIndicatorScale() {
-                const bars = selectedSignal?.candles_by_tf?.[activeTimeframe]
-                    || (activeTimeframe === (selectedSignal?.timeframe || '1d') ? selectedSignal?.candles : []);
-                const paneOutput = pineChartPlots(
-                    selectedSignal?.pine_indicator_outputs,
-                    activeTimeframe,
-                    Array.isArray(bars) ? bars.length : 0,
-                ).paneOutput;
+                const bars = getChartCandles(selectedSignal);
+                const paneOutput = getChartCandleContext(selectedSignal).hasGap
+                    ? null
+                    : pineChartPlots(
+                        selectedSignal?.pine_indicator_outputs,
+                        activeTimeframe,
+                        Array.isArray(bars) ? bars.length : 0,
+                    ).paneOutput;
                 const values = (paneOutput?.plots || []).flatMap(plot => plot.values).filter(Number.isFinite);
                 const isNweOutsideDistance = String(paneOutput?.id) === NWE_MAX_OUTSIDE_DISTANCE_ID;
                 chartIndicatorScale = QuantChart.fitValueScale(values, isNweOutsideDistance
@@ -753,6 +822,7 @@ export function installChartData() {
             }
 
     publishDashboardBindings('chart-data', {
+        getChartCandleContext: { get: () => getChartCandleContext },
         windowPanOffset: { get: () => windowPanOffset, set: value => { windowPanOffset = value; } },
         showMarkovRegimeIndicator: { get: () => showMarkovRegimeIndicator, set: value => { showMarkovRegimeIndicator = value; } },
         showVolumeDelta: { get: () => showVolumeDelta },
