@@ -19,7 +19,7 @@ fn same_origin_request(request: &str) -> bool {
 }
 
 pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(),RequestContext<'a>> {
-    if !matches!(request.route,"/api/entry-validation"|"/api/entry-validation/report"|"/api/entry-validation/run"|"/api/entry-validation/status") {
+    if !matches!(request.route,"/api/entry-validation"|"/api/entry-validation/report"|"/api/entry-validation/run"|"/api/entry-validation/status"|"/api/entry-validation/control") {
         return Err(request);
     }
     let RequestContext {stream,db,method,path,route,request_text,..} = request;
@@ -29,6 +29,22 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(),RequestContex
         match entry_validation_daily_status(&connection) {
             Ok(status) => respond(stream,crate::wire::encode(&status).unwrap_or_default(),"200 OK"),
             Err(error) => api_error(stream,"500 Internal Server Error",error),
+        }
+        return Ok(())
+    }
+    if route == "/api/entry-validation/control" {
+        if method != "POST" { api_error(stream,"405 Method Not Allowed","Use POST to control the daily backtest."); return Ok(()) }
+        if !has_json_content_type(request_text) { api_error(stream,"415 Unsupported Media Type","Backtest controls require application/json."); return Ok(()) }
+        if !same_origin_request(request_text) { api_error(stream,"403 Forbidden","Control the daily backtest from this dashboard origin."); return Ok(()) }
+        let payload: Value = match crate::wire::decode(&read_post_body(request_text)) {
+            Ok(value) => value,
+            Err(error) => {api_error(stream,"400 Bad Request",error);return Ok(())}
+        };
+        let action = payload.get("action").and_then(Value::as_str).unwrap_or("");
+        let connection = match open_db_minimal(db) {Ok(value)=>value,Err(error)=>{api_error(stream,"500 Internal Server Error",error);return Ok(())}};
+        match entry_validation_update_control(&connection, action) {
+            Ok(status) => respond(stream,crate::wire::encode(&status).unwrap_or_default(),"200 OK"),
+            Err(error) => api_error(stream,"400 Bad Request",error),
         }
         return Ok(())
     }

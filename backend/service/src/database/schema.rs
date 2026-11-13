@@ -57,6 +57,14 @@ CREATE TABLE IF NOT EXISTS app.entry_model_validation_daily_refresh (
 );
 INSERT OR IGNORE INTO app.entry_model_validation_daily_refresh(id,status)
     VALUES(1,'idle');
+CREATE TABLE IF NOT EXISTS app.entry_model_validation_controls (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0,1)),
+    run_requested INTEGER NOT NULL DEFAULT 0 CHECK(run_requested IN (0,1)),
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO app.entry_model_validation_controls(id)
+    VALUES(1);
 CREATE TABLE IF NOT EXISTS app.entry_model_scoring_profiles (
     profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
     score_model_id TEXT NOT NULL,

@@ -73,6 +73,22 @@ pub(crate) fn entry_validation_daily_status(connection: &Connection) -> Result<V
     Ok(json!({"daily_refresh":daily_refresh,"live_scoring":live_scoring}))
 }
 
+pub(crate) fn entry_validation_update_control(
+    connection: &Connection,
+    action: &str,
+) -> Result<Value, String> {
+    if !matches!(action, "pause" | "resume" | "run_now") {
+        return Err("Choose pause, resume, or run_now.".into());
+    }
+    let updated_at = now_secs().min(i64::MAX as u64) as i64;
+    crate::database::retry_sqlite_busy(|| {
+        store::update_daily_refresh_control(connection, action, updated_at)
+    })
+    .map_err(|error| error.to_string())?;
+    scheduler::notify_daily_refresh_worker();
+    entry_validation_daily_status(connection)
+}
+
 pub(crate) fn run_entry_validation(
     connection: &Connection,
     market_directory: &str,

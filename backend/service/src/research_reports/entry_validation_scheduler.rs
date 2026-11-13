@@ -1,5 +1,5 @@
 use super::*;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex as DailyRefreshMutex};
 use std::time::Duration;
 
 const DAILY_REFRESH_INTERVAL_SECONDS: u64 = quant_core::SECONDS_PER_DAY as u64;
@@ -7,6 +7,35 @@ const DAILY_REFRESH_RETRY_SECONDS: u64 = 15 * quant_core::SECONDS_PER_MINUTE as 
 const DAILY_REFRESH_WAIT_SECONDS: u64 = 5;
 const DAILY_REFRESH_PAUSE_MILLISECONDS: u64 = 100;
 const PROFILE_EVALUATION_RETRY_PAIRS: usize = 500;
+
+static DAILY_REFRESH_WAKE: (DailyRefreshMutex<bool>, Condvar) =
+    (DailyRefreshMutex::new(false), Condvar::new());
+
+pub(super) fn notify_daily_refresh_worker() {
+    let mut notified = match DAILY_REFRESH_WAKE.0.lock() {
+        Ok(guard) => guard,
+        Err(error) => error.into_inner(),
+    };
+    *notified = true;
+    DAILY_REFRESH_WAKE.1.notify_one();
+}
+
+fn wait_for_control_or_timeout(seconds: u64) {
+    let notified = match DAILY_REFRESH_WAKE.0.lock() {
+        Ok(guard) => guard,
+        Err(error) => error.into_inner(),
+    };
+    if *notified {
+        let mut notified = notified;
+        *notified = false;
+        return;
+    }
+    let (mut notified, _) = DAILY_REFRESH_WAKE
+        .1
+        .wait_timeout(notified, Duration::from_secs(seconds.max(1)))
+        .unwrap_or_else(|error| error.into_inner());
+    *notified = false;
+}
 
 fn required_profile_coverage_pairs(total_pairs: usize) -> usize {
     total_pairs
@@ -99,10 +128,10 @@ pub fn background_daily_refresh_loop(state: Arc<AppState>) {
     }
     loop {
         match run_due_daily_refresh(&state) {
-            Ok(wait_seconds) => sleep_seconds(wait_seconds),
+            Ok(wait_seconds) => wait_for_control_or_timeout(wait_seconds),
             Err(error) => {
                 eprintln!("[EntryValidation] Daily refresh worker error: {error}");
-                sleep_seconds(DAILY_REFRESH_RETRY_SECONDS);
+                wait_for_control_or_timeout(DAILY_REFRESH_RETRY_SECONDS);
             }
         }
     }
@@ -112,17 +141,26 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
     let connection = open_db_minimal(&state.market_database).map_err(|error| error.to_string())?;
     let now = now_secs().min(i64::MAX as u64) as i64;
     let persisted = store::daily_refresh_state(&connection).map_err(|error| error.to_string())?;
+    let control = store::daily_refresh_control(&connection).map_err(|error| error.to_string())?;
     let protocol_changed = persisted.protocol_id != PROTOCOL_ID;
     let unfinished = persisted.cycle_started_at > persisted.cycle_completed_at
         && !matches!(persisted.status.as_str(), "idle" | "complete" | "complete_with_errors");
+    if control.paused {
+        if unfinished && persisted.status != "waiting" {
+            store::wait_daily_refresh(&connection, now)
+                .map_err(|error| error.to_string())?;
+        }
+        return Ok(DAILY_REFRESH_WAIT_SECONDS);
+    }
     if unfinished
         && !protocol_changed
         && persisted.status == "error"
         && persisted.next_due_at > now
+        && !control.run_requested
     {
         return Ok((persisted.next_due_at - now) as u64);
     }
-    if !unfinished && !protocol_changed && persisted.next_due_at > now {
+    if !unfinished && !protocol_changed && !control.run_requested && persisted.next_due_at > now {
         return Ok((persisted.next_due_at - now) as u64);
     }
 
@@ -185,8 +223,14 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
         }
         store::start_daily_refresh(&connection, now, targets.len(), next_due_at, PROTOCOL_ID)
             .map_err(|error| error.to_string())?;
+        store::consume_daily_refresh_request(&connection, now)
+            .map_err(|error| error.to_string())?;
         (now, 0)
     };
+    if control.run_requested && unfinished && persisted.status == "error" {
+        store::consume_daily_refresh_request(&connection, now)
+            .map_err(|error| error.to_string())?;
+    }
     let cursor = cursor.min(targets.len());
     store::set_daily_refresh_total(&connection, targets.len(), now)
         .map_err(|error| error.to_string())?;
@@ -220,6 +264,14 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
 
     for (index, target) in targets.iter().enumerate().skip(cursor) {
         let now = now_secs().min(i64::MAX as u64) as i64;
+        if store::daily_refresh_control(&connection)
+            .map_err(|error| error.to_string())?
+            .paused
+        {
+            store::wait_daily_refresh(&connection, now)
+                .map_err(|error| error.to_string())?;
+            return Ok(DAILY_REFRESH_WAIT_SECONDS);
+        }
         store::set_daily_refresh_current(
             &connection,
             index,
@@ -231,10 +283,18 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
         .map_err(|error| error.to_string())?;
 
         let permit = loop {
+            if store::daily_refresh_control(&connection)
+                .map_err(|error| error.to_string())?
+                .paused
+            {
+                store::wait_daily_refresh(&connection, now_secs() as i64)
+                    .map_err(|error| error.to_string())?;
+                return Ok(DAILY_REFRESH_WAIT_SECONDS);
+            }
             if state.is_scanning.load(Ordering::Relaxed) {
                 store::wait_daily_refresh(&connection, now_secs() as i64)
                     .map_err(|error| error.to_string())?;
-                sleep_seconds(DAILY_REFRESH_WAIT_SECONDS);
+                wait_for_control_or_timeout(DAILY_REFRESH_WAIT_SECONDS);
                 continue;
             }
             match ENTRY_VALIDATION_WORK.try_lock() {
@@ -242,14 +302,14 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
                     drop(permit);
                     store::wait_daily_refresh(&connection, now_secs() as i64)
                         .map_err(|error| error.to_string())?;
-                    sleep_seconds(DAILY_REFRESH_WAIT_SECONDS);
+                    wait_for_control_or_timeout(DAILY_REFRESH_WAIT_SECONDS);
                 }
                 Ok(permit) => break permit,
                 Err(std::sync::TryLockError::Poisoned(error)) => break error.into_inner(),
                 Err(std::sync::TryLockError::WouldBlock) => {
                     store::wait_daily_refresh(&connection, now_secs() as i64)
                         .map_err(|error| error.to_string())?;
-                    sleep_seconds(DAILY_REFRESH_WAIT_SECONDS);
+                    wait_for_control_or_timeout(DAILY_REFRESH_WAIT_SECONDS);
                 }
             }
         };

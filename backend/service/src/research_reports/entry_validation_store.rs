@@ -168,6 +168,74 @@ pub(super) struct DailyRefreshState {
     pub(super) protocol_id: String,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct DailyRefreshControl {
+    pub(super) paused: bool,
+    pub(super) run_requested: bool,
+}
+
+pub(super) fn daily_refresh_control(
+    conn: &Connection,
+) -> Result<DailyRefreshControl, rusqlite::Error> {
+    conn.query_row(
+        "SELECT paused,run_requested FROM app.entry_model_validation_controls WHERE id=1",
+        [],
+        |row| Ok(DailyRefreshControl {
+            paused: row.get::<_, i64>(0)? != 0,
+            run_requested: row.get::<_, i64>(1)? != 0,
+        }),
+    )
+}
+
+pub(super) fn update_daily_refresh_control(
+    conn: &Connection,
+    action: &str,
+    updated_at: i64,
+) -> Result<(), rusqlite::Error> {
+    match action {
+        "pause" => {
+            conn.execute(
+                "UPDATE app.entry_model_validation_controls
+                    SET paused=1,run_requested=0,updated_at=?1 WHERE id=1",
+                [updated_at],
+            )?;
+        }
+        "resume" => {
+            conn.execute(
+                "UPDATE app.entry_model_validation_controls
+                    SET paused=0,updated_at=?1 WHERE id=1",
+                [updated_at],
+            )?;
+        }
+        "run_now" => {
+            let state = daily_refresh_state(conn)?;
+            let unfinished = state.cycle_started_at > state.cycle_completed_at
+                && !matches!(state.status.as_str(), "idle" | "complete" | "complete_with_errors");
+            let retry_after_error = state.status == "error";
+            conn.execute(
+                "UPDATE app.entry_model_validation_controls SET paused=0,
+                 run_requested=CASE WHEN ?1 AND NOT ?2 THEN run_requested ELSE 1 END,
+                 updated_at=?3 WHERE id=1",
+                params![unfinished, retry_after_error, updated_at],
+            )?;
+        }
+        _ => return Err(invalid("action must be pause, resume, or run_now")),
+    }
+    Ok(())
+}
+
+pub(super) fn consume_daily_refresh_request(
+    conn: &Connection,
+    updated_at: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE app.entry_model_validation_controls SET run_requested=0,updated_at=?1
+         WHERE id=1",
+        [updated_at],
+    )?;
+    Ok(())
+}
+
 pub(super) fn daily_refresh_state(
     conn: &Connection,
 ) -> Result<DailyRefreshState, rusqlite::Error> {
@@ -193,14 +261,29 @@ pub(super) fn daily_refresh_state(
 
 pub(super) fn daily_refresh_status(conn: &Connection) -> Result<Value, rusqlite::Error> {
     let state = daily_refresh_state(conn)?;
-    let active = matches!(state.status.as_str(), "running" | "waiting");
+    let control = daily_refresh_control(conn)?;
+    let unfinished = state.cycle_started_at > state.cycle_completed_at
+        && !matches!(state.status.as_str(), "idle" | "complete" | "complete_with_errors");
+    let status = if control.paused && unfinished {
+        if state.status == "running" && !state.current_label.is_empty() {
+            "pausing"
+        } else {
+            "paused"
+        }
+    } else if control.paused {
+        "paused"
+    } else {
+        &state.status
+    };
+    let active = matches!(status, "running" | "waiting" | "pausing");
     let current = (!state.current_label.is_empty()).then(|| json!({
         "instrument_id":state.current_instrument_id,
         "timeframe":state.current_timeframe,
         "label":state.current_label,
     }));
     Ok(json!({
-        "status":state.status,"active":active,
+        "status":status,"active":active,
+        "control":{"paused":control.paused,"run_requested":control.run_requested},
         "cycle_started_at":(state.cycle_started_at > 0).then_some(state.cycle_started_at),
         "cycle_completed_at":(state.cycle_completed_at > 0).then_some(state.cycle_completed_at),
         "next_due_at":(state.next_due_at > 0).then_some(state.next_due_at),

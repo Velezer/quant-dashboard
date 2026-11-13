@@ -104,10 +104,12 @@ lesson only when it will improve future tasks.
   the 20% holdout tail. Requiring 1,000 days inside that tail would require about
   fourteen years of stored data and exceed the bounded 100,000-candle report
   read; keep the holdout's trade-count requirement as a separate check.
-- A daily all-ticker backtest must be sequential, resumable, and visible on its
-  research page. Persist its ticker/timeframe cursor and status, share the lock
-  with manual runs, yield to signal scans, and keep learned candidates separate
-  from live weights unless a promotion rule is explicitly authorized.
+- A daily all-ticker backtest must be sequential, resumable, controllable, and
+  visible on its research page. Provide run-now, pause-after-current, and resume
+  controls there; persist its ticker/timeframe cursor and controls, wake the
+  worker promptly after a request, share the lock with manual runs, yield to
+  signal scans, and keep learned candidates separate from live weights unless
+  a promotion rule is explicitly authorized.
 - Keep the stored-history target separate from the evidence sample requirement.
   For multi-year crypto backfills, advance one bounded page from the oldest
   saved timestamp and run the small latest-candle refresh independently. A
