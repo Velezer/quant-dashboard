@@ -294,7 +294,7 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
             if state.is_scanning.load(Ordering::Relaxed) {
                 store::wait_daily_refresh(&connection, now_secs() as i64)
                     .map_err(|error| error.to_string())?;
-                sleep_seconds(DAILY_REFRESH_WAIT_SECONDS);
+                wait_for_control_or_timeout(DAILY_REFRESH_WAIT_SECONDS);
                 continue;
             }
             match ENTRY_VALIDATION_WORK.try_lock() {
@@ -302,14 +302,14 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
                     drop(permit);
                     store::wait_daily_refresh(&connection, now_secs() as i64)
                         .map_err(|error| error.to_string())?;
-                    sleep_seconds(DAILY_REFRESH_WAIT_SECONDS);
+                    wait_for_control_or_timeout(DAILY_REFRESH_WAIT_SECONDS);
                 }
                 Ok(permit) => break permit,
                 Err(std::sync::TryLockError::Poisoned(error)) => break error.into_inner(),
                 Err(std::sync::TryLockError::WouldBlock) => {
                     store::wait_daily_refresh(&connection, now_secs() as i64)
                         .map_err(|error| error.to_string())?;
-                    sleep_seconds(DAILY_REFRESH_WAIT_SECONDS);
+                    wait_for_control_or_timeout(DAILY_REFRESH_WAIT_SECONDS);
                 }
             }
         };
