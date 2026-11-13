@@ -401,19 +401,33 @@ pub(crate) fn registered_hourly_targets(
         .saturating_add(stale_priorities.len())
         .min(i64::MAX as usize) as i64;
     let mut statement = connection.prepare(
-        "SELECT i.exchange_id, i.storage_symbol, i.product_id, i.underlying_symbol, i.asset_category_id
-           FROM app.instruments AS i
-           LEFT JOIN app.market_sync_cursor AS c ON c.exchange_id=i.exchange_id
-             AND c.product_id=i.product_id AND c.storage_symbol=i.storage_symbol
-             AND c.interval='hourly'
-          WHERE i.is_active=1 AND i.venue_verified=1 AND i.storage_symbol <> ''
-            AND i.listing_status IN ('venue_active','public_listed_snapshot')
-          GROUP BY i.exchange_id, i.product_id, i.storage_symbol
-          ORDER BY MAX(CASE WHEN ?1 IS NOT NULL AND
+        "WITH candidates AS (
+             SELECT i.exchange_id, i.storage_symbol, i.product_id,
+                    i.underlying_symbol, i.asset_category_id,
+                    MAX(CASE WHEN ?1 IS NOT NULL AND
                                   (i.storage_symbol=?1 OR i.venue_symbol=?1 OR i.symbol=?1)
-                             THEN 1 ELSE 0 END) DESC,
-                   COALESCE(MIN(c.attempted_at), '') ASC,
-                   i.exchange_id ASC, i.product_id ASC, i.storage_symbol ASC
+                             THEN 1 ELSE 0 END) AS chart_priority,
+                    COALESCE(MIN(c.attempted_at), '') AS last_attempted_at
+               FROM app.instruments AS i
+               LEFT JOIN app.market_sync_cursor AS c ON c.exchange_id=i.exchange_id
+                 AND c.product_id=i.product_id AND c.storage_symbol=i.storage_symbol
+                 AND c.interval='hourly'
+              WHERE i.is_active=1 AND i.venue_verified=1 AND i.storage_symbol <> ''
+                AND i.listing_status IN ('venue_active','public_listed_snapshot')
+              GROUP BY i.exchange_id, i.product_id, i.storage_symbol
+         ), ranked AS (
+             SELECT exchange_id, storage_symbol, product_id, underlying_symbol,
+                    asset_category_id, chart_priority,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY exchange_id
+                        ORDER BY last_attempted_at ASC, product_id ASC, storage_symbol ASC
+                    ) AS app_rank
+               FROM candidates
+         )
+         SELECT exchange_id, storage_symbol, product_id, underlying_symbol, asset_category_id
+           FROM ranked
+          ORDER BY chart_priority DESC, app_rank ASC, exchange_id ASC,
+                   product_id ASC, storage_symbol ASC
           LIMIT ?2",
     )?;
     let normal_targets = statement
