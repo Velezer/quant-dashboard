@@ -4,6 +4,9 @@ use crate::strategies::{
 };
 use serde_json::{json, Value};
 
+#[path = "entry_score/risk_reward.rs"]
+mod risk_reward;
+
 const TRAINING_SHARE: usize = 60;
 const VALIDATION_END_SHARE: usize = 80;
 const TOTAL_SCORE_BAND_WIDTH: f64 = 10.0;
@@ -30,7 +33,7 @@ const FACTOR_NAMES: [&str; 4] = [
     "Estimated Volume Delta (OHLCV proxy)",
 ];
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
-    "entry_five_factor_weight_fit_markov_fixed_10_after_fee_target_50_v9";
+    "entry_five_factor_weight_fit_markov_fixed_10_after_fee_target_50_asymmetric_4h_v10";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {
@@ -804,6 +807,17 @@ pub fn evaluate_entry_score_backtest(
         .as_ref()
         .map(|selection| selection.validation.overall)
         .unwrap_or_default();
+    let risk_reward_rule = risk_reward::report(
+        &bars,
+        &observations,
+        Some(selected_weights.unwrap_or(BASELINE_WEIGHTS)),
+        baseline_policy,
+        train_end,
+        validation_end,
+        history_days,
+        !invalid,
+        bar_interval_ns,
+    );
     let after_fee_target_met = |summary: TradeSummary| {
         fees_known
             && summary.trades >= MIN_WEIGHT_FIT_TRADES
@@ -901,6 +915,7 @@ pub fn evaluate_entry_score_backtest(
         "trade_return_autocorrelation": selected_training_fit.return_autocorrelation_json(),
         "baseline": baseline_weight_comparison,
         "candidate": learned_weight_comparison,
+        "risk_reward_rule": risk_reward_rule,
         "hour_rule": hour_rule_report(&bars, &observations, train_end, validation_end, bars.len(),
             bar_interval_ns, selected_weights, baseline_policy),
         "live_weights_changed": false,
