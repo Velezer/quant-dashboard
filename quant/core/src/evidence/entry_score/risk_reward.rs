@@ -1,4 +1,4 @@
-use super::nwe_dss::{wilson_interval, TradeSummary};
+use super::super::nwe_dss::{wilson_interval, TradeSummary};
 use super::{
     qualifies, summary_json, EvaluationPolicy, Observation, ENTRY_SCORE_MIN_HISTORY_DAYS,
     ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
