@@ -150,8 +150,11 @@ live NWE-led or DSS-led five-factor models.
 The page exposes paginated saved evidence, one-ticker runs, a sequential run of
 all eligible tickers in the selected scope, and the automatic daily
 per-ticker/timeframe candidate refresh with persisted progress, last/next run,
-and failure status. Manual runs expose progress, stop after the current ticker,
-failed-ticker retry, and source/history recovery links. Empty history,
+and failure status. The page starts the full eligible universe, pauses its
+daily worker after the current ticker, and resumes from the saved cursor; these
+controls stay separate from the filtered manual scope. Manual runs expose
+progress, stop after the current ticker, failed-ticker retry, and
+source/history recovery links. Empty history,
 pending venue verification, unsupported models, provider/proxy data, missing
 costs, insufficient validation/holdout samples, stale protocol snapshots, and
 request failures remain visible. No ticker beyond an arbitrary first page is

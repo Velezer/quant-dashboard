@@ -27,6 +27,14 @@ restarts the cycle from the first pair so a profile evaluation never mixes
 reports from different backtest rules. If a cycle takes more than 24 hours, the
 next one starts as soon as the current one finishes.
 
+The page controls the server cycle as well: **Run full universe now** requests
+an immediate all-app/all-supported-timeframe pass, independent of the filtered
+ticker scope; **Pause after current ticker** pauses the automatic worker at its
+next saved cursor; **Resume** continues that cursor. These actions are persisted
+in the app database, survive page reloads and service restarts, and do not alter
+the fixed 1,000-day evidence minimum or chronological holdout protocol. The
+filtered scope controls below remain available for targeted manual runs.
+
 This refresh updates the saved research reports and their training-selected
 candidate weights. It uses stored matching candles and never fetches provider
 data. After a complete cycle, the service groups reports by model, asset
@@ -152,9 +160,10 @@ comparison.
    ticker/timeframe; it stores no individual simulated trades.
 6. **Boundary conditions:** Unsupported, unverified, and excluded instruments
    are skipped. A pair failure is recorded and does not block later pairs.
-7. **Recovery:** The page shows cycle progress and the latest failed pair; item
-   failures retry in the next daily pass and worker-level failures retry after
-   15 minutes.
+7. **Recovery:** The page shows cycle progress and the latest failed pair; run
+   now retries a worker-level error, pause takes effect after the active pair,
+   and resume continues from the saved cursor. Item failures retry in the next
+   daily pass and worker-level failures retry after 15 minutes.
 8. **Governance:** A candidate reaches live screener scoring only when its
    after-fee validation and untouched holdout both pass the 50% target, score
    cutoff, sample, and return checks. A failed or incomplete cohort leaves the

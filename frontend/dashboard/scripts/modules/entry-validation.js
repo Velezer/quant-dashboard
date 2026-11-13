@@ -107,6 +107,10 @@ export function initializeEntryValidation(doc = document) {
     let protocol = '';
     let lastDailyCompletedAt = 0;
     let receivedDailyStatus = false;
+    let dailyControlBusy = false;
+    let dailyControlReady = false;
+    let dailyControlFeedback = '';
+    let dailyControlFeedbackTone = '';
 
     const element = (tag, text, className = '') => {
         const node = doc.createElement(tag);
@@ -190,11 +194,90 @@ export function initializeEntryValidation(doc = document) {
             decisionContainer.append(card);
         }
     }
+    function renderDailyControls(daily) {
+        const control = daily?.control;
+        const runNow = $('daily-run-now');
+        const pause = $('daily-pause');
+        const resume = $('daily-resume');
+        if (!runNow || !pause || !resume) return;
+        if (!control || typeof control.paused !== 'boolean') {
+            dailyControlReady = false;
+            runNow.disabled = true; pause.disabled = true; resume.disabled = true;
+            status('daily-control-status', 'Backtest controls are unavailable until server status loads.', 'error');
+            return;
+        }
+        dailyControlReady = true;
+        const paused = control.paused;
+        const queued = control.run_requested === true;
+        const started = numeric(daily.cycle_started_at) || 0;
+        const completed = numeric(daily.cycle_completed_at) || 0;
+        const unfinished = started > completed && !['complete', 'complete_with_errors', 'idle'].includes(daily.status);
+        const active = daily.active === true;
+        runNow.disabled = dailyControlBusy || queued || (active && !paused) || (paused && unfinished);
+        runNow.textContent = queued
+            ? 'Full-universe run queued'
+            : active && !paused
+                ? 'Full-universe backtest running'
+                : paused && unfinished
+                    ? 'Resume below to continue'
+                    : 'Run full universe now';
+        pause.hidden = paused;
+        pause.disabled = dailyControlBusy;
+        pause.textContent = active ? 'Pause after current ticker' : 'Pause automatic backtests';
+        resume.hidden = !paused;
+        resume.disabled = dailyControlBusy;
+        resume.textContent = unfinished ? 'Resume current backtest' : 'Resume daily schedule';
+        if (dailyControlBusy) {
+            status('daily-control-status', 'Saving backtest control…', 'loading');
+        } else if (dailyControlFeedback) {
+            status('daily-control-status', dailyControlFeedback, dailyControlFeedbackTone);
+        } else if (paused) {
+            const next = daily.current?.label;
+            status('daily-control-status', daily.status === 'pausing'
+                ? `Pause requested. The current ticker${next ? ` (${next})` : ''} will finish first.`
+                : unfinished
+                    ? `Paused. The saved cursor${next ? ` is at ${next}` : ''}; resume to continue.`
+                : 'Automatic daily backtests are paused. Resume to restore the daily schedule.');
+        } else if (queued) {
+            status('daily-control-status', 'Full-universe run requested; waiting for the server worker.');
+        } else if (active) {
+            status('daily-control-status', 'The server is processing the full eligible universe.');
+        } else {
+            status('daily-control-status', 'Automatic full-universe backtests are scheduled daily.');
+        }
+    }
+    async function setDailyControl(action) {
+        if (dailyControlBusy || !dailyControlReady) return;
+        dailyControlBusy = true;
+        dailyControlFeedback = '';
+        dailyControlFeedbackTone = '';
+        renderDailyControls(latestDailyStatus);
+        try {
+            const payload = await request('/api/entry-validation/control', {
+                method: 'POST', body: JSON.stringify({ action }),
+            });
+            if (!payload?.daily_refresh) throw new Error('The server did not return updated backtest status.');
+            latestDailyStatus = payload.daily_refresh;
+            dailyControlFeedback = '';
+            renderDailyControls(latestDailyStatus);
+        } catch (error) {
+            dailyControlFeedback = `Could not update backtest controls: ${error.message}`;
+            dailyControlFeedbackTone = 'error';
+            renderDailyControls(latestDailyStatus);
+        } finally {
+            dailyControlBusy = false;
+            renderDailyControls(latestDailyStatus);
+            void refreshDailyStatus();
+        }
+    }
+    let latestDailyStatus = null;
     async function refreshDailyStatus() {
         try {
             const payload = await request('/api/entry-validation/status');
             const daily = payload?.daily_refresh;
             if (!daily || typeof daily.status !== 'string') throw new Error('Daily backtest status is incomplete.');
+            latestDailyStatus = daily;
+            renderDailyControls(daily);
             renderLiveScoring(payload?.live_scoring);
             const completedAt = numeric(daily.cycle_completed_at) || 0;
             if (receivedDailyStatus && completedAt > lastDailyCompletedAt && !busy) void loadList();
@@ -202,11 +285,11 @@ export function initializeEntryValidation(doc = document) {
             receivedDailyStatus = true;
             const labels = {
                 idle: 'Starting', running: 'Running', waiting: 'Yielding to scan/backtest',
-                complete: 'Complete', complete_with_errors: 'Complete with errors', error: 'Retry scheduled',
+                pausing: 'Pausing after ticker', paused: 'Paused', complete: 'Complete', complete_with_errors: 'Complete with errors', error: 'Retry scheduled',
             };
             const stateElement = $('daily-refresh-state');
             text('daily-refresh-state', labels[daily.status] || 'Status unavailable');
-            stateElement.className = `state-badge ${daily.status === 'complete' ? 'valid' : 'pending'}`;
+            stateElement.className = `state-badge ${daily.status === 'complete' ? 'valid' : ['error', 'complete_with_errors'].includes(daily.status) ? 'error' : 'pending'}`;
             const processed = Math.max(0, numeric(daily.processed_pairs) ?? numeric(daily.completed_pairs) ?? 0);
             const total = Math.max(0, numeric(daily.total_pairs) ?? 0);
             const percentage = Math.min(100, Math.max(0, numeric(daily.progress_pct) ?? (total ? processed / total * 100 : 0)));
@@ -221,6 +304,10 @@ export function initializeEntryValidation(doc = document) {
             const current = daily.current?.label;
             let message = daily.status === 'running'
                 ? `Backtest cycle running${current ? ` · ${current}` : ''}. This count includes completed attempts; ${metric(daily.failed_pairs, '', 0)} failed pairs are shown separately. Progress refreshes every 15 seconds.`
+                : daily.status === 'pausing'
+                    ? `Pause requested. The current ticker${current ? ` · ${current}` : ''} will finish, then the worker will stop at the saved cursor.`
+                : daily.status === 'paused'
+                    ? `The daily backtest is paused${current ? ` before ${current}` : ''}. Completed ticker reports remain saved; resume continues from the saved cursor.`
                 : daily.status === 'waiting'
                     ? `Waiting for an active signal scan or manual backtest to finish${current ? ` before continuing ${current}` : ''}.`
                     : daily.status === 'complete_with_errors'
@@ -234,6 +321,8 @@ export function initializeEntryValidation(doc = document) {
             status('daily-refresh-message', message, daily.status === 'error' || daily.status === 'complete_with_errors' ? 'error' : '');
         } catch (error) {
             status('daily-refresh-message', `Automatic backtest status is unavailable: ${error.message}`, 'error');
+            dailyControlReady = false;
+            renderDailyControls(null);
         }
     }
     function setBusy(value) {
@@ -739,6 +828,9 @@ export function initializeEntryValidation(doc = document) {
     $('run-scope').addEventListener('click', () => { void runRows('scope'); });
     $('run-selected').addEventListener('click', () => { void runRows('selected'); });
     $('retry-failed').addEventListener('click', () => { void runRows('retry'); });
+    $('daily-run-now').addEventListener('click', () => { void setDailyControl('run_now'); });
+    $('daily-pause').addEventListener('click', () => { void setDailyControl('pause'); });
+    $('daily-resume').addEventListener('click', () => { void setDailyControl('resume'); });
     $('stop-run').addEventListener('click', () => { stopping = true; $('stop-run').disabled = true; text('run-progress-title', 'Stopping after the current ticker…'); });
     $('retry-report').addEventListener('click', () => { if (selected) void selectTicker(selected); });
     for (const button of doc.querySelectorAll('[data-model]')) {

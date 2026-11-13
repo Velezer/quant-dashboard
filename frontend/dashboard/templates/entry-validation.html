@@ -24,6 +24,13 @@
                 <div><span>Last completed</span><strong id="daily-refresh-last">Unavailable</strong></div>
                 <div><span>Next due</span><strong id="daily-refresh-next">Unavailable</strong></div>
             </div>
+            <div class="daily-control-actions" aria-label="Full-universe backtest controls">
+                <button id="daily-run-now" class="primary-button" type="button" disabled>Run full universe now</button>
+                <button id="daily-pause" class="secondary-button danger-button" type="button" disabled>Pause after current ticker</button>
+                <button id="daily-resume" class="secondary-button" type="button" hidden disabled>Resume backtest</button>
+                <span id="daily-control-status" class="small-text" role="status" aria-live="polite">Loading backtest controls…</span>
+            </div>
+            <p class="small-text daily-control-note">These controls run every active, verified, eligible ticker/timeframe supported by the scoring models, independent of the filtered ticker scope below. Pausing takes effect after the current ticker and keeps the saved cursor. The 1,000-day evidence minimum and chronological holdout rules are fixed.</p>
             <p id="daily-refresh-message" class="small-text" role="status" aria-live="polite">Loading automatic backtest status…</p>
         </section>
         <section class="hero" aria-labelledby="page-title">
