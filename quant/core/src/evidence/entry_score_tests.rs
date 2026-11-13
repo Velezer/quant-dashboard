@@ -154,8 +154,28 @@ fn actual_dss_lead_is_evaluated_without_the_old_composite_nwe_gate() {
             .unwrap()
             > 0
     );
-    assert_eq!(value["checks"]["holdout_span_sufficient"], false);
+    assert_eq!(value["checks"]["history_span_sufficient"], false);
     assert!(value.get("sizing_ready").is_none());
+}
+
+#[test]
+fn calendar_minimum_applies_to_full_history_not_the_twenty_percent_holdout() {
+    let bars = alternating_bars(crate::MIN_EVIDENCE_SAMPLE_DAYS as usize + 1);
+    let value = evaluate_entry_score_backtest(
+        &bars,
+        EntryModelKind::Dss,
+        crate::NANOS_PER_DAY,
+        0.1,
+        0.2,
+        true,
+        true,
+    );
+
+    assert_eq!(value["history_days"], crate::MIN_EVIDENCE_SAMPLE_DAYS);
+    assert!(value["holdout_window_days"].as_i64().unwrap() < crate::MIN_EVIDENCE_SAMPLE_DAYS);
+    assert_eq!(value["checks"]["history_span_sufficient"], true);
+    assert_eq!(value["minimum_history_days"], crate::MIN_EVIDENCE_SAMPLE_DAYS);
+    assert!(value.get("minimum_holdout_days").is_none());
 }
 
 #[test]

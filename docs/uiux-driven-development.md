@@ -179,6 +179,8 @@ two bands, better top-band mean return, and separated Wilson win-rate intervals.
 Existing sample, native-source, fee and full-cost requirements remain separate
 checks. Omitted slippage, funding/borrow, spread, depth and impact prevent
 execution/sizing promotion.
+The 730-calendar-day minimum applies to the full chronological history; the
+untouched holdout remains the final 20% and has its own trade-count requirement.
 
 Only aggregate, versioned evidence snapshots and resumable daily-refresh status
 are saved in the existing app SQLite database, with exact identity and a

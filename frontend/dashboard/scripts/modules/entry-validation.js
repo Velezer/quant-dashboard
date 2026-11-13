@@ -367,7 +367,7 @@ export function initializeEntryValidation(doc = document) {
         const checks = model.checks || model.backtest?.checks || {};
         const labels = {
             registered_identity: 'Registered ticker and model identity match',
-            holdout_sample_sufficient: 'Enough completed holdout trades', holdout_span_sufficient: 'Enough held-out calendar history',
+            holdout_sample_sufficient: 'Enough completed holdout trades', history_span_sufficient: 'Enough total calendar history',
             profitable_holdout: 'Positive held-out return and profit factor', score_discrimination_supported: 'Held-out score discrimination supported',
             venue_native_history: 'Venue-native history', fees_known: 'Product transaction fees are known', execution_costs_complete: 'Execution costs are fully covered',
         };
@@ -377,8 +377,8 @@ export function initializeEntryValidation(doc = document) {
             const marker = element('span', value === true ? '✓' : value === false ? '○' : '—', 'check-symbol'); marker.setAttribute('aria-hidden', 'true');
             const threshold = key === 'holdout_sample_sufficient' && numeric(model.backtest?.minimum_holdout_trades) !== null
                 ? ` · minimum ${metric(model.backtest.minimum_holdout_trades, ' trades', 0)}`
-                : key === 'holdout_span_sufficient' && numeric(model.backtest?.minimum_holdout_days) !== null
-                    ? ` · minimum ${metric(model.backtest.minimum_holdout_days, ' days', 0)}` : '';
+                : key === 'history_span_sufficient' && numeric(model.backtest?.minimum_history_days) !== null
+                    ? ` · minimum ${metric(model.backtest.minimum_history_days, ' days', 0)}` : '';
             const copy = element('span', label); copy.append(element('small', `${value === true ? 'Passed' : value === false ? 'Not passed' : 'Not reported'}${threshold}`));
             row.append(marker, copy); return row;
         }));
