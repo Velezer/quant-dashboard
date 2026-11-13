@@ -149,6 +149,7 @@ fn sync_hourly_chart_targets(
         .collect::<std::collections::VecDeque<_>>();
     let mut attempted_targets = 0usize;
     let mut refreshed = 0usize;
+    let mut stockbit_refreshed = 0usize;
     let mut worker_count = 0usize;
     while !pending_targets.is_empty() {
         let wave_limit = pending_targets.len().min(MAX_REGISTERED_CANDLE_TARGETS_PER_TICK);
@@ -212,14 +213,16 @@ fn sync_hourly_chart_targets(
             })
             .collect::<Result<Vec<_>, _>>()?;
         let wave_size = targets.len();
-        let (wave_refreshed, wave_workers) = targets::sync_prepared_candle_targets(
-            connection,
-            &targets,
-            market_database,
-            storage_symbol_gate,
-        );
+        let (wave_refreshed, wave_workers, wave_stockbit_refreshed) =
+            targets::sync_prepared_candle_targets(
+                connection,
+                &targets,
+                market_database,
+                storage_symbol_gate,
+            );
         attempted_targets += wave_size;
         refreshed += wave_refreshed;
+        stockbit_refreshed += wave_stockbit_refreshed;
         worker_count = worker_count.max(wave_workers);
         if !pending_targets.is_empty() {
             thread::sleep(Duration::from_millis(CANDLE_SYNC_WAVE_PAUSE_MILLISECONDS));
@@ -229,6 +232,14 @@ fn sync_hourly_chart_targets(
         "[Daemon] 15m history batch attempted {attempted_targets} registered products with up to {worker_count} workers; {refreshed} interval syncs succeeded in {}ms.",
         batch_started.elapsed().as_millis(),
     );
+    if stockbit_refreshed > 0 {
+        if let Some(state) = sync_state {
+            state.request_stockbit_scan_after_market_data();
+            eprintln!(
+                "[Daemon] Queued one Stockbit rescan after {stockbit_refreshed} market intervals refreshed."
+            );
+        }
+    }
     Ok(refreshed)
 }
 

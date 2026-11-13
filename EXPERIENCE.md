@@ -186,3 +186,12 @@ lesson only when it will improve future tasks.
   the declared total and each page before reconciliation, and queue an
   app-scoped rescan after a successful live registry refresh so a first-boot
   scan against an empty registry is not the only scan until the next interval.
+- Market-history target selection must interleave due tickers by app after
+  respecting explicit chart and stale-signal priorities. A global alphabetical
+  order can let a larger app consume every bounded batch and leave another
+  app's registered instruments without candles, making its signal scan
+  correctly but uselessly report missing history.
+- After a first Stockbit candle is stored on a fresh deployment, queue one
+  Stockbit-only rescan. A successful registry refresh can happen before the
+  bounded candle worker has ingested any prices, so a registry-only rescan still
+  leaves the UI empty until the next periodic interval.

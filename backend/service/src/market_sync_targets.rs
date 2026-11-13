@@ -203,7 +203,7 @@ fn has_fresh_shared_reference(
 pub(super) fn sync_prepared_candle_target(
     target: &PreparedCandleSyncTarget,
     market_database: &str,
-) -> Result<usize, String> {
+) -> Result<(usize, bool), String> {
     let tokocrypto_market =
         target
             .tokocrypto_market
@@ -234,7 +234,7 @@ pub(super) fn sync_prepared_candle_target(
     let market_connection =
         match open_market_history_for_symbol(market_database, &target.storage_symbol, true) {
             Ok(Some(connection)) => connection,
-            Ok(None) => return Ok(0),
+            Ok(None) => return Ok((0, false)),
             Err(error) => return Err(error.to_string()),
         };
     let _ = market_connection.pragma_update(
@@ -243,6 +243,7 @@ pub(super) fn sync_prepared_candle_target(
         -CANDLE_SYNC_WORKER_SQLITE_PAGE_CACHE_KIB,
     );
     let mut refreshed = 0;
+    let mut stockbit_15m_refreshed = false;
     for adapter in &CANDLE_SYNC_ADAPTERS {
         if !adapter.supports(&request) {
             continue;
@@ -260,11 +261,14 @@ pub(super) fn sync_prepared_candle_target(
                     continue;
                 }
                 let report = adapter.sync(&market_connection, &interval_request);
-                refreshed += report
+                let succeeded = report
                     .outcomes
                     .iter()
-                    .filter(|outcome| outcome.result.is_ok())
-                    .count();
+                    .any(|outcome| outcome.result.is_ok());
+                refreshed += usize::from(succeeded);
+                if target.exchange_id == "stockbit" && *interval == "15m" && succeeded {
+                    stockbit_15m_refreshed = true;
+                }
             }
             continue;
         }
@@ -294,7 +298,7 @@ pub(super) fn sync_prepared_candle_target(
         }
     }
     record_hourly_instrument_attempt(&market_connection, instrument);
-    Ok(refreshed)
+    Ok((refreshed, stockbit_15m_refreshed))
 }
 
 pub(super) fn sync_prepared_candle_targets(
@@ -302,16 +306,18 @@ pub(super) fn sync_prepared_candle_targets(
     targets: &[super::PreparedCandleSyncTarget],
     market_database: &str,
     storage_symbol_gate: &StorageSymbolSyncGate,
-) -> (usize, usize) {
+) -> (usize, usize, usize) {
     let worker_count = candle_sync_worker_count(targets.len());
     let next_target = std::sync::atomic::AtomicUsize::new(0);
     let refreshed = std::sync::atomic::AtomicUsize::new(0);
+    let stockbit_refreshed = std::sync::atomic::AtomicUsize::new(0);
     let open_failures = std::sync::Mutex::new(Vec::<(usize, String)>::new());
     std::thread::scope(|scope| {
         let mut workers = Vec::with_capacity(worker_count);
         for _ in 0..worker_count {
             let next_target = &next_target;
             let refreshed = &refreshed;
+            let stockbit_refreshed = &stockbit_refreshed;
             let open_failures = &open_failures;
             let storage_symbol_gate = storage_symbol_gate;
             workers.push(scope.spawn(move || loop {
@@ -321,8 +327,12 @@ pub(super) fn sync_prepared_candle_targets(
                 };
                 let _storage_symbol_guard = storage_symbol_gate.lock(&target.storage_symbol);
                 match sync_prepared_candle_target(target, market_database) {
-                    Ok(count) => {
+                    Ok((count, stockbit_15m_succeeded)) => {
                         refreshed.fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+                        if stockbit_15m_succeeded {
+                            stockbit_refreshed
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
                     }
                     Err(error) => open_failures
                         .lock()
@@ -354,6 +364,7 @@ pub(super) fn sync_prepared_candle_targets(
     (
         refreshed.load(std::sync::atomic::Ordering::Relaxed),
         worker_count,
+        stockbit_refreshed.load(std::sync::atomic::Ordering::Relaxed),
     )
 }
 
@@ -401,19 +412,33 @@ pub(crate) fn registered_hourly_targets(
         .saturating_add(stale_priorities.len())
         .min(i64::MAX as usize) as i64;
     let mut statement = connection.prepare(
-        "SELECT i.exchange_id, i.storage_symbol, i.product_id, i.underlying_symbol, i.asset_category_id
-           FROM app.instruments AS i
-           LEFT JOIN app.market_sync_cursor AS c ON c.exchange_id=i.exchange_id
-             AND c.product_id=i.product_id AND c.storage_symbol=i.storage_symbol
-             AND c.interval='hourly'
-          WHERE i.is_active=1 AND i.venue_verified=1 AND i.storage_symbol <> ''
-            AND i.listing_status IN ('venue_active','public_listed_snapshot')
-          GROUP BY i.exchange_id, i.product_id, i.storage_symbol
-          ORDER BY MAX(CASE WHEN ?1 IS NOT NULL AND
+        "WITH candidates AS (
+             SELECT i.exchange_id, i.storage_symbol, i.product_id,
+                    i.underlying_symbol, i.asset_category_id,
+                    MAX(CASE WHEN ?1 IS NOT NULL AND
                                   (i.storage_symbol=?1 OR i.venue_symbol=?1 OR i.symbol=?1)
-                             THEN 1 ELSE 0 END) DESC,
-                   COALESCE(MIN(c.attempted_at), '') ASC,
-                   i.exchange_id ASC, i.product_id ASC, i.storage_symbol ASC
+                             THEN 1 ELSE 0 END) AS chart_priority,
+                    COALESCE(MIN(c.attempted_at), '') AS last_attempted_at
+               FROM app.instruments AS i
+               LEFT JOIN app.market_sync_cursor AS c ON c.exchange_id=i.exchange_id
+                 AND c.product_id=i.product_id AND c.storage_symbol=i.storage_symbol
+                 AND c.interval='hourly'
+              WHERE i.is_active=1 AND i.venue_verified=1 AND i.storage_symbol <> ''
+                AND i.listing_status IN ('venue_active','public_listed_snapshot')
+              GROUP BY i.exchange_id, i.product_id, i.storage_symbol
+         ), ranked AS (
+             SELECT exchange_id, storage_symbol, product_id, underlying_symbol,
+                    asset_category_id, chart_priority,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY exchange_id
+                        ORDER BY last_attempted_at ASC, product_id ASC, storage_symbol ASC
+                    ) AS app_rank
+               FROM candidates
+         )
+         SELECT exchange_id, storage_symbol, product_id, underlying_symbol, asset_category_id
+           FROM ranked
+          ORDER BY chart_priority DESC, app_rank ASC, exchange_id ASC,
+                   product_id ASC, storage_symbol ASC
           LIMIT ?2",
     )?;
     let normal_targets = statement
