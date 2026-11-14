@@ -653,6 +653,11 @@
                     <h3 id="appSignalReadinessTitle">Checking why signals are unavailable…</h3>
                     <p id="appSignalReadinessStatus" role="status" aria-live="polite">Loading app data checks…</p>
                     <dl id="appSignalReadinessHighlights" class="signal-readiness-highlights" hidden></dl>
+                    <div class="signal-readiness-actions">
+                        <button id="appSignalReadinessRetry" type="button">Recheck status</button>
+                        <button id="appSignalScanRetry" type="button">Refresh signals</button>
+                        <button id="appSignalListingRetry" type="button" hidden>Retry listings and scan</button>
+                    </div>
                     <p id="appSignalReadinessNextStep" class="signal-readiness-next"></p>
                     <details id="appSignalReadinessDetails" hidden>
                         <summary>View scan metrics, data checks and observed errors</summary>
@@ -660,11 +665,6 @@
                         <p id="appSignalReadinessCheckedAt"></p>
                         <ul id="appSignalReadinessExamples"></ul>
                     </details>
-                    <div class="signal-readiness-actions">
-                        <button id="appSignalReadinessRetry" type="button">Recheck status</button>
-                        <button id="appSignalScanRetry" type="button">Refresh signals</button>
-                        <button id="appSignalListingRetry" type="button" hidden>Retry listings and scan</button>
-                    </div>
                 </section>
                 <div id="signalsList" class="flex-1 overflow-y-auto custom-scroll space-y-2 p-1 max-h-[680px]" role="list" aria-label="Signal records matching the selected app, product, timeframe, and search filters" tabindex="0">
                     <p class="rounded-lg border border-gray-800 bg-gray-950/70 p-4 text-xs text-gray-400">Loading screener signals…</p>
