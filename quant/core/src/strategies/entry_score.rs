@@ -1,6 +1,8 @@
+use super::four_indicator_score::add_entry_model_indicators;
 use super::{
-    add_markov_regime_score, score_four_indicators_with_weights, FOUR_INDICATOR_EQUAL_WEIGHTS,
-    stockbit_nwe_4h_minimum_history_bars, FiveIndicatorScore, FourIndicatorScore, StrategyBar,
+    score_four_indicators_with_weights,
+    FOUR_INDICATOR_EQUAL_WEIGHTS, stockbit_nwe_4h_minimum_history_bars,
+    FourIndicatorScore, SixIndicatorScore, StrategyBar,
     StrategySignal, DSS_BRESSERT_MINIMUM_HISTORY_BARS,
     STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID, STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
 };
@@ -27,30 +29,36 @@ impl EntryModelKind {
     }
 }
 
-/// Score the supplied latest signal using the screener's five-factor model.
+/// Score the supplied latest signal using the screener's six-indicator model.
 /// The caller must pass only history available at signal time.
 pub fn score_entry_signal(
     bars: &[StrategyBar],
     signal: &StrategySignal,
     kind: EntryModelKind,
-) -> Option<FiveIndicatorScore> {
+) -> Option<SixIndicatorScore> {
     score_entry_signal_with_weights(bars, signal, kind, FOUR_INDICATOR_EQUAL_WEIGHTS)
 }
 
-/// Apply the selected live scoring profile and latest causal Markov regime to
-/// a signal. Invalid profile weights fail closed to no score.
+/// Apply the selected live scoring profile, causal Markov state, and rolling
+/// return-autocorrelation reading to a signal. Invalid profile weights fail
+/// closed to no score.
 pub fn score_entry_signal_with_weights(
     bars: &[StrategyBar],
     signal: &StrategySignal,
     kind: EntryModelKind,
     weights: [u8; 4],
-) -> Option<FiveIndicatorScore> {
+) -> Option<SixIndicatorScore> {
     let score = score_entry_signal_four_indicators_with_weights(bars, signal, kind, weights)?;
     let markov_regime = crate::classify_regimes(bars, &crate::MarkovRegimeConfig::default())
         .last()
         .copied()
         .flatten();
-    Some(add_markov_regime_score(score, &signal.direction, markov_regime))
+    Some(add_entry_model_indicators(
+        score,
+        &signal.direction,
+        markov_regime,
+        bars,
+    ))
 }
 
 fn score_entry_signal_four_indicators_with_weights(
@@ -89,12 +97,13 @@ pub fn score_entry_signal_with_markov(
     kind: EntryModelKind,
     weights: [u8; 4],
     markov_regime: Option<crate::RegimeId>,
-) -> Option<FiveIndicatorScore> {
+) -> Option<SixIndicatorScore> {
     let score = score_entry_signal_four_indicators_with_weights(bars, signal, kind, weights)?;
-    Some(add_markov_regime_score(
+    Some(add_entry_model_indicators(
         score,
         &signal.direction,
         markov_regime,
+        bars,
     ))
 }
 

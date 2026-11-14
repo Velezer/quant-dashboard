@@ -1,4 +1,4 @@
-import { hasFiveIndicatorScores, signalIndicatorScores, scoreWeightLabel, signalScoreComponentWeights, signalScorePresentation } from './signal-screener-model.js';
+import { hasSixIndicatorScores, signalIndicatorScores, scoreWeightLabel, signalScoreComponentWeights, signalScorePresentation } from './signal-screener-model.js';
 
 export function createSignalScoreBasisMarkup({ escape, scoreModelFor }) {
     function componentLabel(component) {
@@ -12,6 +12,8 @@ export function createSignalScoreBasisMarkup({ escape, scoreModelFor }) {
                 ? ` · ${value.toFixed(2)}× baseline`
                 : indicator.includes('Delta')
                     ? ` · close-location ${value.toFixed(2)}`
+                    : indicator.includes('Autocorrelation')
+                        ? ` · lag-one ρ ${value.toFixed(2)}`
                     : ''
             : '';
         return `${indicator}: ${state}${pointsLabel}${valueLabel}`;
@@ -21,19 +23,20 @@ export function createSignalScoreBasisMarkup({ escape, scoreModelFor }) {
         const basis = signal.score_basis || {};
         const scoreModel = scoreModelFor(signal);
         const presentation = signalScorePresentation(signal, scoreModel);
-        if (hasFiveIndicatorScores(signal, scoreModel)) {
+        if (hasSixIndicatorScores(signal, scoreModel)) {
             const factors = signalIndicatorScores(signal, scoreModel).map(item => {
                 const state = item.state.replaceAll('_', ' ').toLowerCase();
                 const value = typeof item.value === 'number' && Number.isFinite(item.value)
                     ? item.label === 'Relative volume' ? ` · ${item.value.toFixed(2)}× baseline`
-                        : item.label === 'Delta proxy' ? ` · close-location ${item.value.toFixed(2)}` : ''
+                        : item.label === 'Delta proxy' ? ` · close-location ${item.value.toFixed(2)}`
+                            : item.label === 'Autocorrelation' ? ` · lag-one ρ ${item.value.toFixed(2)}` : ''
                     : '';
                 const weighted = item.weightedPoints === null ? '—' : item.weightedPoints.toFixed(1);
                 return `<span class="signal-indicator-score"><span>${escape(item.label)}</span><strong>${item.points === null ? '—' : item.points.toFixed(1)}<small>/10</small></strong><span class="signal-indicator-weight">${scoreWeightLabel(item.weight)} · +${weighted}</span><span class="signal-indicator-state">${escape(state + value)}</span></span>`;
             }).join('');
             const version = signalIndicatorScores(signal, scoreModel).find(item => Number.isFinite(Number(item.profileVersion)))?.profileVersion;
             const profile = version === null || version === undefined ? 'Equal-weight profile' : `Scoring profile v${escape(version)}`;
-            return `<div class="signal-score-basis signal-score-basis-indicators"><div class="signal-indicator-grid" aria-label="Five indicators scored out of 10 with the displayed live weights">${factors}</div><small class="signal-scoring-profile">${profile}</small></div>`;
+            return `<div class="signal-score-basis signal-score-basis-indicators"><div class="signal-indicator-grid" aria-label="Six indicators scored out of 10 with the displayed live weights">${factors}</div><small class="signal-scoring-profile">${profile}</small></div>`;
         }
         const componentScaleMax = presentation.componentScoreScaleMax;
         const indicatorComponentScaleMax = presentation.indicatorComponentScoreScaleMax;

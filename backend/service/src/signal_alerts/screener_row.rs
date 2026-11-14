@@ -124,9 +124,9 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         });
     let score_model_id = first_candidate_string(candidate, &["Signal_Scoring_Model_ID"])
         .unwrap_or_else(|| quant_core::SIGNAL_CONFLUENCE_SCORING_MODEL_ID.to_string());
-    let five_indicator_score_model = super::super::is_five_indicator_score_model(&score_model_id);
-    let score_scale_max = if five_indicator_score_model {
-        quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX
+    let six_indicator_score_model = super::super::is_six_indicator_score_model(&score_model_id);
+    let score_scale_max = if six_indicator_score_model {
+        quant_core::SIX_INDICATOR_SCORE_SCALE_MAX
     } else if is_crypto_nwe_dss_signal_score {
         quant_core::NWE_DSS_SIGNAL_SCORE_SCALE_MAX
     } else {
@@ -137,21 +137,21 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
     };
     if !score_scale_max.is_finite()
         || score_scale_max <= 0.0
-        || score_scale_max > quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX
+        || score_scale_max > quant_core::SIX_INDICATOR_SCORE_SCALE_MAX
         || score < 0.0
         || score > score_scale_max
     {
         return None;
     }
-    let minimum_score_field = if five_indicator_score_model {
-        "minimum_score_out_of_50"
+    let minimum_score_field = if six_indicator_score_model {
+        "minimum_score_out_of_60"
     } else if score_scale_max == quant_core::NWE_DSS_SIGNAL_SCORE_SCALE_MAX {
         "minimum_score_out_of_20"
     } else {
         "minimum_score_out_of_10"
     };
-    let minimum_score = if five_indicator_score_model {
-        Some(quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50)
+    let minimum_score = if six_indicator_score_model {
+        Some(quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60)
     } else if is_crypto_nwe_dss_signal_score {
         Some(quant_core::NWE_DSS_SIGNAL_MINIMUM_SCORE_OUT_OF_20)
     } else {
@@ -203,7 +203,7 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         .and_then(|model| model.get("indicator_component_score_scale_max"))
         .and_then(Value::as_f64)
         .unwrap_or(component_score_scale_max);
-    let group_score_scale_max = if five_indicator_score_model {
+    let group_score_scale_max = if six_indicator_score_model {
         quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX
     } else {
         quant_core::NWE_DSS_COMPONENT_SCORE_SCALE_MAX
@@ -314,14 +314,14 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
                 "points": 0.0
             }));
         }
-        let component_points_max = if five_indicator_score_model {
+        let component_points_max = if six_indicator_score_model {
             indicator_component_score_scale_max
         } else {
             component_score_scale_max
         };
         if !score_components_match(
             &score_components,
-            five_indicator_score_model,
+            six_indicator_score_model,
             component_points_max,
             group_score_scale_max,
             strategy_strength,
@@ -392,7 +392,7 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         } else {
             None
         },
-        "minimum_score_out_of_50": if five_indicator_score_model { minimum_score } else { None },
+        "minimum_score_out_of_60": if six_indicator_score_model { minimum_score } else { None },
         "component_score_scale_max": component_score_scale_max,
         "indicator_component_score_scale_max": indicator_component_score_scale_max,
         "current_price": current_price,

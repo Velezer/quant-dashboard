@@ -156,8 +156,10 @@ export function signalScorePresentation(signal, model) {
     );
     const basisIsCurrent = basis.score_model_status !== 'legacy'
         && (!basis.model_id || !model?.score_model_id || basis.model_id === model.score_model_id);
-    const minimumKey = scoreScaleMax === 50
-        ? 'minimum_score_out_of_50'
+    const minimumKey = scoreScaleMax === 60
+        ? 'minimum_score_out_of_60'
+        : scoreScaleMax === 50
+            ? 'minimum_score_out_of_50'
         : scoreScaleMax === 40
             ? 'minimum_score_out_of_40'
             : scoreScaleMax === 20
@@ -206,9 +208,9 @@ export function scoreWeightLabel(weight) {
     return Number.isFinite(weight) ? `${Math.round(weight * 100)}% weight` : 'weight unavailable';
 }
 
-export function hasFiveIndicatorScores(signal, model) {
+export function hasSixIndicatorScores(signal, model) {
     const presentation = signalScorePresentation(signal, model);
-    return presentation.scoreScaleMax === 50 && !presentation.legacy;
+    return presentation.scoreScaleMax === 60 && !presentation.legacy;
 }
 
 export const SIGNAL_SCORE_INDICATORS = Object.freeze([
@@ -217,6 +219,7 @@ export const SIGNAL_SCORE_INDICATORS = Object.freeze([
     { id: 'relative_volume', indicator: 'Relative Volume', label: 'Relative volume' },
     { id: 'delta_proxy', indicator: 'Estimated Volume Delta (OHLCV proxy)', label: 'Delta proxy' },
     { id: 'markov_regime', indicator: 'Markov Regime', label: 'Markov regime' },
+    { id: 'lag_one_return_autocorrelation', indicator: 'Lag-one Return Autocorrelation', label: 'Autocorrelation' },
 ]);
 
 function normalizedIndicatorIdentity(value) {
@@ -231,12 +234,16 @@ function componentMatchesIndicator(component, indicator) {
         accepted.add('regime');
         accepted.add('markovstate');
     }
+    if (indicator.id === 'lag_one_return_autocorrelation') {
+        accepted.add('autocorrelation');
+        accepted.add('lagoneautocorrelation');
+    }
     return [component?.indicator, component?.indicator_id, component?.id, component?.key]
         .some(identity => accepted.has(normalizedIndicatorIdentity(identity)));
 }
 
 export function signalIndicatorScores(signal, model) {
-    if (!hasFiveIndicatorScores(signal, model)) return [];
+    if (!hasSixIndicatorScores(signal, model)) return [];
     const components = Array.isArray(signal?.score_basis?.components) ? signal.score_basis.components : [];
     return SIGNAL_SCORE_INDICATORS.map(({ id, indicator, label }) => {
         const component = components.find(item => componentMatchesIndicator(item, { id, indicator }));
@@ -246,7 +253,7 @@ export function signalIndicatorScores(signal, model) {
             ? component.weight_points : 10;
         const weightedPoints = typeof component?.weighted_points === 'number' && Number.isFinite(component.weighted_points)
             ? component.weighted_points : points === null ? null : points * weightPoints / 10;
-        return { id, indicator, label, points, weightedPoints, scale: 10, weight: weightPoints / 50,
+        return { id, indicator, label, points, weightedPoints, scale: 10, weight: weightPoints / 60,
             profileVersion: component?.scoring_profile_version ?? null,
             state: String(component?.state || 'UNAVAILABLE'), value: component?.value };
     });
@@ -263,7 +270,7 @@ export function signalIndicatorScoreForFilter(signal, model, indicatorId) {
 const LOW_TOTAL_INDICATOR_POINTS = 10;
 
 export function signalTotalStrength(signal, model) {
-    if (!hasFiveIndicatorScores(signal, model)) return null;
+    if (!hasSixIndicatorScores(signal, model)) return null;
     const indicators = signalIndicatorScores(signal, model);
     const known = indicators.every(item => item.points !== null);
     const total = known ? indicators.reduce((sum, item) => sum + (item.weightedPoints ?? item.points), 0) : null;
@@ -273,8 +280,8 @@ export function signalTotalStrength(signal, model) {
     return {
         tone: !known ? 'unavailable' : low ? 'low' : 'standard',
         label: retained ? `Last recorded: ${label.toLowerCase()}` : label,
-        description: !known ? 'All five numeric indicator contributions are needed to classify total strength.'
-            : `The five indicator readings are each out of 10, then combined using the active weights to produce ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} weighted points.`,
+        description: !known ? 'All six numeric indicator contributions are needed to classify total strength.'
+            : `The six indicator readings are each out of 10, then combined using the active weights to produce ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} weighted points.`,
     };
 }
 
@@ -285,7 +292,7 @@ export function signalIndicatorSummary(signal, model) {
 }
 
 export function signalScoreWeightSummary(signal, model) {
-    if (hasFiveIndicatorScores(signal, model)) return signalIndicatorScores(signal, model).map(item => `${item.label} ${Math.round(item.weight * 100)}%`).join(', ');
+    if (hasSixIndicatorScores(signal, model)) return signalIndicatorScores(signal, model).map(item => `${item.label} ${Math.round(item.weight * 100)}%`).join(', ');
     const weights = signalScoreComponentWeights(signal, model);
     const strategyLabel = String(model?.strategy_score_label || 'Strategy');
     const confluenceLabel = String(model?.confluence_score_label || 'Confluence');
@@ -328,11 +335,11 @@ export function signalScoreSummary(signal, model, scoreState = null) {
                 ? 'closed'
                 : stateLabel.toLowerCase()}`
         : '';
-    if (hasFiveIndicatorScores(signal, model)) {
+    if (hasSixIndicatorScores(signal, model)) {
         const label = scoreState?.tone === 'stale' ? 'Last recorded indicator scores' : 'Indicator scores';
         const strength = signalTotalStrength(signal, model);
         const total = signalDisplayScore(signal);
-        const totalLabel = Number.isFinite(total) ? `Weighted total ${total.toFixed(1)}/50 · ` : '';
+        const totalLabel = Number.isFinite(total) ? `Weighted total ${total.toFixed(1)}/60 · ` : '';
         const indicators = `${totalLabel}${label}: ${signalIndicatorSummary(signal, model)}${state}`;
         const summary = strength.tone === 'low' ? `${strength.label} · ${indicators}` : `${indicators} · ${strength.label}`;
         return `${summary} · ${strength.description} · setup strength, not win probability or execution availability`;

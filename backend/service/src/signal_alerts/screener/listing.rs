@@ -722,6 +722,7 @@ fn signal_meets_render_minimum(signal: &Value, models: &Value) -> bool {
         .or_else(|| signal["score_scale_max"].as_f64())
         .or_else(|| model.and_then(|model| model["score_scale_max"].as_f64()));
     let minimum_key = match scale {
+        Some(60.0) => "minimum_score_out_of_60",
         Some(50.0) => "minimum_score_out_of_50",
         Some(40.0) => "minimum_score_out_of_40",
         Some(20.0) => "minimum_score_out_of_20",
@@ -729,16 +730,16 @@ fn signal_meets_render_minimum(signal: &Value, models: &Value) -> bool {
     };
     let stored_model_id = basis["model_id"].as_str();
     let current_model_id = model.and_then(|model| model["score_model_id"].as_str());
-    let is_five_indicator_score_model = stored_model_id
+    let is_six_indicator_score_model = stored_model_id
         .or(current_model_id)
-        .is_some_and(super::super::is_five_indicator_score_model);
+        .is_some_and(super::super::is_six_indicator_score_model);
     let basis_is_current = basis["score_model_status"].as_str() != Some("legacy")
         && match (stored_model_id, current_model_id) {
             (Some(stored), Some(current)) => stored == current,
             _ => true,
         };
-    let minimum_candidate = if is_five_indicator_score_model {
-        Some(quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50)
+    let minimum_candidate = if is_six_indicator_score_model {
+        Some(quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60)
     } else if scale.is_some_and(|scale| scale >= 20.0) {
         if basis_is_current {
             model

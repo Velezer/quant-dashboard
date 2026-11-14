@@ -145,7 +145,7 @@ from the screener and scoring guide. App, exact product, ticker, timeframe,
 lead model/version, candle source, sample dates, costs, and frozen evaluation
 protocol remain explicit. A completed backtest is distinct from a validated
 entry model. The existing composite NWE/DSS report is not substituted for the
-live NWE-led or DSS-led five-factor models.
+live NWE-led or DSS-led six-indicator models.
 
 The page exposes paginated saved evidence, one-ticker runs, a sequential run of
 all eligible tickers in the selected scope, and the automatic daily
@@ -161,13 +161,14 @@ request failures remain visible. No ticker beyond an arbitrary first page is
 silently omitted. Report details expose fixed score bands, factor outcomes,
 uncertainty, and future sizing prerequisites; no sizing model is built here.
 
-Reuse the live causal lead generators and one shared five-factor mapping.
+Reuse the live causal lead generators and one shared six-indicator mapping.
 Entries occur at the next bar open, with no overlapping trades and no trades
 crossing split boundaries. Apply 60/20/20 chronological splits to bars after
 the model warm-up. Keep the equal-weight baseline, and fit one research-only
 candidate from 165 predeclared weight vectors (nonnegative, 5-point increments,
-sum /40 across four indicators, plus a fixed 10-point Markov component for a
-/50 total) on training data using a fixed 8-bar timeout and known fees. Require 30
+sum /40 across four indicators, plus fixed 10-point Markov and lag-one return
+autocorrelation components for a /60 total) on training data using a fixed
+8-bar timeout and known fees. Require 30
 training trades per candidate; missing factors contribute zero without
 redistribution. Validation selects 4/8/12-bar or opposite-qualifying-signal
 exits independently for the baseline and candidate. With the candidate weights
@@ -255,19 +256,20 @@ candidate is not a live signal model and cannot make that evidence sizing-ready.
 ## Candle retention and low total strength
 
 The user must be able to retain history beyond 1,000 days and identify a
-five-indicator signal with fewer than 10 combined points. Candle storage has no
+six-indicator signal with fewer than 10 combined points. Candle storage has no
 application age or total-row retention cap. Data details shows actual stored
 coverage and labels the evidence minimum separately, with an explanation of
 provider download windows and bounded chart/backtest reads. Sync Market keeps
 its existing recovery path and merges accepted candles into canonical SQLite.
 
-Five-indicator cards show an amber **Low total strength** label and left border
-when all five numeric contributions sum to less than 10, using unrounded
+Six-indicator cards show an amber **Low total strength** label and left border
+when all six numeric weighted contributions sum to less than 10, using unrounded
 points. A sum of exactly 10 belongs to the neutral **10+ combined points**
 category, which is not a validation or strong-signal claim. Missing numeric
 components show **Total strength unavailable**. Recorded zero contributions
-with an unavailable indicator state retain that state. Keep five /10 values,
-the first four weights totaling 40 and the fixed Markov weight of 10, existing
+with an unavailable indicator state retain that state. Keep six /10 values,
+the first four weights totaling 40 and fixed Markov and autocorrelation weights
+of 10 each, existing
 freshness/entry labels, and a last-recorded qualifier for
 stale scores. The same distinction appears in the selected-chart summary and
 accessible card label. This presentation does not change ranking, model
@@ -279,7 +281,7 @@ qualification, or browser alert delivery. Explain the threshold in the guide.
    minimum; readers can identify a low recorded contribution without arithmetic.
 3. **Response:** Repeated syncs upsert exact timestamps rather than replacing
    history; below-threshold signals remain selectable and eligible for alerts.
-4. **Interactions:** Keep source/product identity, five-factor semantics,
+4. **Interactions:** Keep source/product identity, six-indicator semantics,
    SQLite ownership, validation minimums, and bounded per-request work.
 5. **Accumulation:** Disk use may grow; a chart or strategy read cap is never
    a reason to prune canonical candles or trim an accepted response before save.
@@ -296,10 +298,10 @@ qualification, or browser alert delivery. Explain the threshold in the guide.
 
 ## Indicator scores, browser alerts, and app readiness
 
-Signal cards and selected-chart summaries show five indicator values out of
+Signal cards and selected-chart summaries show six indicator values out of
 10. Four weights total 40 and can be redistributed by an after-fee profile;
-Markov has a fixed 10-point weight. The /50 combined value is shown with all
-five components. Verify all five values remain visible on
+Markov and lag-one return autocorrelation each have a fixed 10-point weight.
+The /60 combined value is shown with all six components. Verify all six values remain visible on
 selected and unselected cards without hover, including narrow screens; old
 compact-layout rules can hide nested score sections. Missing components remain unavailable;
 legacy score models retain their original basis. This presentation change does
@@ -389,7 +391,7 @@ unrelated signal.
 The primary task is to understand a signal's displayed score and decide whether
 its model, timeframe, source, and freshness make it comparable to another row.
 The dashboard links to `/scoring`, a single page with a return link, section
-navigation, five-factor explanations, an illustrative points example, status
+navigation, six-indicator explanations, an illustrative points example, status
 definitions, and the separate strategy/confluence and Tokocrypto voting rules.
 The example displays supplied factor points separately; it does not evaluate market candles,
 qualify a setup, or produce a signal. Current model identities and thresholds
@@ -442,10 +444,12 @@ and Retry states. All controls use native links, labels, and keyboard behavior.
 - **Score basis:** Show the score components used for ranking, including DSS
   Bressert near/cross states and extreme-zone evidence, plus Nadaraya-Watson
   near-line/cross states when available. The NWE/DSS research ranking also
-  shows its five factors: NWE, DSS Bressert, 20-bar relative volume, estimated
-  OHLCV volume delta, and Markov regime. Show each raw `/10` score and its
-  weight; the first four weights total 40 and Markov is fixed at 10. Display
-  the combined `/50` score with its factor contributions. Preserve legacy
+  shows its six factors: NWE, DSS Bressert, 20-bar relative volume, estimated
+  OHLCV volume delta, Markov regime, and lag-one return autocorrelation. Show
+  each raw `/10` score and its weight; the first four weights total 40 while
+  Markov and autocorrelation are fixed at 10 each. Display the combined `/60`
+  score with its factor contributions and expose autocorrelation `ρ` and
+  availability state. Preserve legacy
   `/40` rows on their original scale.
   Keep component values, direction/alignment, and unavailable states visible so
   a score is interpretable. Missing components are unavailable, not silently

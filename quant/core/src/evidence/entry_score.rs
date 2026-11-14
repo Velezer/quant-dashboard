@@ -13,7 +13,7 @@ const TRAINING_SHARE: usize = 60;
 const VALIDATION_END_SHARE: usize = 80;
 const TOTAL_SCORE_BAND_WIDTH: f64 = 10.0;
 const FACTOR_SCORE_BAND_WIDTH: f64 = 2.5;
-const TOTAL_SCORE_BAND_COUNT: usize = 5;
+const TOTAL_SCORE_BAND_COUNT: usize = 6;
 const FACTOR_SCORE_BAND_COUNT: usize = 4;
 const SCORE_WEIGHT_BUDGET: u8 = 40;
 const SCORE_WEIGHT_STEP: u8 = 5;
@@ -35,17 +35,18 @@ const FACTOR_NAMES: [&str; 4] = [
     "Estimated Volume Delta (OHLCV proxy)",
 ];
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
-    "entry_five_factor_weight_fit_markov_fixed_10_after_fee_win_rate_50_v11";
+    "entry_six_indicator_weight_fit_markov_autocorrelation_fixed_10_after_fee_win_rate_50_v12";
 pub const ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID: &str = risk_reward::PROTOCOL_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {
     long: bool,
-    total: f64,
     factors: [f64; 4],
     available: [bool; 4],
     markov_score: f64,
     markov_available: bool,
+    autocorrelation_score: f64,
+    autocorrelation_available: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -54,8 +55,10 @@ struct WindowSummary {
     total_bands: [TradeSummary; TOTAL_SCORE_BAND_COUNT],
     factor_bands: [[TradeSummary; FACTOR_SCORE_BAND_COUNT]; 4],
     markov_score_bands: [TradeSummary; FACTOR_SCORE_BAND_COUNT],
+    autocorrelation_score_bands: [TradeSummary; FACTOR_SCORE_BAND_COUNT],
     unavailable_factors: [TradeSummary; 4],
     markov_unavailable: TradeSummary,
+    autocorrelation_unavailable: TradeSummary,
 }
 
 #[derive(Clone, Copy)]
@@ -100,7 +103,7 @@ fn score_with_weights(observation: Observation, weights: [u8; 4]) -> f64 {
         .zip(weights)
         .map(|(points, weight)| points * f64::from(weight) / SCORE_WEIGHT_SCALE)
         .sum::<f64>();
-    weighted_factors + markov_points(observation)
+    weighted_factors + markov_points(observation) + observation.autocorrelation_score
 }
 
 fn markov_points(observation: Observation) -> f64 {
@@ -196,6 +199,15 @@ fn evaluate_window(
             )]);
         } else {
             add(&mut result.markov_unavailable);
+        }
+        if observation.autocorrelation_available {
+            add(&mut result.autocorrelation_score_bands[band_index(
+                observation.autocorrelation_score,
+                FACTOR_SCORE_BAND_WIDTH,
+                FACTOR_SCORE_BAND_COUNT,
+            )]);
+        } else {
+            add(&mut result.autocorrelation_unavailable);
         }
         index = exit + 1;
     }
@@ -754,13 +766,14 @@ pub fn evaluate_entry_score_backtest(
             ) {
                 observations[index] = Some(Observation {
                     long: signal.direction == "LONG",
-                    total: score.total_score,
                     factors: std::array::from_fn(|factor| score.components[factor].points),
                     available: std::array::from_fn(|factor| {
                         !score.components[factor].state.ends_with("UNAVAILABLE")
                     }),
                     markov_score: score.markov_regime_score,
                     markov_available: !score.components[4].state.ends_with("UNAVAILABLE"),
+                    autocorrelation_score: score.autocorrelation_score,
+                    autocorrelation_available: !score.components[5].state.ends_with("UNAVAILABLE"),
                 });
             }
         });
@@ -769,7 +782,7 @@ pub fn evaluate_entry_score_backtest(
         horizon: WEIGHT_FIT_EXIT_BARS,
         exit_on_reverse_signal: false,
         weights: BASELINE_WEIGHTS,
-        minimum_score: crate::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50,
+        minimum_score: crate::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60,
         buy_fee_pct,
         sell_fee_pct,
         fees_known,
@@ -938,14 +951,23 @@ pub fn evaluate_entry_score_backtest(
         "bands": score_bands_json(&holdout.markov_score_bands, FACTOR_SCORE_BAND_WIDTH, fees_known),
         "unavailable": summary_json(holdout.markov_unavailable, fees_known)
     }));
+    holdout_factor_bands.push(json!({
+        "indicator": "Lag-one Return Autocorrelation",
+        "score_scale_max": crate::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
+        "weight_points": crate::STRATEGY_RETURN_AUTOCORRELATION_COMPONENT_WEIGHT,
+        "weight_status": "fixed",
+        "bands": score_bands_json(&holdout.autocorrelation_score_bands, FACTOR_SCORE_BAND_WIDTH, fees_known),
+        "unavailable": summary_json(holdout.autocorrelation_unavailable, fees_known)
+    }));
     let weight_learning = json!({
         "status": weight_learning_status,
         "reason": weight_learning_reason,
-        "score_formula": "sum(the four learned component_points * weight_points / 10) plus the fixed 10-point Markov regime contribution; unavailable indicators contribute zero without redistributing weight",
-        "score_floor_out_of_50": crate::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50,
-        "score_scale_max": crate::FIVE_INDICATOR_SCORE_SCALE_MAX,
+        "score_formula": "sum(the four learned component_points * weight_points / 10) plus fixed 10-point Markov regime and lag-one return-autocorrelation contributions; unavailable indicators contribute zero without redistributing weight",
+        "score_floor_out_of_60": crate::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60,
+        "score_scale_max": crate::SIX_INDICATOR_SCORE_SCALE_MAX,
         "learned_weight_budget": SCORE_WEIGHT_BUDGET,
         "fixed_markov_weight_points": crate::MARKOV_REGIME_COMPONENT_WEIGHT,
+        "fixed_autocorrelation_weight_points": crate::STRATEGY_RETURN_AUTOCORRELATION_COMPONENT_WEIGHT,
         "weight_step": SCORE_WEIGHT_STEP,
         "candidate_count": score_weight_candidates().len(),
         "eligible_candidate_count": eligible_weight_candidates,

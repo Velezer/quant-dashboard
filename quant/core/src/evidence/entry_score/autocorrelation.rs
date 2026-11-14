@@ -130,7 +130,7 @@ fn series_report(
 
     json!({
         "weights_out_of_40": policy.weights,
-        "minimum_score_out_of_50": policy.minimum_score,
+        "minimum_score_out_of_60": policy.minimum_score,
         "qualifying_signal_events": signal_events,
         "lags": lags,
     })

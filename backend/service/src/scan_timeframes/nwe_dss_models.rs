@@ -157,14 +157,14 @@ fn append_crypto_model_signal(
         context.timeframe,
         context.source,
     );
-    let (score_components, score_groups) = five_indicator_score_outputs(
+    let (score_components, score_groups) = six_indicator_score_outputs(
         &context.bars[..=signal_index],
         signal,
         indicator,
         profile,
         context.markov_regime,
     );
-    let score = score_groups.map(|(_, _, _, total)| total);
+    let score = score_groups.map(|(_, _, _, _, total)| total);
     let after_fee_issue = if profile.is_none_or(|profile| {
         score.is_none_or(|score| score < profile.minimum_score)
     }) {

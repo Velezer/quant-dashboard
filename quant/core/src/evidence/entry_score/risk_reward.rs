@@ -10,13 +10,13 @@ const ATR_LOOKBACK_BARS: usize = 14;
 const STOP_ATR_MULTIPLIERS: [f64; 3] = [0.75, 1.0, 1.5];
 const TARGET_AFTER_FEE_R_MULTIPLES: [f64; 5] = [1.1, 1.25, 1.5, 2.0, 2.5];
 const MAXIMUM_HOLD_BARS: [usize; 3] = [4, 8, 12];
-const SCORE_FLOORS_OUT_OF_50: [f64; 3] = [
-    crate::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50,
+const SCORE_FLOORS_OUT_OF_60: [f64; 3] = [
+    crate::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60,
     10.0,
     20.0,
 ];
 const RISK_REWARD_INTERVAL_NS: i64 = 4 * crate::SECONDS_PER_HOUR * crate::NANOS_PER_SECOND;
-pub(super) const PROTOCOL_ID: &str = "entry_score_risk_reward_after_fee_win_rate_v2";
+pub(super) const PROTOCOL_ID: &str = "entry_score_risk_reward_after_fee_win_rate_v3";
 
 #[derive(Clone, Copy)]
 struct BracketRule {
@@ -298,9 +298,9 @@ fn candidate_json(
     let validation_passed = validation_passes(validation, fees_known);
     let holdout_passed = validation_passes(holdout, fees_known);
     json!({
-        "entry_rule": "Completed NWE/DSS directional signal with the selected /50 score floor; enter at the next 4h bar open.",
+        "entry_rule": "Completed NWE/DSS directional signal with the selected /60 score floor including Markov and lag-one return autocorrelation; enter at the next 4h bar open.",
         "weights": weights,
-        "minimum_score_out_of_50": candidate.rule.minimum_score,
+        "minimum_score_out_of_60": candidate.rule.minimum_score,
         "atr_lookback_bars": ATR_LOOKBACK_BARS,
         "stop_distance": format!("{} × 4h ATR", candidate.rule.stop_atr_multiple),
         "stop_atr_multiple": candidate.rule.stop_atr_multiple,
@@ -329,7 +329,7 @@ pub(super) fn report(
     let candidate_count = STOP_ATR_MULTIPLIERS.len()
         * TARGET_AFTER_FEE_R_MULTIPLES.len()
         * MAXIMUM_HOLD_BARS.len()
-        * SCORE_FLOORS_OUT_OF_50.len();
+        * SCORE_FLOORS_OUT_OF_60.len();
     let empty = |status: &str, reason: &str| {
         json!({
             "protocol_id": PROTOCOL_ID,
@@ -345,7 +345,7 @@ pub(super) fn report(
                 "atr14_stop_multiples": STOP_ATR_MULTIPLIERS,
                 "target_after_fee_r_multiples": TARGET_AFTER_FEE_R_MULTIPLES,
                 "maximum_hold_bars": MAXIMUM_HOLD_BARS,
-                "score_floors_out_of_50": SCORE_FLOORS_OUT_OF_50,
+                "score_floors_out_of_60": SCORE_FLOORS_OUT_OF_60,
             },
             "target_r_basis": "after configured entry and exit fees",
             "fees_applied": template.fees_known,
@@ -389,7 +389,7 @@ pub(super) fn report(
     for stop_atr_multiple in STOP_ATR_MULTIPLIERS {
         for target_after_fee_r_multiple in TARGET_AFTER_FEE_R_MULTIPLES {
             for maximum_hold_bars in MAXIMUM_HOLD_BARS {
-                for minimum_score in SCORE_FLOORS_OUT_OF_50 {
+                for minimum_score in SCORE_FLOORS_OUT_OF_60 {
                     let rule = BracketRule {
                         stop_atr_multiple,
                         target_after_fee_r_multiple,
@@ -473,7 +473,7 @@ pub(super) fn report(
             "atr14_stop_multiples": STOP_ATR_MULTIPLIERS,
             "target_after_fee_r_multiples": TARGET_AFTER_FEE_R_MULTIPLES,
             "maximum_hold_bars": MAXIMUM_HOLD_BARS,
-            "score_floors_out_of_50": SCORE_FLOORS_OUT_OF_50,
+            "score_floors_out_of_60": SCORE_FLOORS_OUT_OF_60,
         },
         "candidate_count": candidate_count,
         "eligible_validation_candidate_count": eligible_candidates,

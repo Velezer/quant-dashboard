@@ -15,7 +15,7 @@ pub(super) fn append_timeframe_signal_candidate(
     source: &str,
     provider: &str,
     score_components: Vec<Value>,
-    score_groups: Option<(f64, f64, f64, f64)>,
+    score_groups: Option<(f64, f64, f64, f64, f64)>,
     profile: Option<&crate::research_reports::ActiveScoringProfile>,
 ) {
     let data_quality = if is_research_proxy_source(source) {
@@ -40,13 +40,19 @@ pub(super) fn append_timeframe_signal_candidate(
         "Data_Symbol": input.symbol,
         "Signal_Strategy_ID": strategy_id,
         "Signal_Direction": signal.direction,
-        "Signal_Strength": score_groups.map(|(_, _, _, total)| total).unwrap_or(signal.strength),
-        "Strategy_Strength": score_groups.map(|(price, _, _, _)| price).unwrap_or(signal.strategy_strength),
-        "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _)| volume)
+        "Signal_Strength": score_groups.map(|(_, _, _, _, total)| total).unwrap_or(signal.strength),
+        "Strategy_Strength": score_groups.map(|(price, _, _, _, _)| price).unwrap_or(signal.strategy_strength),
+        "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _, _)| volume)
             .or_else(|| signal.confluence.as_ref().map(|score| score.score)),
-        "Signal_Markov_Regime_Score": score_groups.map(|(_, _, markov, _)| markov),
+        "Signal_Markov_Regime_Score": score_groups.map(|(_, _, markov, _, _)| markov),
+        "Signal_Autocorrelation_Score": score_groups.map(|(_, _, _, autocorrelation, _)| autocorrelation),
         "Signal_Markov_Regime": score_components.iter()
             .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Markov Regime"))
+            .and_then(|component| component.get("state"))
+            .cloned()
+            .unwrap_or(Value::Null),
+        "Signal_Autocorrelation_State": score_components.iter()
+            .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Lag-one Return Autocorrelation"))
             .and_then(|component| component.get("state"))
             .cloned()
             .unwrap_or(Value::Null),
@@ -78,13 +84,13 @@ pub(super) fn append_timeframe_signal_candidate(
     }));
 }
 
-pub(super) fn five_indicator_score_outputs(
+pub(super) fn six_indicator_score_outputs(
     bars: &[StrategyBar],
     signal: &quant_core::StrategySignal,
     lead_indicator: &str,
     profile: Option<&crate::research_reports::ActiveScoringProfile>,
     markov_regime: Option<quant_core::RegimeId>,
-) -> (Vec<Value>, Option<(f64, f64, f64, f64)>) {
+) -> (Vec<Value>, Option<(f64, f64, f64, f64, f64)>) {
     let kind = if lead_indicator == "DSS Bressert" {
         quant_core::EntryModelKind::Dss
     } else {
@@ -106,6 +112,7 @@ pub(super) fn five_indicator_score_outputs(
         score.price_score,
         score.volume_score,
         score.markov_regime_score,
+        score.autocorrelation_score,
         score.total_score,
     ));
     let components = score
@@ -171,7 +178,7 @@ pub(super) fn append_stockbit_model_result(
         .filter(|signal| matches!(signal.direction.as_str(), "LONG" | "SHORT"));
     let profile = active_scoring_profile(input, score_model_id, timeframe, source);
     let (score_components, score_groups) = latest_signal
-        .map(|signal| five_indicator_score_outputs(bars, signal, indicator, profile, markov_regime))
+        .map(|signal| six_indicator_score_outputs(bars, signal, indicator, profile, markov_regime))
         .unwrap_or_else(|| {
             let weights = profile.map(|profile| profile.weights)
                 .unwrap_or(quant_core::FOUR_INDICATOR_EQUAL_WEIGHTS);
@@ -183,14 +190,15 @@ pub(super) fn append_stockbit_model_result(
                     serde_json::json!({"indicator": "Relative Volume", "state": "UNAVAILABLE", "points": 0.0,"weight_points":weights[2],"weighted_points":0.0,"scoring_profile_version":version}),
                     serde_json::json!({"indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "UNAVAILABLE", "points": 0.0,"weight_points":weights[3],"weighted_points":0.0,"scoring_profile_version":version}),
                     serde_json::json!({"indicator": "Markov Regime", "state": "UNAVAILABLE", "points": 0.0,"weight_points":quant_core::MARKOV_REGIME_COMPONENT_WEIGHT,"weighted_points":0.0,"scoring_profile_version":version}),
+                    serde_json::json!({"indicator": "Lag-one Return Autocorrelation", "state": "UNAVAILABLE", "points": 0.0,"weight_points":quant_core::STRATEGY_RETURN_AUTOCORRELATION_COMPONENT_WEIGHT,"weighted_points":0.0,"scoring_profile_version":version}),
                 ],
-                Some((0.0, 0.0, 0.0, 0.0)),
+                Some((0.0, 0.0, 0.0, 0.0, 0.0)),
             )
         });
     let has_after_fee_setup = latest_signal.is_some();
     let after_fee_issue = if has_after_fee_setup
         && profile.is_none_or(|profile| {
-            score_groups.is_none_or(|(_, _, _, total)| total < profile.minimum_score)
+            score_groups.is_none_or(|(_, _, _, _, total)| total < profile.minimum_score)
         })
     {
         let (reason, explanation) = match (profile, score_groups) {
@@ -198,7 +206,7 @@ pub(super) fn append_stockbit_model_result(
                 "after_fee_profile_missing",
                 "No active after-fee profile is available; equal-weight scoring is used and this setup is still shown.",
             ),
-            (Some(profile), Some((_, _, _, score))) if score < profile.minimum_score => (
+            (Some(profile), Some((_, _, _, _, score))) if score < profile.minimum_score => (
                 "below_after_fee_score_cutoff",
                 "The setup is below the historical after-fee score cutoff; the metric is informational and does not hide this signal.",
             ),
@@ -273,12 +281,18 @@ pub(super) fn append_stockbit_model_result(
             "timeframe": timeframe,
             "Signal_Direction": latest_signal.map(|signal| signal.direction.as_str()),
             "Signal_Bar_Time": latest_signal.map(|_| score_bar.time),
-            "Signal_Strength": score_groups.map(|(_, _, _, total)| total).unwrap_or(0.0),
-            "Strategy_Strength": score_groups.map(|(price, _, _, _)| price).unwrap_or(0.0),
-            "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _)| volume),
-            "Signal_Markov_Regime_Score": score_groups.map(|(_, _, markov, _)| markov),
+            "Signal_Strength": score_groups.map(|(_, _, _, _, total)| total).unwrap_or(0.0),
+            "Strategy_Strength": score_groups.map(|(price, _, _, _, _)| price).unwrap_or(0.0),
+            "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _, _)| volume),
+            "Signal_Markov_Regime_Score": score_groups.map(|(_, _, markov, _, _)| markov),
+            "Signal_Autocorrelation_Score": score_groups.map(|(_, _, _, autocorrelation, _)| autocorrelation),
             "Signal_Markov_Regime": score_components.iter()
                 .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Markov Regime"))
+                .and_then(|component| component.get("state"))
+                .cloned()
+                .unwrap_or(Value::Null),
+            "Signal_Autocorrelation_State": score_components.iter()
+                .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Lag-one Return Autocorrelation"))
                 .and_then(|component| component.get("state"))
                 .cloned()
                 .unwrap_or(Value::Null),
