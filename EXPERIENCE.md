@@ -98,8 +98,12 @@ lesson only when it will improve future tasks.
 - For entry-score research, retain raw causal factor observations before applying
   the composite floor so alternate weights can change qualification. Fit bounded
   weights on training data, select exits and WIB hour pairs on validation, and
-  keep the chronological holdout read-only. Report score and consecutive-trade
-  return autocorrelation with pair counts; it describes dependence, not accuracy.
+  keep the chronological holdout read-only. Report lagged, strategy-aligned
+  return autocorrelation with pair counts on training data, comparing the
+  equal-weight baseline with any training-fitted candidate. A negative lag is a
+  reversal clue between separate outcomes, not a position-flip instruction or
+  evidence of accuracy; any reverse-direction rule needs its own validation and
+  untouched holdout evaluation.
 - Apply the 1,000-day validation minimum to the full chronological history, not
   the 20% holdout tail. Requiring 1,000 days inside that tail would require about
   fourteen years of stored data and exceed the bounded 100,000-candle report
