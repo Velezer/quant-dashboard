@@ -269,7 +269,7 @@ fn history_contract_requires_one_thousand_calendar_days() {
         .contains("999/1000"));
     assert!(history_coverage_warning("15m", 100, 65)
         .expect("intraday coverage should explain the provider limit")
-        .contains("provider-window limited"));
+        .contains("not a storage cap"));
 }
 
 #[test]

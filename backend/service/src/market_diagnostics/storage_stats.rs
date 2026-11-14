@@ -671,7 +671,7 @@ fn load_market_storage_details(
         "history_contract": {
             "minimum_calendar_days": MIN_ENGINE_HISTORY_DAYS,
             "daily_weekly_request_range": "10y",
-            "intraday_policy": "provider_window_plus_local_accumulation",
+            "intraday_policy": "provider_history_backfill_plus_local_retention",
             "validated_evidence_requires": "minimum_calendar_days_and_trade_count"
         },
         "history_coverage": {

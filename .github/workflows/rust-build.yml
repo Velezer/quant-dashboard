@@ -12,7 +12,7 @@ on:
       - ".github/workflows/rust-build.yml"
       - ".github/scripts/**"
   push:
-    branches: ["**"]
+    branches: ["main"]
     paths:
       - "backend/**"
       - "quant/**"
