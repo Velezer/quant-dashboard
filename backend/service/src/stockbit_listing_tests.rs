@@ -29,6 +29,62 @@ fn complete_idx_company_directory_is_normalized_and_count_checked() {
 }
 
 #[test]
+fn malformed_non_trading_identifiers_do_not_reject_a_complete_idx_directory() {
+    let mut symbols: Vec<String> = (0..945).map(ticker).collect();
+    symbols.extend(
+        [
+            "TEST-SHM",
+            "TEST-SHM2",
+            "TEST-SHM3",
+            "TESTDWHPD2",
+            "TESTDWHSH2",
+            "TESTDWHSH3",
+            "TESTDWHSH4",
+            "TESTDWHSHM",
+            "TKS-KORSFU",
+        ]
+        .map(str::to_string),
+    );
+
+    let listings = parse_directory(&directory_page(&symbols, symbols.len())).unwrap();
+
+    assert_eq!(listings.len(), 945);
+    assert!(listings.iter().all(|listing| {
+        listing
+            .symbol
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+    }));
+}
+
+#[test]
+fn api_page_excludes_malformed_identifiers_without_losing_source_row_count() {
+    let mut rows: Vec<serde_json::Value> = (0..MIN_LISTING_SYMBOLS)
+        .map(|index| {
+            serde_json::json!({
+                "EfekEmiten_Saham": true,
+                "KodeEmiten": ticker(index),
+            })
+        })
+        .collect();
+    rows.push(serde_json::json!({
+        "EfekEmiten_Saham": true,
+        "KodeEmiten": "TEST-SHM",
+    }));
+    let source_row_count = rows.len();
+    let body = serde_json::to_vec(&serde_json::json!({
+        "recordsTotal": source_row_count,
+        "data": rows,
+    }))
+    .unwrap();
+
+    let page = super::parse_api_page(&body).unwrap();
+
+    assert_eq!(page.record_count, source_row_count);
+    assert_eq!(page.listings.len(), MIN_LISTING_SYMBOLS);
+}
+
+#[test]
 fn record_total_mismatch_cannot_be_used_to_delist_tickers() {
     let symbols: Vec<String> = (0..MIN_LISTING_SYMBOLS - 1).map(ticker).collect();
     let error = parse_directory(&directory_page(&symbols, MIN_LISTING_SYMBOLS)).unwrap_err();

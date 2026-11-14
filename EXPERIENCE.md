@@ -191,9 +191,12 @@ lesson only when it will improve future tasks.
   become a false missing-history result.
 - IDX Stockbit registration must use the paginated `GetCompanyProfiles` JSON
   endpoint rather than assume the public HTML page embeds Nuxt state. Validate
-  the declared total and each page before reconciliation, and queue an
-  app-scoped rescan after a successful live registry refresh so a first-boot
-  scan against an empty registry is not the only scan until the next interval.
+  the declared total and each page before reconciliation. Count complete
+  source rows separately from usable tickers: IDX includes malformed test or
+  non-trading identifiers such as `TEST-SHM`, and rejecting one must not erase
+  the rest of a valid 900+ ticker universe. Queue an app-scoped rescan after a
+  successful live registry refresh so a first-boot scan against an empty
+  registry is not the only scan until the next interval.
 - Market-history target selection must interleave due tickers by app after
   respecting explicit chart and stale-signal priorities. A global alphabetical
   order can let a larger app consume every bounded batch and leave another
