@@ -22,7 +22,7 @@ use interval::sync_interval_for_exchange;
 use providers::yahoo_request_window;
 use providers::{
     fetch_binance_history_page, fetch_binance_interval, fetch_chart_interval,
-    fetch_yahoo_interval, yahoo_base_asset, Bar, BinanceMarket,
+    fetch_yahoo_history_page, fetch_yahoo_interval, yahoo_base_asset, Bar, BinanceMarket,
 };
 #[path = "research_proxy_warmup.rs"]
 mod warmup;
@@ -180,8 +180,13 @@ fn recent_proxy_result(
         now.saturating_sub(ts.div_euclid(NANOS_PER_SECOND))
             <= crate::freshness_threshold_seconds(symbol, interval)
     });
-    let history_complete = if provider == "binance" && matches!(interval, "15m" | "1h" | "1d") {
-        binance_history_backfill_complete(connection, symbol, interval, source).ok()?
+    let backfill_required = (provider == "binance" && matches!(interval, "15m" | "1h" | "1d"))
+        || (provider == "yfinance"
+            && exchange == "stockbit"
+            && source.starts_with("stockbit_regular_")
+            && matches!(interval, "15m" | "1h" | "1d"));
+    let history_complete = if backfill_required {
+        provider_history_backfill_complete(connection, symbol, interval, source).ok()?
     } else {
         true
     };
@@ -203,7 +208,7 @@ fn recent_proxy_result(
     None
 }
 
-fn binance_history_backfill_complete(
+fn provider_history_backfill_complete(
     connection: &Connection,
     symbol: &str,
     interval: &str,
@@ -221,12 +226,13 @@ fn binance_history_backfill_complete(
         .map(|complete| complete.unwrap_or(false))
 }
 
-fn record_binance_history_backfill_state(
+fn record_history_backfill_state(
     connection: &Connection,
     symbol: &str,
     interval: &str,
     exchange: &str,
     product_id: &str,
+    provider: &str,
     source: &str,
     status: &str,
     rows_received: usize,
@@ -241,13 +247,14 @@ fn record_binance_history_backfill_state(
     };
     let updated = connection
         .execute(
-            "UPDATE ingestion_runs SET exchange_id=?1,product_id=?2,data_provider='binance',
-                attempted_at=?3,status=?4,rows_received=?5,error=?6
-              WHERE id=(SELECT id FROM ingestion_runs WHERE symbol=?7 AND interval=?8
-                AND source=?9 ORDER BY id DESC LIMIT 1)",
+            "UPDATE ingestion_runs SET exchange_id=?1,product_id=?2,data_provider=?3,
+                attempted_at=?4,status=?5,rows_received=?6,error=?7
+              WHERE id=(SELECT id FROM ingestion_runs WHERE symbol=?8 AND interval=?9
+                AND source=?10 ORDER BY id DESC LIMIT 1)",
             params![
                 recorded_exchange,
                 recorded_product,
+                provider,
                 attempted_at,
                 status,
                 rows_received as i64,
@@ -262,13 +269,14 @@ fn record_binance_history_backfill_state(
         let _ = connection.execute(
             "INSERT INTO ingestion_runs(symbol,interval,source,exchange_id,product_id,data_provider,
                 attempted_at,status,rows_received,error)
-              VALUES(?1,?2,?3,?4,?5,'binance',?6,?7,?8,?9)",
+              VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             params![
                 symbol,
                 marker_interval,
                 source,
                 recorded_exchange,
                 recorded_product,
+                provider,
                 attempted_at,
                 status,
                 rows_received as i64,
@@ -299,7 +307,7 @@ fn sync_with_binance(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|error| error.to_string())?;
-    let history_complete = binance_history_backfill_complete(
+    let history_complete = provider_history_backfill_complete(
         connection,
         storage_symbol,
         interval,
@@ -329,12 +337,13 @@ fn sync_with_binance(
             },
         ) {
             Ok(rows) => {
-                record_binance_history_backfill_state(
+                record_history_backfill_state(
                     connection,
                     storage_symbol,
                     interval,
                     exchange,
                     app_product_from_source(source).unwrap_or(""),
+                    "binance",
                     source,
                     if rows == 0 { "complete" } else { "running" },
                     rows,
@@ -342,12 +351,13 @@ fn sync_with_binance(
                 );
             }
             Err(error) => {
-                record_binance_history_backfill_state(
+                record_history_backfill_state(
                     connection,
                     storage_symbol,
                     interval,
                     exchange,
                     app_product_from_source(source).unwrap_or(""),
+                    "binance",
                     source,
                     "error",
                     0,
@@ -414,22 +424,116 @@ fn sync_with_yahoo(
     duration_seconds: i64,
     maximum_rows: usize,
 ) -> Result<usize, String> {
-    let result = fetch_yahoo_interval(yahoo_symbol, kind, interval, duration_seconds, maximum_rows)
-        .and_then(|bars| {
-            persist(
-                connection,
-                storage_symbol,
-                kind,
-                exchange,
-                "yfinance",
-                source,
+    let mut history_error = None;
+    let has_stored_history: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3)",
+            params![storage_symbol, interval, source],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if kind == "idx_stock"
+        && exchange == "stockbit"
+        && source.starts_with("stockbit_regular_")
+        && matches!(interval, "15m" | "1h" | "1d")
+    {
+        let earliest_ts: Option<i64> = connection
+            .query_row(
+                "SELECT MIN(ts) FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3",
+                params![storage_symbol, interval, source],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let complete =
+            provider_history_backfill_complete(connection, storage_symbol, interval, source)
+                .unwrap_or(false);
+        if let Some(earliest_ts) = earliest_ts.filter(|_| !complete) {
+            match fetch_yahoo_history_page(
                 yahoo_symbol,
                 interval,
-                "yahoo_unadjusted",
-                &bars,
-            )?;
-            Ok(bars.len())
-        });
+                duration_seconds,
+                earliest_ts.div_euclid(NANOS_PER_SECOND),
+                i64::try_from(super::now_secs()).unwrap_or(i64::MAX),
+            ) {
+                Ok((bars, reached_provider_start)) => {
+                    let rows = bars.len();
+                    if !bars.is_empty() {
+                        if let Err(error) = persist(
+                            connection,
+                            storage_symbol,
+                            kind,
+                            exchange,
+                            "yfinance",
+                            source,
+                            yahoo_symbol,
+                            interval,
+                            "yahoo_unadjusted",
+                            &bars,
+                        ) {
+                            history_error = Some(error);
+                        }
+                    }
+                    if history_error.is_none() {
+                        record_history_backfill_state(
+                            connection,
+                            storage_symbol,
+                            interval,
+                            exchange,
+                            app_product_from_source(source).unwrap_or(""),
+                            "yfinance",
+                            source,
+                            if reached_provider_start || rows == 0 {
+                                "complete"
+                            } else {
+                                "running"
+                            },
+                            rows,
+                            "",
+                        );
+                    }
+                }
+                Err(error) => {
+                    record_history_backfill_state(
+                        connection,
+                        storage_symbol,
+                        interval,
+                        exchange,
+                        app_product_from_source(source).unwrap_or(""),
+                        "yfinance",
+                        source,
+                        "error",
+                        0,
+                        &error,
+                    );
+                    history_error = Some(error);
+                }
+            }
+        }
+    }
+
+    let result = fetch_yahoo_interval(
+        yahoo_symbol,
+        kind,
+        interval,
+        duration_seconds,
+        maximum_rows,
+        has_stored_history,
+    )
+    .and_then(|bars| {
+        persist(
+            connection,
+            storage_symbol,
+            kind,
+            exchange,
+            "yfinance",
+            source,
+            yahoo_symbol,
+            interval,
+            "yahoo_unadjusted",
+            &bars,
+        )?;
+        Ok(bars.len())
+    });
     if let Err(error) = &result {
         let now = super::format_timestamp(super::now_secs());
         record_proxy_failure(
@@ -442,6 +546,11 @@ fn sync_with_yahoo(
             interval,
             &now,
             error,
+        );
+    }
+    if let Some(error) = history_error {
+        eprintln!(
+            "[ResearchProxy] Yahoo history backfill deferred for {storage_symbol} {interval}: {error}"
         );
     }
     result

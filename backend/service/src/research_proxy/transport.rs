@@ -23,8 +23,18 @@ pub(crate) fn fetch_bounded_url(url: &str) -> Result<Vec<u8>, String> {
         },
     )?;
     if response.status >= 400 {
+        let detail = serde_json::from_slice::<serde_json::Value>(&response.body)
+            .ok()
+            .and_then(|body| {
+                body.pointer("/chart/error/description")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+            .filter(|detail| !detail.trim().is_empty())
+            .map(|detail| format!(": {}", detail.chars().take(240).collect::<String>()))
+            .unwrap_or_default();
         return Err(format!(
-            "market-data request failed with HTTP {}",
+            "market-data request failed with HTTP {}{detail}",
             response.status
         ));
     }

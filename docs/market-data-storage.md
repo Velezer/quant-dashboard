@@ -84,10 +84,14 @@ must still support SQLite file locking and durable writes.
 Canonical candle history has no application-imposed maximum age or total-row
 retention cap. Candles older than 1,000 days remain stored, and newly acquired
 older candles can be added. The 1,000-day value is the minimum stored-history
-coverage requirement, not a storage limit. Binance crypto history uses bounded
-pages from the oldest saved candle, and continues backfilling even when a recent
-price refresh succeeded. Historical pages do not replace current-price refreshes.
-The separate 730-day value is the minimum evidence sample requirement. Syncs upsert the exact
+coverage requirement, not a storage limit. Binance crypto history and Stockbit
+Yahoo daily history use bounded pages from each series' oldest saved candle and
+continue backfilling even when a recent price refresh succeeds. Stockbit starts
+with a recent daily window and adds older pages gradually. Yahoo's own
+intraday retention remains 60 days for 15-minute candles and 730 days for hourly
+candles; the app stores all history those provider windows expose. Historical
+pages do not replace current-price refreshes. The separate 730-day value is the
+minimum evidence sample requirement. Syncs upsert the exact
 symbol/interval/source/timestamp and preserve other timestamps.
 
 Provider request windows and per-response budgets bound acquisition. Chart,

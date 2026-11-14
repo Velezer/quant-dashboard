@@ -2,6 +2,7 @@ use super::*;
 
 const STOCKBIT_4H_SOURCE: &str = "stockbit_regular_yfinance_fallback";
 const STOCKBIT_4H_WARMUP_INTERVAL: &str = "1h_history_for_4h";
+// Yahoo's 60m endpoint rejects requests older than the latest 730 days.
 const STOCKBIT_4H_HISTORY_RANGE: &str = "2y";
 const MAX_STOCKBIT_4H_HISTORY_RESPONSE_ROWS: usize = 4_000;
 const STOCKBIT_4H_WARMUP_FAILURE_RETRY_SECONDS: i64 = quant_core::SECONDS_PER_HOUR;

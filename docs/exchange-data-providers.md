@@ -472,6 +472,13 @@ marked unverified until a listing source confirms it.
 | Pluang | No native feed configured | Approved feed required for the exact product and price basis; scraping requires written consent | Binance, Coinbase, Bybit, OKX, and Yahoo for eligible crypto spot; Binance, Bybit, and Yahoo for perpetuals; Yahoo for eligible equity mappings |
 | Pintu Retail Spot / Pro Spot / Pro Futures | No native candle feed configured | First-party app listings confirm product eligibility; venue-native execution validation still requires an approved candle and product contract | Spot: Binance, Coinbase, Bybit, and OKX. Futures: Binance USDⓈ-M and Bybit Linear. Yahoo is also attempted; none represents Pintu venue pricing |
 
+Stockbit's Yahoo daily candle history is backfilled in bounded pages until the
+ticker's first available trade. Yahoo limits its intraday history to 60 days
+for 15-minute bars and 730 days for hourly bars; those are provider limits, not
+storage limits. The research proxy stores all accepted bars within those
+windows. Stockbit daily syncs start with a recent window, then add older pages
+gradually until the provider's earliest available candle.
+
 The Pintu app registry refresh reads the bounded first-party
 [`Retail market listing`](https://api.pintu.co.id/v2/trade/price-changes),
 [`Pro Spot symbols`](https://api.pintu.pro/v1/public/get-symbols-reference), and
