@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 
 #[path = "entry_score/risk_reward.rs"]
 mod risk_reward;
+#[path = "entry_score/autocorrelation.rs"]
+mod autocorrelation;
 
 const TRAINING_SHARE: usize = 60;
 const VALIDATION_END_SHARE: usize = 80;
@@ -854,6 +856,14 @@ pub fn evaluate_entry_score_backtest(
         !invalid,
         bar_interval_ns,
     );
+    let strategy_return_autocorrelation = autocorrelation::report(
+        bars,
+        &observations,
+        warmup_end,
+        train_end,
+        baseline_policy,
+        selected_weights,
+    );
     let after_fee_target_met = |summary: TradeSummary| {
         fees_known
             && summary.trades >= MIN_WEIGHT_FIT_TRADES
@@ -949,6 +959,7 @@ pub fn evaluate_entry_score_backtest(
         "weighted_score_autocorrelation": selected_weights.map(|weights|
             weighted_score_autocorrelation(&observations, warmup_end, train_end, weights)),
         "trade_return_autocorrelation": selected_training_fit.return_autocorrelation_json(),
+        "strategy_return_autocorrelation": strategy_return_autocorrelation,
         "baseline": baseline_weight_comparison,
         "candidate": learned_weight_comparison,
         "risk_reward_rule": risk_reward_rule,

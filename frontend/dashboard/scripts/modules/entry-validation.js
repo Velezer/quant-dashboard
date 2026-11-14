@@ -1,4 +1,5 @@
 import { requestJson } from './api.js';
+import { renderStrategyAutocorrelation } from './strategy-autocorrelation-chart.js';
 
 const PAGE_SIZE = 50;
 const APP_LABELS = { stockbit: 'Stockbit', pintu: 'Pintu', pluang: 'Pluang', tokocrypto: 'Tokocrypto' };
@@ -667,6 +668,7 @@ export function initializeEntryValidation(doc = document) {
             autocorrelationCard('Weighted score · lag 1', learning?.weighted_score_autocorrelation),
             autocorrelationCard('Trade return · lag 1', learning?.trade_return_autocorrelation),
         );
+        renderStrategyAutocorrelation($('strategy-autocorrelation-indicator'), learning?.strategy_return_autocorrelation);
     }
     function hourText(value) {
         const hour = numeric(value);
