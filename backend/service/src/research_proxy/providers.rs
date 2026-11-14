@@ -116,35 +116,14 @@ pub(super) fn fetch_yahoo_history_page(
     now_seconds: i64,
 ) -> Result<(Vec<Bar>, bool), String> {
     validate_yahoo_symbol(symbol)?;
-    if duration_seconds <= 0 || earliest_ts <= 0 || now_seconds <= 0 {
-        return Err("invalid Yahoo history cursor".into());
-    }
-    let (provider_interval, page_days, provider_limit_days) = match interval {
-        "15m" => ("15m", 14_i64, Some(60_i64)),
-        "1h" => ("60m", 90_i64, Some(730_i64)),
-        "1d" => ("1d", 365 * 3, None),
-        _ => return Err("unsupported Yahoo history interval".into()),
+    let Some((provider_interval, page_start, page_end)) =
+        yahoo_history_page_window(interval, duration_seconds, earliest_ts, now_seconds)?
+    else {
+        return Ok((Vec::new(), true));
     };
-    let provider_floor = provider_limit_days.map(|days| {
-        now_seconds.saturating_sub(days.saturating_mul(crate::SECONDS_PER_DAY))
-    });
-    if provider_floor
-        .is_some_and(|floor| earliest_ts <= floor.saturating_add(duration_seconds))
-    {
-        return Ok((Vec::new(), true));
-    }
-
-    let earliest_request = earliest_ts.saturating_sub(1);
-    let page_start = earliest_ts
-        .saturating_sub(page_days.saturating_mul(crate::SECONDS_PER_DAY))
-        .max(0)
-        .max(provider_floor.unwrap_or(0));
-    if page_start >= earliest_request {
-        return Ok((Vec::new(), true));
-    }
 
     let url = format!(
-        "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={provider_interval}&period1={page_start}&period2={earliest_ts}"
+        "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={provider_interval}&period1={page_start}&period2={page_end}"
     );
     let body = match fetch_bounded_url(&url) {
         Ok(body) => body,
@@ -188,6 +167,43 @@ pub(super) fn fetch_yahoo_history_page(
             .is_some_and(|bar| bar.ts <= first_trade.saturating_add(duration_seconds))
     });
     Ok((bars, reached_first_trade))
+}
+
+/// Returns one provider-bounded interval ending just before the oldest
+/// stored bar. `None` means this source's available history was exhausted.
+pub(super) fn yahoo_history_page_window(
+    interval: &str,
+    duration_seconds: i64,
+    earliest_ts: i64,
+    now_seconds: i64,
+) -> Result<Option<(&'static str, i64, i64)>, String> {
+    if duration_seconds <= 0 || earliest_ts <= 0 || now_seconds <= 0 {
+        return Err("invalid Yahoo history cursor".into());
+    }
+    let (provider_interval, page_days, provider_limit_days) = match interval {
+        "15m" => ("15m", 14_i64, Some(60_i64)),
+        "1h" => ("60m", 90_i64, Some(730_i64)),
+        "1d" => ("1d", 365 * 3, None),
+        _ => return Err("unsupported Yahoo history interval".into()),
+    };
+    let provider_floor = provider_limit_days.map(|days| {
+        now_seconds.saturating_sub(days.saturating_mul(crate::SECONDS_PER_DAY))
+    });
+    if provider_floor
+        .is_some_and(|floor| earliest_ts <= floor.saturating_add(duration_seconds))
+    {
+        return Ok(None);
+    }
+
+    let earliest_request = earliest_ts.saturating_sub(1);
+    let page_start = earliest_ts
+        .saturating_sub(page_days.saturating_mul(crate::SECONDS_PER_DAY))
+        .max(0)
+        .max(provider_floor.unwrap_or(0));
+    if page_start >= earliest_request {
+        return Ok(None);
+    }
+    Ok(Some((provider_interval, page_start, earliest_ts)))
 }
 
 fn validate_yahoo_symbol(symbol: &str) -> Result<(), String> {

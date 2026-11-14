@@ -351,6 +351,69 @@ fn one_hour_proxy_history_keeps_its_one_hour_refresh_interval() {
 }
 
 #[test]
+fn stockbit_yahoo_success_cache_waits_for_history_backfill_completion() {
+    let connection = proxy_fixture();
+    let now = super::super::format_timestamp(super::super::now_secs());
+    connection
+        .execute(
+            "INSERT INTO series(symbol,interval,source,exchange_id,product_id,data_provider,
+                last_success,last_attempt,last_error)
+             VALUES('BBCA.JK','15m','stockbit_regular_yfinance_fallback','stockbit',
+                'stockbit_regular','yfinance',?1,?1,NULL)",
+            [&now],
+        )
+        .unwrap();
+    insert_completed_bars(
+        &connection,
+        "BBCA.JK",
+        "stockbit_regular_yfinance_fallback",
+        "15m",
+        900,
+        1,
+    );
+    connection
+        .execute(
+            "INSERT INTO ingestion_runs(symbol,interval,source,status)
+             VALUES('BBCA.JK','15m_history_backfill',
+                'stockbit_regular_yfinance_fallback','running')",
+            [],
+        )
+        .unwrap();
+
+    assert_eq!(
+        recent_proxy_result(
+            &connection,
+            "BBCA.JK",
+            "stockbit",
+            "stockbit_regular",
+            "stockbit_regular_yfinance_fallback",
+            "15m",
+            900,
+        ),
+        None
+    );
+
+    connection
+        .execute(
+            "UPDATE ingestion_runs SET status='complete' WHERE interval='15m_history_backfill'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(
+        recent_proxy_result(
+            &connection,
+            "BBCA.JK",
+            "stockbit",
+            "stockbit_regular",
+            "stockbit_regular_yfinance_fallback",
+            "15m",
+            900,
+        ),
+        Some(Ok(1))
+    );
+}
+
+#[test]
 fn recent_proxy_failure_is_returned_without_retrying_each_scheduler_minute() {
     let connection = proxy_fixture();
     let now = super::super::format_timestamp(super::super::now_secs());
@@ -435,7 +498,46 @@ fn yahoo_non_15m_request_windows_keep_the_existing_interval_mapping() {
         yahoo_request_window("crypto_spot", "1d").unwrap(),
         ("1d", "10y")
     );
+    assert_eq!(
+        yahoo_request_window("idx_stock", "1d").unwrap(),
+        ("1d", "1y")
+    );
     assert!(yahoo_request_window("idx_stock", "5m").is_err());
+}
+
+#[test]
+fn yahoo_history_pages_exceed_the_evidence_minimum_only_when_provider_allows_it() {
+    let now = 1_800_000_000_i64;
+    let daily_earliest = now - 10 * 365 * crate::SECONDS_PER_DAY;
+    let daily_page = super::providers::yahoo_history_page_window(
+        "1d",
+        crate::SECONDS_PER_DAY,
+        daily_earliest,
+        now,
+    )
+    .unwrap()
+    .expect("daily history has no fixed provider lookback cap");
+    assert_eq!(daily_page.0, "1d");
+    assert_eq!(daily_page.2, daily_earliest);
+    assert!(daily_page.1 < now - crate::MIN_ENGINE_HISTORY_DAYS * crate::SECONDS_PER_DAY);
+
+    let hourly_floor = now - 730 * crate::SECONDS_PER_DAY;
+    assert!(super::providers::yahoo_history_page_window(
+        "1h",
+        quant_core::SECONDS_PER_HOUR,
+        hourly_floor,
+        now,
+    )
+    .unwrap()
+    .is_none());
+    assert!(super::providers::yahoo_history_page_window(
+        "15m",
+        15 * quant_core::SECONDS_PER_MINUTE,
+        now - 61 * crate::SECONDS_PER_DAY,
+        now,
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]
