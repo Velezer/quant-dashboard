@@ -165,16 +165,6 @@ impl TradeSummary {
         (self.trades > 0).then(|| self.wins as f64 / self.trades as f64 * 100.0)
     }
 
-    pub(super) fn profit_factor(self) -> Option<f64> {
-        if self.negative_returns_pct > 0.0 {
-            Some(self.positive_returns_pct / self.negative_returns_pct)
-        } else if self.positive_returns_pct > 0.0 {
-            Some(99.0)
-        } else {
-            None
-        }
-    }
-
     pub(super) fn return_autocorrelation_json(self) -> Value {
         self.lag_one_returns.to_json("Consecutive non-overlapping trade returns in chronological order; equal time spacing is not assumed.")
     }
