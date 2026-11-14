@@ -151,13 +151,8 @@ impl MetricTotals {
                 .is_some_and(|lower| lower >= TARGET_AFTER_FEE_WIN_RATE_PCT)
     }
 
-    fn signal_potential_passes(self) -> bool {
+    fn signal_win_rate_passes(self) -> bool {
         self.target_passes()
-            && self
-                .payoff_ratio()
-                .is_some_and(|ratio| ratio >= quant_core::MIN_ASYMMETRIC_REWARD_RISK)
-            && self.mean_net().is_some_and(|mean| mean > 0.0)
-            && self.profit_factor().is_some_and(|factor| factor > 1.0)
     }
 
     fn merge(&mut self, incoming: Self) {
@@ -177,7 +172,6 @@ impl MetricTotals {
             "win_rate_after_fees_pct": self.win_rate(),
             "win_rate_after_fees_wilson_95_lower_pct": self.wilson_lower_pct(),
             "observed_payoff_ratio_after_fees": self.payoff_ratio(),
-            "minimum_asymmetric_payoff_ratio": quant_core::MIN_ASYMMETRIC_REWARD_RISK,
             "mean_net_return_pct": self.mean_net(),
             "profit_factor": self.profit_factor(),
         })
@@ -408,7 +402,7 @@ fn candidate_decision(
     // that frozen cutoff and never participates in selecting it.
     let calibration_band = (0..SCORE_BAND_COUNT).find(|band| {
         cumulative_score_bands(&evidence.validation_score_bands, *band)
-            .signal_potential_passes()
+            .signal_win_rate_passes()
     });
     let validation_signal_gate = calibration_band
         .map(|band| cumulative_score_bands(&evidence.validation_score_bands, band));
@@ -433,30 +427,11 @@ fn candidate_decision(
     if !evidence.holdout.target_passes() {
         blockers.push("The untouched holdout does not meet the 50% after-fee win-rate target with a 95% Wilson lower bound.");
     }
-    if evidence.validation.mean_net().zip(evidence.baseline_validation.mean_net())
-        .is_none_or(|(candidate, baseline)| candidate <= baseline)
-        || evidence.holdout.mean_net().zip(evidence.baseline_holdout.mean_net())
-            .is_none_or(|(candidate, baseline)| candidate <= baseline)
-    {
-        blockers.push("The candidate must improve mean net return over equal weights in validation and holdout.");
-    }
-    if evidence.validation.profit_factor().is_none_or(|factor| factor <= 1.0)
-        || evidence.holdout.profit_factor().is_none_or(|factor| factor <= 1.0)
-    {
-        blockers.push("Validation and holdout profit factors must both exceed 1 after fees.");
-    }
-    if evidence.validation.payoff_ratio().is_none_or(|ratio| {
-        ratio < quant_core::MIN_ASYMMETRIC_REWARD_RISK
-    }) || evidence.holdout.payoff_ratio().is_none_or(|ratio| {
-        ratio < quant_core::MIN_ASYMMETRIC_REWARD_RISK
-    }) {
-        blockers.push("Validation and holdout average net wins must be at least 1.5 times average net losses after fees.");
-    }
     if validation_signal_gate.is_none() {
-        blockers.push("No validation score cutoff meets the 50% after-fee win-rate, 95% Wilson lower-bound, and positive-expectancy gates.");
+        blockers.push("No validation score cutoff meets the 50% after-fee win-rate target and its 95% Wilson lower bound.");
     }
-    if holdout_signal_gate.is_none_or(|summary| !summary.signal_potential_passes()) {
-        blockers.push("The frozen validation score cutoff does not meet the same after-fee gates on untouched holdout data.");
+    if holdout_signal_gate.is_none_or(|summary| !summary.signal_win_rate_passes()) {
+        blockers.push("The frozen validation score cutoff does not meet the 50% after-fee win-rate target and its 95% Wilson lower bound on untouched holdout data.");
     }
     let product_slices = cohort
         .product_report_counts
@@ -488,34 +463,8 @@ fn candidate_decision(
             if minimum_history_days < quant_core::ENTRY_SCORE_MIN_HISTORY_DAYS {
                 slice_blockers.push("history is shorter than 1,000 days".to_string());
             }
-            if slice
-                .is_none_or(|slice| {
-                    validation
-                        .mean_net()
-                        .zip(slice.baseline_validation.mean_net())
-                        .is_none_or(|(candidate, baseline)| candidate <= baseline)
-                        || holdout
-                            .mean_net()
-                            .zip(slice.baseline_holdout.mean_net())
-                            .is_none_or(|(candidate, baseline)| candidate <= baseline)
-                })
-            {
-                slice_blockers.push("candidate net return does not beat equal weights".to_string());
-            }
-            if validation.profit_factor().is_none_or(|factor| factor <= 1.0)
-                || holdout.profit_factor().is_none_or(|factor| factor <= 1.0)
-            {
-                slice_blockers.push("profit factor does not exceed 1".to_string());
-            }
-            if validation.payoff_ratio().is_none_or(|ratio| {
-                ratio < quant_core::MIN_ASYMMETRIC_REWARD_RISK
-            }) || holdout.payoff_ratio().is_none_or(|ratio| {
-                ratio < quant_core::MIN_ASYMMETRIC_REWARD_RISK
-            }) {
-                slice_blockers.push("after-fee average win/loss payoff ratio is below 1.5".to_string());
-            }
-            if signal_validation.is_none_or(|summary| !summary.signal_potential_passes())
-                || signal_holdout.is_none_or(|summary| !summary.signal_potential_passes())
+            if signal_validation.is_none_or(|summary| !summary.signal_win_rate_passes())
+                || signal_holdout.is_none_or(|summary| !summary.signal_win_rate_passes())
             {
                 slice_blockers.push("the calibrated score range misses the 50% after-fee setup gate".to_string());
             }
@@ -537,20 +486,19 @@ fn candidate_decision(
             evidence.product_slices.get(key).is_some_and(|slice| {
                 let band = calibration_band.unwrap_or_default();
                 cumulative_score_bands(&slice.validation_score_bands, band)
-                    .signal_potential_passes()
+                    .signal_win_rate_passes()
                     && cumulative_score_bands(&slice.holdout_score_bands, band)
-                        .signal_potential_passes()
+                        .signal_win_rate_passes()
             })
         });
     let signal_gate_qualified = validation_signal_gate
-        .is_some_and(MetricTotals::signal_potential_passes)
-        && holdout_signal_gate.is_some_and(MetricTotals::signal_potential_passes)
+        .is_some_and(MetricTotals::signal_win_rate_passes)
+        && holdout_signal_gate.is_some_and(MetricTotals::signal_win_rate_passes)
         && product_signal_gate_passes;
     let signal_gate = json!({
         "status": if signal_gate_qualified {"QUALIFIED"} else {"BLOCKED"},
         "minimum_score_out_of_50": calibration_band.map(score_floor_for_band),
         "target_after_fee_win_rate_pct": TARGET_AFTER_FEE_WIN_RATE_PCT,
-        "minimum_asymmetric_reward_risk": quant_core::MIN_ASYMMETRIC_REWARD_RISK,
         "fees_applied": true,
         "validation": validation_signal_gate.map(MetricTotals::as_json),
         "holdout": holdout_signal_gate.map(MetricTotals::as_json),
@@ -562,7 +510,6 @@ fn candidate_decision(
         "scope": {"score_model_id":scope.score_model_id,"asset_category_id":scope.asset_category_id,
             "timeframe":scope.timeframe,"source_family":scope.source_family},
         "target_after_fee_win_rate_pct": TARGET_AFTER_FEE_WIN_RATE_PCT,
-        "minimum_asymmetric_reward_risk": quant_core::MIN_ASYMMETRIC_REWARD_RISK,
         "weights": weights,
         "cohort": {"reports":cohort.report_count,"candidate_symbols":evidence.symbol_count,"coverage_pct":coverage_pct,
             "minimum_history_days":evidence.minimum_history_days,"minimum_holdout_days":evidence.minimum_holdout_days},
@@ -798,15 +745,6 @@ fn validated_gate_summary(summary: &Value) -> bool {
         && summary["win_rate_after_fees_wilson_95_lower_pct"]
             .as_f64()
             .is_some_and(|lower| lower >= TARGET_AFTER_FEE_WIN_RATE_PCT)
-        && summary["mean_net_return_pct"]
-            .as_f64()
-            .is_some_and(|mean| mean > 0.0)
-        && summary["profit_factor"]
-            .as_f64()
-            .is_some_and(|factor| factor > 1.0)
-        && summary["observed_payoff_ratio_after_fees"]
-            .as_f64()
-            .is_some_and(|ratio| ratio >= quant_core::MIN_ASYMMETRIC_REWARD_RISK)
 }
 
 fn validated_signal_gate(evaluation: &Value) -> Option<Value> {
@@ -876,7 +814,6 @@ pub(crate) fn scoring_profile_status(connection: &Connection) -> Result<Value, r
         evaluations
     };
     Ok(json!({"target_after_fee_win_rate_pct":TARGET_AFTER_FEE_WIN_RATE_PCT,
-        "minimum_asymmetric_reward_risk":quant_core::MIN_ASYMMETRIC_REWARD_RISK,
         "active_profiles":profiles,"latest_evaluations":evaluations,
         "default_weights":[10,10,10,10],"default_status":"equal-weight live scoring when no validated profile exists; after-fee metrics are informational"}))
 }

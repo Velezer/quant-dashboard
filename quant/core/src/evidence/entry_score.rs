@@ -33,7 +33,7 @@ const FACTOR_NAMES: [&str; 4] = [
     "Estimated Volume Delta (OHLCV proxy)",
 ];
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
-    "entry_five_factor_weight_fit_markov_fixed_10_after_fee_target_50_asymmetric_4h_v10";
+    "entry_five_factor_weight_fit_markov_fixed_10_after_fee_win_rate_50_v11";
 pub const ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID: &str = risk_reward::PROTOCOL_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -254,21 +254,29 @@ fn fit_weights(
         let lower_bound = wilson_interval(summary.wins, summary.trades)
             .map(|interval| interval[0])
             .unwrap_or_default();
-        let mean = summary.mean_net().unwrap_or_default();
         let best_lower_bound = wilson_interval(selected_summary.wins, selected_summary.trades)
             .map(|interval| interval[0]);
-        let best_mean = selected_summary.mean_net();
-        let replace = best_lower_bound.is_none_or(|best| {
-            lower_bound > best + f64::EPSILON
-                || ((lower_bound - best).abs() <= f64::EPSILON
-                    && (best_mean.is_none_or(|best_mean| mean > best_mean + f64::EPSILON)
-                        || (best_mean.is_some_and(|best_mean| {
-                            (mean - best_mean).abs() <= f64::EPSILON
-                        }) && weight_distance_from_baseline(weights)
-                            < weight_distance_from_baseline(
-                                selected.unwrap_or(BASELINE_WEIGHTS),
-                            ))))
-        });
+        let selected_win_rate = selected_summary.win_rate();
+        let replace = match selected_win_rate {
+            None => true,
+            Some(best_rate) if win_rate > best_rate + f64::EPSILON => true,
+            Some(best_rate) if (win_rate - best_rate).abs() <= f64::EPSILON => {
+                match best_lower_bound {
+                    None => true,
+                    Some(best) if lower_bound > best + f64::EPSILON => true,
+                    Some(best) if (lower_bound - best).abs() <= f64::EPSILON => {
+                        summary.trades > selected_summary.trades
+                            || (summary.trades == selected_summary.trades
+                                && weight_distance_from_baseline(weights)
+                                    < weight_distance_from_baseline(
+                                        selected.unwrap_or(BASELINE_WEIGHTS),
+                                    ))
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        };
         if replace {
             selected = Some(weights);
             selected_summary = summary;
@@ -306,13 +314,10 @@ fn select_exit_on_validation(
             });
             result.candidates.push(candidate_json);
             if candidate.overall.trades >= crate::MIN_EVIDENCE_SAMPLE_TRADES
-                && candidate.overall.mean_net().is_some_and(|score| {
-                    result
-                        .validation
-                        .overall
-                        .mean_net()
-                        .is_none_or(|best| score > best)
-                })
+                && candidate_win_rate_is_better(
+                    candidate.overall,
+                    result.validation.overall,
+                )
             {
                 result.selected_policy = Some(candidate_policy);
                 result.validation = candidate;
@@ -320,6 +325,29 @@ fn select_exit_on_validation(
         }
     }
     result
+}
+
+fn candidate_win_rate_is_better(candidate: TradeSummary, current: TradeSummary) -> bool {
+    let Some(candidate_rate) = candidate.win_rate() else {
+        return false;
+    };
+    let Some(current_rate) = current.win_rate() else {
+        return true;
+    };
+    let rate_order = candidate_rate.total_cmp(&current_rate);
+    if !rate_order.is_eq() {
+        return rate_order.is_gt();
+    }
+    let candidate_lower = wilson_interval(candidate.wins, candidate.trades)
+        .map(|interval| interval[0])
+        .unwrap_or_default();
+    let current_lower = wilson_interval(current.wins, current.trades)
+        .map(|interval| interval[0])
+        .unwrap_or_default();
+    candidate_lower
+        .total_cmp(&current_lower)
+        .then_with(|| candidate.trades.cmp(&current.trades))
+        .is_gt()
 }
 
 fn evaluate_selected_policy(
@@ -424,13 +452,20 @@ fn select_hour_pair_on_validation(
         }
     }
     eligible.sort_by(|left, right| {
-        let mean_order = right
+        right
             .summary
-            .mean_net()
+            .win_rate()
             .unwrap_or_default()
-            .partial_cmp(&left.summary.mean_net().unwrap_or_default())
-            .unwrap_or(std::cmp::Ordering::Equal);
-        mean_order
+            .total_cmp(&left.summary.win_rate().unwrap_or_default())
+            .then_with(|| {
+                let right_lower = wilson_interval(right.summary.wins, right.summary.trades)
+                    .map(|interval| interval[0])
+                    .unwrap_or_default();
+                let left_lower = wilson_interval(left.summary.wins, left.summary.trades)
+                    .map(|interval| interval[0])
+                    .unwrap_or_default();
+                right_lower.total_cmp(&left_lower)
+            })
             .then_with(|| right.summary.trades.cmp(&left.summary.trades))
             .then_with(|| left.entry_hour.cmp(&right.entry_hour))
             .then_with(|| left.exit_hour.cmp(&right.exit_hour))
@@ -541,7 +576,7 @@ fn hour_rule_report(
         "maximum_hold_bars":maximum_hold_bars,"weights":weights,
         "entry_hour_basis":"Open time of the bar after the qualifying signal bar.",
         "exit_hour_basis":"Close time of the first bar at the selected hour; if it is not reached within the maximum hold, exit at the maximum-hold close.",
-        "selection_metric":"Highest mean return after configured transaction fees; ties favor more validation trades, then earlier entry hour, then earlier exit hour.",
+        "selection_metric":"Highest validation win rate after configured transaction fees; ties favor the stronger Wilson 95% lower bound, larger sample, earlier entry hour, then earlier exit hour.",
         "candidate":{"entry_hour_wib":selected.entry_hour,"exit_hour_wib":selected.exit_hour,
             "validation":summary_json(selected.summary, policy.fees_known),
             "holdout":summary_json(holdout, policy.fees_known)},
@@ -907,7 +942,7 @@ pub fn evaluate_entry_score_backtest(
         "minimum_training_trades": MIN_WEIGHT_FIT_TRADES,
         "training_exit_bars": WEIGHT_FIT_EXIT_BARS,
         "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
-        "selection_metric": "Among candidates with at least 30 non-overlapping training outcomes and at least 50% wins after configured transaction fees, maximize the Wilson 95% lower bound for after-fee win rate; tie-break by mean net return, then proximity to equal weights.",
+        "selection_metric": "Among candidates with at least 30 non-overlapping training outcomes and at least 50% wins after configured transaction fees, maximize observed after-fee win rate; tie-break by the Wilson 95% lower bound, larger sample, then proximity to equal weights.",
         "validation_after_fee_target_met": after_fee_target_met(learned_validation),
         "holdout_after_fee_target_met": after_fee_target_met(learned_holdout.overall),
         "selected_weights": selected_weights,
@@ -959,7 +994,7 @@ pub fn evaluate_entry_score_backtest(
         "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
         "fees_known": fees_known,
         "weight_promotion_target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
-        "selection_metric": "Equal-weight baseline exit: highest validation mean return; ties favor the shorter maximum hold, then fixed timeout. Fee-unknown results are gross only.",
+        "selection_metric": "Exit rules are ranked by validation win rate after configured transaction fees, then Wilson 95% lower bound and sample size. Fee-unknown results are gross only and are not fee-qualified.",
         "entry_rule": "Completed-bar live lead model; enter next bar open; no overlapping trades or trades crossing split boundaries.",
         "exit_rule": "Validation compares fixed bar-close timeouts with a close on the first opposite-direction entry signal that qualifies under the tested weights and existing score floor, capped by the same maximum hold. Each selected policy is evaluated once on the untouched holdout.",
         "discrimination_note": "Exploratory conservative screen: at least two ordered score bands each meet the minimum trade count; the highest eligible band's lower Wilson 95% win bound exceeds the lowest eligible band's upper bound and its mean return is higher. This is not independent statistical proof.",

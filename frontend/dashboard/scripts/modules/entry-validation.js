@@ -2,7 +2,7 @@ import { requestJson } from './api.js';
 
 const PAGE_SIZE = 50;
 const APP_LABELS = { stockbit: 'Stockbit', pintu: 'Pintu', pluang: 'Pluang', tokocrypto: 'Tokocrypto' };
-const RISK_REWARD_PROTOCOL_ID = 'entry_score_risk_reward_after_fee_net_r_v1';
+const RISK_REWARD_PROTOCOL_ID = 'entry_score_risk_reward_after_fee_win_rate_v2';
 
 function numeric(value) {
     if (!['number', 'string'].includes(typeof value) || (typeof value === 'string' && !value.trim())) return null;
@@ -145,7 +145,7 @@ export function initializeEntryValidation(doc = document) {
         const outdatedProfiles = storedProfiles.filter(profile => profile.protocol_current === false);
         activeContainer.replaceChildren();
         if (!profiles.length) {
-            activeContainer.append(element('p', `${outdatedProfiles.length ? 'Stored profiles use an outdated protocol and are ignored. ' : 'No score range has passed the after-fee promotion checks. '}A profile needs at least ${metric(scoring?.target_after_fee_win_rate_pct, '% wins', 0)} and ${metric(scoring?.minimum_asymmetric_reward_risk, '× average payoff', 2)} on held-out evidence. Live signals remain visible using equal research weights (${weightVectorText(scoring?.default_weights || [10, 10, 10, 10])}). These metrics never filter signals.`, 'empty-cell'));
+            activeContainer.append(element('p', `${outdatedProfiles.length ? 'Stored profiles use an outdated protocol and are ignored. ' : 'No score range has passed the after-fee promotion checks. '}A profile needs at least ${metric(scoring?.target_after_fee_win_rate_pct, '% wins', 0)} on validation and untouched holdout evidence, with the required sample, history, and app coverage. Payoff and return are diagnostics, not targets. Live signals remain visible using equal research weights (${weightVectorText(scoring?.default_weights || [10, 10, 10, 10])}). These metrics never filter signals.`, 'empty-cell'));
             status('live-scoring-state', 'No active profile · signals shown', 'pending');
         } else {
             for (const profile of profiles) {
@@ -160,7 +160,7 @@ export function initializeEntryValidation(doc = document) {
                     element('p', weightVectorText(profile.weights), 'profile-metrics'));
                 const gate = profile.signal_gate || {};
                 const holdout = gate.holdout || {};
-                card.append(element('p', `Historical holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} after fees vs ${metric(gate.target_after_fee_win_rate_pct ?? scoring?.target_after_fee_win_rate_pct, '% target', 0)} · payoff ${metric(holdout.observed_payoff_ratio_after_fees, '×', 2)} vs ${metric(gate.minimum_asymmetric_reward_risk ?? scoring?.minimum_asymmetric_reward_risk, '× target', 2)} · ${metric(holdout.trades, ' trades', 0)} · 95% lower bound ${metric(holdout.win_rate_after_fees_wilson_95_lower_pct, '%', 1)} · score cutoff ${metric(gate.minimum_score_out_of_50, '/50', 0)} is informational and does not filter signals`, 'profile-metrics'));
+                card.append(element('p', `Historical holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} after fees vs ${metric(gate.target_after_fee_win_rate_pct ?? scoring?.target_after_fee_win_rate_pct, '% target', 0)} · 95% lower bound ${metric(holdout.win_rate_after_fees_wilson_95_lower_pct, '%', 1)} · ${metric(holdout.trades, ' trades', 0)} · observed average net payoff ${metric(holdout.observed_payoff_ratio_after_fees, '×', 2)} (diagnostic) · score cutoff ${metric(gate.minimum_score_out_of_50, '/50', 0)} is informational and does not filter signals`, 'profile-metrics'));
                 activeContainer.append(card);
             }
             status('live-scoring-state', `${profiles.length} active profile${profiles.length === 1 ? '' : 's'}`, 'valid');
@@ -185,7 +185,7 @@ export function initializeEntryValidation(doc = document) {
             const validation = decision.validation || {};
             const holdout = decision.holdout || {};
             if (validation.trades != null || holdout.trades != null) {
-                card.append(element('p', `Validation ${metric(validation.win_rate_after_fees_pct, '%', 1)} · payoff ${metric(validation.observed_payoff_ratio_after_fees, '×', 2)} · ${metric(validation.trades, '', 0)} trades · holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} · payoff ${metric(holdout.observed_payoff_ratio_after_fees, '×', 2)} · ${metric(holdout.trades, '', 0)} trades · targets ${metric(decision.target_after_fee_win_rate_pct, '% after fees', 0)} and ${metric(decision.minimum_asymmetric_reward_risk, '× payoff', 2)}; informational only`));
+                card.append(element('p', `Validation ${metric(validation.win_rate_after_fees_pct, '%', 1)} · ${metric(validation.trades, '', 0)} trades · holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} · ${metric(holdout.trades, '', 0)} trades · target ${metric(decision.target_after_fee_win_rate_pct, '% after fees', 0)} · observed net payoff ${metric(holdout.observed_payoff_ratio_after_fees, '×', 2)} and mean return ${metric(holdout.mean_net_return_pct, '%')} are diagnostics`));
             }
             const gate = decision.signal_gate || {};
             if (gate.minimum_score_out_of_50 != null) {
@@ -320,7 +320,7 @@ export function initializeEntryValidation(doc = document) {
                         : daily.status === 'error'
                             ? 'The daily backtest worker could not prepare its ticker list and will retry shortly.'
                             : daily.status === 'complete'
-                                ? 'All eligible registered ticker/timeframe pairs were refreshed. Shared profiles use a 50% after-fee target plus confidence, return, and validation gates.'
+                                ? 'All eligible registered ticker/timeframe pairs were refreshed. Shared profiles use the 50% after-fee win-rate target plus sample, history, coverage, and source checks.'
                                 : 'The first daily backtest cycle is waiting to start.';
             if (daily.last_failure_label && daily.last_error) message += ` Last failure: ${daily.last_failure_label} · ${daily.last_error}`;
             status('daily-refresh-message', message, daily.status === 'error' || daily.status === 'complete_with_errors' ? 'error' : '');
@@ -471,9 +471,10 @@ export function initializeEntryValidation(doc = document) {
         const labels = {
             registered_identity: 'Registered ticker and model identity match',
             holdout_sample_sufficient: 'Enough completed holdout trades', history_span_sufficient: 'Enough total calendar history',
-            profitable_holdout: 'Positive held-out return and profit factor', score_discrimination_supported: 'Held-out score discrimination supported',
+            after_fee_win_rate_target_met: 'At least 50% wins after configured fees on validation and holdout',
+            profitable_holdout: 'Positive held-out return and profit factor · diagnostic, not a target', score_discrimination_supported: 'Held-out score discrimination supported · diagnostic',
             venue_native_history: 'Venue-native history', fees_known: 'Product transaction fees are known',
-            asymmetric_risk_reward_rule: '4h stop/target rule meets after-fee confidence and payoff targets',
+            asymmetric_risk_reward_rule: '4h stop/target rule meets the after-fee win-rate target',
             execution_costs_complete: 'Execution costs are fully covered',
         };
         const checkEntries = Object.entries(labels).filter(([key]) => checks[key] !== undefined || key !== 'asymmetric_risk_reward_rule');
@@ -569,7 +570,7 @@ export function initializeEntryValidation(doc = document) {
             INSUFFICIENT_TRAINING_SAMPLE: 'No candidate had 30 or more non-overlapping training trades at the existing score floor.',
             AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED: 'Training candidates had enough trades, but none reached the 50% win-rate target after configured transaction fees.',
             NO_VALIDATION_EXIT: 'Training selected a weight candidate, but no exit rule met the validation sample minimum.',
-            CANDIDATE_READY: 'Training selected a candidate at the 50% after-fee win-rate target; validation selected the exit. The untouched holdout reports both against the equal-weight baseline.',
+            CANDIDATE_READY: 'Training selected a candidate at the 50% after-fee win-rate target; validation selected the exit. The untouched holdout reports the frozen rule once.',
         };
         const statusText = learning?.reason || reasons[learning?.status] || 'This saved report predates weight learning. Rerun this ticker to calculate a training-only candidate.';
         status('weight-learning-status', `${statusText}${learning?.live_weights_changed === false ? ' Live screener weights were not changed.' : ''}`, learning?.status === 'CANDIDATE_READY' ? '' : '');
@@ -616,7 +617,6 @@ export function initializeEntryValidation(doc = document) {
         text('risk-reward-state', stateLabel);
         state.className = `state-badge ${feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? 'valid' : feeAdjustedTargetProtocol && rule?.status === 'HOLDOUT_FAILED' ? 'error' : 'pending'}`;
         const targetRate = metric(rule?.target_after_fee_win_rate_pct, '% after fees', 0);
-        const minimumPayoff = metric(rule?.minimum_after_fee_payoff_ratio, '× payoff', 2);
         const message = feeAdjustedTargetProtocol
             ? (rule?.reason || 'This saved report predates the current 4h risk/reward protocol. Rerun it to calculate candidate rules.')
             : 'This saved 4h report used gross target R multiples. Rerun the ticker to calculate target levels and asymmetric R:R after configured entry and exit fees.';
@@ -625,7 +625,7 @@ export function initializeEntryValidation(doc = document) {
         const targetValues = search.target_after_fee_r_multiples ?? search.target_r_multiples;
         const targetSuffix = Array.isArray(search.target_after_fee_r_multiples) ? '× net risk after fees' : ' gross R';
         const searchDescription = `Search grid: ${values(search.atr14_stop_multiples, ' × ATR14')} stops; ${values(targetValues, targetSuffix)} targets; ${values(search.maximum_hold_bars, ' bars', 0)} maximum holds; score floors ${values(search.score_floors_out_of_50, '/50', 0)}`;
-        status('risk-reward-status', `${message} Target: ${targetRate}, with its 95% Wilson lower bound also at target, and at least ${minimumPayoff}.`, feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? '' : 'pending');
+        status('risk-reward-status', `${message} Qualification target: ${targetRate} after fees, with its 95% Wilson lower bound also at target. Payoff and net return are shown as diagnostics.`, feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? '' : 'pending');
         if (!candidate) {
             text('risk-reward-description', `${metric(rule?.eligible_validation_candidate_count, '', 0)} of ${metric(rule?.candidate_count, '', 0)} bracket combinations had enough validation trades. No rule was selected from holdout data.`);
             metrics.replaceChildren(metricCard('Rule candidate', 'Unavailable', `${metric(rule?.minimum_validation_trades, ' trades minimum', 0)} per validation and holdout`));
@@ -644,11 +644,11 @@ export function initializeEntryValidation(doc = document) {
         metrics.replaceChildren(
             metricCard('Validation win rate', metric(validation.win_rate_after_fees_pct, '%', 1), `${metric(validation.trades, ' trades', 0)} · target ${targetRate}`),
             metricCard('Validation 95% lower bound', metric(wilsonLower(validation), '%', 1), `Must also reach ${targetRate}`),
-            metricCard('Validation payoff after fees', metric(validation.payoff_ratio_after_fees ?? validation.payoff_ratio, '×', 2), `Average net win / net loss · minimum ${minimumPayoff}`),
+            metricCard('Validation payoff after fees', metric(validation.payoff_ratio_after_fees ?? validation.payoff_ratio, '×', 2), 'Average net win / net loss · diagnostic only'),
             metricCard('Validation mean net', metric(validation.mean_net_return_pct, '%'), validation.return_basis || 'Configured fees applied'),
             metricCard('Untouched holdout win', metric(holdout.win_rate_after_fees_pct, '%', 1), `${metric(holdout.trades, ' trades', 0)} · not used to select rule`),
             metricCard('Holdout 95% lower bound', metric(wilsonLower(holdout), '%', 1), `Must also reach ${targetRate}`),
-            metricCard('Untouched holdout payoff after fees', metric(holdout.payoff_ratio_after_fees ?? holdout.payoff_ratio, '×', 2), `Average net win / net loss · mean net ${metric(holdout.mean_net_return_pct, '%')}`),
+            metricCard('Untouched holdout payoff after fees', metric(holdout.payoff_ratio_after_fees ?? holdout.payoff_ratio, '×', 2), `Diagnostic · mean net ${metric(holdout.mean_net_return_pct, '%')}`),
         );
         text('risk-reward-limits', `Selected from ${metric(rule.candidate_count, '', 0)} predeclared 4h combinations. ${searchDescription}. ${metric(rule.eligible_validation_candidate_count, '', 0)} had enough validation trades. ${rule.fill_assumptions || ''} Configured fees are included; spread, slippage, impact, funding and borrow costs are not. Research does not change live weights or signals.`);
     }

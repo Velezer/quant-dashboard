@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 const ATR_LOOKBACK_BARS: usize = 14;
 const STOP_ATR_MULTIPLIERS: [f64; 3] = [0.75, 1.0, 1.5];
-const TARGET_AFTER_FEE_R_MULTIPLES: [f64; 3] = [1.5, 2.0, 2.5];
+const TARGET_AFTER_FEE_R_MULTIPLES: [f64; 5] = [1.1, 1.25, 1.5, 2.0, 2.5];
 const MAXIMUM_HOLD_BARS: [usize; 3] = [4, 8, 12];
 const SCORE_FLOORS_OUT_OF_50: [f64; 3] = [
     crate::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50,
@@ -16,7 +16,7 @@ const SCORE_FLOORS_OUT_OF_50: [f64; 3] = [
     20.0,
 ];
 const RISK_REWARD_INTERVAL_NS: i64 = 4 * crate::SECONDS_PER_HOUR * crate::NANOS_PER_SECOND;
-pub(super) const PROTOCOL_ID: &str = "entry_score_risk_reward_after_fee_net_r_v1";
+pub(super) const PROTOCOL_ID: &str = "entry_score_risk_reward_after_fee_win_rate_v2";
 
 #[derive(Clone, Copy)]
 struct BracketRule {
@@ -30,7 +30,7 @@ struct BracketRule {
 struct ValidationCandidate {
     rule: BracketRule,
     summary: TradeSummary,
-    passes_target: bool,
+    passes_win_rate_target: bool,
 }
 
 fn average_true_range(bars: &[StrategyBar], signal_index: usize) -> Option<f64> {
@@ -260,32 +260,28 @@ fn validation_passes(summary: TradeSummary, fees_known: bool) -> bool {
         })
         && wilson_interval(summary.wins, summary.trades)
             .is_some_and(|interval| interval[0] >= ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT)
-        && summary
-            .payoff_ratio()
-            .is_some_and(|ratio| ratio >= crate::MIN_ASYMMETRIC_REWARD_RISK)
-        && summary.mean_net().is_some_and(|mean| mean > 0.0)
-        && summary
-            .profit_factor()
-            .is_some_and(|factor| factor > 1.0)
 }
 
 fn candidate_is_better(candidate: ValidationCandidate, current: ValidationCandidate) -> bool {
     candidate
-        .passes_target
-        .cmp(&current.passes_target)
+        .passes_win_rate_target
+        .cmp(&current.passes_win_rate_target)
         .then_with(|| {
             candidate
                 .summary
-                .mean_net()
+                .win_rate()
                 .unwrap_or_default()
-                .total_cmp(&current.summary.mean_net().unwrap_or_default())
+                .total_cmp(&current.summary.win_rate().unwrap_or_default())
         })
         .then_with(|| {
-            candidate
-                .summary
-                .payoff_ratio()
-                .unwrap_or_default()
-                .total_cmp(&current.summary.payoff_ratio().unwrap_or_default())
+            let candidate_lower =
+                wilson_interval(candidate.summary.wins, candidate.summary.trades)
+                    .map(|interval| interval[0])
+                    .unwrap_or_default();
+            let current_lower = wilson_interval(current.summary.wins, current.summary.trades)
+                .map(|interval| interval[0])
+                .unwrap_or_default();
+            candidate_lower.total_cmp(&current_lower)
         })
         .then_with(|| candidate.summary.trades.cmp(&current.summary.trades))
         .is_gt()
@@ -341,7 +337,6 @@ pub(super) fn report(
             "reason": reason,
             "preferred_timeframe": "4h",
             "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
-            "minimum_after_fee_payoff_ratio": crate::MIN_ASYMMETRIC_REWARD_RISK,
             "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
             "candidate_count": candidate_count,
             "minimum_validation_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
@@ -419,7 +414,7 @@ pub(super) fn report(
                     let candidate = ValidationCandidate {
                         rule,
                         summary,
-                        passes_target: validation_passes(summary, template.fees_known),
+                        passes_win_rate_target: validation_passes(summary, template.fees_known),
                     };
                     if selected
                         .is_none_or(|current| candidate_is_better(candidate, current))
@@ -449,7 +444,7 @@ pub(super) fn report(
         template,
         selected.rule,
     );
-    let validation_passed = selected.passes_target;
+    let validation_passed = selected.passes_win_rate_target;
     let holdout_passed = validation_passes(holdout, template.fees_known);
     let history_span_passed = history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS;
     let status = if !history_span_passed {
@@ -463,9 +458,9 @@ pub(super) fn report(
     };
     let reason = match status {
         "INSUFFICIENT_HISTORY" => "The selected rule is exploratory; qualification needs at least 1,000 calendar days. This is a minimum, not a maximum lookback.",
-        "NO_VALIDATION_RULE" => "No candidate rule met the after-fee win rate and 95% lower-bound target, asymmetric payoff, and positive expectancy checks on validation data.",
-        "HOLDOUT_FAILED" => "The validation-selected rule did not meet every after-fee confidence, payoff, and expectancy check on the untouched holdout.",
-        _ => "The frozen 4h rule met the after-fee confidence, payoff, and expectancy targets on validation and untouched holdout data.",
+        "NO_VALIDATION_RULE" => "No candidate rule met the 50% after-fee win-rate target and its 95% Wilson lower bound on validation data.",
+        "HOLDOUT_FAILED" => "The validation-selected rule did not meet the 50% after-fee win-rate target and its 95% Wilson lower bound on the untouched holdout.",
+        _ => "The frozen 4h rule met the 50% after-fee win-rate target and its 95% Wilson lower bound on validation and untouched holdout data.",
     };
     json!({
         "protocol_id": PROTOCOL_ID,
@@ -473,7 +468,6 @@ pub(super) fn report(
         "reason": reason,
         "preferred_timeframe": "4h",
         "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
-        "minimum_after_fee_payoff_ratio": crate::MIN_ASYMMETRIC_REWARD_RISK,
         "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
         "search_space": {
             "atr14_stop_multiples": STOP_ATR_MULTIPLIERS,
@@ -485,7 +479,7 @@ pub(super) fn report(
         "eligible_validation_candidate_count": eligible_candidates,
         "minimum_validation_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
         "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
-        "selection_method": "Predeclared ATR stop, target-to-stop net R after configured entry and exit fees, max-hold, and score-floor grid; selection uses validation net return among candidates whose realized after-fee win rate and 95% Wilson lower bound both reach the target, with the required realized average net win/loss payoff and positive expectancy. The selected rule is evaluated once on untouched holdout data.",
+        "selection_method": "Predeclared ATR stop, target-to-stop net R after configured entry and exit fees, max-hold, and score-floor grid; among candidates meeting the 50% after-fee win-rate target and its 95% Wilson lower bound on validation, select the highest validation win rate, then the stronger lower bound and larger sample. Payoff and net return are reported as diagnostics, not qualification targets. The selected rule is evaluated once on untouched holdout data.",
         "fill_assumptions": "Enter at the next 4h open. The target price is solved so planned target reward divided by planned stop loss is the selected R multiple after configured entry and exit fees. Stops fill at the stop or worse after a gap, so gaps can reduce realized payoff. Targets fill at the target. If both stop and target are inside one bar, assume the stop fills first. Untriggered rules exit at the max-hold bar close. Observed validation and holdout payoff uses realized net trade returns after fees.",
         "target_r_basis": "after configured entry and exit fees",
         "fees_applied": true,
