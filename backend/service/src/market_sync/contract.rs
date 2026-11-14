@@ -31,6 +31,7 @@ pub(super) struct PreparedCandleSyncTarget {
     pub(super) asset_category_id: String,
     pub(super) shared_reference_symbols: Vec<String>,
     pub(super) tokocrypto_market: Option<PreparedTokocryptoMarket>,
+    pub(super) chart_priority: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -56,6 +57,7 @@ impl CandleSyncWindow {
 pub(super) struct CandleSyncRequest<'a> {
     pub(super) instrument: RegisteredCandleInstrument<'a>,
     pub(super) window: CandleSyncWindow,
+    pub(super) chart_priority: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

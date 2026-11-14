@@ -8,6 +8,7 @@ pub(super) fn sync_interval_for_exchange(
     product_id: &str,
     yahoo_symbol: &str,
     interval: &str,
+    chart_priority: bool,
 ) -> Result<usize, String> {
     let (duration_seconds, maximum_rows) = match interval {
         "15m" => (FIFTEEN_MINUTE_INTERVAL_SECONDS, MAX_RESEARCH_15M_CANDLES),
@@ -59,16 +60,18 @@ pub(super) fn sync_interval_for_exchange(
         let binance_result = match yahoo_base_asset(yahoo_symbol) {
             Ok(base) => {
                 let binance_pair = format!("{base}USDT");
-                recent_proxy_result(
-                    connection,
-                    storage_symbol,
-                    &normalized_exchange,
-                    product_id,
-                    &source,
-                    interval,
-                    duration_seconds,
-                )
-                .unwrap_or_else(|| {
+                let chart_gap_needs_repair = chart_priority
+                    && recent_chart_window_needs_repair(
+                        connection,
+                        storage_symbol,
+                        interval,
+                        &source,
+                        i64::try_from(crate::now_secs())
+                            .unwrap_or(i64::MAX)
+                            .saturating_mul(NANOS_PER_SECOND),
+                    )
+                    .map_err(|error| format!("chart history check failed: {error}"))?;
+                if chart_gap_needs_repair {
                     sync_with_binance(
                         connection,
                         storage_symbol,
@@ -81,7 +84,31 @@ pub(super) fn sync_interval_for_exchange(
                         duration_seconds,
                         maximum_rows,
                     )
-                })
+                } else {
+                    recent_proxy_result(
+                        connection,
+                        storage_symbol,
+                        &normalized_exchange,
+                        product_id,
+                        &source,
+                        interval,
+                        duration_seconds,
+                    )
+                    .unwrap_or_else(|| {
+                        sync_with_binance(
+                            connection,
+                            storage_symbol,
+                            &category,
+                            &normalized_exchange,
+                            &binance_pair,
+                            family,
+                            &source,
+                            interval,
+                            duration_seconds,
+                            maximum_rows,
+                        )
+                    })
+                }
             }
             Err(error) => Err(error),
         };

@@ -387,6 +387,15 @@ export function installSignalRefresh() {
             lastRequestAt = 0;
             void fetchFreshSignals({ quiet: true });
         });
+        eventSource.addEventListener('chart_history_sync_completed', event => {
+            try {
+                window.dispatchEvent(new CustomEvent('dashboard:chart-history-sync-completed', {
+                    detail: JSON.parse(event.data),
+                }));
+            } catch (_) {
+                window.dispatchEvent(new CustomEvent('dashboard:chart-history-sync-completed', { detail: {} }));
+            }
+        });
         eventSource.onerror = () => updateSseBadge(false);
     }
 

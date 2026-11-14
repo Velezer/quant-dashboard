@@ -194,6 +194,17 @@ fn has_fresh_shared_reference(
     }) else {
         return false;
     };
+    if crate::research_proxy::recent_chart_window_needs_repair(
+        connection,
+        storage_symbol,
+        interval,
+        &source,
+        now_ns,
+    )
+    .unwrap_or(true)
+    {
+        return false;
+    }
     load_candles_from_source(connection, storage_symbol, interval, 1, &source)
         .ok()
         .and_then(|candles| candles.last().map(|candle| candle.time))
@@ -224,8 +235,9 @@ pub(super) fn sync_prepared_candle_target(
     let request = CandleSyncRequest {
         instrument,
         window: CandleSyncWindow::Intraday,
+        chart_priority: false,
     };
-    let already_fresh = fresh_shared_reference_intervals(
+    let mut already_fresh = fresh_shared_reference_intervals(
         market_database,
         instrument,
         &target.shared_reference_symbols,
@@ -244,6 +256,77 @@ pub(super) fn sync_prepared_candle_target(
     );
     let mut refreshed = 0;
     let mut stockbit_15m_refreshed = false;
+    if target.chart_priority
+        && matches!(
+            instrument.asset_category_id,
+            "crypto_spot" | "crypto_perpetual" | "crypto_futures"
+        )
+    {
+        let chart_instrument = candle_instrument(
+            crate::research_proxy::shared::CHART_REFERENCE_EXCHANGE_ID,
+            instrument.storage_symbol,
+            crate::research_proxy::shared::CHART_REFERENCE_PRODUCT_ID,
+            instrument.underlying_symbol,
+            crate::research_proxy::shared::CHART_REFERENCE_CATEGORY_ID,
+            None,
+        );
+        for interval in request.window.intervals() {
+            let source = selected_candle_source_for_product(
+                &market_connection,
+                chart_instrument.storage_symbol,
+                chart_instrument.exchange_id,
+                chart_instrument.product_id,
+                interval,
+            )
+            .ok()
+            .flatten()
+            .filter(|source| {
+                crate::research_proxy::shared::is_shared_source_for_category(
+                    source,
+                    chart_instrument.asset_category_id,
+                )
+            });
+            let Some(source) = source else {
+                continue;
+            };
+            let needs_repair = crate::research_proxy::recent_chart_window_needs_repair(
+                &market_connection,
+                instrument.storage_symbol,
+                interval,
+                &source,
+                now_millis().saturating_mul(quant_core::NANOS_PER_MILLISECOND),
+            )
+            .unwrap_or(true);
+            if !needs_repair {
+                continue;
+            }
+            let interval_request = CandleSyncRequest {
+                instrument: chart_instrument,
+                window: CandleSyncWindow::SingleInterval(*interval),
+                chart_priority: true,
+            };
+            let Some(adapter) = CANDLE_SYNC_ADAPTERS.iter().find(|adapter| {
+                adapter.source_class() == CandleSourceClass::ResearchProxy
+                    && adapter.supports(&interval_request)
+            }) else {
+                continue;
+            };
+            let report = adapter.sync(&market_connection, &interval_request);
+            let succeeded = report
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.result.is_ok());
+            refreshed += usize::from(succeeded);
+            if succeeded {
+                already_fresh.extend(fresh_shared_reference_intervals(
+                    market_database,
+                    instrument,
+                    &target.shared_reference_symbols,
+                    std::slice::from_ref(interval),
+                ));
+            }
+        }
+    }
     for adapter in &CANDLE_SYNC_ADAPTERS {
         if !adapter.supports(&request) {
             continue;
@@ -256,6 +339,7 @@ pub(super) fn sync_prepared_candle_target(
                 let interval_request = CandleSyncRequest {
                     instrument,
                     window: CandleSyncWindow::SingleInterval(*interval),
+                    chart_priority: false,
                 };
                 if !adapter.supports(&interval_request) {
                     continue;

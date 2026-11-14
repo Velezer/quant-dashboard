@@ -215,6 +215,17 @@ impl CandleSyncAdapter for ResearchProxyAdapter {
         let mut outcomes = Vec::with_capacity(request.window.intervals().len());
         for interval in request.window.intervals() {
             let result = match *interval {
+                "15m" | "1h" if request.chart_priority => {
+                    research_proxy::sync_chart_interval_for_exchange(
+                        connection,
+                        instrument.storage_symbol,
+                        instrument.asset_category_id,
+                        instrument.exchange_id,
+                        instrument.product_id,
+                        &yahoo_symbol,
+                        interval,
+                    )
+                }
                 "15m" => research_proxy::sync_15m_for_exchange(
                     connection,
                     instrument.storage_symbol,

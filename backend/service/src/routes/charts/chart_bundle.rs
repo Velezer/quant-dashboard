@@ -111,7 +111,12 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             }
         }
     };
-    state.prioritize_chart_sync(&storage_symbol);
+    let skip_sync_priority = values
+        .get("skip_sync_priority")
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+    if !skip_sync_priority {
+        state.prioritize_chart_sync(&storage_symbol);
+    }
     let market_connection = match open_market_history_for_symbol(db, &storage_symbol, false) {
         Ok(Some(connection)) => connection,
         Ok(None) => {
@@ -165,15 +170,35 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             .min(MAX_CANDLES);
         // The chart uses the common Spot reference when available. Signal
         // scoring retains its own source and freshness checks.
-        let crypto_product = matches!(product_id, "pintu_retail_spot" | "pintu_pro_spot"
-            | "pintu_pro_futures" | "pluang_spot" | "pluang_perpetual" | "tokocrypto_spot");
+        let crypto_product =
+            research_proxy::shared::category_for_product(&exchange, product_id).is_some();
         let shared_chart_source = if crypto_product {
-            selected_candle_source_for_product(market_connection, &storage_symbol,
-                "pintu", "pintu_retail_spot", timeframe).ok().flatten()
-                .filter(|source| research_proxy::shared::is_shared_source_for_category(source, "crypto_spot"))
-        } else { None };
+            selected_candle_source_for_product(
+                market_connection,
+                &storage_symbol,
+                research_proxy::shared::CHART_REFERENCE_EXCHANGE_ID,
+                research_proxy::shared::CHART_REFERENCE_PRODUCT_ID,
+                timeframe,
+            )
+            .ok()
+            .flatten()
+            .filter(|source| {
+                research_proxy::shared::is_shared_source_for_category(
+                    source,
+                    research_proxy::shared::CHART_REFERENCE_CATEGORY_ID,
+                )
+            })
+        } else {
+            None
+        };
         let mut metadata = if let Some(source) = shared_chart_source.as_deref() {
-            load_series_metadata_from_source(market_connection, &storage_symbol, timeframe, false, source)
+            load_series_metadata_from_source(
+                market_connection,
+                &storage_symbol,
+                timeframe,
+                false,
+                source,
+            )
         } else if exchange.is_empty() {
             load_series_metadata(market_connection, &storage_symbol, timeframe, false)
         } else {
