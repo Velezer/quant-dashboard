@@ -134,10 +134,14 @@ fn parse_api_page(body: &[u8]) -> Result<ApiPage, String> {
             .ok_or_else(|| "IDX company-profile record omitted KodeEmiten".to_string())?
             .trim()
             .to_ascii_uppercase();
-        if !valid_ticker(&symbol) {
-            return Err("IDX company-profile API contained an invalid ticker".into());
+        // IDX's full company-profile directory includes a small number of
+        // non-trading/test security identifiers (for example TEST-SHM).
+        // They count toward the source page length but cannot be Stockbit
+        // ticker identities. Exclude those rows without rejecting the valid
+        // listings in the same complete response.
+        if valid_ticker(&symbol) {
+            listings.push(Listing { symbol });
         }
-        listings.push(Listing { symbol });
     }
     Ok(ApiPage {
         total,
@@ -188,11 +192,10 @@ pub fn parse_directory(body: &[u8]) -> Result<Vec<Listing>, String> {
         .ok_or_else(|| "IDX listed-company table omitted its record array".to_string())?;
     let data_end = matching_array_end(html, data_start)
         .ok_or_else(|| "IDX listed-company record array was incomplete".to_string())?;
-    let listings = parse_tickers(&html[data_start + 1..data_end])?;
-    if listings.len() != expected_count {
+    let (listings, source_record_count) = parse_tickers(&html[data_start + 1..data_end])?;
+    if source_record_count != expected_count {
         return Err(format!(
-            "IDX company directory declared {expected_count} records but contained {} unique tickers",
-            listings.len()
+            "IDX company directory declared {expected_count} records but contained {source_record_count} ticker records"
         ));
     }
     validate_complete(&listings)?;
@@ -349,9 +352,10 @@ fn matching_array_end(source: &str, open: usize) -> Option<usize> {
     None
 }
 
-fn parse_tickers(records: &str) -> Result<Vec<Listing>, String> {
+fn parse_tickers(records: &str) -> Result<(Vec<Listing>, usize), String> {
     let mut listings = Vec::new();
     let mut seen = HashSet::new();
+    let mut source_record_count = 0usize;
     let mut cursor = 0usize;
     while let Some(relative) = records[cursor..].find("KodeEmiten") {
         let key_start = cursor + relative;
@@ -386,21 +390,22 @@ fn parse_tickers(records: &str) -> Result<Vec<Listing>, String> {
             .find('"')
             .ok_or_else(|| "IDX company record had an incomplete ticker".to_string())?;
         let symbol = quoted[..value_end].to_ascii_uppercase();
+        source_record_count += 1;
+        if source_record_count > MAX_LISTING_SYMBOLS {
+            return Err("IDX company directory exceeded 5000 ticker records".into());
+        }
+        let next_cursor = value_start + 1 + value_end + 1;
         if !valid_ticker(&symbol) {
-            return Err("IDX company directory contained an invalid ticker".into());
+            cursor = next_cursor;
+            continue;
         }
         if !seen.insert(symbol.clone()) {
-            return Err(format!(
-                "IDX listed-company directory repeats ticker {symbol}"
-            ));
+            return Err(format!("IDX listed-company directory repeats ticker {symbol}"));
         }
         listings.push(Listing { symbol });
-        if listings.len() > MAX_LISTING_SYMBOLS {
-            return Err("IDX company directory exceeded 5000 tickers".into());
-        }
-        cursor = value_start + 1 + value_end + 1;
+        cursor = next_cursor;
     }
-    Ok(listings)
+    Ok((listings, source_record_count))
 }
 
 fn valid_ticker(symbol: &str) -> bool {
