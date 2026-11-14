@@ -158,7 +158,7 @@ fn recent_proxy_result(
         .optional()
         .ok()
         .flatten();
-    let (_source, provider, last_success, last_error, last_attempt, earliest_ts, rows) = result?;
+    let (_source, provider, last_success, last_error, last_attempt, _earliest_ts, rows) = result?;
     let success_epoch = last_success.and_then(|value| value.parse::<i64>().ok());
     let attempt_epoch = last_attempt.and_then(|value| value.parse::<i64>().ok());
     let latest_completed: Option<i64> = connection
@@ -181,14 +181,7 @@ fn recent_proxy_result(
             <= crate::freshness_threshold_seconds(symbol, interval)
     });
     let history_complete = if provider == "binance" && matches!(interval, "15m" | "1h" | "1d") {
-        let target_floor_ns = now
-            .saturating_sub(
-                crate::MIN_ENGINE_HISTORY_DAYS
-                    .saturating_sub(1)
-                    .saturating_mul(quant_core::SECONDS_PER_DAY),
-            )
-            .saturating_mul(NANOS_PER_SECOND);
-        earliest_ts.is_some_and(|ts| ts <= target_floor_ns)
+        binance_history_backfill_complete(connection, symbol, interval, source).ok()?
     } else {
         true
     };
@@ -208,6 +201,81 @@ fn recent_proxy_result(
         }
     }
     None
+}
+
+fn binance_history_backfill_complete(
+    connection: &Connection,
+    symbol: &str,
+    interval: &str,
+    source: &str,
+) -> Result<bool, rusqlite::Error> {
+    connection
+        .query_row(
+            "SELECT status='complete' FROM ingestion_runs
+              WHERE symbol=?1 AND interval=?2 AND source=?3
+              ORDER BY id DESC LIMIT 1",
+            params![symbol, format!("{interval}_history_backfill"), source],
+            |row| row.get(0),
+        )
+        .optional()
+        .map(|complete| complete.unwrap_or(false))
+}
+
+fn record_binance_history_backfill_state(
+    connection: &Connection,
+    symbol: &str,
+    interval: &str,
+    exchange: &str,
+    product_id: &str,
+    source: &str,
+    status: &str,
+    rows_received: usize,
+    error: &str,
+) {
+    let attempted_at = super::format_timestamp(super::now_secs());
+    let marker_interval = format!("{interval}_history_backfill");
+    let (recorded_exchange, recorded_product) = if shared::is_shared_source(source) {
+        (shared::SOURCE_EXCHANGE_ID, "")
+    } else {
+        (exchange, product_id)
+    };
+    let updated = connection
+        .execute(
+            "UPDATE ingestion_runs SET exchange_id=?1,product_id=?2,data_provider='binance',
+                attempted_at=?3,status=?4,rows_received=?5,error=?6
+              WHERE id=(SELECT id FROM ingestion_runs WHERE symbol=?7 AND interval=?8
+                AND source=?9 ORDER BY id DESC LIMIT 1)",
+            params![
+                recorded_exchange,
+                recorded_product,
+                attempted_at,
+                status,
+                rows_received as i64,
+                if error.is_empty() { None } else { Some(error) },
+                symbol,
+                marker_interval,
+                source
+            ],
+        )
+        .unwrap_or(0);
+    if updated == 0 {
+        let _ = connection.execute(
+            "INSERT INTO ingestion_runs(symbol,interval,source,exchange_id,product_id,data_provider,
+                attempted_at,status,rows_received,error)
+              VALUES(?1,?2,?3,?4,?5,'binance',?6,?7,?8,?9)",
+            params![
+                symbol,
+                marker_interval,
+                source,
+                recorded_exchange,
+                recorded_product,
+                attempted_at,
+                status,
+                rows_received as i64,
+                if error.is_empty() { None } else { Some(error) }
+            ],
+        );
+    }
 }
 
 fn sync_with_binance(
@@ -231,14 +299,20 @@ fn sync_with_binance(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|error| error.to_string())?;
-    if let Some(earliest_ts) = earliest_ts {
+    let history_complete = binance_history_backfill_complete(
+        connection,
+        storage_symbol,
+        interval,
+        source,
+    )
+    .unwrap_or(false);
+    if let Some(earliest_ts) = earliest_ts.filter(|_| !history_complete) {
         match fetch_binance_history_page(
             pair,
             market,
             interval,
             duration_seconds,
             earliest_ts.div_euclid(NANOS_PER_SECOND),
-            crate::MIN_ENGINE_HISTORY_DAYS,
             |candles| {
                 persist(
                     connection,
@@ -254,10 +328,35 @@ fn sync_with_binance(
                 )
             },
         ) {
-            Ok(_) => {}
-            Err(error) => eprintln!(
-                "[ResearchProxy] Binance history backfill deferred for {storage_symbol} {interval}: {error}"
-            ),
+            Ok(rows) => {
+                record_binance_history_backfill_state(
+                    connection,
+                    storage_symbol,
+                    interval,
+                    exchange,
+                    app_product_from_source(source).unwrap_or(""),
+                    source,
+                    if rows == 0 { "complete" } else { "running" },
+                    rows,
+                    "",
+                );
+            }
+            Err(error) => {
+                record_binance_history_backfill_state(
+                    connection,
+                    storage_symbol,
+                    interval,
+                    exchange,
+                    app_product_from_source(source).unwrap_or(""),
+                    source,
+                    "error",
+                    0,
+                    &error,
+                );
+                eprintln!(
+                    "[ResearchProxy] Binance history backfill deferred for {storage_symbol} {interval}: {error}"
+                );
+            }
         }
     }
 

@@ -524,7 +524,9 @@ pub(super) fn history_coverage_status(rows: i64, coverage_days: i64) -> &'static
 pub(super) fn history_acquisition_policy(timeframe: &str) -> &'static str {
     match timeframe {
         "1d" | "1w" => "provider_backfill_then_local_retention",
-        "15m" | "30m" | "1h" | "2h" | "4h" | "6h" | "12h" => "local_accumulation_or_native_feed",
+        "15m" | "30m" | "1h" | "2h" | "4h" | "6h" | "12h" => {
+            "provider_history_backfill_plus_local_retention"
+        }
         _ => "local_retention",
     }
 }
@@ -540,7 +542,7 @@ pub(super) fn history_coverage_warning(
     let target = MIN_ENGINE_HISTORY_DAYS;
     if matches!(timeframe, "15m" | "30m" | "1h" | "2h" | "4h" | "6h" | "12h") {
         Some(format!(
-            "Stored {coverage_days}/{target} calendar days. Intraday fallback history is provider-window limited and must accumulate locally or come from a native app feed."
+            "Stored {coverage_days} calendar days; {target} days is the evidence minimum, not a storage cap. Paginated provider history is added gradually when available."
         ))
     } else {
         Some(format!(

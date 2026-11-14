@@ -1,6 +1,7 @@
 use super::*;
 
-const BINANCE_INGESTION_PAGE_ROWS: usize = 200;
+const BINANCE_INGESTION_PAGE_ROWS: usize = 1_500;
+const BINANCE_HISTORY_PAGE_ROWS: usize = 1_500;
 const BINANCE_PAGE_PAUSE_MILLISECONDS: u64 = 250;
 
 #[derive(Clone, Copy)]
@@ -200,7 +201,6 @@ pub(super) fn fetch_binance_history_page(
     interval: &str,
     duration_seconds: i64,
     earliest_ts: i64,
-    target_days: i64,
     mut save_page: impl FnMut(&[Bar]) -> Result<(), String>,
 ) -> Result<usize, String> {
     if pair.is_empty()
@@ -211,7 +211,6 @@ pub(super) fn fetch_binance_history_page(
         || !matches!(interval, "15m" | "1h" | "1d")
         || duration_seconds <= 0
         || earliest_ts <= 0
-        || target_days <= 0
     {
         return Err("invalid Binance history backfill request".into());
     }
@@ -221,20 +220,14 @@ pub(super) fn fetch_binance_history_page(
     let interval_ms = duration_seconds
         .checked_mul(quant_core::MILLISECONDS_PER_SECOND)
         .ok_or("Binance interval overflow")?;
-    let target_floor_ms = now_ms.saturating_sub(
-        target_days
-            .saturating_sub(1)
-            .saturating_mul(quant_core::SECONDS_PER_DAY)
-            .saturating_mul(quant_core::MILLISECONDS_PER_SECOND),
-    );
     let earliest_ms = earliest_ts.saturating_mul(quant_core::MILLISECONDS_PER_SECOND);
-    if earliest_ms <= target_floor_ms {
-        return Ok(0);
-    }
     let end_ms = earliest_ms.saturating_sub(1);
     let page_start_ms = earliest_ms
-        .saturating_sub(interval_ms.saturating_mul(BINANCE_INGESTION_PAGE_ROWS as i64))
-        .max(target_floor_ms);
+        .saturating_sub(interval_ms.saturating_mul(BINANCE_HISTORY_PAGE_ROWS as i64))
+        .max(0);
+    if page_start_ms >= earliest_ms {
+        return Ok(0);
+    }
     let requested_rows = usize::try_from(
         end_ms
             .saturating_sub(page_start_ms)
@@ -242,7 +235,7 @@ pub(super) fn fetch_binance_history_page(
             .saturating_add(1),
     )
     .unwrap_or(BINANCE_INGESTION_PAGE_ROWS)
-    .clamp(1, BINANCE_INGESTION_PAGE_ROWS.min(market.max_page_size()));
+    .clamp(1, BINANCE_HISTORY_PAGE_ROWS.min(market.max_page_size()));
     let url = format!(
         "{}?symbol={pair}&interval={interval}&startTime={page_start_ms}&endTime={end_ms}&limit={requested_rows}",
         market.endpoint()
