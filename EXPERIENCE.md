@@ -210,13 +210,15 @@ lesson only when it will improve future tasks.
   values unavailable instead of plotting a neutral 50.
 - A preferred-timeframe rule search must use a predeclared grid, select only on
   chronological validation data, and score its frozen choice once on holdout.
-  Require the after-fee win rate and its 95% lower confidence bound, plus
-  average net win/loss payoff and positive expectancy; show the measured
-  evidence and missing coverage without claiming a rule was proven. A 4h
+  The performance target is a 50% win rate after configured transaction fees;
+  use its 95% lower confidence bound and sufficient samples to describe the
+  strength of that evidence. Do not invent a minimum payoff ratio, profit
+  factor, or positive-return target. Report those as diagnostics. A 4h
   preference must not block otherwise valid research at other timeframes.
 - For asymmetric brackets, define target R as planned net reward divided by
   planned net stop loss after configured entry and exit fees. Solve the target
-  price from the fee-adjusted stop, and separately gate the realized average
-  net win/loss ratio because stop gaps and timed exits can change the observed
-  payoff. Version this rule protocol and mark older gross-target reports for
-  rerun without invalidating unrelated score-weight evidence.
+  price from the fee-adjusted stop. Show realized net win/loss ratio because
+  stop gaps and timed exits can change observed payoff, but do not use it as a
+  pass/fail gate unless the user supplies a payoff target. Version rule changes
+  and mark older gross-target reports for rerun without invalidating unrelated
+  score-weight evidence.
