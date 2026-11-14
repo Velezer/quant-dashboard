@@ -155,6 +155,9 @@ export function installChartDataDiagnostics() {
                 const rows = Number(meta.rows ?? storedSeries.rows ?? 0);
                 const coverageDays = Number(meta.coverage_days ?? storedSeries.coverage_days);
                 const targetDays = Number(meta.history_target_days ?? storedSeries.history_target_days);
+                const backfillStatus = String(storedSeries.history_backfill_status || '').toLowerCase();
+                const backfillRows = Number(storedSeries.history_backfill_rows_received || 0);
+                const backfillError = String(storedSeries.history_backfill_error || '').trim();
                 const lastTs = meta.last_ts ?? meta.last_bar_ts ?? storedSeries.last_ts;
                 const lastError = String(meta.last_error || storedSeries.last_error || '').trim();
                 const reason = String(meta.error_reason || storedSeries.error_reason || (lastError ? syncFailureLabel(lastError) : '')).trim();
@@ -191,7 +194,14 @@ export function installChartDataDiagnostics() {
                 setText(age, ageSeconds !== null ? formatDataAge(ageSeconds) : '--');
                 const storedSpan = Number.isFinite(coverageDays) ? `${Math.floor(coverageDays)} calendar days stored` : 'Stored span unavailable';
                 const validationMinimum = Number.isFinite(targetDays) && targetDays > 0 ? `${Math.floor(targetDays)} days minimum for validation` : 'Validation minimum unavailable';
-                setText(coverage, `${rows || 0} bars · ${storedSpan} · ${validationMinimum}`);
+                const backfillText = backfillStatus === 'complete'
+                    ? 'Provider history start reached'
+                    : backfillStatus === 'running'
+                        ? `Provider backfill in progress · ${backfillRows} older bars saved this page`
+                        : backfillStatus === 'error'
+                            ? `Provider backfill will retry · ${backfillError || 'provider error'}`
+                            : '';
+                setText(coverage, `${rows || 0} bars · ${storedSpan} · ${validationMinimum}${backfillText ? ` · ${backfillText}` : ''}`);
                 setText(source, sourceText);
                 setText(attempt, attemptText);
                 setText(success, successText);
@@ -218,8 +228,9 @@ export function installChartDataDiagnostics() {
                 }
 
                 const rawRuns = Array.isArray(CHART_STORAGE_DIAGNOSTICS?.recent_runs) ? CHART_STORAGE_DIAGNOSTICS.recent_runs : [];
+                const historyBackfillInterval = `${storageInterval}_history_backfill`;
                 const runs = rawRuns.filter(run => String(run?.symbol || '').toUpperCase() === String(symbol).toUpperCase()
-                    && (!storageInterval || String(run?.interval || '').toLowerCase() === storageInterval)
+                    && (!storageInterval || [storageInterval, historyBackfillInterval].includes(String(run?.interval || '').toLowerCase()))
                     && (!meta.source || !run?.source || String(run.source) === String(meta.source))).slice(0, 5);
                 runList.textContent = '';
                 if (!runs.length) {

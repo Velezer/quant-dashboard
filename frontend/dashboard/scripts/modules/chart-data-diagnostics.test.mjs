@@ -73,6 +73,14 @@ test('shared reference diagnostics preserve freshness, native failure, and recov
         shared_reference: true, source_is_proxy: true, is_stale: true,
         native_fallback_reason: 'Native provider unreachable',
     };
+    globalThis.CHART_STORAGE_DIAGNOSTICS = {
+        series: [{
+            symbol: 'BTC-USD', interval: '15m', source: metadata.source, rows: 32,
+            coverage_days: 2, history_backfill_status: 'running',
+            history_backfill_rows_received: 750,
+        }],
+        recent_runs: [],
+    };
     globalThis.updateChartDataDiagnostics({ exchange: 'tokocrypto', chart_freshness: { '15m': metadata } });
 
     assert.equal(elements.get('chart-data-diagnostics-state').textContent, 'STALE');
@@ -80,6 +88,8 @@ test('shared reference diagnostics preserve freshness, native failure, and recov
     assert.match(elements.get('chart-diagnostics-source').textContent, /same asset and category share/);
     assert.match(elements.get('chart-diagnostics-source').textContent, /Spot and perpetual candles stay separate/);
     assert.match(elements.get('chart-diagnostics-source').textContent, /do not validate app execution/);
+    assert.match(elements.get('chart-diagnostics-coverage').textContent, /Provider backfill in progress/);
+    assert.match(elements.get('chart-diagnostics-coverage').textContent, /750 older bars saved this page/);
     assert.match(elements.get('chart-diagnostics-why').textContent, /native feed failed: Native provider unreachable/);
     assert.equal(elements.get('chart-diagnostics-retry').disabled, false);
     assert.equal(elements.get('chart-diagnostics-sync').disabled, false);

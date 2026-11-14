@@ -452,7 +452,7 @@
                                 <div id="chart-diagnostics-error" class="mt-1 font-mono font-bold text-amber-300 break-words">--</div>
                             </div>
                         </div>
-                        <p class="text-[10px] leading-relaxed text-gray-400">Candle storage has no maximum age or total-row retention cap. The evidence coverage minimum is not a storage limit. Provider download windows and chart/backtest read limits apply to individual requests; Sync Market preserves older saved candles.</p>
+                        <p class="text-[10px] leading-relaxed text-gray-400">Candle storage has no maximum age or total-row retention cap. The evidence coverage minimum is not a storage limit. Stockbit daily history is fetched in pages back to the ticker’s first Yahoo candle. Yahoo limits Stockbit 15m history to 60 days and hourly history to 730 days; these are provider windows, not storage limits. Chart/backtest reads have separate limits, and Sync Market preserves older saved candles.</p>
                         <details id="chartDiagnosticsRuns" class="rounded border border-gray-800 bg-gray-900/50">
                             <summary class="px-2.5 py-2 cursor-pointer text-[10px] font-bold text-gray-400 hover:text-gray-200">Recent sync events</summary>
                             <div id="chart-diagnostics-run-list" class="border-t border-gray-800 px-2.5 py-2 space-y-1 text-[10px] font-mono text-gray-500">No sync events loaded.</div>

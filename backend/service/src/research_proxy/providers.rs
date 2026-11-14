@@ -3,6 +3,7 @@ use super::*;
 const BINANCE_INGESTION_PAGE_ROWS: usize = 1_500;
 const BINANCE_HISTORY_PAGE_ROWS: usize = 1_500;
 const BINANCE_PAGE_PAUSE_MILLISECONDS: u64 = 250;
+const YAHOO_HISTORY_PAGE_ROWS: usize = 2_000;
 
 #[derive(Clone, Copy)]
 pub(super) enum BinanceMarket {
@@ -49,8 +50,14 @@ pub(super) fn fetch_yahoo_interval(
     interval: &str,
     duration_seconds: i64,
     maximum_rows: usize,
+    has_stored_history: bool,
 ) -> Result<Vec<Bar>, String> {
-    let (provider_interval, range) = yahoo_request_window(kind, interval)?;
+    let (provider_interval, default_range) = yahoo_request_window(kind, interval)?;
+    let range = if has_stored_history && interval == "1d" {
+        "5d"
+    } else {
+        default_range
+    };
     fetch_chart_interval(
         symbol,
         provider_interval,
@@ -73,7 +80,10 @@ pub(super) fn yahoo_request_window(
             },
         )),
         "1h" => Ok(("60m", "5d")),
-        "1d" => Ok(("1d", "10y")),
+        "1d" => Ok((
+            "1d",
+            if kind == "idx_stock" { "1y" } else { "10y" },
+        )),
         _ => Err("unsupported Yahoo candle interval".into()),
     }
 }
@@ -85,6 +95,118 @@ pub(super) fn fetch_chart_interval(
     duration_seconds: i64,
     maximum_rows: usize,
 ) -> Result<Vec<Bar>, String> {
+    validate_yahoo_symbol(symbol)?;
+    let url = format!(
+        "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&range={range}"
+    );
+    let body = fetch_bounded_url(&url)?;
+    parse_yahoo_candles(&body, crate::now_secs() as i64, duration_seconds, maximum_rows)
+        .map_err(|error| yahoo_chart_error(&body).unwrap_or(error))
+}
+
+/// Fetch one older Stockbit/Yahoo candle page. The cursor is the oldest stored
+/// timestamp, so each scheduled sync commits a bounded page and resumes from
+/// the new database minimum. Daily candles are paged back to first trade; Yahoo
+/// itself limits 15m and 60m data to the latest 60 and 730 days respectively.
+pub(super) fn fetch_yahoo_history_page(
+    symbol: &str,
+    interval: &str,
+    duration_seconds: i64,
+    earliest_ts: i64,
+    now_seconds: i64,
+) -> Result<(Vec<Bar>, bool), String> {
+    validate_yahoo_symbol(symbol)?;
+    let Some((provider_interval, page_start, page_end)) =
+        yahoo_history_page_window(interval, duration_seconds, earliest_ts, now_seconds)?
+    else {
+        return Ok((Vec::new(), true));
+    };
+
+    let url = format!(
+        "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={provider_interval}&period1={page_start}&period2={page_end}"
+    );
+    let body = match fetch_bounded_url(&url) {
+        Ok(body) => body,
+        Err(error) if is_yahoo_history_exhausted(&error) => return Ok((Vec::new(), true)),
+        Err(error) => return Err(error),
+    };
+    let empty_result = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|root| {
+            root.pointer("/chart/result/0/timestamp")
+                .and_then(Value::as_array)
+                .map(Vec::is_empty)
+        })
+        .unwrap_or(false);
+    if empty_result {
+        return Ok((Vec::new(), true));
+    }
+    let bars = match parse_yahoo_candles(
+        &body,
+        now_seconds,
+        duration_seconds,
+        YAHOO_HISTORY_PAGE_ROWS,
+    ) {
+        Ok(bars) => bars,
+        Err(error) => {
+            if let Some(provider_error) = yahoo_chart_error(&body) {
+                if is_yahoo_history_exhausted(&provider_error) {
+                    return Ok((Vec::new(), true));
+                }
+                return Err(provider_error);
+            }
+            return Err(error);
+        }
+    };
+    if bars.iter().any(|bar| bar.ts >= earliest_ts) {
+        return Err("Yahoo history page overlaps stored candles".into());
+    }
+    let first_trade = yahoo_first_trade_date(&body);
+    let reached_first_trade = first_trade.is_some_and(|first_trade| {
+        bars.first()
+            .is_some_and(|bar| bar.ts <= first_trade.saturating_add(duration_seconds))
+    });
+    Ok((bars, reached_first_trade))
+}
+
+/// Returns one provider-bounded interval ending just before the oldest
+/// stored bar. `None` means this source's available history was exhausted.
+pub(super) fn yahoo_history_page_window(
+    interval: &str,
+    duration_seconds: i64,
+    earliest_ts: i64,
+    now_seconds: i64,
+) -> Result<Option<(&'static str, i64, i64)>, String> {
+    if duration_seconds <= 0 || earliest_ts <= 0 || now_seconds <= 0 {
+        return Err("invalid Yahoo history cursor".into());
+    }
+    let (provider_interval, page_days, provider_limit_days) = match interval {
+        "15m" => ("15m", 14_i64, Some(60_i64)),
+        "1h" => ("60m", 90_i64, Some(730_i64)),
+        "1d" => ("1d", 365 * 3, None),
+        _ => return Err("unsupported Yahoo history interval".into()),
+    };
+    let provider_floor = provider_limit_days.map(|days| {
+        now_seconds.saturating_sub(days.saturating_mul(crate::SECONDS_PER_DAY))
+    });
+    if provider_floor
+        .is_some_and(|floor| earliest_ts <= floor.saturating_add(duration_seconds))
+    {
+        return Ok(None);
+    }
+
+    let earliest_request = earliest_ts.saturating_sub(1);
+    let page_start = earliest_ts
+        .saturating_sub(page_days.saturating_mul(crate::SECONDS_PER_DAY))
+        .max(0)
+        .max(provider_floor.unwrap_or(0));
+    if page_start >= earliest_request {
+        return Ok(None);
+    }
+    Ok(Some((provider_interval, page_start, earliest_ts)))
+}
+
+fn validate_yahoo_symbol(symbol: &str) -> Result<(), String> {
     if symbol.is_empty()
         || symbol.len() > 50
         || !symbol
@@ -93,16 +215,30 @@ pub(super) fn fetch_chart_interval(
     {
         return Err("invalid Yahoo research ticker".into());
     }
-    let url = format!(
-        "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&range={range}"
-    );
-    let body = fetch_bounded_url(&url)?;
-    parse_yahoo_candles(
-        &body,
-        crate::now_secs() as i64,
-        duration_seconds,
-        maximum_rows,
-    )
+    Ok(())
+}
+
+fn yahoo_first_trade_date(body: &[u8]) -> Option<i64> {
+    serde_json::from_slice::<Value>(body)
+        .ok()?
+        .pointer("/chart/result/0/meta/firstTradeDate")?
+        .as_i64()
+}
+
+fn yahoo_chart_error(body: &[u8]) -> Option<String> {
+    serde_json::from_slice::<Value>(body)
+        .ok()?
+        .pointer("/chart/error/description")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn is_yahoo_history_exhausted(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("data doesn't exist")
+        || error.contains("no data found")
+        || error.contains("no price data found")
+        || error.contains("not available for starttime")
 }
 
 pub(super) fn fetch_binance_interval(
