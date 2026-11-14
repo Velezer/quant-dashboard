@@ -294,7 +294,7 @@ pub(super) fn sync_prepared_candle_target(
                 instrument.storage_symbol,
                 interval,
                 &source,
-                now_millis().saturating_mul(quant_core::NANOS_PER_MILLISECOND),
+                super::now_millis().saturating_mul(quant_core::NANOS_PER_MILLISECOND),
             )
             .unwrap_or(true);
             if !needs_repair {

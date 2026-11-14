@@ -429,7 +429,7 @@ fn sync_with_binance(
         match result {
             Ok(rows) => repaired_rows = rows,
             Err(error) => {
-                let now = super::format_timestamp(now_seconds);
+                let now = super::format_timestamp(super::now_secs());
                 record_proxy_failure(
                     connection,
                     storage_symbol,
