@@ -19,9 +19,9 @@ pub(super) const SIGNAL_ALERT_HISTORY_RETENTION_SECONDS: i64 =
     2 * quant_core::SECONDS_PER_HOUR;
 pub(super) const SIGNAL_SCORE_SUM_TOLERANCE: f64 = 1e-10;
 pub(super) const SIGNAL_LAYOUT_VERSION: &str = "1";
-pub(super) const SIGNAL_SCORE_SCHEMA_VERSION: &str = "4";
+pub(super) const SIGNAL_SCORE_SCHEMA_VERSION: &str = "5";
 
-pub(super) fn is_five_indicator_score_model(score_model_id: &str) -> bool {
+pub(super) fn is_six_indicator_score_model(score_model_id: &str) -> bool {
     matches!(
         score_model_id,
         quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID
@@ -31,7 +31,7 @@ pub(super) fn is_five_indicator_score_model(score_model_id: &str) -> bool {
 
 pub(super) fn score_components_match(
     components: &[Value],
-    five_indicator_score_model: bool,
+    six_indicator_score_model: bool,
     component_points_max: f64,
     group_score_max: f64,
     strategy_strength: f64,
@@ -45,7 +45,7 @@ pub(super) fn score_components_match(
         || !confluence_score.is_finite()
         || confluence_score < 0.0
         || confluence_score > group_score_max
-        || (!five_indicator_score_model
+        || (!six_indicator_score_model
             && (total_score - strategy_strength - confluence_score).abs()
                 > SIGNAL_SCORE_SUM_TOLERANCE)
     {
@@ -65,18 +65,19 @@ pub(super) fn score_components_match(
     else {
         return false;
     };
-    let component_points = if five_indicator_score_model {
-        const FIVE_INDICATOR_NAMES: [&str; 5] = [
+    let component_points = if six_indicator_score_model {
+        const SIX_INDICATOR_NAMES: [&str; 6] = [
             "Nadaraya-Watson Envelope",
             "DSS Bressert",
             "Relative Volume",
             "Estimated Volume Delta (OHLCV proxy)",
             "Markov Regime",
+            "Lag-one Return Autocorrelation",
         ];
-        if components.len() != FIVE_INDICATOR_NAMES.len()
+        if components.len() != SIX_INDICATOR_NAMES.len()
             || components
                 .iter()
-                .zip(FIVE_INDICATOR_NAMES)
+                .zip(SIX_INDICATOR_NAMES)
                 .any(|(component, expected)| {
                     component.get("indicator").and_then(Value::as_str) != Some(expected)
                 })
@@ -101,7 +102,11 @@ pub(super) fn score_components_match(
                     learned_weight_total = learned_weight_total.saturating_add(u16::from(weight));
                 }
                 (weight % 5 == 0
-                    && (index < 4 || weight == quant_core::MARKOV_REGIME_COMPONENT_WEIGHT)
+                    && (index < 4
+                        || (index == 4 && weight == quant_core::MARKOV_REGIME_COMPONENT_WEIGHT)
+                        || (index == 5
+                            && weight
+                                == quant_core::STRATEGY_RETURN_AUTOCORRELATION_COMPONENT_WEIGHT))
                     && contribution.is_finite()
                     && (contribution - *points * f64::from(weight) / 10.0).abs()
                         <= SIGNAL_SCORE_SUM_TOLERANCE)
@@ -125,8 +130,8 @@ pub(super) fn score_components_match(
             difference.abs() < SIGNAL_SCORE_SUM_TOLERANCE
         }
     };
-    let expected_component_count = if five_indicator_score_model { 5 } else { 2 };
-    let component_groups_match = if five_indicator_score_model {
+    let expected_component_count = if six_indicator_score_model { 6 } else { 2 };
+    let component_groups_match = if six_indicator_score_model {
         component_points.len() == expected_component_count
             && groups_match(component_points[0] + component_points[1] - strategy_strength)
             && groups_match(component_points[2] + component_points[3] - confluence_score)

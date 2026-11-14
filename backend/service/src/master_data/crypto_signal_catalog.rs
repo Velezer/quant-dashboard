@@ -53,13 +53,23 @@ pub(super) fn ensure_crypto_signal_catalog(catalog: &mut Value) -> bool {
         })
         .collect::<Vec<_>>();
 
-    let minimum_score = quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50;
+    let minimum_score = quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60;
     let nwe_minimum_history = quant_core::stockbit_nwe_4h_minimum_history_bars();
     let dss_minimum_history = quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS;
-    let score_scale_max = quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX;
+    let score_scale_max = quant_core::SIX_INDICATOR_SCORE_SCALE_MAX;
     let component_score_scale_max = quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX;
     let indicator_component_score_scale_max = quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX;
     let mut changed = false;
+    changed |= super::upsert_catalog_record(
+        catalog,
+        "indicators",
+        json!({
+            "id": "lag_one_return_autocorrelation",
+            "label": "Lag-one Return Autocorrelation",
+            "kind": "indicator",
+            "signal_strategy": false,
+        }),
+    );
 
     for timeframe in quant_core::SIGNAL_SCREENER_TIMEFRAMES.iter().copied() {
         let Some(nwe_strategy_id) = quant_core::crypto_nwe_signal_strategy_id(timeframe) else {
@@ -96,9 +106,9 @@ pub(super) fn ensure_crypto_signal_catalog(catalog: &mut Value) -> bool {
                 "label": format!("Crypto {timeframe} Nadaraya-Watson Band Proximity · Research"),
                 "short_label": format!("{timeframe} NWE Band Proximity"),
                 "description": nwe_description.clone(),
-                "indicator_ids": [quant_core::NWE_METHOD_ID, "dss_bressert", "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime"],
+                "indicator_ids": [quant_core::NWE_METHOD_ID, "dss_bressert", "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime", "lag_one_return_autocorrelation"],
                 "score_model_id": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
-                "minimum_score_out_of_50": minimum_score,
+                "minimum_score_out_of_60": minimum_score,
                 "minimum_history_bars": nwe_minimum_history,
                 "strategy_score_label": "Weighted price contribution (NWE + DSS)",
                 "confluence_score_label": "Weighted volume contribution (relative volume + delta proxy)",
@@ -120,9 +130,9 @@ pub(super) fn ensure_crypto_signal_catalog(catalog: &mut Value) -> bool {
                 "label": format!("Crypto {timeframe} DSS Bressert Near-Cross · Research"),
                 "short_label": format!("{timeframe} DSS Near-Cross"),
                 "description": dss_description.clone(),
-                "indicator_ids": ["dss_bressert", quant_core::NWE_METHOD_ID, "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime"],
+                "indicator_ids": ["dss_bressert", quant_core::NWE_METHOD_ID, "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime", "lag_one_return_autocorrelation"],
                 "score_model_id": quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID,
-                "minimum_score_out_of_50": minimum_score,
+                "minimum_score_out_of_60": minimum_score,
                 "minimum_history_bars": dss_minimum_history,
                 "strategy_score_label": "Price evidence (NWE + DSS)",
                 "confluence_score_label": "Volume evidence (relative volume + delta proxy)",
@@ -142,13 +152,16 @@ fn crypto_score_description(
     score_scale_max: f64,
 ) -> String {
     let volume_lookback_bars = quant_core::FOUR_INDICATOR_VOLUME_LOOKBACK_BARS;
+    let autocorrelation_lookback = quant_core::STRATEGY_RETURN_AUTOCORRELATION_LOOKBACK_RETURNS;
+    let autocorrelation_minimum_pairs =
+        quant_core::STRATEGY_RETURN_AUTOCORRELATION_MINIMUM_PAIRS;
     let timeframe_source_note = if timeframe == "30m" {
         " 30m setup candles are aggregated locally from two adjacent, completed same-source 15m candles; no separate 30m provider request is made."
     } else {
         ""
     };
     format!(
-        "Crypto research market-entry signals are recalculated each scan from the latest directional setup on a completed {timeframe} bar. The strategy setup and base score floor determine whether a row qualifies; after-fee profile metrics and profile-specific cutoffs are informational and never hide a signal. An active validated profile supplies learned weights when available; otherwise the first four factors use equal weights. There is no separate signal-age expiry. The latest same-source 15m reference price is shown when available; a stale reference remains labeled and is not a market entry. The /{score_scale_max:.0} setup score has five /10 readings: NWE, DSS Bressert, {volume_lookback_bars}-bar relative volume, estimated volume delta from OHLCV close location, and Markov regime. The first four share 40 points of weight and Markov has a fixed 10-point weight; Markov earns its 10 only when the causal current-bar state aligns with signal direction (bull trend/accumulation for LONG, bear trend/distribution for SHORT), otherwise it contributes zero. The screener shows every raw /10 value, weight, and weighted contribution. Relative volume compares the setup bar to the preceding {volume_lookback_bars} same-source bars; estimated delta is a candle proxy, not true aggressor-side trade delta. Neutral or unavailable evidence contributes zero and remains labeled. The Markov state is not a forecast or win probability. Scores below the base floor {minimum_score:.1}/{score_scale_max:.0} are withheld. Requires at least {minimum_history_bars} completed {timeframe} bars.{timeframe_source_note} The 15m price is a candle close, not a live bid/ask. Source and quality stay attached; proxy candles are not venue-native execution evidence. The score measures setup strength, not execution availability, and no order is placed."
+        "Crypto research market-entry signals are recalculated each scan from the latest directional setup on a completed {timeframe} bar. The strategy setup and base score floor determine whether a row qualifies; after-fee profile metrics and profile-specific cutoffs are informational and never hide a signal. An active validated profile supplies learned weights when available; otherwise the first four factors use equal weights. There is no separate signal-age expiry. The latest same-source 15m reference price is shown when available; a stale reference remains labeled and is not a market entry. The /{score_scale_max:.0} setup score has six /10 readings: NWE, DSS Bressert, {volume_lookback_bars}-bar relative volume, estimated volume delta from OHLCV close location, Markov regime, and lag-one return autocorrelation. The first four share 40 points of weight; Markov and autocorrelation each have a fixed 10-point weight. Markov contributes its 10 only when the causal current-bar state aligns with signal direction (bull trend/accumulation for LONG, bear trend/distribution for SHORT), otherwise zero. The screener shows every raw /10 value, weight, and weighted contribution. Relative volume compares the setup bar to the preceding {volume_lookback_bars} same-source bars; estimated delta is a candle proxy, not true aggressor-side trade delta. Autocorrelation uses up to {autocorrelation_lookback} same-timeframe close-to-close returns and requires {autocorrelation_minimum_pairs} adjacent return pairs. A causal one-step AR(1) forecast is standardized by recent volatility and scored in the signal direction; the displayed value is the lag-one correlation. Insufficient or flat history contributes zero and is labeled unavailable. Neither reading is an individual win-probability estimate. Scores below the base floor {minimum_score:.1}/{score_scale_max:.0} are withheld. Requires at least {minimum_history_bars} completed {timeframe} bars.{timeframe_source_note} The 15m price is a candle close, not a live bid/ask. Source and quality stay attached; proxy candles are not venue-native execution evidence. The score measures setup strength, not execution availability, and no order is placed."
     )
 }
 

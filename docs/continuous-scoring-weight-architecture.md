@@ -25,11 +25,13 @@ whether a row is shown.
 - Reports are saved in `app.entry_model_validation_reports`. They retain
   aggregate evidence and candidate weights, not simulated trade rows.
 - The live scorer combines four learned /10 factor readings (weight budget 40)
-  with a fixed /10 Markov regime component (weight 10). The Markov classifier
-  uses the causal current-bar state, not transition forecasts. The scan-pinned
-  profile redistributes only the first four weights; without a profile those
-  four share the 40-point budget equally. Both paths publish setups that meet
-  the /50 base score floor; after-fee profile cutoffs are informational.
+  with fixed /10 Markov and lag-one return-autocorrelation components (weight
+  10 each). Markov uses the causal current-bar regime; autocorrelation uses a
+  causal one-step AR(1) forecast from up to 128 same-timeframe returns and
+  requires 30 adjacent pairs. The scan-pinned profile redistributes only the
+  first four weights; without a profile those four share the 40-point budget
+  equally. Both paths publish setups that meet the /60 base score floor;
+  after-fee profile cutoffs are informational.
 - The Entry Validation page shows active profile versions, recent cohort
   decisions, and promotion blockers. Research reports remain separate and
   state `live_weights_changed: false`.

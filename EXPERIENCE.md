@@ -83,7 +83,9 @@ lesson only when it will improve future tasks.
   from the first page.
 - Normalize an overall score filter by each signal model's declared maximum and
   apply it before pagination on both server and browser. State the displayed
-  normalization clearly when models use /10, /20, /40, and /50 scales.
+  normalization clearly when models use /10, /20, /40, /50, and /60 scales;
+  keep retired `/50` rows on their stored scale when the current model moves to
+  `/60`.
 - Keep fresh Stockbit score snapshots with `not_qualifying` visible as
   zero-score, no-entry rows, while excluding them from current-entry and
   notification counts. The server and browser must use the same rule.
@@ -153,6 +155,10 @@ lesson only when it will improve future tasks.
   old rows on their recorded scale and mark them stale/legacy. For Markov input,
   use the causal regime at the scored bar and document its fixed contribution;
   do not treat whole-history transition statistics as a signal-time forecast.
+  For a live autocorrelation factor, calculate same-timeframe returns only
+  through the scored bar, expose its minimum pair count and unavailable state,
+  and carry its fixed weight through backtest observations, profile protocol,
+  score basis, filters, and the guide.
 - Keep the wide-screen dashboard's app, product, timeframe, search, and score
   controls in the screener rail, with one scrollable signal list and a visible
   availability summary. Hide desktop navigation at phone widths and verify the
@@ -160,8 +166,8 @@ lesson only when it will improve future tasks.
   persisted `URLSearchParams`, treat a missing value as missing before numeric
   conversion: `Number(null)` is zero and can silently clamp a layout preference
   to its minimum.
-- Show the current Markov contribution beside the screener total as well as in
-  the expanded five-factor breakdown. Normalize component identities so a
+- Show current fixed-indicator contributions beside the screener total as well
+  as in the expanded six-factor breakdown. Normalize component identities so a
   display label and a stable component ID resolve to the same indicator. For a
   retained legacy row, say that Markov was not scored instead of assigning a
   fabricated regime value.

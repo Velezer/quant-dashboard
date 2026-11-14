@@ -3,13 +3,16 @@ use serde_json::Value;
 pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
     let minimum_nwe_history = quant_core::stockbit_nwe_4h_minimum_history_bars();
     let minimum_dss_history = quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS;
-    let minimum_score = quant_core::FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50;
+    let minimum_score = quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60;
     let nwe_band_distance_ratio =
         quant_core::STOCKBIT_NWE_4H_SIGNAL_CONFIG.maximum_band_distance_ratio;
-    let maximum_score = quant_core::FIVE_INDICATOR_SCORE_SCALE_MAX;
+    let maximum_score = quant_core::SIX_INDICATOR_SCORE_SCALE_MAX;
     let component_maximum_score = quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX;
     let indicator_component_maximum_score = quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX;
     let relative_volume_lookback = quant_core::FOUR_INDICATOR_VOLUME_LOOKBACK_BARS;
+    let autocorrelation_lookback = quant_core::STRATEGY_RETURN_AUTOCORRELATION_LOOKBACK_RETURNS;
+    let autocorrelation_minimum_pairs =
+        quant_core::STRATEGY_RETURN_AUTOCORRELATION_MINIMUM_PAIRS;
     let indicator = serde_json::json!({
         "id": quant_core::NWE_METHOD_ID,
         "label": quant_core::NWE_METHOD_LABEL,
@@ -33,6 +36,16 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
         serde_json::json!({
             "id": "markov_regime",
             "label": "Markov Regime",
+            "kind": "indicator",
+            "signal_strategy": false,
+        }),
+    );
+    changed |= super::upsert_catalog_record(
+        catalog,
+        "indicators",
+        serde_json::json!({
+            "id": "lag_one_return_autocorrelation",
+            "label": "Lag-one Return Autocorrelation",
             "kind": "indicator",
             "signal_strategy": false,
         }),
@@ -63,7 +76,7 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "{nwe_direction_rule} Without a cross, a close within {:.0}% of the full envelope width from its nearest band qualifies on either side.",
             nwe_band_distance_ratio * 100.0,
         );
-        let nwe_basis = five_indicator_score_basis(
+        let nwe_basis = six_indicator_score_basis(
             &nwe_setup_description,
             timeframe,
             relative_volume_lookback,
@@ -83,14 +96,14 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "validation_status": "UNVALIDATED",
             "research_only": true,
             "implemented": true,
-            "indicator_ids": [quant_core::NWE_METHOD_ID, "dss_bressert", "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime"],
+            "indicator_ids": [quant_core::NWE_METHOD_ID, "dss_bressert", "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime", "lag_one_return_autocorrelation"],
             "asset_category_ids": [quant_core::STOCKBIT_NWE_4H_ASSET_CATEGORY_ID],
             "exchange_ids": [quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID],
             "product_ids": [quant_core::STOCKBIT_NWE_4H_PRODUCT_ID],
             "timeframe": timeframe,
             "score_model_id": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
             "score_scale_max": maximum_score,
-            "minimum_score_out_of_50": minimum_score,
+            "minimum_score_out_of_60": minimum_score,
             "component_score_scale_max": component_maximum_score,
             "indicator_component_score_scale_max": indicator_component_maximum_score,
             "strategy_score_label": "Weighted price contribution (NWE + DSS)",
@@ -104,7 +117,7 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "On a completed {timeframe} bar, a bullish DSS Bressert cross or approaching near-cross is LONG; a bearish cross or approaching near-cross is SHORT. A near-cross requires the DSS-to-trigger spread to approach zero within {:.1} points.",
             quant_core::DSS_BRESSERT_NEAR_SPREAD_THRESHOLD,
         );
-        let dss_basis = five_indicator_score_basis(
+        let dss_basis = six_indicator_score_basis(
             &dss_setup_description,
             timeframe,
             relative_volume_lookback,
@@ -124,14 +137,14 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
             "validation_status": "UNVALIDATED",
             "research_only": true,
             "implemented": true,
-            "indicator_ids": ["dss_bressert", quant_core::NWE_METHOD_ID, "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime"],
+            "indicator_ids": ["dss_bressert", quant_core::NWE_METHOD_ID, "relative_volume", "estimated_volume_delta_ohlcv", "markov_regime", "lag_one_return_autocorrelation"],
             "asset_category_ids": [quant_core::STOCKBIT_NWE_4H_ASSET_CATEGORY_ID],
             "exchange_ids": [quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID],
             "product_ids": [quant_core::STOCKBIT_NWE_4H_PRODUCT_ID],
             "timeframe": timeframe,
             "score_model_id": quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID,
             "score_scale_max": maximum_score,
-            "minimum_score_out_of_50": minimum_score,
+            "minimum_score_out_of_60": minimum_score,
             "component_score_scale_max": component_maximum_score,
             "indicator_component_score_scale_max": indicator_component_maximum_score,
             "strategy_score_label": "Weighted price contribution (NWE + DSS)",
@@ -146,14 +159,17 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
     changed
 }
 
-fn five_indicator_score_basis(
+fn six_indicator_score_basis(
     setup_description: &str,
     timeframe: &str,
     relative_volume_lookback: usize,
     minimum_score: f64,
     maximum_score: f64,
 ) -> String {
+    let autocorrelation_lookback = quant_core::STRATEGY_RETURN_AUTOCORRELATION_LOOKBACK_RETURNS;
+    let autocorrelation_minimum_pairs =
+        quant_core::STRATEGY_RETURN_AUTOCORRELATION_MINIMUM_PAIRS;
     format!(
-        "{setup_description} The entry setup score has five readings scored /10: NWE, DSS Bressert, {relative_volume_lookback}-bar relative volume, estimated OHLCV volume delta, and Markov regime. The first four readings share 40 weight points; an active validated profile can redistribute those weights, while equal weighting gives 10 points each. Markov has a fixed 10-point weight and earns 10 when its causal current-bar regime aligns with the signal direction (bull trend/accumulation for LONG; bear trend/distribution for SHORT); opposing, neutral, or unavailable regimes earn zero. The score is out of {maximum_score:.0}; every raw /10 reading, weight, and contribution is shown. After-fee backtest metrics and profile-specific cutoffs are informational and never hide a signal; the base score floor remains {minimum_score:.1}/{maximum_score:.0}. Price and volume subtotals depend on the learned weights. Relative volume compares the current bar against the preceding {relative_volume_lookback} same-source {timeframe} bars and awards points only when candle direction agrees with the signal. The delta proxy uses candle close location; it is not true aggressor-side trade delta. Markov state alignment is not a forecast or win probability. Missing/zero volume or insufficient history contributes zero and remains labeled unavailable. Scores below the base floor are withheld. The score measures setup strength, not execution availability."
+        "{setup_description} The entry setup score has six readings scored /10: NWE, DSS Bressert, {relative_volume_lookback}-bar relative volume, estimated OHLCV volume delta, Markov regime, and lag-one return autocorrelation. The first four readings share 40 weight points and may be redistributed by a validated after-fee profile; Markov and autocorrelation each have a fixed 10-point weight. Markov awards 10 when its causal current-bar regime aligns with the signal direction (bull trend/accumulation for LONG; bear trend/distribution for SHORT), otherwise zero. The score is out of {maximum_score:.0}; every raw /10 reading, weight, and contribution is shown. After-fee backtest metrics and profile-specific cutoffs are informational and never hide a signal; the base score floor remains {minimum_score:.1}/{maximum_score:.0}. Price and volume subtotals depend on the learned weights. Relative volume compares the current bar against the preceding {relative_volume_lookback} same-source {timeframe} bars and awards points only when candle direction agrees with the signal. The delta proxy uses candle close location; it is not true aggressor-side trade delta. Autocorrelation uses up to {autocorrelation_lookback} same-timeframe close-to-close returns and needs at least {autocorrelation_minimum_pairs} adjacent return pairs. It applies a causal one-step AR(1) forecast, scales its signed direction alignment against return volatility, and shows lag-one correlation as its value. Insufficient or flat history is unavailable and contributes zero; the reading is not a win-probability estimate. Markov state alignment is descriptive, not a forecast. The score measures setup strength, not execution availability."
     )
 }

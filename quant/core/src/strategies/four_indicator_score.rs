@@ -2,9 +2,12 @@ use super::common::StrategyBar;
 
 pub const FOUR_INDICATOR_SCORE_SCALE_MAX: f64 = 40.0;
 pub const FOUR_INDICATOR_EQUAL_WEIGHTS: [u8; 4] = [10; 4];
-pub const FIVE_INDICATOR_SCORE_SCALE_MAX: f64 = 50.0;
 pub const MARKOV_REGIME_COMPONENT_WEIGHT: u8 = 10;
-pub const FIVE_INDICATOR_MINIMUM_SCORE_OUT_OF_50: f64 = 1.0;
+pub const STRATEGY_RETURN_AUTOCORRELATION_COMPONENT_WEIGHT: u8 = 10;
+pub const STRATEGY_RETURN_AUTOCORRELATION_LOOKBACK_RETURNS: usize = 128;
+pub const STRATEGY_RETURN_AUTOCORRELATION_MINIMUM_PAIRS: usize = 30;
+pub const SIX_INDICATOR_SCORE_SCALE_MAX: f64 = 60.0;
+pub const SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60: f64 = 1.0;
 /// A price or volume subtotal may receive the full score budget under a
 /// learned profile, so its valid range is the complete model scale.
 pub const FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX: f64 = FOUR_INDICATOR_SCORE_SCALE_MAX;
@@ -35,25 +38,30 @@ pub struct FourIndicatorScore {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FiveIndicatorScore {
+pub struct SixIndicatorScore {
     pub price_score: f64,
     pub volume_score: f64,
     pub markov_regime_score: f64,
+    pub autocorrelation_score: f64,
     pub total_score: f64,
     pub weights: [u8; 4],
-    pub components: [ScoreComponent; 5],
+    pub components: [ScoreComponent; 6],
 }
 
-/// Add a causal current-bar Markov regime factor to the validated four-factor
-/// score. The Markov factor has a fixed 10-point weight; transition estimates
-/// are not used as trade probabilities or as a second prediction signal.
-pub fn add_markov_regime_score(
+/// Add fixed-weight Markov and lag-one return-autocorrelation readings to the
+/// four learned score factors. Both additions are causal and each has a fixed
+/// 10-point weight; neither is a win-probability estimate.
+pub(super) fn add_entry_model_indicators(
     score: FourIndicatorScore,
     direction: &str,
     regime: Option<crate::RegimeId>,
-) -> FiveIndicatorScore {
+    bars: &[StrategyBar],
+) -> SixIndicatorScore {
     let markov_component = markov_regime_component(direction, regime);
     let markov_regime_score = markov_component.weighted_points;
+    let autocorrelation_component =
+        strategy_return_autocorrelation_component(bars, direction);
+    let autocorrelation_score = autocorrelation_component.weighted_points;
     let components = score.components;
     let components = [
         components[0].clone(),
@@ -61,14 +69,115 @@ pub fn add_markov_regime_score(
         components[2].clone(),
         components[3].clone(),
         markov_component,
+        autocorrelation_component,
     ];
-    FiveIndicatorScore {
+    SixIndicatorScore {
         price_score: score.price_score,
         volume_score: score.volume_score,
         markov_regime_score,
-        total_score: score.total_score + markov_regime_score,
+        autocorrelation_score,
+        total_score: score.total_score + markov_regime_score + autocorrelation_score,
         weights: score.weights,
         components,
+    }
+}
+
+fn strategy_return_autocorrelation_component(
+    bars: &[StrategyBar],
+    direction: &str,
+) -> ScoreComponent {
+    let unavailable = || ScoreComponent {
+        indicator: "Lag-one Return Autocorrelation",
+        state: "UNAVAILABLE".to_string(),
+        points: 0.0,
+        weight_points: STRATEGY_RETURN_AUTOCORRELATION_COMPONENT_WEIGHT,
+        weighted_points: 0.0,
+        value: None,
+    };
+    if !matches!(direction, "LONG" | "SHORT") {
+        return unavailable();
+    }
+    let return_count = bars
+        .len()
+        .saturating_sub(1)
+        .min(STRATEGY_RETURN_AUTOCORRELATION_LOOKBACK_RETURNS);
+    if return_count <= STRATEGY_RETURN_AUTOCORRELATION_MINIMUM_PAIRS {
+        return unavailable();
+    }
+    let pair_count = return_count.saturating_sub(1);
+    if pair_count < STRATEGY_RETURN_AUTOCORRELATION_MINIMUM_PAIRS {
+        return unavailable();
+    }
+    let first_bar = bars.len().saturating_sub(return_count + 1);
+    let mut returns = [0.0; STRATEGY_RETURN_AUTOCORRELATION_LOOKBACK_RETURNS];
+    for (index, pair) in bars[first_bar..].windows(2).enumerate() {
+        returns[index] = pair[1].close.ln() - pair[0].close.ln();
+        if !returns[index].is_finite() {
+            return unavailable();
+        }
+    }
+    let pair_count_f64 = pair_count as f64;
+    let mut previous_sum = 0.0;
+    let mut next_sum = 0.0;
+    for index in 0..pair_count {
+        previous_sum += returns[index];
+        next_sum += returns[index + 1];
+    }
+    let mean_previous = previous_sum / pair_count_f64;
+    let mean_next = next_sum / pair_count_f64;
+    let mut covariance = 0.0;
+    let mut previous_variance = 0.0;
+    let mut next_variance = 0.0;
+    for index in 0..pair_count {
+        let previous_delta = returns[index] - mean_previous;
+        let next_delta = returns[index + 1] - mean_next;
+        covariance += previous_delta * next_delta;
+        previous_variance += previous_delta * previous_delta;
+        next_variance += next_delta * next_delta;
+    }
+    covariance /= pair_count_f64;
+    previous_variance /= pair_count_f64;
+    next_variance /= pair_count_f64;
+    if !covariance.is_finite()
+        || !previous_variance.is_finite()
+        || !next_variance.is_finite()
+        || previous_variance <= f64::EPSILON
+        || next_variance <= f64::EPSILON
+    {
+        return unavailable();
+    }
+    let deviation = next_variance.sqrt();
+    let correlation = (covariance / (previous_variance.sqrt() * deviation)).clamp(-1.0, 1.0);
+    let slope = covariance / previous_variance;
+    let forecast = mean_next + slope * (returns[return_count - 1] - mean_previous);
+    let direction_sign = if direction == "LONG" { 1.0 } else { -1.0 };
+    let directional_forecast_z = direction_sign * forecast / deviation;
+    if !correlation.is_finite() || !directional_forecast_z.is_finite() {
+        return unavailable();
+    }
+    let points = (5.0 + 5.0 * directional_forecast_z.clamp(-1.0, 1.0))
+        .clamp(0.0, FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX);
+    let alignment = if directional_forecast_z > 0.05 {
+        "ALIGNED"
+    } else if directional_forecast_z < -0.05 {
+        "OPPOSED"
+    } else {
+        "NO_DIRECTIONAL_EDGE"
+    };
+    let regime = if correlation.abs() < 0.05 {
+        "LOW_AUTOCORRELATION"
+    } else if correlation > 0.0 {
+        "CONTINUATION"
+    } else {
+        "MEAN_REVERSION"
+    };
+    ScoreComponent {
+        indicator: "Lag-one Return Autocorrelation",
+        state: format!("{alignment}_{regime}"),
+        points,
+        weight_points: STRATEGY_RETURN_AUTOCORRELATION_COMPONENT_WEIGHT,
+        weighted_points: points,
+        value: Some(correlation),
     }
 }
 

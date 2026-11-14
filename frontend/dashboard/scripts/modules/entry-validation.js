@@ -161,7 +161,7 @@ export function initializeEntryValidation(doc = document) {
                     element('p', weightVectorText(profile.weights), 'profile-metrics'));
                 const gate = profile.signal_gate || {};
                 const holdout = gate.holdout || {};
-                card.append(element('p', `Historical holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} after fees vs ${metric(gate.target_after_fee_win_rate_pct ?? scoring?.target_after_fee_win_rate_pct, '% target', 0)} · 95% lower bound ${metric(holdout.win_rate_after_fees_wilson_95_lower_pct, '%', 1)} · ${metric(holdout.trades, ' trades', 0)} · observed average net payoff ${metric(holdout.observed_payoff_ratio_after_fees, '×', 2)} (diagnostic) · score cutoff ${metric(gate.minimum_score_out_of_50, '/50', 0)} is informational and does not filter signals`, 'profile-metrics'));
+                card.append(element('p', `Historical holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} after fees vs ${metric(gate.target_after_fee_win_rate_pct ?? scoring?.target_after_fee_win_rate_pct, '% target', 0)} · 95% lower bound ${metric(holdout.win_rate_after_fees_wilson_95_lower_pct, '%', 1)} · ${metric(holdout.trades, ' trades', 0)} · observed average net payoff ${metric(holdout.observed_payoff_ratio_after_fees, '×', 2)} (diagnostic) · score cutoff ${metric(gate.minimum_score_out_of_60, '/60', 0)} is informational and does not filter signals`, 'profile-metrics'));
                 activeContainer.append(card);
             }
             status('live-scoring-state', `${profiles.length} active profile${profiles.length === 1 ? '' : 's'}`, 'valid');
@@ -189,8 +189,8 @@ export function initializeEntryValidation(doc = document) {
                 card.append(element('p', `Validation ${metric(validation.win_rate_after_fees_pct, '%', 1)} · ${metric(validation.trades, '', 0)} trades · holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} · ${metric(holdout.trades, '', 0)} trades · target ${metric(decision.target_after_fee_win_rate_pct, '% after fees', 0)} · observed net payoff ${metric(holdout.observed_payoff_ratio_after_fees, '×', 2)} and mean return ${metric(holdout.mean_net_return_pct, '%')} are diagnostics`));
             }
             const gate = decision.signal_gate || {};
-            if (gate.minimum_score_out_of_50 != null) {
-                card.append(element('p', `Backtested score cutoff ${metric(gate.minimum_score_out_of_50, '/50', 0)} · validation ${metric(gate.validation?.win_rate_after_fees_pct, '%', 1)} · holdout ${metric(gate.holdout?.win_rate_after_fees_pct, '%', 1)} after fees · metric only; live signals are not filtered`, 'profile-metrics'));
+            if (gate.minimum_score_out_of_60 != null) {
+                card.append(element('p', `Backtested score cutoff ${metric(gate.minimum_score_out_of_60, '/60', 0)} · validation ${metric(gate.validation?.win_rate_after_fees_pct, '%', 1)} · holdout ${metric(gate.holdout?.win_rate_after_fees_pct, '%', 1)} after fees · metric only; live signals are not filtered`, 'profile-metrics'));
             } else {
                 card.append(element('p', 'No validation score cutoff met the after-fee promotion target. The measured validation and holdout rates above remain visible; live signals are not filtered.', 'profile-metrics'));
             }
@@ -625,7 +625,7 @@ export function initializeEntryValidation(doc = document) {
         const values = (items, suffix = '', digits = 2) => Array.isArray(items) ? items.map(value => `${metric(value, '', digits)}${suffix}`).join(' / ') : 'unavailable';
         const targetValues = search.target_after_fee_r_multiples ?? search.target_r_multiples;
         const targetSuffix = Array.isArray(search.target_after_fee_r_multiples) ? '× net risk after fees' : ' gross R';
-        const searchDescription = `Search grid: ${values(search.atr14_stop_multiples, ' × ATR14')} stops; ${values(targetValues, targetSuffix)} targets; ${values(search.maximum_hold_bars, ' bars', 0)} maximum holds; score floors ${values(search.score_floors_out_of_50, '/50', 0)}`;
+        const searchDescription = `Search grid: ${values(search.atr14_stop_multiples, ' × ATR14')} stops; ${values(targetValues, targetSuffix)} targets; ${values(search.maximum_hold_bars, ' bars', 0)} maximum holds; score floors ${values(search.score_floors_out_of_60, '/60', 0)}`;
         status('risk-reward-status', `${message} Qualification target: ${targetRate} after fees, with its 95% Wilson lower bound also at target. Payoff and net return are shown as diagnostics.`, feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? '' : 'pending');
         if (!candidate) {
             text('risk-reward-description', `${metric(rule?.eligible_validation_candidate_count, '', 0)} of ${metric(rule?.candidate_count, '', 0)} bracket combinations had enough validation trades. No rule was selected from holdout data.`);
@@ -641,7 +641,7 @@ export function initializeEntryValidation(doc = document) {
             : `target ${metric(afterFeeTarget, '× net risk after fees', 2)}`;
         const verdict = candidate.qualified === true ? 'Passed history, validation, and holdout checks.' : `Validation ${candidate.validation_passed === true ? 'passed' : 'failed'} · holdout ${candidate.holdout_passed === true ? 'passed' : 'failed'} · 1,000-day minimum ${candidate.history_span_passed === true ? 'passed' : 'not met'}.`;
         const wilsonLower = summary => Array.isArray(summary.win_rate_after_fees_wilson_95_pct) ? summary.win_rate_after_fees_wilson_95_pct[0] : null;
-        text('risk-reward-description', `${candidate.entry_rule || '4h NWE/DSS entry'} Score floor ${metric(candidate.minimum_score_out_of_50, '/50', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; ${targetDescription}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
+        text('risk-reward-description', `${candidate.entry_rule || '4h NWE/DSS entry'} Score floor ${metric(candidate.minimum_score_out_of_60, '/60', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; ${targetDescription}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
         metrics.replaceChildren(
             metricCard('Validation win rate', metric(validation.win_rate_after_fees_pct, '%', 1), `${metric(validation.trades, ' trades', 0)} · target ${targetRate}`),
             metricCard('Validation 95% lower bound', metric(wilsonLower(validation), '%', 1), `Must also reach ${targetRate}`),
@@ -808,7 +808,7 @@ export function initializeEntryValidation(doc = document) {
         if (report.eligibility?.reason) notices.append(element('p', report.eligibility.reason, 'notice'));
         if (selected?.research_eligibility !== 'eligible') notices.append(element('p', 'The current registry does not mark this ticker eligible. Saved results are historical; a new run is blocked until verification or scope recovers.', 'notice'));
         if (report.status === 'NO_HISTORY') notices.append(element('p', 'No matching stored history was available. Use Sync Market on the screener, then backtest this ticker again.', 'notice'));
-        if (report.status === 'UNSUPPORTED_MODEL') notices.append(element('p', 'No current five-indicator entry model is configured for this ticker’s exact app/product/category. Another model has not been substituted.', 'notice'));
+        if (report.status === 'UNSUPPORTED_MODEL') notices.append(element('p', 'No current six-indicator entry model is configured for this ticker’s exact app/product/category. Another model has not been substituted.', 'notice'));
         if (history.read_limit_reached) notices.append(element('p', `The ${metric(history.read_limit, '', 0)}-bar read limit was reached. Earlier candles may remain stored; validation uses only the sample dates shown here.`, 'notice'));
         metadata('history-metadata', [['Source', sourceName(report.source)], ['Provider', report.source?.data_provider || 'Unavailable'], ['Source basis', report.source?.is_proxy ? 'Research proxy' : report.source?.venue_native ? 'Venue-native history' : 'Unverified'], ['Timezone', report.source?.timezone || 'Unavailable'], ['Sampled bars', metric(history.bars, '', 0)], ['Sample dates', `${dateText(history.first_ts)} – ${dateText(history.last_ts)}`], ['Sample span', metric(history.coverage_days, ' days', 0)], ['Stored span', metric(history.stored_coverage_days, ' days', 0)], ['Protocol', report.protocol_id || 'Unavailable'], ['Data fingerprint', history.data_fingerprint || 'Unavailable']]);
         metadata('cost-metadata', [['Fee model', costs.fee_model || 'Unavailable'], ['Buy / sell fees', costs.fees_known === true ? `${metric(costs.buy_fee_pct, '%', 3)} / ${metric(costs.sell_fee_pct, '%', 3)}` : 'Unknown · gross returns only'], ['Execution-cost coverage', costs.execution_costs_complete === true ? 'Complete for this protocol' : 'Incomplete · validation blocked']]);
