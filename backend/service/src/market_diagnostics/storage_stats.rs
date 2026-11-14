@@ -549,7 +549,19 @@ fn load_market_storage_details(
         "SELECT s.symbol, s.interval, s.source, s.timezone, s.price_basis, \
          s.instrument_kind, s.last_success, s.last_attempt, s.last_error, \
          COUNT(b.ts) AS rows, MIN(b.ts) AS first_ts, MAX(b.ts) AS last_ts, \
-         s.exchange_id, s.data_provider \
+         s.exchange_id, s.data_provider, \
+         (SELECT status FROM main.ingestion_runs r WHERE r.symbol=s.symbol \
+            AND r.interval=s.interval||'_history_backfill' AND r.source=s.source \
+            ORDER BY r.id DESC LIMIT 1), \
+         (SELECT attempted_at FROM main.ingestion_runs r WHERE r.symbol=s.symbol \
+            AND r.interval=s.interval||'_history_backfill' AND r.source=s.source \
+            ORDER BY r.id DESC LIMIT 1), \
+         (SELECT rows_received FROM main.ingestion_runs r WHERE r.symbol=s.symbol \
+            AND r.interval=s.interval||'_history_backfill' AND r.source=s.source \
+            ORDER BY r.id DESC LIMIT 1), \
+         (SELECT error FROM main.ingestion_runs r WHERE r.symbol=s.symbol \
+            AND r.interval=s.interval||'_history_backfill' AND r.source=s.source \
+            ORDER BY r.id DESC LIMIT 1) \
          FROM main.series s LEFT JOIN main.bars b \
            ON b.symbol=s.symbol AND b.interval=s.interval AND b.source=s.source \
          WHERE s.symbol=?1 \
@@ -571,6 +583,10 @@ fn load_market_storage_details(
             let last_ts = row.get::<_, Option<i64>>(11)?;
             let exchange_id = row.get::<_, String>(12)?;
             let data_provider = row.get::<_, String>(13)?;
+            let history_backfill_status = row.get::<_, Option<String>>(14)?;
+            let history_backfill_attempted_at = row.get::<_, Option<String>>(15)?;
+            let history_backfill_rows_received = row.get::<_, Option<i64>>(16)?;
+            let history_backfill_error = row.get::<_, Option<String>>(17)?;
             let coverage_days = history_coverage_days(first_ts, last_ts);
             Ok(serde_json::json!({
                 "symbol": symbol,
@@ -596,6 +612,10 @@ fn load_market_storage_details(
                 "history_status": history_coverage_status(rows, coverage_days),
                 "history_policy": history_acquisition_policy(&interval),
                 "history_warning": history_coverage_warning(&interval, rows, coverage_days),
+                "history_backfill_status": history_backfill_status,
+                "history_backfill_attempted_at": history_backfill_attempted_at,
+                "history_backfill_rows_received": history_backfill_rows_received,
+                "history_backfill_error": history_backfill_error,
             }))
         })?
         .collect::<Result<Vec<_>, _>>()?;
