@@ -222,3 +222,8 @@ lesson only when it will improve future tasks.
   pass/fail gate unless the user supplies a payoff target. Version rule changes
   and mark older gross-target reports for rerun without invalidating unrelated
   score-weight evidence.
+- Do not treat a Yahoo `range` preset as the full history horizon. IDX daily
+  candles can be paged backward to `meta.firstTradeDate`; Yahoo rejects 15m
+  requests older than 60 days and 60m requests older than 730 days. Keep those
+  provider limits separate from the 1,000-day evidence minimum and from storage
+  retention, and save pages incrementally.
