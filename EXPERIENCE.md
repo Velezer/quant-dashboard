@@ -166,10 +166,11 @@ lesson only when it will improve future tasks.
   persisted `URLSearchParams`, treat a missing value as missing before numeric
   conversion: `Number(null)` is zero and can silently clamp a layout preference
   to its minimum.
-- Keep the desktop signal-availability summary bounded so it cannot starve the
-  signal list at 1280×720. Verify the list's real `clientHeight` and wheel and
-  Page Down behavior with signal rows; `overflow-y: auto` on a near-zero region
-  is still unusable.
+- Keep the desktop signal-availability state visible in a compact scan-info
+  control and float its detailed recovery panel above the signal list. Keep the
+  full panel in document flow on phones. Verify the list's real `clientHeight`
+  and wheel and Page Down behavior with signal rows; `overflow-y: auto` on a
+  near-zero region is still unusable.
 - Show current fixed-indicator contributions beside the screener total as well
   as in the expanded six-factor breakdown. Normalize component identities so a
   display label and a stable component ID resolve to the same indicator. For a
