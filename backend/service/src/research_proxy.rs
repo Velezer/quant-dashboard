@@ -21,8 +21,9 @@ use interval::sync_interval_for_exchange;
 #[cfg(test)]
 use providers::yahoo_request_window;
 use providers::{
-    fetch_binance_history_page, fetch_binance_interval, fetch_chart_interval,
-    fetch_yahoo_history_page, fetch_yahoo_interval, yahoo_base_asset, Bar, BinanceMarket,
+    fetch_binance_chart_repair_interval, fetch_binance_history_page, fetch_binance_interval,
+    fetch_chart_interval, fetch_yahoo_history_page, fetch_yahoo_interval, yahoo_base_asset, Bar,
+    BinanceMarket,
 };
 #[path = "research_proxy_warmup.rs"]
 mod warmup;
@@ -33,18 +34,58 @@ use parsing::{
     ONE_DAY_INTERVAL_SECONDS, ONE_HOUR_INTERVAL_SECONDS,
 };
 
-const MAX_BINANCE_PAGES: usize = 4;
 const MAX_RESEARCH_15M_CANDLES: usize = 96_000;
 const MAX_RESEARCH_1H_CANDLES: usize = 24_000;
 const RESEARCH_15M_REFRESH_INTERVAL_SECONDS: i64 = 10 * 60;
 pub(crate) const RECENT_CHART_HISTORY_ROWS: usize = 500;
 const MAX_CONTINUOUS_CHART_GAP_INTERVALS: i64 = 3;
 
+pub(crate) fn chart_priority_history_rows(interval: &str) -> usize {
+    let warmup_rows = quant_core::MarkovRegimeConfig::default()
+        .chart_context_warmup_bars()
+        .min(crate::MAX_CANDLES as usize) as i64;
+    let calculation_rows = (RECENT_CHART_HISTORY_ROWS as i64)
+        .saturating_add(warmup_rows)
+        .min(crate::MAX_CANDLES);
+    // Four-hour candles use the one-hour series, so repair enough source bars
+    // for the requested chart window and its regime context.
+    let source_rows = match interval {
+        "15m" => calculation_rows,
+        "1h" => crate::required_chart_source_candles("4h", calculation_rows)
+            .unwrap_or(RECENT_CHART_HISTORY_ROWS as i64),
+        _ => RECENT_CHART_HISTORY_ROWS as i64,
+    };
+    let maximum_rows = match interval {
+        "15m" => MAX_RESEARCH_15M_CANDLES,
+        "1h" => MAX_RESEARCH_1H_CANDLES,
+        _ => RECENT_CHART_HISTORY_ROWS,
+    };
+    source_rows.clamp(1, maximum_rows as i64) as usize
+}
+
 pub(crate) fn recent_chart_window_needs_repair(
     connection: &Connection,
     symbol: &str,
     interval: &str,
     source: &str,
+    now_ns: i64,
+) -> Result<bool, rusqlite::Error> {
+    recent_chart_window_needs_repair_with_rows(
+        connection,
+        symbol,
+        interval,
+        source,
+        RECENT_CHART_HISTORY_ROWS,
+        now_ns,
+    )
+}
+
+pub(crate) fn recent_chart_window_needs_repair_with_rows(
+    connection: &Connection,
+    symbol: &str,
+    interval: &str,
+    source: &str,
+    history_rows: usize,
     now_ns: i64,
 ) -> Result<bool, rusqlite::Error> {
     if !matches!(interval, "15m" | "1h") {
@@ -59,7 +100,7 @@ pub(crate) fn recent_chart_window_needs_repair(
         connection,
         symbol,
         interval,
-        RECENT_CHART_HISTORY_ROWS as i64,
+        i64::try_from(history_rows).unwrap_or(i64::MAX),
         source,
     )?;
     Ok(chart_window_needs_repair(
@@ -380,6 +421,7 @@ fn sync_with_binance(
     interval: &str,
     duration_seconds: i64,
     maximum_rows: usize,
+    chart_repair_rows: usize,
 ) -> Result<usize, String> {
     // Candle timestamps are the durable cursor, scoped to the exact source series.
     // Replay the last closed candle so provider corrections remain idempotent.
@@ -391,41 +433,54 @@ fn sync_with_binance(
         )
         .map_err(|error| error.to_string())?;
     let now_seconds = i64::try_from(super::now_secs()).unwrap_or(i64::MAX);
-    let recent_window_needs_repair = recent_chart_window_needs_repair(
+    let recent_window_needs_repair = recent_chart_window_needs_repair_with_rows(
         connection,
         storage_symbol,
         interval,
         source,
+        chart_repair_rows,
         now_seconds.saturating_mul(NANOS_PER_SECOND),
     )
     .map_err(|error| format!("chart history check failed: {error}"))?;
     let mut repaired_rows = 0;
     if recent_window_needs_repair {
-        let repair_window_seconds = duration_seconds
-            .saturating_mul(RECENT_CHART_HISTORY_ROWS as i64);
+        let repair_window_seconds = duration_seconds.saturating_mul(chart_repair_rows as i64);
         let recent_start_seconds = now_seconds.saturating_sub(repair_window_seconds);
-        let result = fetch_binance_interval(
-            pair,
-            market,
-            interval,
-            duration_seconds,
-            RECENT_CHART_HISTORY_ROWS,
-            Some(recent_start_seconds),
-            |candles| {
-                persist(
-                    connection,
-                    storage_symbol,
-                    kind,
-                    exchange,
-                    "binance",
-                    source,
-                    pair,
-                    interval,
-                    "binance_usdt_reference",
-                    candles,
-                )
-            },
-        );
+        let save_page = |candles: &[Bar]| {
+            persist(
+                connection,
+                storage_symbol,
+                kind,
+                exchange,
+                "binance",
+                source,
+                pair,
+                interval,
+                "binance_usdt_reference",
+                candles,
+            )
+        };
+        let result = if chart_repair_rows > RECENT_CHART_HISTORY_ROWS {
+            fetch_binance_chart_repair_interval(
+                pair,
+                market,
+                interval,
+                duration_seconds,
+                chart_repair_rows,
+                Some(recent_start_seconds),
+                save_page,
+            )
+        } else {
+            fetch_binance_interval(
+                pair,
+                market,
+                interval,
+                duration_seconds,
+                chart_repair_rows,
+                Some(recent_start_seconds),
+                save_page,
+            )
+        };
         match result {
             Ok(rows) => repaired_rows = rows,
             Err(error) => {
