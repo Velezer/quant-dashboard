@@ -367,6 +367,24 @@ export function installChartData() {
                 chartRetryButton.dataset.bound = 'true';
                 chartRetryButton.addEventListener('click', retryChartData);
             }
+            const setupZonesRetryButton = document.getElementById('retrySelectedSignalSetupZones');
+            if (setupZonesRetryButton && !setupZonesRetryButton.dataset.bound) {
+                setupZonesRetryButton.dataset.bound = 'true';
+                setupZonesRetryButton.addEventListener('click', async () => {
+                    const status = document.getElementById('selectedSignalSetupZoneStatus');
+                    setupZonesRetryButton.disabled = true;
+                    setupZonesRetryButton.textContent = 'Requesting chart history…';
+                    if (status) status.textContent = 'Requesting a fresh chart check. Zones update automatically after stored history repair completes.';
+                    try {
+                        await retryChartData();
+                    } finally {
+                        if (!setupZonesRetryButton.hidden) {
+                            setupZonesRetryButton.disabled = false;
+                            setupZonesRetryButton.textContent = 'Request chart history';
+                        }
+                    }
+                });
+            }
 
             // Normal signal responses carry metadata only.  Fetch the bounded Rust
             // chart bundle when a signal is selected so the dashboard never embeds

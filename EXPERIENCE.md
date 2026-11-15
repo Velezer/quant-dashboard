@@ -70,6 +70,11 @@ lesson only when it will improve future tasks.
   timeframe chart bundle. Label NWE proximity zones as contextual references,
   show both directions, and keep an explicit unavailable state when endpoint
   bands are missing; do not fabricate a win rate or entry price.
+- A crypto chart may be display-ready while its latest continuous segment is
+  too short for an indicator-dependent setup. Put the history-repair action
+  beside the unavailable setup zone and show the contiguous-bar count and
+  indicator warmup needed; the chart's error overlay alone will not appear when
+  a few recent bars are drawable.
 - Before opening a code PR, verify both locked release builds:
   `cargo build --locked --release --target wasm32-unknown-unknown -p quant_pine_runtime`
   and `cargo build --locked --release -p rust_chart_api`. If Cargo is unavailable,

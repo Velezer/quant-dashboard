@@ -143,7 +143,8 @@
                         <span>NWE SHORT ZONE · UPPER BAND</span>
                         <strong id="selectedSignalShortArea">Loading signal candles…</strong>
                     </div>
-                    <p class="selected-signal-setup-note">NWE zones use the latest available signal-timeframe bands and extend half an envelope width around each band. They are chart references, not executable prices; the opposite zone is context, not an opposite signal.</p>
+                    <p id="selectedSignalSetupZoneStatus" class="selected-signal-setup-note">NWE zones use causal signal-timeframe bands and appear shaded on the chart. They are reference areas, not executable prices; the opposite zone is context, not an opposite signal.</p>
+                    <button id="retrySelectedSignalSetupZones" type="button" hidden aria-label="Request chart history for the selected signal's long and short zones" title="Queues a repair for missing signal-timeframe candles. The zones refresh when the sync finishes." class="selected-signal-setup-retry">Request chart history</button>
                 </div>
             </div>
 

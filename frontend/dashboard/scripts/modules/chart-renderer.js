@@ -36,14 +36,27 @@ export function visibleOverlayPriceRange(plots, startIndex, endIndex) {
     return { min, max };
 }
 
-function signalNweSetupAreas(candleContext, timeframe) {
-    if (candleContext?.hasGap) return { unavailable: 'continuous history is unavailable' };
+function signalNweSetupAreas(candleContext, timeframe, signal) {
+    const frameLabel = String(timeframe || '--').toUpperCase();
+    const continuousBars = Array.isArray(candleContext?.candles) ? candleContext.candles.length : 0;
+    const configuredWarmup = Number(signal?.chart_indicator_config?.nadaraya_watson_envelope?.endpoint_envelope_warmup_bars);
+    const requiredBars = Number.isInteger(configuredWarmup) && configuredWarmup > 0 ? configuredWarmup : null;
+    if (candleContext?.hasGap) {
+        const warmup = requiredBars ? `; endpoint NWE needs ${requiredBars} consecutive bars` : '';
+        return { unavailable: `history gap leaves ${continuousBars} consecutive ${frameLabel} bars${warmup}` };
+    }
     const latest = candleContext?.candles?.at(-1);
     const endpoint = latest?.indicators?.[CHART_INDICATOR_IDS.nadarayaWatsonEnvelope]?.endpoint;
     const upper = endpoint?.upper == null ? NaN : Number(endpoint.upper);
     const lower = endpoint?.lower == null ? NaN : Number(endpoint.lower);
     if (!Number.isFinite(lower) || !Number.isFinite(upper) || lower <= 0 || upper <= lower) {
-        return { unavailable: `endpoint NWE is not ready on ${String(timeframe || '--').toUpperCase()}` };
+        if (requiredBars && continuousBars < requiredBars) {
+            return { unavailable: `${continuousBars} / ${requiredBars} consecutive ${frameLabel} bars; endpoint NWE needs more history` };
+        }
+        if (!continuousBars && signal?.chart_data_loaded !== true) {
+            return { unavailable: `loading ${frameLabel} chart history` };
+        }
+        return { unavailable: `endpoint NWE bands are unavailable for ${frameLabel} chart data` };
     }
     // The band-proximity setup accepts prices within half an envelope width
     // of the lower/upper band. Show those actual directional reference zones
@@ -59,11 +72,18 @@ function signalNweSetupAreas(candleContext, timeframe) {
 function updateSignalSetupAreaReadout(areas) {
     const longArea = document.getElementById('selectedSignalLongArea');
     const shortArea = document.getElementById('selectedSignalShortArea');
+    const zoneStatus = document.getElementById('selectedSignalSetupZoneStatus');
+    const retryButton = document.getElementById('retrySelectedSignalSetupZones');
     if (!longArea || !shortArea) return;
     if (!areas?.long || !areas?.short) {
         const reason = areas?.unavailable || 'signal-timeframe chart data is still loading';
-        longArea.textContent = `Unavailable · ${reason}`;
-        shortArea.textContent = `Unavailable · ${reason}`;
+        const loading = reason.startsWith('loading ');
+        longArea.textContent = loading ? 'Loading endpoint bands…' : 'Unavailable · see history status';
+        shortArea.textContent = loading ? 'Loading endpoint bands…' : 'Unavailable · see history status';
+        longArea.removeAttribute('title');
+        shortArea.removeAttribute('title');
+        if (zoneStatus) zoneStatus.textContent = reason;
+        if (retryButton) retryButton.hidden = loading;
         return;
     }
     const format = value => getDashboardBinding('formatPrice')?.(value) ?? Number(value).toString();
@@ -72,6 +92,8 @@ function updateSignalSetupAreaReadout(areas) {
     shortArea.textContent = `${format(areas.short.low)} – ${format(areas.short.high)}`;
     longArea.title = `Causal endpoint NWE lower-band zone, within half an envelope width · ${timeframe} signal candles. Chart reference only.`;
     shortArea.title = `Causal endpoint NWE upper-band zone, within half an envelope width · ${timeframe} signal candles. Context only, not an opposite signal.`;
+    if (zoneStatus) zoneStatus.textContent = `Shaded on the ${timeframe} chart · causal endpoint NWE · chart reference only`;
+    if (retryButton) retryButton.hidden = true;
 }
 
 function formatChartGapDuration(milliseconds) {
@@ -114,7 +136,7 @@ export function installChartRenderer() {
                 const setupTimeframe = String(signal.timeframe || activeTimeframe || '').trim().toLowerCase();
                 const signalCandleContext = getDashboardBinding('getChartCandleContext')?.(signal, setupTimeframe)
                     || (setupTimeframe === activeTimeframe ? chartCandleContext : null);
-                const setupAreas = signalNweSetupAreas(signalCandleContext, setupTimeframe);
+                const setupAreas = signalNweSetupAreas(signalCandleContext, setupTimeframe, signal);
                 updateSignalSetupAreaReadout(setupAreas);
                 getDashboardBinding('updateMarkovRegimeStatus')?.(signal);
                 const canvas = document.getElementById('candleCanvas');
