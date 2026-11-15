@@ -3,7 +3,7 @@ mod aggregation;
 pub(super) use aggregation::{
     aggregate_candles_from_base_source_with_cap,
     aggregate_candles_from_base_source_with_cap_and_range, aggregate_candles_from_source,
-    required_chart_source_candles,
+    required_chart_source_candles, required_chart_source_candles_from_base,
 };
 #[cfg(test)]
 pub(super) use aggregation::aggregate_candles_from_base_source;

@@ -63,6 +63,40 @@ pub(crate) fn chart_priority_history_rows(interval: &str) -> usize {
     source_rows.clamp(1, maximum_rows as i64) as usize
 }
 
+/// Size the repair window for the source timeframe selected by the chart,
+/// within one bounded chart-priority provider batch.
+pub(crate) fn chart_priority_history_rows_for_timeframe(
+    interval: &str,
+    chart_timeframe: &str,
+    source_timeframe: &str,
+    history_bars: usize,
+) -> Option<usize> {
+    if interval != source_timeframe || !matches!(interval, "15m" | "1h" | "1d") {
+        return None;
+    }
+    let requested_rows = crate::required_chart_source_candles_from_base(
+        chart_timeframe,
+        interval,
+        i64::try_from(history_bars).unwrap_or(i64::MAX),
+    )
+    .and_then(|rows| usize::try_from(rows).ok())
+    .unwrap_or_else(|| chart_priority_history_rows(interval));
+    let interval_limit = match interval {
+        "15m" => MAX_RESEARCH_15M_CANDLES,
+        "1h" => MAX_RESEARCH_1H_CANDLES,
+        "1d" => 4_000,
+        _ => return None,
+    };
+    let bounded_provider_rows = BinanceMarket::Spot
+        .chart_repair_row_limit()
+        .min(interval_limit);
+    Some(
+        requested_rows
+            .max(chart_priority_history_rows(interval))
+            .clamp(1, bounded_provider_rows),
+    )
+}
+
 pub(crate) fn recent_chart_window_needs_repair(
     connection: &Connection,
     symbol: &str,
@@ -88,13 +122,14 @@ pub(crate) fn recent_chart_window_needs_repair_with_rows(
     history_rows: usize,
     now_ns: i64,
 ) -> Result<bool, rusqlite::Error> {
-    if !matches!(interval, "15m" | "1h") {
+    if !matches!(interval, "15m" | "1h" | "1d") {
         return Ok(false);
     }
     let duration_seconds = match interval {
         "15m" => FIFTEEN_MINUTE_INTERVAL_SECONDS,
         "1h" => ONE_HOUR_INTERVAL_SECONDS,
-        _ => return Ok(false),
+        "1d" => ONE_DAY_INTERVAL_SECONDS,
+        _ => unreachable!(),
     };
     let candles = crate::load_candles_from_source(
         connection,
@@ -158,6 +193,7 @@ pub fn sync_hourly_for_exchange(
         yahoo_symbol,
         "1h",
         false,
+        None,
     )
 }
 
@@ -180,6 +216,7 @@ pub fn sync_15m_for_exchange(
         yahoo_symbol,
         "15m",
         false,
+        None,
     )
 }
 
@@ -202,10 +239,11 @@ pub fn sync_daily_for_exchange(
         yahoo_symbol,
         "1d",
         false,
+        None,
     )
 }
 
-/// Refresh a chart-selected intraday series when its stored window has a gap.
+/// Refresh a chart-selected source series when its stored window has a gap.
 pub fn sync_chart_interval_for_exchange(
     connection: &Connection,
     storage_symbol: &str,
@@ -214,6 +252,7 @@ pub fn sync_chart_interval_for_exchange(
     product_id: &str,
     yahoo_symbol: &str,
     interval: &str,
+    chart_history_rows: usize,
 ) -> Result<usize, String> {
     sync_interval_for_exchange(
         connection,
@@ -224,6 +263,7 @@ pub fn sync_chart_interval_for_exchange(
         yahoo_symbol,
         interval,
         true,
+        Some(chart_history_rows),
     )
 }
 

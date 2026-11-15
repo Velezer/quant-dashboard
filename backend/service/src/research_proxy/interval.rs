@@ -9,6 +9,7 @@ pub(super) fn sync_interval_for_exchange(
     yahoo_symbol: &str,
     interval: &str,
     chart_priority: bool,
+    chart_history_rows: Option<usize>,
 ) -> Result<usize, String> {
     let (duration_seconds, maximum_rows) = match interval {
         "15m" => (FIFTEEN_MINUTE_INTERVAL_SECONDS, MAX_RESEARCH_15M_CANDLES),
@@ -17,7 +18,7 @@ pub(super) fn sync_interval_for_exchange(
         _ => return Err("unsupported research candle interval".into()),
     };
     let chart_repair_rows = if chart_priority {
-        chart_priority_history_rows(interval)
+        chart_history_rows.unwrap_or_else(|| chart_priority_history_rows(interval))
     } else {
         RECENT_CHART_HISTORY_ROWS
     };

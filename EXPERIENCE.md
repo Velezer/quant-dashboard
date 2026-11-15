@@ -226,6 +226,11 @@ lesson only when it will improve future tasks.
   against old candles or inherit their NWE/Markov state. Label omitted stored
   bars, scale to the latest continuous segment, and keep absent oscillator
   values unavailable instead of plotting a neutral 50.
+- Chart-priority sync requests must carry the selected timeframe and requested
+  history size. A fixed base-bar window can cover only a few days of 15m data,
+  even when the chart needs hundreds of daily bars. Derive the source window
+  from the chart/base interval and keep it within the provider's bounded page
+  budget so the repair reaches the missing dates the user can see.
 - A fresh latest candle does not prove that a chart's visible window and regime
   warm-up are complete. On chart priority, repair gaps in the exact source
   selected by the chart bundle (including its shared Spot source for Futures),

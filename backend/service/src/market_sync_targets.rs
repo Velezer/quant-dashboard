@@ -236,6 +236,7 @@ pub(super) fn sync_prepared_candle_target(
         instrument,
         window: CandleSyncWindow::Intraday,
         chart_priority: false,
+        chart_history_rows: None,
     };
     let mut already_fresh = fresh_shared_reference_intervals(
         market_database,
@@ -256,7 +257,7 @@ pub(super) fn sync_prepared_candle_target(
     );
     let mut refreshed = 0;
     let mut stockbit_15m_refreshed = false;
-    if target.chart_priority
+    if target.chart_priority.is_some()
         && matches!(
             instrument.asset_category_id,
             "crypto_spot" | "crypto_perpetual" | "crypto_futures"
@@ -270,7 +271,20 @@ pub(super) fn sync_prepared_candle_target(
             crate::research_proxy::shared::CHART_REFERENCE_CATEGORY_ID,
             None,
         );
-        for interval in request.window.intervals() {
+        for interval in ["15m", "1h", "1d"] {
+            let Some(chart_priority) = target.chart_priority.as_ref() else {
+                continue;
+            };
+            let Some(chart_history_rows) = crate::research_proxy::
+                chart_priority_history_rows_for_timeframe(
+                    interval,
+                    &chart_priority.timeframe,
+                    &chart_priority.source_timeframe,
+                    chart_priority.history_bars,
+                )
+            else {
+                continue;
+            };
             let source = selected_candle_source_for_product(
                 &market_connection,
                 chart_instrument.storage_symbol,
@@ -285,6 +299,12 @@ pub(super) fn sync_prepared_candle_target(
                     source,
                     chart_instrument.asset_category_id,
                 )
+            })
+            .or_else(|| {
+                crate::research_proxy::shared::canonical_source(
+                    chart_instrument.asset_category_id,
+                    "binance_spot_proxy",
+                )
             });
             let Some(source) = source else {
                 continue;
@@ -294,7 +314,7 @@ pub(super) fn sync_prepared_candle_target(
                 instrument.storage_symbol,
                 interval,
                 &source,
-                crate::research_proxy::chart_priority_history_rows(interval),
+                chart_history_rows,
                 super::now_millis().saturating_mul(quant_core::NANOS_PER_MILLISECOND),
             )
             .unwrap_or(true);
@@ -303,8 +323,9 @@ pub(super) fn sync_prepared_candle_target(
             }
             let interval_request = CandleSyncRequest {
                 instrument: chart_instrument,
-                window: CandleSyncWindow::SingleInterval(*interval),
+                window: CandleSyncWindow::SingleInterval(interval),
                 chart_priority: true,
+                chart_history_rows: Some(chart_history_rows),
             };
             let Some(adapter) = CANDLE_SYNC_ADAPTERS.iter().find(|adapter| {
                 adapter.source_class() == CandleSourceClass::ResearchProxy
@@ -323,7 +344,7 @@ pub(super) fn sync_prepared_candle_target(
                     market_database,
                     instrument,
                     &target.shared_reference_symbols,
-                    std::slice::from_ref(interval),
+                    std::slice::from_ref(&interval),
                 ));
             }
         }
@@ -341,6 +362,7 @@ pub(super) fn sync_prepared_candle_target(
                     instrument,
                     window: CandleSyncWindow::SingleInterval(*interval),
                     chart_priority: false,
+                    chart_history_rows: None,
                 };
                 if !adapter.supports(&interval_request) {
                     continue;
