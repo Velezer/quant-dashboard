@@ -111,6 +111,31 @@ values are required to report a coefficient. This describes linear dependence,
 not predictive accuracy; trade spacing is irregular and is not treated as an
 equal-time series.
 
+The 4h bracket report also uses candle-return autocorrelation for a
+research-only position-risk adjustment. At each qualifying signal it estimates
+the finite-horizon variance ratio from up to 128 contiguous completed 4h log
+returns, requiring at least 30. The multiplier is bounded from 0.25 to 1.0:
+positive serial dependence can reduce the hypothetical risk budget, while
+negative dependence never increases it. The page compares fixed 1% risk with
+the adjusted path on validation and untouched holdout trades. Its local size
+scenario applies the latest completed report-bar multiplier and configured
+fees to hypothetical equity, entry, and stop values. It does not use account
+state, change live signals, or place orders; spread, slippage, liquidity,
+funding/borrow, and market impact remain excluded.
+
+Signal rows show an empirical win-probability estimate when the exact active
+scoring profile has at least 30 after-fee chronological holdout outcomes in
+the signal's /60 score band for that exact app/product. The estimate includes
+a 95% Wilson interval and is scoped by model, asset category, timeframe, candle
+source family, and app/product fee schedule; long and short outcomes are
+pooled. If the product-specific score-band sample is too small, the card may
+show that product's validated profile-gate estimate instead. Otherwise it
+shows why no estimate is available. This is historical cohort evidence, not a
+guarantee or direction-specific forecast. The interval is a standard binomial
+interval and does not adjust for dependence between trades or correlated
+tickers. Configured transaction fees are included; spread, slippage, market
+impact, funding, and borrow are not.
+
 **Backtest complete** means the evaluator produced a report. **Validated
 holdout evidence** has at least 1,000 calendar days across the full chronological
 history, sufficient trades in the untouched 20% holdout, positive holdout
