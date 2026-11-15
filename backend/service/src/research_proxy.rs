@@ -87,7 +87,8 @@ pub(crate) fn chart_priority_history_rows_for_timeframe(
         "1d" => 4_000,
         _ => return None,
     };
-    let bounded_provider_rows = providers::chart_repair_row_limit(BinanceMarket::Spot)
+    let bounded_provider_rows = BinanceMarket::Spot
+        .chart_repair_row_limit()
         .min(interval_limit);
     Some(
         requested_rows
