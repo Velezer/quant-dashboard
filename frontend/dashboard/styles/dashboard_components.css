@@ -710,6 +710,10 @@
 .signal-row-regime-score > span { color:#c4b5fd; text-transform:uppercase; letter-spacing:.04em; }
 .signal-row-regime-score strong { color:#f5f3ff; white-space:nowrap; }
 .signal-row-regime-score small { min-width:0; overflow:hidden; color:#b8a9d9; text-overflow:ellipsis; white-space:nowrap; }
+.signal-autocorrelation-guidance { display:block; border-left:2px solid #64748b; border-radius:.2rem; padding:.28rem .45rem; background:#111827; color:#cbd5e1; font-size:10px; line-height:1.4; }
+.signal-autocorrelation-guidance.is-opposed { border-color:#f59e0b; background:#2b1f11; color:#fde68a; }
+.signal-autocorrelation-guidance.is-aligned { border-color:#10b981; background:#08231c; color:#a7f3d0; }
+.signal-autocorrelation-guidance.is-neutral,.signal-autocorrelation-guidance.is-unavailable { border-color:#64748b; color:#cbd5e1; }
 .signal-row-regime-legacy,.signal-row-regime-unavailable { border-color:#475569; background:#1f2937; color:#cbd5e1; }
 .signal-row-regime-legacy > span,.signal-row-regime-legacy small,.signal-row-regime-unavailable > span,.signal-row-regime-unavailable small { color:#9ca3af; }
 .signal-row-regime-legacy strong,.signal-row-regime-unavailable strong { color:#e2e8f0; }

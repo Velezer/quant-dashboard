@@ -45,8 +45,34 @@ export function createSignalScreenerCard({
                     : `<span class="signal-row-regime-score signal-row-regime-unavailable" title="This row uses the current /60 scoring model, but its saved regime component is unavailable"><span>Regime</span><strong>Unavailable</strong><small>saved score basis</small></span>`
                 : '';
         const autocorrelationRho = Number(autocorrelationScore?.value);
+        const autocorrelationState = String(autocorrelationScore?.state || 'UNAVAILABLE').toUpperCase();
+        const autocorrelationAlignment = autocorrelationState.startsWith('OPPOSED')
+            ? 'opposed'
+            : autocorrelationState.startsWith('ALIGNED')
+                ? 'aligned'
+                : autocorrelationState.startsWith('NO_DIRECTIONAL_EDGE')
+                    ? 'neutral'
+                    : 'unavailable';
+        const autocorrelationRelation = autocorrelationAlignment === 'opposed'
+            ? `Against ${signal.direction}`
+            : autocorrelationAlignment === 'aligned'
+                ? `Supports ${signal.direction}`
+                : autocorrelationAlignment === 'neutral' ? 'No clear direction' : 'Unavailable';
+        const autocorrelationTendency = autocorrelationState.includes('MEAN_REVERSION')
+            ? 'mean-reversion tendency'
+            : autocorrelationState.includes('CONTINUATION') ? 'continuation tendency' : '';
+        const autocorrelationExplanation = autocorrelationAlignment === 'opposed'
+            ? `Opposes ${signal.direction}. This one /10 input lowers the /60 total; it does not cancel the ${signal.direction} signal or create a ${signal.direction === 'LONG' ? 'SHORT' : 'LONG'} signal. A ${signal.direction === 'LONG' ? 'SHORT' : 'LONG'} setup must qualify on its own.`
+            : autocorrelationAlignment === 'aligned'
+                ? `Supports ${signal.direction} as one of six score inputs. It adds to the total but is not a standalone signal or a win guarantee.`
+                : autocorrelationAlignment === 'neutral'
+                    ? 'Near-neutral forecast, around 5/10. It does not vote buy or sell.'
+                    : 'No reading: this factor contributes 0/10, and the other factors keep their weights.';
         const autocorrelationSummary = autocorrelationScore
-            ? `<span class="signal-row-regime-score" title="Lag-one return autocorrelation contributes a fixed 10 points. The displayed rho is a same-timeframe return correlation; its causal AR(1) forecast is scored in the signal direction."><span>Autocorrelation</span><strong>${autocorrelationScore.points === null ? '—' : autocorrelationScore.points.toFixed(1)}/10</strong><small>${Number.isFinite(autocorrelationRho) ? `ρ ${autocorrelationRho.toFixed(2)}` : 'unavailable'} · ${escape(autocorrelationScore.state.replaceAll('_', ' ').toLowerCase())}</small></span>`
+            ? `<span class="signal-row-regime-score" title="${escape(`${autocorrelationExplanation} ρ is the lag-one return correlation; the /10 points come from a causal forecast aligned to the signal direction.`)}"><span>Autocorrelation · 1 of 6</span><strong>${autocorrelationScore.points === null ? '—' : `${autocorrelationScore.points.toFixed(1)}/10 · ${autocorrelationRelation}`}</strong><small>${Number.isFinite(autocorrelationRho) ? `ρ ${autocorrelationRho >= 0 ? '+' : ''}${autocorrelationRho.toFixed(2)}` : 'ρ unavailable'}${autocorrelationTendency ? ` · ${autocorrelationTendency}` : ''}</small></span>`
+            : '';
+        const autocorrelationGuidance = autocorrelationScore
+            ? `<span class="signal-autocorrelation-guidance is-${autocorrelationAlignment}" role="note">${escape(autocorrelationExplanation)}</span>`
             : '';
         const afterFeeGate = signal.score_basis?.after_fee_gate;
         const gateHoldout = afterFeeGate?.holdout || {};
@@ -114,7 +140,7 @@ export function createSignalScreenerCard({
         const accessibleScore = sixIndicators
             ? `${Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax} weighted total; ` : ''}${signalIndicatorSummary(signal, scoreModel)}`
             : Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax}` : 'unavailable';
-        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup score measures strength; the estimate is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
+        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${autocorrelationScore ? `${autocorrelationExplanation} ` : ''}${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup score measures strength; the estimate is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
         const productLabel = signal.product_id === 'stockbit_regular'
             ? ''
             : signal.product_id.replaceAll('_', ' ');
@@ -131,6 +157,7 @@ export function createSignalScreenerCard({
                 <span class="signal-row-meta">${escape(rowContext)}</span>
                 ${scoreState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}" role="status">${escape(scoreState.label)} · ${signal.persistent_score === true ? 'strategy' : 'price'} bar ${escape(signalPriceBarAgeLabel(signal.persistent_score === true ? signal.score_bar_time : signal.price_bar_time))}</span>` : ''}
                 <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${sixIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded total' : 'Weighted total'} <strong>${scoreValue}</strong><span aria-hidden="true"> / 60</span> · six /10 indicators</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}${regimeSummary}${autocorrelationSummary}</span>
+                ${autocorrelationGuidance}
                 ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
                 ${totalStrength ? `<span class="signal-total-strength signal-total-strength-${totalStrength.tone}" title="${escape(totalStrength.description)}">${escape(totalStrength.label)}<small>${escape(totalStrength.description)}</small></span>` : ''}
                 <span class="signal-win-probability${hasWinProbability ? '' : ' is-unavailable'}" title="${escape(winProbability.basis || winProbability.reason || 'Estimate uses after-fee holdout outcomes matched to the active score profile.')}"><strong>${escape(winProbabilityText)}</strong><small>${escape(winProbabilityDetail)}</small></span>
