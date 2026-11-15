@@ -6,6 +6,9 @@ export { appSignalReadiness } from './signal-readiness-model.js';
 
 export function installSignalAppReadiness() {
     const panel = document.getElementById('appSignalReadinessPanel');
+    const resultsPanel = document.getElementById('signalResultsPanel');
+    const scanInfoToggle = document.getElementById('scanInfoToggle');
+    const scanInfoSummary = document.getElementById('scanInfoSummary');
     const status = document.getElementById('appSignalReadinessStatus');
     const recheck = document.getElementById('appSignalReadinessRetry');
     const scan = document.getElementById('appSignalScanRetry');
@@ -18,6 +21,13 @@ export function installSignalAppReadiness() {
     let selectedScope = {};
     let shownKey = '';
     let serial = 0;
+    resultsPanel?.setAttribute('data-scan-info-open', 'false');
+
+    function setScanInfoOpen(open, restoreFocus = false) {
+        resultsPanel?.setAttribute('data-scan-info-open', String(open));
+        scanInfoToggle?.setAttribute('aria-expanded', String(open));
+        if (scanInfoToggle && restoreFocus) scanInfoToggle.focus();
+    }
 
     function renderMetrics(container, items, highlight = false) {
         container.replaceChildren(...items.map(metric => {
@@ -67,6 +77,11 @@ export function installSignalAppReadiness() {
     function render(readiness) {
         if (!status || !panel) return;
         panel.dataset.tone = readiness.tone;
+        if (scanInfoSummary) scanInfoSummary.textContent = readiness.title;
+        if (scanInfoToggle) {
+            scanInfoToggle.dataset.tone = readiness.tone;
+            scanInfoToggle.setAttribute('aria-label', `${scanInfoToggle.getAttribute('aria-expanded') === 'true' ? 'Hide' : 'Show'} scan info. ${readiness.title}.`);
+        }
         document.getElementById('appSignalReadinessTitle').textContent = readiness.title;
         document.getElementById('appSignalReadinessScope').textContent = readiness.scopeLabel;
         status.textContent = readiness.message;
@@ -184,6 +199,22 @@ export function installSignalAppReadiness() {
         } catch (error) {
             if (app === selected) unavailable(`Listing refresh failed for ${APP_LABELS[app]}: ${String(error?.message || error).slice(0, 200)}`);
         } finally { listingRetry.disabled = false; }
+    });
+    scanInfoToggle?.addEventListener('click', () => {
+        setScanInfoOpen(scanInfoToggle.getAttribute('aria-expanded') !== 'true');
+        const title = scanInfoSummary?.textContent || 'Signal availability';
+        scanInfoToggle.setAttribute('aria-label', `${scanInfoToggle.getAttribute('aria-expanded') === 'true' ? 'Hide' : 'Show'} scan info. ${title}.`);
+    });
+    document.addEventListener('pointerdown', event => {
+        if (scanInfoToggle?.getAttribute('aria-expanded') !== 'true'
+            || panel?.contains(event.target) || scanInfoToggle?.contains(event.target)) return;
+        setScanInfoOpen(false);
+        scanInfoToggle?.setAttribute('aria-label', `Show scan info. ${scanInfoSummary?.textContent || 'Signal availability'}.`);
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || scanInfoToggle?.getAttribute('aria-expanded') !== 'true') return;
+        setScanInfoOpen(false, true);
+        scanInfoToggle?.setAttribute('aria-label', `Show scan info. ${scanInfoSummary?.textContent || 'Signal availability'}.`);
     });
     publishDashboardBindings('signal-app-readiness', {
         refreshAppSignalReadiness: { get: () => refresh },
