@@ -1,6 +1,9 @@
 //! Identity of research references shared by registered products in one category.
 //! Venue-native candles never use this namespace.
 pub(crate) const SOURCE_EXCHANGE_ID: &str = "research_reference";
+pub(crate) const CHART_REFERENCE_EXCHANGE_ID: &str = "pintu";
+pub(crate) const CHART_REFERENCE_PRODUCT_ID: &str = "pintu_retail_spot";
+pub(crate) const CHART_REFERENCE_CATEGORY_ID: &str = "crypto_spot";
 
 // Suffix, provider, quote/price basis, market family. Provider identities remain
 // distinct even when two reference prices happen to match.

@@ -225,6 +225,11 @@ lesson only when it will improve future tasks.
   against old candles or inherit their NWE/Markov state. Label omitted stored
   bars, scale to the latest continuous segment, and keep absent oscillator
   values unavailable instead of plotting a neutral 50.
+- A fresh latest candle does not prove that the visible 500-bar chart window is
+  complete. On chart priority, repair gaps in the exact source selected by the
+  chart bundle (including its shared Spot source for Futures), then refresh the
+  view without enqueueing the same priority sync again. Keep the continuity
+  guard active when provider repair fails.
 - A preferred-timeframe rule search must use a predeclared grid, select only on
   chronological validation data, and score its frozen choice once on holdout.
   The performance target is a 50% win rate after configured transaction fees;

@@ -170,6 +170,9 @@ fn sync_hourly_chart_targets(
                 underlying_symbol,
                 asset_category_id,
             )| -> Result<PreparedCandleSyncTarget, rusqlite::Error> {
+                let chart_priority = priority_symbol.is_some_and(|symbol| {
+                    symbol == storage_symbol || symbol == underlying_symbol
+                });
                 let shared_reference_symbols = targets::shared_reference_storage_symbols(
                     connection,
                     &exchange_id,
@@ -209,6 +212,7 @@ fn sync_hourly_chart_targets(
                     asset_category_id,
                     shared_reference_symbols,
                     tokocrypto_market,
+                    chart_priority,
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -239,6 +243,16 @@ fn sync_hourly_chart_targets(
                 "[Daemon] Queued one Stockbit rescan after {stockbit_refreshed} market intervals refreshed."
             );
         }
+    }
+    if let (Some(state), Some(symbol)) = (sync_state, priority_symbol) {
+        state.broadcast(
+            "chart_history_sync_completed",
+            &serde_json::json!({
+                "storage_symbol": symbol,
+                "refreshed_interval_count": refreshed,
+                "attempted_targets": attempted_targets,
+            }),
+        );
     }
     Ok(refreshed)
 }
@@ -293,6 +307,7 @@ fn sync_daily_chart_targets(
         let request = CandleSyncRequest {
             instrument,
             window: CandleSyncWindow::Daily,
+            chart_priority: false,
         };
         let shared_reference_symbols = targets::shared_reference_storage_symbols(
             connection,

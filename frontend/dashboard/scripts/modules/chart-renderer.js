@@ -57,9 +57,11 @@ function updateChartContinuityWarning(context, signal, timeframe) {
     const from = formatChartCandleTimestamp(context.gapFrom?.time, timeframe, { includeWib: true }) || context.gapFrom?.date || 'earlier history';
     const to = formatChartCandleTimestamp(context.gapTo?.time, timeframe, { includeWib: true }) || context.gapTo?.date || 'latest history';
     const duration = formatChartGapDuration(context.gapMilliseconds);
-    const detail = `${symbol} ${timeframeLabel} has a ${duration} gap between ${from} and ${to}. Showing ${context.candles.length} latest consecutive bars and omitting ${context.omittedBars} older bars from this view; the stored candles are unchanged. Price overlays and regime states are suppressed until the visible history is continuous.`;
+    const barLabel = context.candles.length === 1 ? 'bar' : 'bars';
+    const olderBarLabel = context.omittedBars === 1 ? 'bar' : 'bars';
+    const detail = `${symbol} ${timeframeLabel} has a ${duration} gap between ${from} and ${to}. Showing ${context.candles.length} latest consecutive ${barLabel} and omitting ${context.omittedBars} older ${olderBarLabel} from this view; the stored candles are unchanged. Price overlays and regime states are suppressed until the visible history is continuous.`;
     badge.className = 'inline-flex max-w-[340px] px-2 py-0.5 rounded border border-amber-700/80 bg-amber-950/70 text-amber-300 text-[10px] font-bold leading-tight';
-    badge.textContent = `DATA GAP · ${context.candles.length} recent bars · ${context.omittedBars} older hidden`;
+    badge.textContent = `DATA GAP · ${context.candles.length} recent ${barLabel} · ${context.omittedBars} older hidden`;
     badge.setAttribute('aria-label', detail);
     badge.title = detail;
 }
@@ -170,7 +172,21 @@ export function installChartRenderer() {
                     }
                     return;
                 }
-                if (typeof setChartStatus === 'function') setChartStatus('ready', '', { signal });
+                const minimumVisibleBars = Math.max(
+                    2,
+                    Number(signal.chart_freshness?.[activeTimeframe]?.chart_min_bars) || 2,
+                );
+                if (typeof setChartStatus === 'function') {
+                    if (chartCandleContext.hasGap && allCandles.length < minimumVisibleBars) {
+                        setChartStatus(
+                            'error',
+                            `Only ${allCandles.length} recent ${activeTimeframe.toUpperCase()} candle${allCandles.length === 1 ? '' : 's'} remain after a long history gap. Older candles are hidden until the stored history is repaired. Retry chart data after the sync completes.`,
+                            { signal },
+                        );
+                    } else {
+                        setChartStatus('ready', '', { signal });
+                    }
+                }
 
                 // Dynamic Window Slicing with Pan Offset
                 const totalBars = allCandles.length;

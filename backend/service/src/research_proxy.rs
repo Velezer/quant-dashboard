@@ -1,7 +1,7 @@
 //! Bounded public-market-data and Yahoo chart reads for research-only candles.
 //! The selected app exchange stays attached to the registered instrument while
 //! data_provider identifies the remote source that supplied the candle.
-use crate::NANOS_PER_SECOND;
+use crate::{Candle, NANOS_PER_SECOND};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
@@ -37,6 +37,64 @@ const MAX_BINANCE_PAGES: usize = 4;
 const MAX_RESEARCH_15M_CANDLES: usize = 96_000;
 const MAX_RESEARCH_1H_CANDLES: usize = 24_000;
 const RESEARCH_15M_REFRESH_INTERVAL_SECONDS: i64 = 10 * 60;
+pub(crate) const RECENT_CHART_HISTORY_ROWS: usize = 500;
+const MAX_CONTINUOUS_CHART_GAP_INTERVALS: i64 = 3;
+
+pub(crate) fn recent_chart_window_needs_repair(
+    connection: &Connection,
+    symbol: &str,
+    interval: &str,
+    source: &str,
+    now_ns: i64,
+) -> Result<bool, rusqlite::Error> {
+    if !matches!(interval, "15m" | "1h") {
+        return Ok(false);
+    }
+    let duration_seconds = match interval {
+        "15m" => FIFTEEN_MINUTE_INTERVAL_SECONDS,
+        "1h" => ONE_HOUR_INTERVAL_SECONDS,
+        _ => return Ok(false),
+    };
+    let candles = crate::load_candles_from_source(
+        connection,
+        symbol,
+        interval,
+        RECENT_CHART_HISTORY_ROWS as i64,
+        source,
+    )?;
+    Ok(chart_window_needs_repair(
+        &candles,
+        interval,
+        duration_seconds,
+        now_ns,
+        symbol,
+    ))
+}
+
+fn chart_window_needs_repair(
+    candles: &[Candle],
+    timeframe: &str,
+    duration_seconds: i64,
+    now_ns: i64,
+    symbol: &str,
+) -> bool {
+    if candles.len() < 2 {
+        return true;
+    }
+    let interval_ns = duration_seconds.saturating_mul(NANOS_PER_SECOND);
+    let maximum_gap_ns = interval_ns.saturating_mul(MAX_CONTINUOUS_CHART_GAP_INTERVALS);
+    if candles.windows(2).any(|pair| {
+        let distance = pair[1].time.saturating_sub(pair[0].time);
+        distance <= 0 || distance > maximum_gap_ns
+    }) {
+        return true;
+    }
+    let freshness_ns = crate::freshness_threshold_seconds(symbol, timeframe)
+        .saturating_mul(NANOS_PER_SECOND);
+    candles
+        .last()
+        .is_none_or(|candle| now_ns.saturating_sub(candle.time) > freshness_ns)
+}
 
 /// Prefer Binance for crypto references, trying the next eligible research
 /// source only when the preferred source is unavailable. Eligible equities
@@ -58,6 +116,7 @@ pub fn sync_hourly_for_exchange(
         product_id,
         yahoo_symbol,
         "1h",
+        false,
     )
 }
 
@@ -79,6 +138,7 @@ pub fn sync_15m_for_exchange(
         product_id,
         yahoo_symbol,
         "15m",
+        false,
     )
 }
 
@@ -100,6 +160,29 @@ pub fn sync_daily_for_exchange(
         product_id,
         yahoo_symbol,
         "1d",
+        false,
+    )
+}
+
+/// Refresh a chart-selected intraday series when its stored window has a gap.
+pub fn sync_chart_interval_for_exchange(
+    connection: &Connection,
+    storage_symbol: &str,
+    kind: &str,
+    exchange: &str,
+    product_id: &str,
+    yahoo_symbol: &str,
+    interval: &str,
+) -> Result<usize, String> {
+    sync_interval_for_exchange(
+        connection,
+        storage_symbol,
+        kind,
+        exchange,
+        product_id,
+        yahoo_symbol,
+        interval,
+        true,
     )
 }
 
@@ -300,13 +383,75 @@ fn sync_with_binance(
 ) -> Result<usize, String> {
     // Candle timestamps are the durable cursor, scoped to the exact source series.
     // Replay the last closed candle so provider corrections remain idempotent.
-    let (earliest_ts, latest_ts): (Option<i64>, Option<i64>) = connection
+    let (mut earliest_ts, mut latest_ts): (Option<i64>, Option<i64>) = connection
         .query_row(
             "SELECT MIN(ts),MAX(ts) FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3",
             params![storage_symbol, interval, source],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|error| error.to_string())?;
+    let now_seconds = i64::try_from(super::now_secs()).unwrap_or(i64::MAX);
+    let recent_window_needs_repair = recent_chart_window_needs_repair(
+        connection,
+        storage_symbol,
+        interval,
+        source,
+        now_seconds.saturating_mul(NANOS_PER_SECOND),
+    )
+    .map_err(|error| format!("chart history check failed: {error}"))?;
+    let mut repaired_rows = 0;
+    if recent_window_needs_repair {
+        let repair_window_seconds = duration_seconds
+            .saturating_mul(RECENT_CHART_HISTORY_ROWS as i64);
+        let recent_start_seconds = now_seconds.saturating_sub(repair_window_seconds);
+        let result = fetch_binance_interval(
+            pair,
+            market,
+            interval,
+            duration_seconds,
+            RECENT_CHART_HISTORY_ROWS,
+            Some(recent_start_seconds),
+            |candles| {
+                persist(
+                    connection,
+                    storage_symbol,
+                    kind,
+                    exchange,
+                    "binance",
+                    source,
+                    pair,
+                    interval,
+                    "binance_usdt_reference",
+                    candles,
+                )
+            },
+        );
+        match result {
+            Ok(rows) => repaired_rows = rows,
+            Err(error) => {
+                let now = super::format_timestamp(super::now_secs());
+                record_proxy_failure(
+                    connection,
+                    storage_symbol,
+                    kind,
+                    exchange,
+                    "binance",
+                    source,
+                    interval,
+                    &now,
+                    &error,
+                );
+                return Err(error);
+            }
+        }
+        (earliest_ts, latest_ts) = connection
+            .query_row(
+                "SELECT MIN(ts),MAX(ts) FROM bars WHERE symbol=?1 AND interval=?2 AND source=?3",
+                params![storage_symbol, interval, source],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|error| error.to_string())?;
+    }
     let history_complete = provider_history_backfill_complete(
         connection,
         storage_symbol,
@@ -409,6 +554,9 @@ fn sync_with_binance(
             &now,
             error,
         );
+        if repaired_rows > 0 {
+            return Ok(repaired_rows);
+        }
     }
     result
 }
@@ -799,3 +947,7 @@ mod recovery_tests;
 #[cfg(test)]
 #[path = "research_proxy_persistence_tests.rs"]
 mod persistence_tests;
+
+#[cfg(test)]
+#[path = "research_proxy_chart_gap_tests.rs"]
+mod chart_gap_tests;

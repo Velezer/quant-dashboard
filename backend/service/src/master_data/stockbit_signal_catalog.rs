@@ -10,9 +10,6 @@ pub(super) fn ensure_stockbit_signal_catalog(catalog: &mut Value) -> bool {
     let component_maximum_score = quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX;
     let indicator_component_maximum_score = quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX;
     let relative_volume_lookback = quant_core::FOUR_INDICATOR_VOLUME_LOOKBACK_BARS;
-    let autocorrelation_lookback = quant_core::STRATEGY_RETURN_AUTOCORRELATION_LOOKBACK_RETURNS;
-    let autocorrelation_minimum_pairs =
-        quant_core::STRATEGY_RETURN_AUTOCORRELATION_MINIMUM_PAIRS;
     let indicator = serde_json::json!({
         "id": quant_core::NWE_METHOD_ID,
         "label": quant_core::NWE_METHOD_LABEL,

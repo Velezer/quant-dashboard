@@ -343,6 +343,21 @@ export function installChartData() {
                 void hydrateRustIndicators(signal);
                 drawCandleChart(signal);
             }
+
+            window.addEventListener('dashboard:chart-history-sync-completed', event => {
+                const signal = selectedSignal;
+                const syncedSymbol = String(event.detail?.storage_symbol || '').trim().toUpperCase();
+                if (!signal || !syncedSymbol) return;
+                const selectedSymbols = [
+                    signal.storage_symbol,
+                    signal.data_symbol,
+                    signal.symbol,
+                    signal.asset,
+                ].map(value => String(value || '').trim().toUpperCase());
+                if (!selectedSymbols.includes(syncedSymbol)) return;
+                void refreshChartData(signal, { suppressSyncPriority: true });
+            });
+
             // Bind from the dashboard's own script scope. This keeps the chart
             // recovery action working even when the page runtime is encapsulated
             // by the embedded browser and inline handlers cannot see lexical code.
@@ -357,7 +372,7 @@ export function installChartData() {
             // hundreds of candles for every card. Existing signal fixtures that
             // already contain candles continue to work without a request.
             let chartBundleRequestSerial = 0;
-            async function ensureChartData(signal = selectedSignal, force = false) {
+            async function ensureChartData(signal = selectedSignal, force = false, suppressSyncPriority = false) {
                 if (!signal) return false;
                 if (force) {
                     signal._chartBundleAbortController?.abort();
@@ -414,6 +429,7 @@ export function installChartData() {
                             timeframe: requestTimeframe,
                             limit: String(CHART_BUNDLE_HISTORY_BARS),
                         });
+                        if (suppressSyncPriority) query.set('skip_sync_priority', 'true');
                         const response = await fetch(`/api/compute/chart-bundle?${query.toString()}`, {
                             cache: 'no-store',
                             signal: controller.signal
@@ -523,9 +539,9 @@ export function installChartData() {
                 signal._rustIndicatorCache = null;
             }
 
-            async function refreshChartData(signal = selectedSignal) {
+            async function refreshChartData(signal = selectedSignal, options = {}) {
                 if (!signal) return false;
-                return await ensureChartData(signal, true);
+                return await ensureChartData(signal, true, options.suppressSyncPriority === true);
             }
 
             async function refreshSelectedChartAfterAssetUpdate(asset) {
