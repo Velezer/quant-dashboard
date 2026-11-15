@@ -6,14 +6,23 @@ const words = value => String(value || '').replaceAll('_', ' ');
 
 function latestAfterFeeMetric(liveScoring, app, product, timeframe) {
     const evaluations = Array.isArray(liveScoring?.latest_evaluations) ? liveScoring.latest_evaluations : [];
-    const wantsFutures = product !== 'all' && /future|perpetual/i.test(product);
-    const wantsSpot = product !== 'all' && /spot/i.test(product);
+    const appId = String(app || '').toLowerCase();
+    const productId = String(product || 'all').toLowerCase();
+    const wantsFutures = productId !== 'all' && /future|perpetual/i.test(productId);
+    const wantsSpot = productId !== 'all' && /spot/i.test(productId);
+    const tokenizedStock = productId.includes('tokenized_stock');
+    const appCategory = {
+        stockbit: /stock/i,
+        pintu: /crypto/i,
+        pluang: /crypto/i,
+        tokocrypto: /crypto|tokenized/i,
+    }[appId];
     const candidates = evaluations.filter(evaluation => {
         const scope = evaluation?.scope || {};
-        const category = String(scope.asset_category_id || '');
+        const category = String(scope.asset_category_id || '').toLowerCase();
         if (timeframe !== 'all' && scope.timeframe !== timeframe) return false;
-        if (app === 'stockbit' && !/stock/i.test(category)) return false;
-        if (['pintu', 'tokocrypto'].includes(app) && product === 'all' && !/crypto|tokenized/i.test(category)) return false;
+        if (appCategory && !appCategory.test(category)) return false;
+        if (tokenizedStock && category !== 'tokenized_stock') return false;
         if (wantsFutures && !/perpetual|future/i.test(category)) return false;
         if (wantsSpot && !/spot/i.test(category)) return false;
         return typeof evaluation?.holdout?.win_rate_after_fees_pct === 'number'
