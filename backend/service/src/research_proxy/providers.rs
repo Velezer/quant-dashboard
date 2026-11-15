@@ -2,6 +2,8 @@ use super::*;
 
 const BINANCE_INGESTION_PAGE_ROWS: usize = 1_500;
 const BINANCE_HISTORY_PAGE_ROWS: usize = 1_500;
+const MAX_BINANCE_SYNC_PAGES: usize = 4;
+const MAX_BINANCE_CHART_REPAIR_PAGES: usize = 8;
 const BINANCE_PAGE_PAUSE_MILLISECONDS: u64 = 250;
 const YAHOO_HISTORY_PAGE_ROWS: usize = 2_000;
 
@@ -248,6 +250,49 @@ pub(super) fn fetch_binance_interval(
     duration_seconds: i64,
     maximum_rows: usize,
     resume_ts: Option<i64>,
+    save_page: impl FnMut(&[Bar]) -> Result<(), String>,
+) -> Result<usize, String> {
+    fetch_binance_interval_with_page_limit(
+        pair,
+        market,
+        interval,
+        duration_seconds,
+        maximum_rows,
+        resume_ts,
+        MAX_BINANCE_SYNC_PAGES,
+        save_page,
+    )
+}
+
+pub(super) fn fetch_binance_chart_repair_interval(
+    pair: &str,
+    market: BinanceMarket,
+    interval: &str,
+    duration_seconds: i64,
+    maximum_rows: usize,
+    resume_ts: Option<i64>,
+    save_page: impl FnMut(&[Bar]) -> Result<(), String>,
+) -> Result<usize, String> {
+    fetch_binance_interval_with_page_limit(
+        pair,
+        market,
+        interval,
+        duration_seconds,
+        maximum_rows,
+        resume_ts,
+        MAX_BINANCE_CHART_REPAIR_PAGES,
+        save_page,
+    )
+}
+
+fn fetch_binance_interval_with_page_limit(
+    pair: &str,
+    market: BinanceMarket,
+    interval: &str,
+    duration_seconds: i64,
+    maximum_rows: usize,
+    resume_ts: Option<i64>,
+    page_limit: usize,
     mut save_page: impl FnMut(&[Bar]) -> Result<(), String>,
 ) -> Result<usize, String> {
     if pair.is_empty()
@@ -268,16 +313,19 @@ pub(super) fn fetch_binance_interval(
         .checked_mul(quant_core::MILLISECONDS_PER_SECOND)
         .ok_or("Binance interval overflow")?;
     let start_ms = now_ms.saturating_sub(duration_ms.saturating_mul(maximum_rows as i64));
-    let mut cursor_ms = resume_ts.map(|ts| ts.saturating_mul(quant_core::MILLISECONDS_PER_SECOND))
+    let mut cursor_ms = resume_ts
+        .map(|ts| ts.saturating_mul(quant_core::MILLISECONDS_PER_SECOND))
         .unwrap_or(start_ms);
     let mut saved_rows = 0usize;
     let mut last_saved_ts = None;
 
-    for _ in 0..MAX_BINANCE_PAGES {
+    for _ in 0..page_limit {
         if cursor_ms >= now_ms || saved_rows >= maximum_rows {
             break;
         }
-        let limit = (maximum_rows - saved_rows).min(market.max_page_size()).min(BINANCE_INGESTION_PAGE_ROWS);
+        let limit = (maximum_rows - saved_rows)
+            .min(market.max_page_size())
+            .min(BINANCE_INGESTION_PAGE_ROWS);
         let url = format!(
             "{}?symbol={pair}&interval={interval}&startTime={cursor_ms}&endTime={now_ms}&limit={limit}",
             market.endpoint()

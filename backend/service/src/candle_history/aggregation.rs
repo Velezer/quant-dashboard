@@ -187,7 +187,6 @@ pub(crate) fn aggregate_candles_from_base_source_with_cap_and_range(
     Ok(aggregated)
 }
 
-#[cfg(test)]
 pub(crate) fn required_aggregation_source_candles(
     timeframe: &str,
     base: &str,
@@ -203,6 +202,14 @@ pub(crate) fn required_aggregation_source_candles(
             MAX_AGGREGATION_SOURCE_CANDLES,
         )
     })
+}
+
+pub(crate) fn required_chart_source_candles(timeframe: &str, limit: i64) -> Option<i64> {
+    if let Some((base, _)) = super::derived_spec(timeframe) {
+        required_aggregation_source_candles(timeframe, base, limit)
+    } else {
+        super::timeframe_duration_ns(timeframe).map(|_| limit)
+    }
 }
 
 fn intraday_aggregation_bucket_start(local_time_ns: i64, duration_ns: i64, symbol: &str) -> i64 {

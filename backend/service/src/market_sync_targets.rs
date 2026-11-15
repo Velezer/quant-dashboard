@@ -289,11 +289,12 @@ pub(super) fn sync_prepared_candle_target(
             let Some(source) = source else {
                 continue;
             };
-            let needs_repair = crate::research_proxy::recent_chart_window_needs_repair(
+            let needs_repair = crate::research_proxy::recent_chart_window_needs_repair_with_rows(
                 &market_connection,
                 instrument.storage_symbol,
                 interval,
                 &source,
+                crate::research_proxy::chart_priority_history_rows(interval),
                 super::now_millis().saturating_mul(quant_core::NANOS_PER_MILLISECOND),
             )
             .unwrap_or(true);

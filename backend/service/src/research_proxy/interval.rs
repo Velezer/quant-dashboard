@@ -16,6 +16,11 @@ pub(super) fn sync_interval_for_exchange(
         "1d" => (ONE_DAY_INTERVAL_SECONDS, 4_000),
         _ => return Err("unsupported research candle interval".into()),
     };
+    let chart_repair_rows = if chart_priority {
+        chart_priority_history_rows(interval)
+    } else {
+        RECENT_CHART_HISTORY_ROWS
+    };
     let normalized_exchange = match exchange.trim().to_ascii_lowercase().as_str() {
         "idx" | "stockbit_idx" => "stockbit".to_string(),
         "stockbit" | "pintu" | "pluang" | "tokocrypto" => exchange.trim().to_ascii_lowercase(),
@@ -61,11 +66,12 @@ pub(super) fn sync_interval_for_exchange(
             Ok(base) => {
                 let binance_pair = format!("{base}USDT");
                 let chart_gap_needs_repair = chart_priority
-                    && recent_chart_window_needs_repair(
+                    && recent_chart_window_needs_repair_with_rows(
                         connection,
                         storage_symbol,
                         interval,
                         &source,
+                        chart_repair_rows,
                         i64::try_from(crate::now_secs())
                             .unwrap_or(i64::MAX)
                             .saturating_mul(NANOS_PER_SECOND),
@@ -83,6 +89,7 @@ pub(super) fn sync_interval_for_exchange(
                         interval,
                         duration_seconds,
                         maximum_rows,
+                        chart_repair_rows,
                     )
                 } else {
                     recent_proxy_result(
@@ -106,6 +113,7 @@ pub(super) fn sync_interval_for_exchange(
                             interval,
                             duration_seconds,
                             maximum_rows,
+                            chart_repair_rows,
                         )
                     })
                 }
