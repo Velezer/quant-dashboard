@@ -116,6 +116,7 @@ export function installSignalScreener() {
     } = createSignalScreenerChartContext({
         getAvailableTimeframes: () => availableTimeframes,
         getRows: () => rows,
+        getSignalStrategies: () => signalStrategies,
         scoreModelFor,
         formatPrice,
         renderSignalsList,

@@ -13,6 +13,7 @@ import {
 export function createSignalScreenerChartContext({
     getAvailableTimeframes,
     getRows,
+    getSignalStrategies,
     scoreModelFor,
     formatPrice,
     renderSignalsList,
@@ -85,6 +86,13 @@ export function createSignalScreenerChartContext({
         const directionBadge = document.getElementById('chart-style-badge');
         const evidenceBadge = document.getElementById('chart-evidence-badge');
         const scoreSummary = document.getElementById('chart-score-summary');
+        const selectedSetupPanel = document.getElementById('selectedSignalSetup');
+        const selectedSetupName = document.getElementById('selectedSignalSetupName');
+        const selectedSetupDetail = document.getElementById('selectedSignalSetupDetail');
+        const selectedWinRate = document.getElementById('selectedSignalWinRate');
+        const selectedWinRateDetail = document.getElementById('selectedSignalWinRateDetail');
+        const selectedLongArea = document.getElementById('selectedSignalLongArea');
+        const selectedShortArea = document.getElementById('selectedSignalShortArea');
         if (!signal) {
             if (refreshButton && refreshButton.dataset.refreshPending !== 'true') {
                 refreshButton.disabled = true;
@@ -100,6 +108,13 @@ export function createSignalScreenerChartContext({
                 scoreSummary.textContent = '';
                 scoreSummary.classList.remove('signal-chart-low-total');
             }
+            if (selectedSetupPanel) selectedSetupPanel.hidden = true;
+            if (selectedSetupName) selectedSetupName.textContent = '—';
+            if (selectedSetupDetail) selectedSetupDetail.textContent = 'Select a signal to inspect its rules.';
+            if (selectedWinRate) selectedWinRate.textContent = '—';
+            if (selectedWinRateDetail) selectedWinRateDetail.textContent = 'Historical holdout evidence';
+            if (selectedLongArea) selectedLongArea.textContent = 'Select a signal';
+            if (selectedShortArea) selectedShortArea.textContent = 'Select a signal';
             updateAppContextChip(null);
             return;
         }
@@ -128,6 +143,59 @@ export function createSignalScreenerChartContext({
             scoreSummary.textContent = signalScoreSummary(signal, model, scoreState);
             scoreSummary.classList.toggle('signal-chart-low-total', signalTotalStrength(signal, model)?.tone === 'low');
         }
+        if (selectedSetupPanel) selectedSetupPanel.hidden = false;
+        if (selectedSetupName) {
+            const strategy = (getSignalStrategies?.() || []).find(item =>
+                String(item.id || '') === String(signal.signal_strategy_id || ''),
+            );
+            const strategyName = strategy?.short_label || strategy?.label
+                || signal.signal_strategy_name || signal.signal_strategy_id || 'Signal setup';
+            selectedSetupName.textContent = `${directionLabel} · ${strategyName} · ${String(signal.timeframe || '--').toUpperCase()}`;
+            selectedSetupName.title = selectedSetupName.textContent;
+            if (selectedSetupDetail) {
+                const rule = strategy?.description || strategy?.score_basis_description
+                    || signal.score_basis?.description;
+                selectedSetupDetail.textContent = rule || 'Strategy rule details are not included in this signal response.';
+                selectedSetupDetail.title = selectedSetupDetail.textContent;
+            }
+        }
+        const winRate = signal.win_probability && Object.keys(signal.win_probability).length > 0
+            ? signal.win_probability
+            : signal.score_basis?.win_probability || {};
+        const winRateStatus = String(winRate.status || 'UNAVAILABLE');
+        const winRatePct = Number(winRate.win_probability_pct);
+        const winRateTrades = Number(winRate.sample_trades);
+        const confidence = Array.isArray(winRate.confidence_interval_95_pct)
+            ? winRate.confidence_interval_95_pct.map(value => value == null ? Number.NaN : Number(value))
+            : [];
+        const hasWinRate = ['ESTIMATED', 'PROFILE_GATE_ESTIMATE', 'TICKER_HOLDOUT_RATE'].includes(winRateStatus)
+            && Number.isFinite(winRatePct) && winRatePct >= 0 && winRatePct <= 100
+            && Number.isFinite(winRateTrades) && winRateTrades > 0;
+        if (selectedWinRate) {
+            if (!hasWinRate) {
+                selectedWinRate.textContent = 'After-fee rate unavailable';
+            } else if (winRateStatus === 'TICKER_HOLDOUT_RATE') {
+                selectedWinRate.textContent = `Ticker holdout · ${winRatePct.toFixed(1)}%`;
+            } else if (winRateStatus === 'PROFILE_GATE_ESTIMATE') {
+                selectedWinRate.textContent = `Profile estimate · ${winRatePct.toFixed(1)}%`;
+            } else {
+                selectedWinRate.textContent = `Score-matched · ${winRatePct.toFixed(1)}%`;
+            }
+            selectedWinRate.title = String(winRate.basis || winRate.reason || 'After-fee historical holdout evidence.');
+        }
+        if (selectedWinRateDetail) {
+            const confidenceText = Number.isFinite(confidence[0]) && Number.isFinite(confidence[1])
+                ? ` · 95% interval ${confidence[0].toFixed(1)}–${confidence[1].toFixed(1)}%`
+                : '';
+            selectedWinRateDetail.textContent = hasWinRate
+                ? `${Math.trunc(winRateTrades)} after-fee holdout outcomes${confidenceText}${winRateStatus === 'TICKER_HOLDOUT_RATE' ? ' · long/short pooled · not score-matched' : ''}`
+                : winRateStatus === 'INSUFFICIENT_SAMPLE'
+                    ? `${Number.isFinite(winRateTrades) ? Math.trunc(winRateTrades) : 0} matching outcomes; 30 needed for a rate.`
+                    : String(winRate.reason || 'No matching after-fee holdout result is available for this signal.');
+            selectedWinRateDetail.title = selectedWinRateDetail.textContent;
+        }
+        if (selectedLongArea) selectedLongArea.textContent = 'Loading signal-timeframe NWE…';
+        if (selectedShortArea) selectedShortArea.textContent = 'Loading signal-timeframe NWE…';
         updateAppContextChip(signal);
         updateChartTimeframeContext(signal);
     }

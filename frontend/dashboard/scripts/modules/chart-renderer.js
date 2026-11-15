@@ -4,6 +4,7 @@ import { getDashboardBinding, publishDashboardBindings } from './runtime-context
 import { drawMomentumPane } from './chart-momentum-renderer.js';
 import { pineChartPlots } from './pine-chart-output.js';
 import { formatChartCandleTimestamp, isIntradayChartTimeframe } from './chart-candle-time.js';
+import { CHART_INDICATOR_IDS } from './chart-indicator-data.js';
 import { estimateVolumeDeltaBars, volumeDeltaExtent } from './volume-delta.js';
 
 export function withChartPricePaneClip(ctx, bounds, render) {
@@ -33,6 +34,44 @@ export function visibleOverlayPriceRange(plots, startIndex, endIndex) {
         }
     }
     return { min, max };
+}
+
+function signalNweSetupAreas(candleContext, timeframe) {
+    if (candleContext?.hasGap) return { unavailable: 'continuous history is unavailable' };
+    const latest = candleContext?.candles?.at(-1);
+    const endpoint = latest?.indicators?.[CHART_INDICATOR_IDS.nadarayaWatsonEnvelope]?.endpoint;
+    const upper = endpoint?.upper == null ? NaN : Number(endpoint.upper);
+    const lower = endpoint?.lower == null ? NaN : Number(endpoint.lower);
+    if (!Number.isFinite(lower) || !Number.isFinite(upper) || lower <= 0 || upper <= lower) {
+        return { unavailable: `endpoint NWE is not ready on ${String(timeframe || '--').toUpperCase()}` };
+    }
+    // The band-proximity setup accepts prices within half an envelope width
+    // of the lower/upper band. Show those actual directional reference zones
+    // instead of dividing the envelope itself into arbitrary halves.
+    const halfWidth = (upper - lower) * 0.5;
+    return {
+        timeframe: String(timeframe || '--').toLowerCase(),
+        long: { low: Math.max(Number.EPSILON, lower - halfWidth), high: lower + halfWidth },
+        short: { low: upper - halfWidth, high: upper + halfWidth },
+    };
+}
+
+function updateSignalSetupAreaReadout(areas) {
+    const longArea = document.getElementById('selectedSignalLongArea');
+    const shortArea = document.getElementById('selectedSignalShortArea');
+    if (!longArea || !shortArea) return;
+    if (!areas?.long || !areas?.short) {
+        const reason = areas?.unavailable || 'signal-timeframe chart data is still loading';
+        longArea.textContent = `Unavailable · ${reason}`;
+        shortArea.textContent = `Unavailable · ${reason}`;
+        return;
+    }
+    const format = value => getDashboardBinding('formatPrice')?.(value) ?? Number(value).toString();
+    const timeframe = areas.timeframe.toUpperCase();
+    longArea.textContent = `${format(areas.long.low)} – ${format(areas.long.high)}`;
+    shortArea.textContent = `${format(areas.short.low)} – ${format(areas.short.high)}`;
+    longArea.title = `Causal endpoint NWE lower-band zone, within half an envelope width · ${timeframe} signal candles. Chart reference only.`;
+    shortArea.title = `Causal endpoint NWE upper-band zone, within half an envelope width · ${timeframe} signal candles. Context only, not an opposite signal.`;
 }
 
 function formatChartGapDuration(milliseconds) {
@@ -72,6 +111,11 @@ export function installChartRenderer() {
                 if (!signal || (selectedSignal && !isSelectedSignal(signal))) return;
                 const chartCandleContext = getDashboardBinding('getChartCandleContext')?.(signal)
                     || { candles: getChartCandles(signal), hasGap: false, omittedBars: 0 };
+                const setupTimeframe = String(signal.timeframe || activeTimeframe || '').trim().toLowerCase();
+                const signalCandleContext = getDashboardBinding('getChartCandleContext')?.(signal, setupTimeframe)
+                    || (setupTimeframe === activeTimeframe ? chartCandleContext : null);
+                const setupAreas = signalNweSetupAreas(signalCandleContext, setupTimeframe);
+                updateSignalSetupAreaReadout(setupAreas);
                 getDashboardBinding('updateMarkovRegimeStatus')?.(signal);
                 const canvas = document.getElementById('candleCanvas');
                 const dssCanvas = document.getElementById('dssCanvas');
@@ -244,6 +288,11 @@ export function installChartRenderer() {
                             maxP = Math.max(maxP, envelope.upper);
                         }
                     });
+                }
+
+                if (setupAreas?.long && setupAreas?.short) {
+                    minP = Math.min(minP, setupAreas.long.low);
+                    maxP = Math.max(maxP, setupAreas.short.high);
                 }
 
                 const pinePlots = chartCandleContext.hasGap
@@ -459,6 +508,38 @@ export function installChartRenderer() {
                     if (!axisTagPrices.some(price => Math.abs(getY(price) - y) < 11)) {
                         ctx.fillText(formatPrice(p), width - padding.right + 6, y + 3.5);
                     }
+                }
+
+                if (setupAreas?.long && setupAreas?.short) {
+                    withChartPricePaneClip(ctx, pricePlotBounds, () => {
+                        const drawArea = (area, fill, edge, label) => {
+                            const top = Math.min(getY(area.high), getY(area.low));
+                            const bottom = Math.max(getY(area.high), getY(area.low));
+                            ctx.fillStyle = fill;
+                            ctx.fillRect(padding.left, top, plotW, Math.max(1, bottom - top));
+                            ctx.strokeStyle = edge;
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([3, 3]);
+                            ctx.beginPath();
+                            ctx.moveTo(padding.left, getY(area.low));
+                            ctx.lineTo(width - padding.right, getY(area.low));
+                            ctx.moveTo(padding.left, getY(area.high));
+                            ctx.lineTo(width - padding.right, getY(area.high));
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+                            if (bottom - top >= 15) {
+                                ctx.font = 'bold 8px monospace';
+                                ctx.textAlign = 'left';
+                                ctx.lineWidth = 2.5;
+                                ctx.strokeStyle = 'rgba(10, 15, 22, .9)';
+                                ctx.fillStyle = edge;
+                                ctx.strokeText(label, padding.left + 5, (top + bottom) / 2 + 3);
+                                ctx.fillText(label, padding.left + 5, (top + bottom) / 2 + 3);
+                            }
+                        };
+                        drawArea(setupAreas.long, 'rgba(16, 185, 129, .085)', 'rgba(52, 211, 153, .8)', 'LONG ZONE');
+                        drawArea(setupAreas.short, 'rgba(244, 63, 94, .075)', 'rgba(251, 113, 133, .8)', 'SHORT ZONE');
+                    });
                 }
 
                 // TradingView Right Price Axis Separator Line

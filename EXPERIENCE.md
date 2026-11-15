@@ -65,6 +65,11 @@ lesson only when it will improve future tasks.
   Shared Spot reference charts for Futures must not receive index-aligned
   indicators calculated from Futures-specific candles; return overlays with
   the chart bundle and preserve them during later indicator hydration.
+- A selected-signal setup view should reuse the row's after-fee holdout evidence
+  and strategy metadata, while price zones come from that signal's own
+  timeframe chart bundle. Label NWE proximity zones as contextual references,
+  show both directions, and keep an explicit unavailable state when endpoint
+  bands are missing; do not fabricate a win rate or entry price.
 - Before opening a code PR, verify both locked release builds:
   `cargo build --locked --release --target wasm32-unknown-unknown -p quant_pine_runtime`
   and `cargo build --locked --release -p rust_chart_api`. If Cargo is unavailable,
