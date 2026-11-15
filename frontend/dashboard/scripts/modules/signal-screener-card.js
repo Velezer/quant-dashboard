@@ -101,8 +101,9 @@ export function createSignalScreenerCard({
         const scoreBandSampleTrades = winProbability.score_band_sample_trades === null
             ? Number.NaN
             : Number(winProbability.score_band_sample_trades);
-        const hasWinProbability = ['ESTIMATED', 'PROFILE_GATE_ESTIMATE'].includes(winProbabilityStatus)
-            && Number.isFinite(winProbabilityPct) && Number.isFinite(winProbabilityTrades);
+        const hasWinProbability = ['ESTIMATED', 'PROFILE_GATE_ESTIMATE', 'TICKER_HOLDOUT_RATE'].includes(winProbabilityStatus)
+            && Number.isFinite(winProbabilityPct) && Number.isFinite(winProbabilityTrades)
+            && winProbabilityTrades > 0;
         const probabilityRange = Number.isFinite(winProbabilityInterval[0])
             && Number.isFinite(winProbabilityInterval[1])
             ? ` · 95% interval ${winProbabilityInterval[0].toFixed(1)}–${winProbabilityInterval[1].toFixed(1)}%`
@@ -113,18 +114,22 @@ export function createSignalScreenerCard({
             ? ` · score band ${Number(winProbability.score_band_minimum_out_of_60).toFixed(0)}–${Number(winProbability.score_band_maximum_out_of_60).toFixed(0)}/60${winProbability.score_band_maximum_inclusive ? ' inclusive' : ''}`
             : '';
         const winProbabilityText = hasWinProbability
-            ? `${winProbabilityStatus === 'ESTIMATED' ? 'Estimated win probability' : 'Profile-gate win estimate'} ${winProbabilityPct.toFixed(1)}%`
-            : `Win probability unavailable · ${winProbabilityStatus === 'INSUFFICIENT_SAMPLE'
+            ? `${winProbabilityStatus === 'TICKER_HOLDOUT_RATE'
+                ? 'Ticker holdout win rate'
+                : winProbabilityStatus === 'ESTIMATED' ? 'Estimated win probability' : 'Profile-gate win estimate'} ${winProbabilityPct.toFixed(1)}%`
+            : `After-fee win rate unavailable · ${winProbabilityStatus === 'INSUFFICIENT_SAMPLE'
                 ? `${Number.isFinite(winProbabilityTrades) ? Math.trunc(winProbabilityTrades) : 0} matching outcomes; at least 30 required`
                 : winProbabilityStatus === 'BELOW_PROFILE_GATE'
-                    ? 'signal is below the validated profile score gate'
-                    : String(winProbability.reason || 'no matching validated holdout calibration')}`;
+                    ? 'no score-matched profile estimate; checking exact-ticker holdout'
+                    : String(winProbability.reason || 'run the exact ticker and timeframe backtest to populate this metric')}`;
         const winProbabilityDetail = hasWinProbability
-            ? `${probabilityRange} · ${Math.trunc(winProbabilityTrades)} after-fee holdout outcomes${scoreBand} · long/short pooled${winProbabilityStatus === 'PROFILE_GATE_ESTIMATE' ? ` · ${Number.isFinite(scoreBandSampleTrades) ? `${Math.trunc(scoreBandSampleTrades)} score-band outcomes; profile-gate cohort used` : 'score-band sample unavailable; profile-gate cohort used'}` : ''}`
+            ? winProbabilityStatus === 'TICKER_HOLDOUT_RATE'
+                ? `${probabilityRange} · ${Math.trunc(winProbabilityTrades)} exact-ticker after-fee holdout outcomes · not matched to this score · long/short pooled`
+                : `${probabilityRange} · ${Math.trunc(winProbabilityTrades)} after-fee holdout outcomes${scoreBand} · long/short pooled${winProbabilityStatus === 'PROFILE_GATE_ESTIMATE' ? ` · ${Number.isFinite(scoreBandSampleTrades) ? `${Math.trunc(scoreBandSampleTrades)} score-band outcomes; profile-gate cohort used` : 'score-band sample unavailable; profile-gate cohort used'}` : ''}`
             : String(winProbability.reason || winProbability.basis || 'Refresh the backtest profile to build a matching estimate.');
         const winProbabilityAccessibleText = hasWinProbability
-            ? `${winProbabilityText}, ${Math.trunc(winProbabilityTrades)} after-fee holdout outcomes${probabilityRange}${scoreBand}.`
-            : winProbabilityText;
+            ? `${winProbabilityText}, ${Math.trunc(winProbabilityTrades)} after-fee holdout outcomes${probabilityRange}${winProbabilityStatus === 'TICKER_HOLDOUT_RATE' ? ', not matched to this signal score' : scoreBand}.`
+            : `${winProbabilityText}.`;
         const totalStrength = signalTotalStrength(signal, scoreModel);
         const displayScore = signalDisplayScore(signal);
         const scoreLabel = scoreState?.tone === 'stale' ? 'Last recorded score' : 'Market-entry score';
