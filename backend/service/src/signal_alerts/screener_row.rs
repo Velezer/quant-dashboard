@@ -365,6 +365,16 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
     let data_quality = first_candidate_string(candidate, &["Data_Quality", "data_quality"])
         .unwrap_or_else(|| "unknown".to_string());
 
+    let mut after_fee_gate = candidate
+        .get("Signal_After_Fee_Gate")
+        .cloned()
+        .unwrap_or(Value::Null);
+    // Per-score bins are only needed while calculating a signal's estimate.
+    // Do not copy the whole calibration table into every saved screener row.
+    if let Some(gate) = after_fee_gate.as_object_mut() {
+        gate.remove("holdout_score_bands");
+    }
+
     Some(json!({
         "exchange_id": exchange_id,
         "product_id": product_id,
@@ -380,6 +390,18 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         "confluence_score": confluence_score,
         "score_model_id": score_model_id,
         "score_components": score_components,
+        "profile_version": candidate
+            .get("Signal_Scoring_Profile_Version")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "after_fee_gate": after_fee_gate,
+        "win_probability": candidate
+            .get("Signal_Win_Probability")
+            .cloned()
+            .unwrap_or_else(|| json!({
+                "status": "UNAVAILABLE",
+                "reason": "No matching historical score calibration is attached to this signal.",
+            })),
         "score_scale_max": score_scale_max,
         "minimum_score": minimum_score,
         "minimum_score_out_of_10": if score_scale_max == quant_core::SIGNAL_STRENGTH_SCORE_SCALE_MAX {

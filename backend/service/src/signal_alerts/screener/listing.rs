@@ -452,6 +452,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             "score": row.get::<_, f64>(9)?,
             "strategy_strength": row.get::<_, Option<f64>>(10)?,
             "confluence_score": row.get::<_, Option<f64>>(11)?,
+            "win_probability": score_basis["win_probability"].clone(),
             "score_basis": score_basis,
             "current_price": row.get::<_, f64>(13)?,
             "price_timeframe": price_timeframe,

@@ -1,9 +1,10 @@
 import { requestJson } from './api.js';
 import { renderStrategyAutocorrelation } from './strategy-autocorrelation-chart.js';
+import { renderAutocorrelationRiskSizing } from './entry-validation-risk-sizing.js';
 
 const PAGE_SIZE = 50;
 const APP_LABELS = { stockbit: 'Stockbit', pintu: 'Pintu', pluang: 'Pluang', tokocrypto: 'Tokocrypto' };
-const RISK_REWARD_PROTOCOL_ID = 'entry_score_risk_reward_after_fee_win_rate_v2';
+const RISK_REWARD_PROTOCOL_ID = 'entry_score_risk_reward_after_fee_win_rate_v4';
 
 function numeric(value) {
     if (!['number', 'string'].includes(typeof value) || (typeof value === 'string' && !value.trim())) return null;
@@ -601,6 +602,16 @@ export function initializeEntryValidation(doc = document) {
         const metrics = $('risk-reward-metrics');
         const state = $('risk-reward-state');
         if (!metrics || !state) return;
+        renderAutocorrelationRiskSizing({
+            riskSizing: rule?.risk_sizing,
+            excludedCosts: rule?.excluded_costs,
+            costs: report?.costs || {},
+            doc,
+            metric,
+            metricCard,
+            dateText,
+            numeric,
+        });
         const labels = {
             QUALIFIED: 'Research candidate',
             INSUFFICIENT_HISTORY: 'History too short',
@@ -813,9 +824,23 @@ export function initializeEntryValidation(doc = document) {
         metadata('history-metadata', [['Source', sourceName(report.source)], ['Provider', report.source?.data_provider || 'Unavailable'], ['Source basis', report.source?.is_proxy ? 'Research proxy' : report.source?.venue_native ? 'Venue-native history' : 'Unverified'], ['Timezone', report.source?.timezone || 'Unavailable'], ['Sampled bars', metric(history.bars, '', 0)], ['Sample dates', `${dateText(history.first_ts)} – ${dateText(history.last_ts)}`], ['Sample span', metric(history.coverage_days, ' days', 0)], ['Stored span', metric(history.stored_coverage_days, ' days', 0)], ['Protocol', report.protocol_id || 'Unavailable'], ['Data fingerprint', history.data_fingerprint || 'Unavailable']]);
         metadata('cost-metadata', [['Fee model', costs.fee_model || 'Unavailable'], ['Buy / sell fees', costs.fees_known === true ? `${metric(costs.buy_fee_pct, '%', 3)} / ${metric(costs.sell_fee_pct, '%', 3)}` : 'Unknown · gross returns only'], ['Execution-cost coverage', costs.execution_costs_complete === true ? 'Complete for this protocol' : 'Incomplete · validation blocked']]);
         text('cost-omissions', Array.isArray(costs.omissions) && costs.omissions.length ? `Not modeled: ${costs.omissions.join(', ')}.` : costs.execution_costs_complete ? 'Review the supplied cost policy and source assumptions.' : 'Complete execution-cost coverage has not been established.');
-        text('sizing-reason', report.sizing?.reason || 'Entry evidence must pass all required checks before a separate sizing model can use it. No sizing model is built here.');
-        const inputs = report.sizing?.required_inputs;
-        text('sizing-inputs', Array.isArray(inputs) && inputs.length ? `Future sizing needs: ${inputs.join(', ')}.` : 'Future sizing needs conditional return and loss distributions, uncertainty, complete costs, and validated ticker/model/source identity.');
+        const sizing = report.sizing || {};
+        const hasRiskResearch = ['RESEARCH_ONLY', '4H_ONLY'].includes(sizing.status);
+        const hasSizingStatus = ['RESEARCH_ONLY', '4H_ONLY', 'UNAVAILABLE'].includes(sizing.status);
+        text('sizing-reason', hasSizingStatus
+            ? (sizing.reason || 'The 4h risk study compares fixed and autocorrelation-adjusted size on validation and untouched holdout data.')
+            : 'This saved snapshot predates the autocorrelation sizing study. Rerun the ticker at 4h to add it; existing score and entry evidence remain intact.');
+        const remainingInputs = sizing.remaining_for_live_sizing;
+        text('sizing-inputs', sizing.status === 'UNAVAILABLE'
+            ? 'No quantity is calculated until the ticker, model, and completed 4h history qualify.'
+            : !hasRiskResearch
+            ? 'Rerun the saved backtest at 4h to refresh autocorrelation sizing evidence.'
+            : Array.isArray(remainingInputs) && remainingInputs.length
+                ? `Still needed before live sizing: ${remainingInputs.join(', ')}.`
+                : 'Historical risk scenarios do not change signals or calculate an account position.');
+        const sizingState = $('sizing-state');
+        text('sizing-state', sizing.live_sizing_enabled === true ? 'Live sizing enabled' : sizing.status === 'UNAVAILABLE' ? 'Unavailable' : sizing.status === '4H_ONLY' ? '4h only' : hasRiskResearch ? 'Research only' : 'Refresh report');
+        if (sizingState) sizingState.className = `state-badge ${sizing.live_sizing_enabled === true ? 'valid' : 'pending'}`;
         renderModel();
     }
     async function selectTicker(item, { focus = true } = {}) {

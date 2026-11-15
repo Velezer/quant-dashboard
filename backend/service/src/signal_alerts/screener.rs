@@ -449,6 +449,10 @@ pub(crate) fn compact_stockbit_signal_score_update(
         .get("Signal_After_Fee_Gate")
         .cloned()
         .unwrap_or(Value::Null);
+    let mut after_fee_gate = after_fee_gate;
+    if let Some(gate) = after_fee_gate.as_object_mut() {
+        gate.remove("holdout_score_bands");
+    }
     let score_basis_json = serde_json::to_string(&json!({
         "model_id": score_model_id,
         "score_scale_max": if six_indicator_score_model {
@@ -468,6 +472,7 @@ pub(crate) fn compact_stockbit_signal_score_update(
         },
         "profile_version": candidate["Signal_Scoring_Profile_Version"],
         "after_fee_gate": after_fee_gate,
+        "win_probability": candidate["Signal_Win_Probability"],
         "component_score_scale_max": if six_indicator_score_model {
             quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX
         } else {

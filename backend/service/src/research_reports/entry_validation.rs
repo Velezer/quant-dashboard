@@ -448,6 +448,30 @@ fn build_report(
     } else {
         "VALIDATION_PENDING"
     };
+    let sizing_supported_for_timeframe = timeframe.eq_ignore_ascii_case("4h");
+    let sizing_inputs_available = eligible && supported && !bars.is_empty() && !models.is_empty();
+    let sizing_status = if !sizing_supported_for_timeframe {
+        "4H_ONLY"
+    } else if sizing_inputs_available {
+        "RESEARCH_ONLY"
+    } else {
+        "UNAVAILABLE"
+    };
+    let sizing_reason = if sizing_supported_for_timeframe {
+        if sizing_inputs_available {
+            "The 4h candidate-rule report simulates a causal autocorrelation size multiplier on validation and untouched holdout trades. It only scales down a hypothetical 1% risk budget; no live account or order sizing is enabled."
+        } else if !eligible {
+            "Sizing research requires an exact verified ticker identity. No account or order sizing is enabled."
+        } else if !supported {
+            "This exact product does not have a registered entry model for the 4h sizing study. No substitute model was used."
+        } else if bars.is_empty() {
+            "The ticker has no completed 4h candles to evaluate yet. No account or order sizing is enabled."
+        } else {
+            "No current entry model is available for the 4h sizing study. No substitute model was used."
+        }
+    } else {
+        "The autocorrelation risk-size study currently uses the selected 4h bracket rule. Choose 4h to inspect validation and untouched holdout sizing evidence."
+    };
     Ok(
         json!({"schema_version":1,"protocol_id":PROTOCOL_ID,"instrument":instrument,"timeframe":timeframe,
         "computed_at":now_secs(),"status":status,"source":source,"history":history,"costs":costs,"models":models,
@@ -455,8 +479,10 @@ fn build_report(
             "reason":if !eligible {"A verified eligible registration is required before backtesting."}
                 else if !supported {"The current six-indicator entry models are not registered for this exact product/category. No substitute model was backtested."}
                 else {"Exact registered identity selected. Historical research does not imply execution validation."}},
-        "sizing":{"status":"BLOCKED","reason":"Sizing is a later modeling step. Exact entry evidence, full execution costs, model/data identity and uncertainty must qualify first.",
-            "required_inputs":["Validated per-ticker/model/timeframe/source evidence","Conditional held-out return and loss distributions","Sample confidence and downside uncertainty","Complete execution costs and liquidity assumptions","A separately reviewed sizing rule and risk limits"]}}),
+        "sizing":{"status":sizing_status,"risk_model":"causal_return_autocorrelation_horizon_variance_v1",
+            "reason":sizing_reason,
+            "live_sizing_enabled":false,
+            "remaining_for_live_sizing":["Adequate validation and untouched holdout risk-model samples","Complete spread, slippage, funding, liquidity and market-impact costs","A separately reviewed live risk limit and account-specific inputs"]}}),
     )
 }
 

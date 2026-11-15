@@ -16,7 +16,12 @@ const SCORE_FLOORS_OUT_OF_60: [f64; 3] = [
     20.0,
 ];
 const RISK_REWARD_INTERVAL_NS: i64 = 4 * crate::SECONDS_PER_HOUR * crate::NANOS_PER_SECOND;
-pub(super) const PROTOCOL_ID: &str = "entry_score_risk_reward_after_fee_win_rate_v3";
+const MAX_AUTOCORRELATION_RETURN_BARS: usize = 128;
+const MIN_AUTOCORRELATION_RETURN_SAMPLES: usize = 30;
+const HYPOTHETICAL_BASE_RISK_PCT: f64 = 1.0;
+const MINIMUM_RISK_MODEL_TRADES: usize = 30;
+pub(super) const PROTOCOL_ID: &str = "entry_score_risk_reward_after_fee_win_rate_v4";
+pub(super) const RISK_SIZING_PROTOCOL_ID: &str = "causal_return_autocorrelation_horizon_variance_v1";
 
 #[derive(Clone, Copy)]
 struct BracketRule {
@@ -31,6 +36,175 @@ struct ValidationCandidate {
     rule: BracketRule,
     summary: TradeSummary,
     passes_win_rate_target: bool,
+}
+
+#[derive(Clone, Copy)]
+struct RuleTrade {
+    signal_index: usize,
+    entry_price: f64,
+    stop_price: f64,
+    exit_price: f64,
+    long: bool,
+}
+
+#[derive(Clone, Copy)]
+struct AutocorrelationRiskEstimate {
+    multiplier: f64,
+    variance_ratio: f64,
+    return_samples: usize,
+}
+
+#[derive(Clone, Copy)]
+struct SimulatedEquity {
+    current: f64,
+    peak: f64,
+    maximum_drawdown_pct: f64,
+}
+
+impl Default for SimulatedEquity {
+    fn default() -> Self {
+        Self {
+            current: 1.0,
+            peak: 1.0,
+            maximum_drawdown_pct: 0.0,
+        }
+    }
+}
+
+impl SimulatedEquity {
+    fn add_risk_unit(&mut self, risk_fraction: f64, realized_r: f64) {
+        let change = risk_fraction * realized_r;
+        if change.is_nan()
+            || change <= -1.0
+            || (change.is_infinite() && change.is_sign_negative())
+        {
+            self.current = 0.0;
+        } else if change.is_infinite() {
+            self.current = f64::MAX / 100.0;
+        } else {
+            let next = self.current * (1.0 + change);
+            self.current = if next.is_finite() { next } else { f64::MAX / 100.0 };
+        }
+        self.peak = self.peak.max(self.current);
+        let drawdown_pct = if self.peak > 0.0 {
+            (self.peak - self.current) / self.peak * 100.0
+        } else {
+            100.0
+        };
+        self.maximum_drawdown_pct = self.maximum_drawdown_pct.max(drawdown_pct);
+    }
+
+    fn total_return_pct(self) -> f64 {
+        (self.current - 1.0) * 100.0
+    }
+}
+
+#[derive(Default)]
+struct RiskSizingSummary {
+    trades: usize,
+    missing_estimates: usize,
+    multipliers: Vec<f64>,
+    fixed_risk_equity: SimulatedEquity,
+    adjusted_risk_equity: SimulatedEquity,
+}
+
+impl RiskSizingSummary {
+    fn add_trade(
+        &mut self,
+        bars: &[StrategyBar],
+        trade: RuleTrade,
+        maximum_hold_bars: usize,
+        policy: EvaluationPolicy,
+    ) {
+        self.trades += 1;
+        let (entry_fee_pct, exit_fee_pct) = if trade.long {
+            (policy.buy_fee_pct, policy.sell_fee_pct)
+        } else {
+            (policy.sell_fee_pct, policy.buy_fee_pct)
+        };
+        let net_return_pct = |exit_price: f64| {
+            let gross_return_pct = if trade.long {
+                (exit_price - trade.entry_price) / trade.entry_price * 100.0
+            } else {
+                (trade.entry_price - exit_price) / trade.entry_price * 100.0
+            };
+            crate::venue_rules::net_return_after_transaction_fees(
+                gross_return_pct,
+                exit_price / trade.entry_price,
+                entry_fee_pct,
+                exit_fee_pct,
+            )
+        };
+        let planned_stop_loss_pct = -net_return_pct(trade.stop_price);
+        let realized_return_pct = net_return_pct(trade.exit_price);
+        if !planned_stop_loss_pct.is_finite()
+            || planned_stop_loss_pct <= 0.0
+            || !realized_return_pct.is_finite()
+        {
+            self.missing_estimates += 1;
+            return;
+        }
+        let realized_r = realized_return_pct / planned_stop_loss_pct;
+        if !realized_r.is_finite() {
+            self.missing_estimates += 1;
+            return;
+        }
+        self.fixed_risk_equity
+            .add_risk_unit(HYPOTHETICAL_BASE_RISK_PCT / 100.0, realized_r);
+        if let Some(estimate) = autocorrelation_risk_multiplier(
+            bars,
+            trade.signal_index,
+            maximum_hold_bars,
+        ) {
+            self.multipliers.push(estimate.multiplier);
+            self.adjusted_risk_equity.add_risk_unit(
+                HYPOTHETICAL_BASE_RISK_PCT / 100.0 * estimate.multiplier,
+                realized_r,
+            );
+        } else {
+            self.missing_estimates += 1;
+        }
+    }
+
+    fn to_json(&self) -> Value {
+        let mut multipliers = self.multipliers.clone();
+        multipliers.sort_by(f64::total_cmp);
+        let coverage_pct = if self.trades > 0 {
+            multipliers.len() as f64 / self.trades as f64 * 100.0
+        } else {
+            0.0
+        };
+        let complete = self.trades > 0 && self.missing_estimates == 0;
+        let sufficient_sample = self.trades >= MINIMUM_RISK_MODEL_TRADES;
+        let multiplier_mean = (!multipliers.is_empty()).then(|| {
+            multipliers.iter().sum::<f64>() / multipliers.len() as f64
+        });
+        let multiplier_median = if multipliers.is_empty() {
+            None
+        } else {
+            let middle = multipliers.len() / 2;
+            Some(if multipliers.len() % 2 == 0 {
+                (multipliers[middle - 1] + multipliers[middle]) / 2.0
+            } else {
+                multipliers[middle]
+            })
+        };
+        json!({
+            "status": if self.trades == 0 { "NO_TRADES" } else if !complete { "INCOMPLETE_AUTOCORRELATION_COVERAGE" } else if !sufficient_sample { "INSUFFICIENT_SAMPLE" } else { "RESEARCH_ONLY" },
+            "trades": self.trades,
+            "autocorrelation_estimates": multipliers.len(),
+            "unavailable_estimates": self.missing_estimates,
+            "coverage_pct": coverage_pct,
+            "mean_size_multiplier": multiplier_mean,
+            "median_size_multiplier": multiplier_median,
+            "base_risk_per_trade_pct": HYPOTHETICAL_BASE_RISK_PCT,
+            "fixed_risk_equity_return_pct": self.fixed_risk_equity.total_return_pct(),
+            "autocorrelation_adjusted_equity_return_pct": complete.then(|| self.adjusted_risk_equity.total_return_pct()),
+            "fixed_risk_max_drawdown_pct": self.fixed_risk_equity.maximum_drawdown_pct,
+            "autocorrelation_adjusted_max_drawdown_pct": complete.then_some(self.adjusted_risk_equity.maximum_drawdown_pct),
+            "minimum_trades": MINIMUM_RISK_MODEL_TRADES,
+        })
+    }
 }
 
 fn average_true_range(bars: &[StrategyBar], signal_index: usize) -> Option<f64> {
@@ -51,6 +225,70 @@ fn average_true_range(bars: &[StrategyBar], signal_index: usize) -> Option<f64> 
     }
     let value = total / ATR_LOOKBACK_BARS as f64;
     (value.is_finite() && value > 0.0).then_some(value)
+}
+
+fn autocorrelation_risk_multiplier(
+    bars: &[StrategyBar],
+    signal_index: usize,
+    horizon_bars: usize,
+) -> Option<AutocorrelationRiskEstimate> {
+    let mut returns = Vec::with_capacity(MAX_AUTOCORRELATION_RETURN_BARS);
+    let mut current = signal_index;
+    while current > 0 && returns.len() < MAX_AUTOCORRELATION_RETURN_BARS {
+        let previous = current - 1;
+        let current_bar = bars.get(current)?;
+        let previous_bar = bars.get(previous)?;
+        if current_bar.time.saturating_sub(previous_bar.time) != RISK_REWARD_INTERVAL_NS {
+            break;
+        }
+        if !current_bar.close.is_finite()
+            || !previous_bar.close.is_finite()
+            || current_bar.close <= 0.0
+            || previous_bar.close <= 0.0
+        {
+            break;
+        }
+        returns.push((current_bar.close / previous_bar.close).ln());
+        current = previous;
+    }
+    if returns.len() < MIN_AUTOCORRELATION_RETURN_SAMPLES || horizon_bars <= 1 {
+        return None;
+    }
+    returns.reverse();
+    let mean = returns.iter().sum::<f64>() / returns.len() as f64;
+    let centered = returns
+        .iter()
+        .map(|value| value - mean)
+        .collect::<Vec<_>>();
+    let variance = centered.iter().map(|value| value * value).sum::<f64>();
+    if !variance.is_finite() || variance <= 0.0 {
+        return None;
+    }
+    let maximum_lag = horizon_bars.saturating_sub(1).min(centered.len() - 1);
+    let variance_ratio = 1.0
+        + (1..=maximum_lag)
+            .map(|lag| {
+                let covariance = centered[lag..]
+                    .iter()
+                    .zip(&centered[..centered.len() - lag])
+                    .map(|(left, right)| left * right)
+                    .sum::<f64>();
+                let rho = covariance / variance;
+                2.0 * (1.0 - lag as f64 / horizon_bars as f64) * rho
+            })
+            .sum::<f64>();
+    if !variance_ratio.is_finite() {
+        return None;
+    }
+    let conservative_variance_ratio = variance_ratio.max(1.0);
+    let multiplier = conservative_variance_ratio.sqrt().recip().clamp(0.25, 1.0);
+    multiplier
+        .is_finite()
+        .then_some(AutocorrelationRiskEstimate {
+            multiplier,
+            variance_ratio: conservative_variance_ratio,
+            return_samples: returns.len(),
+        })
 }
 
 fn bracket_exit(
@@ -165,7 +403,7 @@ fn after_fee_target_price(
     .then_some(target_price)
 }
 
-fn evaluate_rule(
+fn evaluate_rule_with_observer(
     bars: &[StrategyBar],
     observations: &[Option<Observation>],
     signal_indices: &[usize],
@@ -175,6 +413,7 @@ fn evaluate_rule(
     weights: [u8; 4],
     template: EvaluationPolicy,
     rule: BracketRule,
+    mut on_trade: impl FnMut(RuleTrade),
 ) -> TradeSummary {
     let mut summary = TradeSummary::default();
     let policy = EvaluationPolicy {
@@ -247,9 +486,41 @@ fn evaluate_rule(
             policy.sell_fee_pct,
             policy.fees_known,
         );
+        on_trade(RuleTrade {
+            signal_index,
+            entry_price,
+            stop_price,
+            exit_price,
+            long: observation.long,
+        });
         cursor = signal_indices.partition_point(|index| *index <= exit_index);
     }
     summary
+}
+
+fn evaluate_rule(
+    bars: &[StrategyBar],
+    observations: &[Option<Observation>],
+    signal_indices: &[usize],
+    signal_atrs: &[Option<f64>],
+    start: usize,
+    end: usize,
+    weights: [u8; 4],
+    template: EvaluationPolicy,
+    rule: BracketRule,
+) -> TradeSummary {
+    evaluate_rule_with_observer(
+        bars,
+        observations,
+        signal_indices,
+        signal_atrs,
+        start,
+        end,
+        weights,
+        template,
+        rule,
+        |_| {},
+    )
 }
 
 fn validation_passes(summary: TradeSummary, fees_known: bool) -> bool {
@@ -314,7 +585,6 @@ fn candidate_json(
         "qualified": validation_passed && holdout_passed && history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS,
     })
 }
-
 pub(super) fn report(
     bars: &[StrategyBar],
     observations: &[Option<Observation>],
@@ -350,6 +620,12 @@ pub(super) fn report(
             "target_r_basis": "after configured entry and exit fees",
             "fees_applied": template.fees_known,
             "candidate": Value::Null,
+            "risk_sizing": {
+                "protocol_id": RISK_SIZING_PROTOCOL_ID,
+                "status": "UNAVAILABLE",
+                "reason": reason,
+                "live_sizing_enabled": false,
+            },
             "selection_uses_holdout": false,
             "live_weights_changed": false,
         })
@@ -444,9 +720,104 @@ pub(super) fn report(
         template,
         selected.rule,
     );
+    let mut validation_sizing = RiskSizingSummary::default();
+    evaluate_rule_with_observer(
+        bars,
+        observations,
+        &signal_indices,
+        &signal_atrs,
+        validation_start,
+        holdout_start,
+        weights,
+        template,
+        selected.rule,
+        |trade| {
+            validation_sizing.add_trade(
+                bars,
+                trade,
+                selected.rule.maximum_hold_bars,
+                template,
+            )
+        },
+    );
+    let mut holdout_sizing = RiskSizingSummary::default();
+    evaluate_rule_with_observer(
+        bars,
+        observations,
+        &signal_indices,
+        &signal_atrs,
+        holdout_start,
+        bars.len(),
+        weights,
+        template,
+        selected.rule,
+        |trade| {
+            holdout_sizing.add_trade(
+                bars,
+                trade,
+                selected.rule.maximum_hold_bars,
+                template,
+            )
+        },
+    );
+    let validation_risk_json = validation_sizing.to_json();
+    let holdout_risk_json = holdout_sizing.to_json();
+    let risk_sizing_ready = validation_risk_json["status"] == "RESEARCH_ONLY"
+        && holdout_risk_json["status"] == "RESEARCH_ONLY";
     let validation_passed = selected.passes_win_rate_target;
     let holdout_passed = validation_passes(holdout, template.fees_known);
     let history_span_passed = history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS;
+    let entry_rule_qualified = validation_passed && holdout_passed && history_span_passed;
+    let risk_sizing_status = if !risk_sizing_ready {
+        "INSUFFICIENT_EVIDENCE"
+    } else if !entry_rule_qualified {
+        "EXPLORATORY_ONLY"
+    } else {
+        "RESEARCH_ONLY"
+    };
+    let risk_sizing_reason = if !risk_sizing_ready {
+        "The validation or untouched holdout sample lacks 30 trades with complete causal autocorrelation estimates."
+    } else if !entry_rule_qualified {
+        "The selected entry rule did not pass its 50% after-fee win-rate, confidence, and history gates; sizing scenarios remain exploratory."
+    } else {
+        "The frozen entry rule passed its existing validation and untouched holdout gates. The size model remains research-only and is not activated for live positions."
+    };
+    let latest_estimate = bars
+        .len()
+        .checked_sub(1)
+        .and_then(|index| {
+            autocorrelation_risk_multiplier(
+                bars,
+                index,
+                selected.rule.maximum_hold_bars,
+            )
+            .map(|estimate| {
+                json!({
+                    "bar_time": bars[index].time,
+                    "multiplier": estimate.multiplier,
+                    "horizon_variance_ratio": estimate.variance_ratio,
+                    "return_samples": estimate.return_samples,
+                })
+            })
+        });
+    let risk_sizing = json!({
+        "protocol_id": RISK_SIZING_PROTOCOL_ID,
+        "status": risk_sizing_status,
+        "reason": risk_sizing_reason,
+        "method": "At each qualifying 4h signal, estimate the variance ratio over the selected maximum hold from up to 128 contiguous completed-bar log returns. Set the risk multiplier to min(1, 1/sqrt(max(1, variance_ratio))). Positive serial dependence may reduce risk; negative dependence never increases it.",
+        "minimum_return_samples": MIN_AUTOCORRELATION_RETURN_SAMPLES,
+        "lookback_return_bars": MAX_AUTOCORRELATION_RETURN_BARS,
+        "maximum_risk_multiplier": 1.0,
+        "minimum_risk_multiplier": 0.25,
+        "base_risk_per_trade_pct": HYPOTHETICAL_BASE_RISK_PCT,
+        "maximum_base_risk_per_trade_pct": crate::risk::MAX_RISK_PER_TRADE_PCT * 100.0,
+        "selected_maximum_hold_bars": selected.rule.maximum_hold_bars,
+        "latest_causal_estimate": latest_estimate,
+        "validation": validation_risk_json,
+        "holdout": holdout_risk_json,
+        "live_sizing_enabled": false,
+        "qualification_target": "Research diagnostics only; this sizing comparison does not alter the after-fee entry win-rate gate or promote a live position-size profile.",
+    });
     let status = if !history_span_passed {
         "INSUFFICIENT_HISTORY"
     } else if !validation_passed {
@@ -493,6 +864,7 @@ pub(super) fn report(
             history_days,
             template.fees_known,
         ),
+        "risk_sizing": risk_sizing,
         "selection_uses_holdout": false,
         "live_weights_changed": false,
     })

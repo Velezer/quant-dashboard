@@ -139,8 +139,8 @@ Decision effects for the 2026-10-27 category-sharing change:
 ## Per-ticker entry-model validation
 
 The primary task is to backtest the actual current entry scoring models for
-each registered ticker and inspect whether their held-out evidence supports
-future sizing research. `/entry-validation` is one discoverable page, linked
+each registered ticker and inspect held-out entry evidence and autocorrelation
+risk scaling. `/entry-validation` is one discoverable page, linked
 from the screener and scoring guide. App, exact product, ticker, timeframe,
 lead model/version, candle source, sample dates, costs, and frozen evaluation
 protocol remain explicit. A completed backtest is distinct from a validated
@@ -159,7 +159,10 @@ pending venue verification, unsupported models, provider/proxy data, missing
 costs, insufficient validation/holdout samples, stale protocol snapshots, and
 request failures remain visible. No ticker beyond an arbitrary first page is
 silently omitted. Report details expose fixed score bands, factor outcomes,
-uncertainty, and future sizing prerequisites; no sizing model is built here.
+uncertainty, and an autocorrelation-based 4h risk-sizing study on validation
+and untouched holdout data. A browser-only scenario calculator applies the
+latest causal multiplier to hypothetical equity, entry, stop, and configured
+fees. This is research only; no account or order state is read or changed.
 
 Reuse the live causal lead generators and one shared six-indicator mapping.
 Entries occur at the next bar open, with no overlapping trades and no trades

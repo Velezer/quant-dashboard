@@ -249,3 +249,13 @@ lesson only when it will improve future tasks.
   requests older than 60 days and 60m requests older than 730 days. Keep those
   provider limits separate from the 1,000-day evidence minimum and from storage
   retention, and save pages incrementally.
+- For position-risk sizing from return autocorrelation, estimate finite-horizon
+  variance from contiguous causal candle returns and never let negative
+  autocorrelation increase the risk budget. Compare fixed-risk and adjusted
+  paths on validation and untouched holdout; keep any quantity calculator
+  hypothetical, fee-aware, browser-local, and separate from live sizing.
+- Show a signal's win estimate only when it matches the active model/profile,
+  category, timeframe, source, and exact app/product fee calibration. Use
+  after-fee holdout counts and uncertainty; distinguish score-band estimates
+  from a profile-gate fallback, and say when evidence is insufficient instead
+  of treating setup score as a probability.

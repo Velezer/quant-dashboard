@@ -35,6 +35,14 @@ whether a row is shown.
 - The Entry Validation page shows active profile versions, recent cohort
   decisions, and promotion blockers. Research reports remain separate and
   state `live_weights_changed: false`.
+- The 4h bracket report also estimates a causal finite-horizon variance ratio
+  from up to 128 contiguous completed-bar log returns before each entry. Its
+  size multiplier is `min(1, 1 / sqrt(max(1, variance_ratio)))`, requires at
+  least 30 returns, and cannot increase a hypothetical 1% stop-risk budget.
+  It compares fixed-risk and adjusted-risk equity paths on validation and the
+  frozen holdout, and supplies the latest report-bar multiplier to a
+  browser-only fee-aware sizing scenario. It is not a promoted live sizing
+  profile; missing cost and liquidity inputs remain blockers.
 
 ## Target architecture
 

@@ -128,7 +128,7 @@ impl MetricTotals {
             .filter(|ratio| ratio.is_finite())
     }
 
-    fn wilson_lower_pct(self) -> Option<f64> {
+    fn wilson_95_pct(self) -> Option<[f64; 2]> {
         if self.trades == 0 {
             return None;
         }
@@ -138,7 +138,14 @@ impl MetricTotals {
         let denominator = 1.0 + z * z / n;
         let center = (p + z * z / (2.0 * n)) / denominator;
         let half_width = z * ((p * (1.0 - p) / n + z * z / (4.0 * n * n)).sqrt()) / denominator;
-        Some((center - half_width).max(0.0) * 100.0)
+        Some([
+            (center - half_width).max(0.0) * 100.0,
+            (center + half_width).min(1.0) * 100.0,
+        ])
+    }
+
+    fn wilson_lower_pct(self) -> Option<f64> {
+        self.wilson_95_pct().map(|interval| interval[0])
     }
 
     fn target_passes(self) -> bool {
@@ -171,11 +178,40 @@ impl MetricTotals {
             "losses": self.losses,
             "win_rate_after_fees_pct": self.win_rate(),
             "win_rate_after_fees_wilson_95_lower_pct": self.wilson_lower_pct(),
+            "win_rate_after_fees_wilson_95_pct": self.wilson_95_pct(),
             "observed_payoff_ratio_after_fees": self.payoff_ratio(),
             "mean_net_return_pct": self.mean_net(),
             "profit_factor": self.profit_factor(),
         })
     }
+}
+
+fn holdout_probability_bands_json(bands: &[MetricTotals; SCORE_BAND_COUNT]) -> Value {
+    let width = quant_core::ENTRY_SCORE_CALIBRATION_BAND_WIDTH;
+    Value::Array(
+        bands
+            .iter()
+            .enumerate()
+            .map(|(index, summary)| {
+                let minimum_score = index as f64 * width;
+                let maximum_score = (index + 1) as f64 * width;
+                let enough_trades = summary.trades >= MIN_PROFILE_TRADES;
+                json!({
+                    "status": if enough_trades { "ESTIMATED" } else { "INSUFFICIENT_SAMPLE" },
+                    "minimum_score_out_of_60": minimum_score,
+                    "maximum_score_out_of_60": maximum_score,
+                    "maximum_inclusive": index + 1 == SCORE_BAND_COUNT,
+                    "sample_trades": summary.trades,
+                    "wins": summary.wins,
+                    "win_probability_pct": if enough_trades { summary.win_rate() } else { None },
+                    "observed_win_rate_pct": summary.win_rate(),
+                    "confidence_interval_95_pct": summary.wilson_95_pct(),
+                    "fees_applied": true,
+                    "direction_conditioned": false,
+                })
+            })
+            .collect(),
+    )
 }
 
 fn add_score_bands(target: &mut [MetricTotals; SCORE_BAND_COUNT], encoded: &Value) {
@@ -452,6 +488,10 @@ fn candidate_decision(
                     .map(|slice| cumulative_score_bands(&slice.holdout_score_bands, band))
                     .unwrap_or_default()
             });
+            let empty_holdout_bands = [MetricTotals::default(); SCORE_BAND_COUNT];
+            let holdout_bands = slice
+                .map(|slice| &slice.holdout_score_bands)
+                .unwrap_or(&empty_holdout_bands);
             let minimum_history_days = slice.map(|slice| slice.minimum_history_days).unwrap_or_default();
             let slice_coverage = if *expected == 0 { 0.0 } else { symbol_count as f64 / *expected as f64 * 100.0 };
             if slice_coverage + f64::EPSILON < PROFILE_MIN_COHORT_COVERAGE_PCT as f64 {
@@ -473,6 +513,7 @@ fn candidate_decision(
                 "validation":validation.as_json(),"holdout":holdout.as_json(),
                 "signal_gate_validation":signal_validation.map(MetricTotals::as_json),
                 "signal_gate_holdout":signal_holdout.map(MetricTotals::as_json),
+                "holdout_score_bands":holdout_probability_bands_json(holdout_bands),
                 "blockers":slice_blockers})
         })
         .collect::<Vec<_>>();
@@ -502,6 +543,7 @@ fn candidate_decision(
         "fees_applied": true,
         "validation": validation_signal_gate.map(MetricTotals::as_json),
         "holdout": holdout_signal_gate.map(MetricTotals::as_json),
+        "holdout_score_bands": holdout_probability_bands_json(&evidence.holdout_score_bands),
         "selection_basis": "lowest score cutoff passing validation; same cutoff evaluated once on untouched holdout",
     });
     json!({
@@ -683,8 +725,16 @@ pub(crate) fn active_profile_snapshot(
     connection: &Connection,
 ) -> Result<ActiveScoringProfiles, rusqlite::Error> {
     let mut statement = connection.prepare(
-        "SELECT score_model_id,asset_category_id,timeframe,source_family,version,weights_json,protocol_id,evaluation_json
-           FROM app.entry_model_scoring_profiles WHERE status='active'",
+        "SELECT profile.score_model_id,profile.asset_category_id,profile.timeframe,
+                profile.source_family,profile.version,profile.weights_json,profile.protocol_id,
+                profile.evaluation_json,evaluation.evaluation_json
+           FROM app.entry_model_scoring_profiles AS profile
+           LEFT JOIN app.entry_model_scoring_evaluations AS evaluation
+             ON evaluation.score_model_id=profile.score_model_id
+            AND evaluation.asset_category_id=profile.asset_category_id
+            AND evaluation.timeframe=profile.timeframe
+            AND evaluation.source_family=profile.source_family
+          WHERE profile.status='active'",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -696,11 +746,12 @@ pub(crate) fn active_profile_snapshot(
             row.get::<_, String>(5)?,
             row.get::<_, String>(6)?,
             row.get::<_, String>(7)?,
+            row.get::<_, Option<String>>(8)?,
         ))
     })?;
     let mut profiles = BTreeMap::new();
     for row in rows {
-        let (model, category, timeframe, source, version, encoded, protocol_id, evaluation) = row?;
+        let (model, category, timeframe, source, version, encoded, protocol_id, frozen_evaluation, latest_evaluation) = row?;
         if protocol_id != quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID {
             continue;
         }
@@ -710,12 +761,28 @@ pub(crate) fn active_profile_snapshot(
         else {
             continue;
         };
-        let Ok(evaluation) = serde_json::from_str::<Value>(&evaluation) else {
+        let Ok(frozen_evaluation) = serde_json::from_str::<Value>(&frozen_evaluation) else {
             continue;
         };
-        let Some(after_fee_gate) = validated_signal_gate(&evaluation) else {
+        let evaluation = latest_evaluation
+            .as_deref()
+            .and_then(|encoded| serde_json::from_str::<Value>(encoded).ok())
+            .filter(|evaluation| {
+                matches!(evaluation["decision"].as_str(), Some("PROMOTED" | "UNCHANGED"))
+                    && weights_from(&evaluation["weights"]) == Some(weights)
+                    && evaluation["fees_applied"].as_bool() == Some(true)
+                    && signal_gate_is_qualified(&evaluation["signal_gate"])
+            })
+            .unwrap_or(frozen_evaluation);
+        let Some(mut after_fee_gate) = validated_signal_gate(&evaluation) else {
             continue;
         };
+        // Product-level fee schedules and outcomes live beside the aggregate
+        // gate in an evaluation. Attach them only to the scan snapshot, not to
+        // the daily promotion loop's lightweight gate check.
+        if let Some(product_slices) = evaluation.get("product_slices") {
+            after_fee_gate["product_slices"] = product_slices.clone();
+        }
         let Some(minimum_score) = after_fee_gate
             .get("minimum_score_out_of_60")
             .and_then(Value::as_f64)
