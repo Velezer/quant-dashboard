@@ -124,6 +124,27 @@
                     <button id="refreshSelectedSignal" type="button" disabled aria-label="Refresh the selected signal" class="rounded border border-cyan-800 bg-cyan-950/50 px-2.5 py-1.5 text-[10px] font-bold text-cyan-200 hover:bg-cyan-900 disabled:cursor-not-allowed disabled:opacity-40">Refresh selected</button>
                     <button id="openSelectedSignalMarkov" type="button" data-dashboard-action="openSelectedSignalMarkov" disabled aria-label="Open Markov regime analysis for the selected signal" class="rounded border border-violet-800 bg-violet-950/50 px-2.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-900 disabled:cursor-not-allowed disabled:opacity-40">Regime model</button>
                 </div>
+                <div id="selectedSignalSetup" class="selected-signal-setup" aria-live="polite" hidden>
+                    <div class="selected-signal-setup-cell selected-signal-setup-main">
+                        <span>SETUP</span>
+                        <strong id="selectedSignalSetupName">—</strong>
+                        <small id="selectedSignalSetupDetail">Select a signal to inspect its rules.</small>
+                    </div>
+                    <div class="selected-signal-setup-cell selected-signal-win-rate">
+                        <span>AFTER-FEE WIN RATE</span>
+                        <strong id="selectedSignalWinRate">—</strong>
+                        <small id="selectedSignalWinRateDetail">Historical holdout evidence</small>
+                    </div>
+                    <div class="selected-signal-setup-cell selected-signal-long-area">
+                        <span>NWE LONG ZONE · LOWER BAND</span>
+                        <strong id="selectedSignalLongArea">Loading signal candles…</strong>
+                    </div>
+                    <div class="selected-signal-setup-cell selected-signal-short-area">
+                        <span>NWE SHORT ZONE · UPPER BAND</span>
+                        <strong id="selectedSignalShortArea">Loading signal candles…</strong>
+                    </div>
+                    <p class="selected-signal-setup-note">NWE zones use the latest available signal-timeframe bands and extend half an envelope width around each band. They are chart references, not executable prices; the opposite zone is context, not an opposite signal.</p>
+                </div>
             </div>
 
             <!-- Chart Canvas Container -->

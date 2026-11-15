@@ -807,6 +807,75 @@
 .tv-terminal .tv-watchlist-column #signalsList .signal-row.is-low-total-strength { border-left:3px solid #d97706 !important; }
 
 #chart-score-summary.signal-chart-low-total { color:#fde68a; font-weight:600; }
+.tv-terminal #signal-banner .selected-signal-setup {
+    display:grid;
+    flex:1 0 100%;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:7px;
+    margin-top:2px;
+}
+.tv-terminal #signal-banner .selected-signal-setup[hidden] { display:none; }
+.tv-terminal #signal-banner .selected-signal-setup-cell { gap:3px !important; }
+.selected-signal-setup-main { grid-column:span 2; }
+.selected-signal-setup-cell {
+    display:flex;
+    min-width:0;
+    flex-direction:column;
+    justify-content:center;
+    gap:3px;
+    border:1px solid #303a49;
+    border-radius:6px;
+    background:rgba(8,13,22,.62);
+    padding:6px 8px;
+}
+.selected-signal-setup-cell > span {
+    color:#8290a2;
+    font:700 8px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+    letter-spacing:.08em;
+}
+.selected-signal-setup-cell > strong {
+    overflow:hidden;
+    color:#e5edf7;
+    font:600 11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;
+    text-overflow:ellipsis;
+}
+.selected-signal-setup-cell > small {
+    overflow:hidden;
+    color:#8c9aad;
+    font-size:9px;
+    line-height:1.3;
+    text-overflow:ellipsis;
+}
+.selected-signal-setup-main > small {
+    display:-webkit-box;
+    -webkit-box-orient:vertical;
+    -webkit-line-clamp:3;
+    white-space:normal;
+}
+.selected-signal-win-rate > strong { color:#a5f3fc; }
+.selected-signal-long-area { border-color:#166653; }
+.selected-signal-long-area > span { color:#5eead4; }
+.selected-signal-short-area { border-color:#713642; }
+.selected-signal-short-area > span { color:#fda4af; }
+.selected-signal-setup-note {
+    grid-column:1/-1;
+    margin:0;
+    color:#728196;
+    font-size:9px;
+    line-height:1.3;
+}
+@media (max-width:720px) {
+    .tv-terminal #signal-banner .selected-signal-setup {
+        grid-template-columns:repeat(2,minmax(0,1fr));
+    }
+    .selected-signal-setup-main,
+    .selected-signal-win-rate {
+        grid-column:1/-1;
+    }
+    .selected-signal-setup-main > small {
+        -webkit-line-clamp:4;
+    }
+}
 
 /* Keep the chart and screener in document flow on narrow screens. */
 @media (max-width: 760px) {

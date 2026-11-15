@@ -132,24 +132,25 @@ export function installChartData() {
                 return category.startsWith('crypto') || assetClass === 'crypto';
             }
 
-            function getChartCandleContext(signal = selectedSignal) {
+            function getChartCandleContext(signal = selectedSignal, timeframe = activeTimeframe) {
                 if (!signal || typeof signal !== 'object') {
                     return { candles: [], sourceCandles: [], startIndex: 0, omittedBars: 0, gapMilliseconds: 0, gapFrom: null, gapTo: null, hasGap: false };
                 }
+                const requestedTimeframe = String(timeframe || activeTimeframe || '1d').trim().toLowerCase();
                 const map = signal.candles_by_tf || {};
-                const sourceCandles = Array.isArray(map[activeTimeframe])
-                    ? map[activeTimeframe]
-                    : (activeTimeframe === (signal.timeframe || '1d') ? (signal.candles || []) : []);
+                const sourceCandles = Array.isArray(map[requestedTimeframe])
+                    ? map[requestedTimeframe]
+                    : (requestedTimeframe === String(signal.timeframe || '1d').toLowerCase() ? (signal.candles || []) : []);
                 if (!Array.isArray(sourceCandles)) {
                     return { candles: [], sourceCandles: [], startIndex: 0, omittedBars: 0, gapMilliseconds: 0, gapFrom: null, gapTo: null, hasGap: false };
                 }
 
                 let byTimeframe = chartCandleContextCache.get(signal);
-                const cached = byTimeframe?.get(activeTimeframe);
+                const cached = byTimeframe?.get(requestedTimeframe);
                 if (cached?.sourceCandles === sourceCandles) return cached;
 
                 const segment = isContinuousCryptoMarket(signal)
-                    ? latestContinuousCandleSegment(sourceCandles, activeTimeframe)
+                    ? latestContinuousCandleSegment(sourceCandles, requestedTimeframe)
                     : { candles: sourceCandles, startIndex: 0, omittedBars: 0, gapMilliseconds: 0, gapFrom: null, gapTo: null };
                 const hasGap = segment.startIndex > 0;
                 const candles = hasGap
@@ -167,7 +168,7 @@ export function installChartData() {
                     byTimeframe = new Map();
                     chartCandleContextCache.set(signal, byTimeframe);
                 }
-                byTimeframe.set(activeTimeframe, context);
+                byTimeframe.set(requestedTimeframe, context);
                 return context;
             }
 
