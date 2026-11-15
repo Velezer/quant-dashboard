@@ -212,6 +212,20 @@ pub(crate) fn required_chart_source_candles(timeframe: &str, limit: i64) -> Opti
     }
 }
 
+pub(crate) fn required_chart_source_candles_from_base(
+    timeframe: &str,
+    base: &str,
+    limit: i64,
+) -> Option<i64> {
+    let timeframe_ns = super::timeframe_duration_ns(timeframe)?;
+    let base_ns = super::timeframe_duration_ns(base)?;
+    if timeframe_ns > base_ns {
+        required_aggregation_source_candles(timeframe, base, limit)
+    } else {
+        Some(limit)
+    }
+}
+
 fn intraday_aggregation_bucket_start(local_time_ns: i64, duration_ns: i64, symbol: &str) -> i64 {
     let day_ns = NANOS_PER_DAY;
     let day_start = local_time_ns.div_euclid(day_ns) * day_ns;

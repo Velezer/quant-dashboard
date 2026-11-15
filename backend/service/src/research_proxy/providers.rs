@@ -34,6 +34,11 @@ impl BinanceMarket {
             Self::UsdmFutures => 1_500,
         }
     }
+
+    pub(super) fn chart_repair_row_limit(self) -> usize {
+        self.max_page_size()
+            .saturating_mul(MAX_BINANCE_CHART_REPAIR_PAGES)
+    }
 }
 
 #[derive(Clone, Debug)]

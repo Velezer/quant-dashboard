@@ -116,10 +116,11 @@ fn record_hourly_instrument_attempt(
 fn sync_hourly_chart_targets(
     connection: &Connection,
     market_database: &str,
-    priority_symbol: Option<&str>,
+    chart_priority: Option<&ChartSyncPriority>,
     sync_state: Option<&AppState>,
     storage_symbol_gate: &targets::StorageSymbolSyncGate,
 ) -> Result<usize, rusqlite::Error> {
+    let priority_symbol = chart_priority.map(|priority| priority.storage_symbol.as_str());
     let batch_started = std::time::Instant::now();
     if !provider_sync_enabled() {
         return Ok(0);
@@ -170,9 +171,12 @@ fn sync_hourly_chart_targets(
                 underlying_symbol,
                 asset_category_id,
             )| -> Result<PreparedCandleSyncTarget, rusqlite::Error> {
-                let chart_priority = priority_symbol.is_some_and(|symbol| {
-                    symbol == storage_symbol || symbol == underlying_symbol
-                });
+                let chart_priority = chart_priority
+                    .filter(|priority| {
+                        priority.storage_symbol == storage_symbol
+                            || priority.storage_symbol == underlying_symbol
+                    })
+                    .cloned();
                 let shared_reference_symbols = targets::shared_reference_storage_symbols(
                     connection,
                     &exchange_id,
@@ -244,11 +248,12 @@ fn sync_hourly_chart_targets(
             );
         }
     }
-    if let (Some(state), Some(symbol)) = (sync_state, priority_symbol) {
+    if let (Some(state), Some(priority)) = (sync_state, chart_priority) {
         state.broadcast(
             "chart_history_sync_completed",
             &serde_json::json!({
-                "storage_symbol": symbol,
+                "storage_symbol": &priority.storage_symbol,
+                "timeframe": &priority.timeframe,
                 "refreshed_interval_count": refreshed,
                 "attempted_targets": attempted_targets,
             }),
@@ -308,6 +313,7 @@ fn sync_daily_chart_targets(
             instrument,
             window: CandleSyncWindow::Daily,
             chart_priority: false,
+            chart_history_rows: None,
         };
         let shared_reference_symbols = targets::shared_reference_storage_symbols(
             connection,

@@ -36,6 +36,15 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or(500)
         .clamp(1, MAX_CANDLES);
+    let requested_timeframe = values
+        .get("timeframe")
+        .map(|value| value.trim().to_ascii_lowercase());
+    if requested_timeframe.as_deref().is_some_and(|timeframe| {
+        !SIGNAL_SCREENER_TIMEFRAMES.contains(&timeframe)
+    }) {
+        api_error(stream, "400 Bad Request", "unsupported chart timeframe");
+        return Ok(());
+    }
     let connection = match open_db_minimal(db) {
         Ok(connection) => connection,
         Err(error) => {
@@ -114,9 +123,6 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
     let skip_sync_priority = values
         .get("skip_sync_priority")
         .is_some_and(|value| value.eq_ignore_ascii_case("true"));
-    if !skip_sync_priority {
-        state.prioritize_chart_sync(&storage_symbol);
-    }
     let market_connection = match open_market_history_for_symbol(db, &storage_symbol, false) {
         Ok(Some(connection)) => connection,
         Ok(None) => {
@@ -133,20 +139,50 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         }
     };
     let market_connection = &market_connection;
+    if !skip_sync_priority {
+        let chart_timeframe = requested_timeframe.as_deref().unwrap_or("1h");
+        let chart_source = if research_proxy::shared::category_for_product(&exchange, product_id)
+            .is_some()
+        {
+            selected_candle_source_for_product(
+                market_connection,
+                &storage_symbol,
+                research_proxy::shared::CHART_REFERENCE_EXCHANGE_ID,
+                research_proxy::shared::CHART_REFERENCE_PRODUCT_ID,
+                chart_timeframe,
+            )
+            .ok()
+            .flatten()
+            .filter(|source| {
+                research_proxy::shared::is_shared_source_for_category(
+                    source,
+                    research_proxy::shared::CHART_REFERENCE_CATEGORY_ID,
+                )
+            })
+        } else {
+            None
+        };
+        let source_timeframe = if let Some(source) = chart_source {
+            preferred_storage_timeframe_from_source(
+                market_connection,
+                &storage_symbol,
+                chart_timeframe,
+                &source,
+            )
+            .unwrap_or_else(|_| chart_timeframe.to_string())
+        } else {
+            chart_timeframe.to_string()
+        };
+        state.prioritize_chart_sync(
+            &storage_symbol,
+            chart_timeframe,
+            &source_timeframe,
+            limit as usize,
+        );
+    }
     // Load the displayed interval on demand so selecting a signal does not
     // wait for seven independent histories and Markov calculations.
-    let timeframes = if let Some(requested) = values
-        .get("timeframe")
-        .map(|value| value.trim().to_ascii_lowercase())
-    {
-        let Some(timeframe) = SIGNAL_SCREENER_TIMEFRAMES
-            .iter()
-            .copied()
-            .find(|candidate| *candidate == requested.as_str())
-        else {
-            api_error(stream, "400 Bad Request", "unsupported chart timeframe");
-            return Ok(());
-        };
+    let timeframes = if let Some(timeframe) = requested_timeframe.as_deref() {
         // Load the full requested chart window so indicators such as the 500-bar
         // NWE use their configured history instead of silently recalculating over
         // the 120 bars needed only for the chart's prior default.

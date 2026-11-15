@@ -12,6 +12,14 @@ pub(super) struct StaleSignalSyncPriority {
     pub(super) product_id: String,
 }
 
+#[derive(Clone)]
+pub(super) struct ChartSyncPriority {
+    pub(super) storage_symbol: String,
+    pub(super) timeframe: String,
+    pub(super) source_timeframe: String,
+    pub(super) history_bars: usize,
+}
+
 #[derive(Default)]
 pub(super) struct StaleSignalSyncPriorityQueue {
     pending: VecDeque<StaleSignalSyncPriority>,
@@ -293,9 +301,9 @@ pub(super) struct AppState {
     /// Unix-millisecond timestamp of the last live worker progress SSE update.
     pub(super) last_scan_progress_broadcast_millis: AtomicI64,
     pub(super) scan_progress_pct: Mutex<f64>,
-    /// Most recently viewed chart symbol gets first place in the next bounded
-    /// hourly history-sync batch.
-    pub(super) chart_sync_priority: Mutex<Option<String>>,
+    /// Most recently viewed chart series gets first place in the next bounded
+    /// hourly history-sync batch, with its timeframe and visible history window.
+    pub(super) chart_sync_priority: Mutex<Option<ChartSyncPriority>>,
     /// A signal scan queues stale 15m identities for the next bounded market
     /// sync batch. The queue is deduplicated and capped to keep memory bounded.
     pub(super) stale_intraday_sync_priority: Mutex<StaleSignalSyncPriorityQueue>,
@@ -345,18 +353,34 @@ impl AppState {
         clients.retain(|tx| tx.try_send(msg.clone()).is_ok());
     }
 
-    pub(super) fn prioritize_chart_sync(&self, symbol: &str) {
+    pub(super) fn prioritize_chart_sync(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        source_timeframe: &str,
+        history_bars: usize,
+    ) {
         let normalized = symbol.trim().to_uppercase();
         if normalized.is_empty() {
+            return;
+        }
+        let timeframe = timeframe.trim().to_ascii_lowercase();
+        let source_timeframe = source_timeframe.trim().to_ascii_lowercase();
+        if timeframe.is_empty() || source_timeframe.is_empty() {
             return;
         }
         *self
             .chart_sync_priority
             .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some(normalized);
+            .unwrap_or_else(|error| error.into_inner()) = Some(ChartSyncPriority {
+                storage_symbol: normalized,
+                timeframe,
+                source_timeframe,
+                history_bars: history_bars.max(1),
+            });
     }
 
-    pub(super) fn take_chart_sync_priority(&self) -> Option<String> {
+    pub(super) fn take_chart_sync_priority(&self) -> Option<ChartSyncPriority> {
         self.chart_sync_priority
             .lock()
             .unwrap_or_else(|error| error.into_inner())
