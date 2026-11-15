@@ -250,6 +250,100 @@ fn score_indicator_name(filter: &str) -> Option<&'static str> {
     }
 }
 
+fn win_rate_confidence_interval_95_pct(wins: u64, trades: u64) -> Option<[f64; 2]> {
+    if trades == 0 || wins > trades {
+        return None;
+    }
+    let z = 1.959_963_984_540_054;
+    let n = trades as f64;
+    let p = wins as f64 / n;
+    let denominator = 1.0 + z * z / n;
+    let center = (p + z * z / (2.0 * n)) / denominator;
+    let half_width = z * (p * (1.0 - p) / n + z * z / (4.0 * n * n)).sqrt() / denominator;
+    Some([
+        (center - half_width).max(0.0) * 100.0,
+        (center + half_width).min(1.0) * 100.0,
+    ])
+}
+
+fn ticker_holdout_win_rate(report: Option<&str>) -> Option<Value> {
+    let report = serde_json::from_str::<Value>(report?).ok()?;
+    let rate = report["win_rate_after_fees_pct"]
+        .as_f64()
+        .filter(|rate| rate.is_finite() && (0.0..=100.0).contains(rate))?;
+    let trades = report["trades"].as_u64().filter(|trades| *trades > 0)?;
+    let wins = report["wins"].as_u64().filter(|wins| *wins <= trades)?;
+    Some(json!({
+        "status": "TICKER_HOLDOUT_RATE",
+        "metric_type": "historical_win_rate",
+        "win_probability_pct": rate,
+        "confidence_interval_95_pct": win_rate_confidence_interval_95_pct(wins, trades),
+        "sample_trades": trades,
+        "wins": wins,
+        "basis": "Exact registered ticker, model and timeframe holdout after configured venue fees; historical win rate, not matched to this signal's score; long and short outcomes pooled; interval does not adjust for correlated outcomes; spread, slippage, market impact, funding and borrow excluded",
+        "fees_applied": true,
+        "direction_conditioned": false,
+        "score_conditioned": false,
+        "computed_at": report["computed_at"],
+        "source_family": report["source_family"],
+    }))
+}
+
+fn has_score_matched_win_probability(value: &Value) -> bool {
+    matches!(
+        value["status"].as_str(),
+        Some("ESTIMATED" | "PROFILE_GATE_ESTIMATE")
+    ) && value["win_probability_pct"]
+        .as_f64()
+        .is_some_and(|rate| rate.is_finite() && (0.0..=100.0).contains(&rate))
+        && value["sample_trades"].as_u64().is_some_and(|trades| trades > 0)
+}
+
+fn load_ticker_holdout_win_rate(
+    connection: &Connection,
+    signal: &Value,
+    score_model_id: &str,
+) -> Result<Option<Value>, rusqlite::Error> {
+    let report = connection
+        .query_row(
+            "SELECT json_object(
+                'win_rate_after_fees_pct',json_extract(model.value,'$.backtest.holdout.win_rate_after_fees_pct'),
+                'trades',json_extract(model.value,'$.backtest.holdout.trades'),
+                'wins',json_extract(model.value,'$.backtest.holdout.wins'),
+                'computed_at',validation_report.computed_at,
+                'source_family',json_extract(validation_report.report_json,'$.source.id'))
+               FROM app.instruments AS validation_instrument
+               JOIN app.entry_model_validation_reports AS validation_report
+                 ON validation_report.instrument_id=validation_instrument.instrument_id
+                AND validation_report.timeframe=?5
+                AND validation_report.protocol_id=?6
+               JOIN json_each(
+                    CASE WHEN json_valid(validation_report.report_json)
+                         THEN validation_report.report_json ELSE '{\"models\":[]}' END,
+                    '$.models') AS model
+                 ON json_extract(model.value,'$.score_model_id')=?7
+                AND json_extract(model.value,'$.backtest.holdout.fees_applied')=1
+              WHERE validation_instrument.exchange_id=?1
+                AND validation_instrument.product_id=?2
+                AND validation_instrument.asset_category_id=?3
+                AND validation_instrument.symbol=?4
+                AND validation_instrument.is_active=1
+              LIMIT 1",
+            rusqlite::params![
+                signal["exchange_id"].as_str().unwrap_or_default(),
+                signal["product_id"].as_str().unwrap_or_default(),
+                signal["asset_category_id"].as_str().unwrap_or_default(),
+                signal["symbol"].as_str().unwrap_or_default(),
+                signal["timeframe"].as_str().unwrap_or_default(),
+                quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
+                score_model_id,
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    Ok(ticker_holdout_win_rate(report.as_deref()))
+}
+
 fn score_basis_matches_indicator_filter(
     score_basis: &Value,
     indicator_filter: Option<&str>,
@@ -540,6 +634,22 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             continue;
         }
         if matching_rows >= offset && signals.len() < page_size {
+            if !has_score_matched_win_probability(&signal["win_probability"]) {
+                let score_model_id = signal["score_basis"]["model_id"]
+                    .as_str()
+                    .or_else(|| {
+                        score_model_by_strategy
+                            .get(signal["signal_strategy_id"].as_str().unwrap_or_default())
+                            .copied()
+                    });
+                if let Some(score_model_id) = score_model_id {
+                    if let Some(win_rate) =
+                        load_ticker_holdout_win_rate(connection, &signal, score_model_id)?
+                    {
+                        signal["win_probability"] = win_rate;
+                    }
+                }
+            }
             signals.push(signal);
         }
         matching_rows = matching_rows.saturating_add(1);
