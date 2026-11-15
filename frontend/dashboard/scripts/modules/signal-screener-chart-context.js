@@ -93,6 +93,8 @@ export function createSignalScreenerChartContext({
         const selectedWinRateDetail = document.getElementById('selectedSignalWinRateDetail');
         const selectedLongArea = document.getElementById('selectedSignalLongArea');
         const selectedShortArea = document.getElementById('selectedSignalShortArea');
+        const selectedZoneStatus = document.getElementById('selectedSignalSetupZoneStatus');
+        const retryZonesButton = document.getElementById('retrySelectedSignalSetupZones');
         if (!signal) {
             if (refreshButton && refreshButton.dataset.refreshPending !== 'true') {
                 refreshButton.disabled = true;
@@ -115,6 +117,12 @@ export function createSignalScreenerChartContext({
             if (selectedWinRateDetail) selectedWinRateDetail.textContent = 'Historical holdout evidence';
             if (selectedLongArea) selectedLongArea.textContent = 'Select a signal';
             if (selectedShortArea) selectedShortArea.textContent = 'Select a signal';
+            if (selectedZoneStatus) selectedZoneStatus.textContent = 'NWE zones use causal signal-timeframe bands and appear shaded on the chart.';
+            if (retryZonesButton) {
+                retryZonesButton.hidden = true;
+                retryZonesButton.disabled = false;
+                retryZonesButton.textContent = 'Request chart history';
+            }
             updateAppContextChip(null);
             return;
         }
@@ -196,6 +204,12 @@ export function createSignalScreenerChartContext({
         }
         if (selectedLongArea) selectedLongArea.textContent = 'Loading signal-timeframe NWE…';
         if (selectedShortArea) selectedShortArea.textContent = 'Loading signal-timeframe NWE…';
+        if (selectedZoneStatus) selectedZoneStatus.textContent = `Loading ${String(signal.timeframe || '--').toUpperCase()} chart history for the zones…`;
+        if (retryZonesButton) {
+            retryZonesButton.hidden = true;
+            retryZonesButton.disabled = false;
+            retryZonesButton.textContent = 'Request chart history';
+        }
         updateAppContextChip(signal);
         updateChartTimeframeContext(signal);
     }
