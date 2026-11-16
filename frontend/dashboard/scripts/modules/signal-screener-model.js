@@ -1,3 +1,5 @@
+export const DIRECTIONAL_VOTE_POINTS = 50;
+
 export const APP_LABELS = {
     stockbit: 'Stockbit',
     pintu: 'Pintu',

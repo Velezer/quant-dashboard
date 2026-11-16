@@ -70,6 +70,11 @@ lesson only when it will improve future tasks.
   timeframe chart bundle. Label NWE proximity zones as contextual references,
   show both directions, and keep an explicit unavailable state when endpoint
   bands are missing; do not fabricate a win rate or entry price.
+- Keep a signed direction vote separate from setup strength and win-rate
+  evidence. Each current LONG/SHORT market-entry row contributes +50/−50;
+  net same-category ticker/timeframe rows across all products for the selected
+  app, independent of visible screener filters, and exclude stale, held, and
+  non-qualifying rows.
 - A crypto chart may be display-ready while its latest continuous segment is
   too short for an indicator-dependent setup. Put the history-repair action
   beside the unavailable setup zone and show the contiguous-bar count and
