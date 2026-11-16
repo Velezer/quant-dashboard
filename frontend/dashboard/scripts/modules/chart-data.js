@@ -4,7 +4,7 @@ import { readApiResponse } from './api.js';
 import { pineChartPlots } from './pine-chart-output.js';
 import { NWE_MAX_OUTSIDE_DISTANCE_ID } from './pine-sources.js';
 import { marketSymbolForSignal, marketVenueForSignal } from './chart-market-identity.js';
-import { CHART_INDICATOR_IDS, finiteChartIndicatorValue, normalizeChartIndicators } from './chart-indicator-data.js';
+import { CHART_INDICATOR_IDS, chartIndicatorPointsByTime, chartIndicatorSeriesKey, finiteChartIndicatorValue, normalizeChartIndicators } from './chart-indicator-data.js';
 import { formatChartCandleTimestamp, latestContinuousCandleSegment } from './chart-candle-time.js';
 import { describeMarkovRegimeStatus, describeNweEnvelopeStatus } from './chart-indicator-status.js';
 
@@ -644,8 +644,9 @@ export function installChartData() {
                     return false;
                 }
                 signal._rustIndicatorCache = signal._rustIndicatorCache || {};
+                const seriesKey = chartIndicatorSeriesKey(candles);
                 const cached = signal._rustIndicatorCache[activeTimeframe];
-                if (cached && cached.count === candles.length) {
+                if (cached && cached.seriesKey === seriesKey) {
                     setIndicatorComputeStatus('ready', `${activeTimeframe} · ${cached.version || 'verified'}`);
                     return true;
                 }
@@ -675,9 +676,9 @@ export function installChartData() {
                     if (requestId !== indicatorRequestSerial) return false;
                     if (!response.ok || !Array.isArray(payload.points)) throw new Error(payload.error || `HTTP ${response.status}`);
                     const points = payload.points;
-                    const offset = Math.max(0, candles.length - points.length);
-                    points.forEach((point, index) => {
-                        const candle = candles[offset + index];
+                    const pointsByTime = chartIndicatorPointsByTime(points);
+                    candles.forEach(candle => {
+                        const point = pointsByTime.get(String(candle.time));
                         if (!candle || !point) return;
                         if (point.dss != null && Number.isFinite(Number(point.dss))) candle.dss = Number(point.dss);
                         if (point.trigger != null && Number.isFinite(Number(point.trigger))) candle.trigger = Number(point.trigger);
@@ -694,7 +695,7 @@ export function installChartData() {
                     if (payload.indicator_config && typeof payload.indicator_config === 'object') {
                         signal.chart_indicator_config = payload.indicator_config;
                     }
-                    signal._rustIndicatorCache[activeTimeframe] = { count: candles.length, version: payload.version || 'verified' };
+                    signal._rustIndicatorCache[activeTimeframe] = { seriesKey, version: payload.version || 'verified' };
                     setIndicatorComputeStatus('ready', `${activeTimeframe} · ${payload.version || 'verified'}`);
                     if (isSelectedSignal(signal)) drawCandleChart(selectedSignal);
                     return true;
