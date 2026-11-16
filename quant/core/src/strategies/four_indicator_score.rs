@@ -313,7 +313,7 @@ fn bounded_price_component(value: f64) -> f64 {
 fn relative_volume_component(
     bars: &[StrategyBar],
     current: &StrategyBar,
-    direction_sign: f64,
+    _direction_sign: f64,
 ) -> ScoreComponent {
     let unavailable = || ScoreComponent {
         indicator: "Relative Volume",
@@ -350,10 +350,10 @@ fn relative_volume_component(
     let candle_direction = if current.close > current.open { 1.0 } else if current.close < current.open { -1.0 } else { 0.0 };
     let state = if candle_direction == 0.0 {
         "NEUTRAL"
-    } else if candle_direction == direction_sign {
-        "ALIGNED"
+    } else if candle_direction > 0.0 {
+        "BULLISH"
     } else {
-        "OPPOSED"
+        "BEARISH"
     };
     let points = if candle_direction != 0.0 {
         ((relative_volume - FOUR_INDICATOR_MIN_RELATIVE_VOLUME_MULTIPLE)
@@ -374,7 +374,7 @@ fn relative_volume_component(
     }
 }
 
-fn estimated_delta_component(current: &StrategyBar, direction_sign: f64) -> ScoreComponent {
+fn estimated_delta_component(current: &StrategyBar, _direction_sign: f64) -> ScoreComponent {
     let unavailable = || ScoreComponent {
         indicator: "Estimated Volume Delta (OHLCV proxy)",
         state: "UNAVAILABLE".to_string(),
@@ -396,11 +396,11 @@ fn estimated_delta_component(current: &StrategyBar, direction_sign: f64) -> Scor
     // Close-location value estimates candle pressure; it is not true buy/sell delta.
     let close_location =
         ((2.0 * current.close - current.high - current.low) / range).clamp(-1.0, 1.0);
-    let aligned_pressure = direction_sign * close_location;
+    let aligned_pressure = close_location;
     let state = if aligned_pressure > 0.0 {
-        "ALIGNED_PROXY"
+        "BULLISH_PROXY"
     } else if aligned_pressure < 0.0 {
-        "OPPOSED_PROXY"
+        "BEARISH_PROXY"
     } else {
         "NEUTRAL_PROXY"
     };
