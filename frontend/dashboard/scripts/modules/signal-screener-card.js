@@ -1,4 +1,4 @@
-import { DIRECTIONAL_VOTE_POINTS, hasSixIndicatorScores, oppositeEntryExitCue, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength } from './signal-screener-model.js';
+import { hasSixIndicatorScores, oppositeEntryExitCue, signalDirectionalScore, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength, signedDirectionScore } from './signal-screener-model.js';
 /** Builds one accessible signal row from normalized screener data. */
 export function createSignalScreenerCard({
     escape,
@@ -89,7 +89,7 @@ export function createSignalScreenerCard({
                 : 'No promoted after-fee profile · equal weights used · signal shown without a profile filter'
             : '';
         const afterFeeAccessibleText = hasAfterFeeMetric
-            ? `${afterFeeMetricText}. This is product-scoped cohort evidence; the score-matched win estimate is shown separately.`
+            ? `${afterFeeMetricText}. This is product-scoped cohort evidence; the setup-strength-matched win estimate is shown separately.`
             : afterFeeMetricText;
         const winProbability = signal.win_probability || signal.score_basis?.win_probability || {};
         const winProbabilityStatus = String(winProbability.status || 'UNAVAILABLE');
@@ -120,19 +120,19 @@ export function createSignalScreenerCard({
             : `After-fee win rate unavailable · ${winProbabilityStatus === 'INSUFFICIENT_SAMPLE'
                 ? `${Number.isFinite(winProbabilityTrades) ? Math.trunc(winProbabilityTrades) : 0} matching outcomes; at least 30 required`
                 : winProbabilityStatus === 'BELOW_PROFILE_GATE'
-                    ? 'no score-matched profile estimate; checking exact-ticker holdout'
+                    ? 'no setup-strength-matched profile estimate; checking exact-ticker holdout'
                     : String(winProbability.reason || 'run the exact ticker and timeframe backtest to populate this metric')}`;
         const winProbabilityDetail = hasWinProbability
             ? winProbabilityStatus === 'TICKER_HOLDOUT_RATE'
-                ? `${probabilityRange} · ${Math.trunc(winProbabilityTrades)} exact-ticker after-fee holdout outcomes · not matched to this score · long/short pooled`
+                ? `${probabilityRange} · ${Math.trunc(winProbabilityTrades)} exact-ticker after-fee holdout outcomes · not matched to setup strength · long/short pooled`
                 : `${probabilityRange} · ${Math.trunc(winProbabilityTrades)} after-fee holdout outcomes${scoreBand} · long/short pooled${winProbabilityStatus === 'PROFILE_GATE_ESTIMATE' ? ` · ${Number.isFinite(scoreBandSampleTrades) ? `${Math.trunc(scoreBandSampleTrades)} score-band outcomes; profile-gate cohort used` : 'score-band sample unavailable; profile-gate cohort used'}` : ''}`
             : String(winProbability.reason || winProbability.basis || 'Refresh the backtest profile to build a matching estimate.');
         const winProbabilityAccessibleText = hasWinProbability
-            ? `${winProbabilityText}, ${Math.trunc(winProbabilityTrades)} after-fee holdout outcomes${probabilityRange}${winProbabilityStatus === 'TICKER_HOLDOUT_RATE' ? ', not matched to this signal score' : scoreBand}.`
+            ? `${winProbabilityText}, ${Math.trunc(winProbabilityTrades)} after-fee holdout outcomes${probabilityRange}${winProbabilityStatus === 'TICKER_HOLDOUT_RATE' ? ', not matched to setup strength' : scoreBand}.`
             : `${winProbabilityText}.`;
         const totalStrength = signalTotalStrength(signal, scoreModel);
         const displayScore = signalDisplayScore(signal);
-        const scoreLabel = scoreState?.tone === 'stale' ? 'Last recorded score' : 'Market-entry score';
+        const scoreLabel = scoreState?.tone === 'stale' ? 'Last recorded setup strength' : 'Setup strength';
         const scoreValue = Number.isFinite(displayScore) ? displayScore.toFixed(1) : '—';
         const scoreStateLabel = scoreState ? `, ${scoreState.label.toLowerCase()}` : '';
         const componentSummary = sixIndicators
@@ -145,27 +145,19 @@ export function createSignalScreenerCard({
         const accessibleScore = sixIndicators
             ? `${Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax} weighted total; ` : ''}${signalIndicatorSummary(signal, scoreModel)}`
             : Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax}` : 'unavailable';
-        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${autocorrelationScore ? `${autocorrelationExplanation} ` : ''}${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup score measures strength; the estimate is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
-        const directionalVote = signal.directional_vote || {};
-        const signalVote = Number(directionalVote.signal_score);
-        const netVote = Number(directionalVote.net_score);
-        const longVoteCount = Number(directionalVote.long_count);
-        const shortVoteCount = Number(directionalVote.short_count);
-        const hasDirectionalVote = [DIRECTIONAL_VOTE_POINTS, -DIRECTIONAL_VOTE_POINTS].includes(signalVote)
-            && Number.isInteger(netVote)
-            && Number.isInteger(longVoteCount) && longVoteCount >= 0
-            && Number.isInteger(shortVoteCount) && shortVoteCount >= 0;
-        const signedVote = value => value > 0 ? `+${value}` : String(value);
-        const voteTone = netVote > 0 ? 'long' : netVote < 0 ? 'short' : 'neutral';
-        const directionalVoteText = hasDirectionalVote
-            ? `Vote ${signedVote(signalVote)} · Net ${signedVote(netVote)} · ${longVoteCount}L / ${shortVoteCount}S`
+        const directionScore = signalDirectionalScore(signal);
+        const directionScoreTone = directionScore?.netScore > 0 ? 'long'
+            : directionScore?.netScore < 0 ? 'short' : 'neutral';
+        const directionScoreText = directionScore
+            ? `Score ${signedDirectionScore(directionScore.score)} · Net ${signedDirectionScore(directionScore.netScore)} · ${directionScore.longCount}L / ${directionScore.shortCount}S`
             : '';
-        const directionalVoteMarkup = hasDirectionalVote
-            ? `<span class="signal-row-direction-vote signal-row-direction-vote-${voteTone}" title="${escape(`This ${signal.direction} signal contributes ${signedVote(signalVote)}. Net adds one ±${DIRECTIONAL_VOTE_POINTS} vote per current ${signal.symbol} ${signal.timeframe.toUpperCase()} entry in the selected app, across products and independent of visible filters. Setup strength and win-rate evidence stay separate.`)}">${escape(directionalVoteText)}</span>`
+        const directionScoreMarkup = directionScore
+            ? `<span class="signal-row-direction-score signal-row-direction-score-${directionScoreTone}" title="${escape(`Signed direction score ${signedDirectionScore(directionScore.score)} for this ${signal.direction} signal. Net sums current ${signal.symbol} ${signal.timeframe.toUpperCase()} entries across products in the selected app. Setup strength and win-rate evidence stay separate.`)}">${escape(directionScoreText)}</span>`
             : '';
-        const directionalVoteAccessible = hasDirectionalVote
-            ? `Directional vote ${signedVote(signalVote)} for ${signal.direction}; net ${signedVote(netVote)} from ${longVoteCount} long and ${shortVoteCount} short current entries in the selected app. `
+        const directionScoreAccessible = directionScore
+            ? `Signed direction score ${signedDirectionScore(directionScore.score)} for ${signal.direction}; net ${signedDirectionScore(directionScore.netScore)} from ${directionScore.longCount} long and ${directionScore.shortCount} short current entries in the selected app. `
             : '';
+        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${autocorrelationScore ? `${autocorrelationExplanation} ` : ''}${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup strength is separate from the signed direction score; win-rate evidence is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
         const productLabel = signal.product_id === 'stockbit_regular'
             ? ''
             : signal.product_id.replaceAll('_', ' ');
@@ -177,16 +169,16 @@ export function createSignalScreenerCard({
             .filter(value => String(value || '').trim() && value !== 'unknown')
             .map(value => String(value).replaceAll('_', ' '));
         return `<article class="signal-row-wrap" role="listitem">
-            <button type="button" class="signal-row${totalStrength?.tone === 'low' ? ' is-low-total-strength' : ''}${selected ? ' is-selected' : ''}" data-signal-id="${escape(signal.signal_id)}" aria-pressed="${selected}" aria-label="${escape(`${scoreAccessibleLabel} ${directionalVoteAccessible}`)}">
+            <button type="button" class="signal-row${totalStrength?.tone === 'low' ? ' is-low-total-strength' : ''}${selected ? ' is-selected' : ''}" data-signal-id="${escape(signal.signal_id)}" aria-pressed="${selected}" aria-label="${escape(`${scoreAccessibleLabel} ${directionScoreAccessible}`)}">
                 <span class="signal-row-top"><span class="signal-row-rank">#${rank}</span><span class="signal-row-symbol">${escape(signal.symbol)}</span><span class="signal-row-timeframe">${escape(signal.timeframe.toUpperCase())}</span></span>
                 <span class="signal-row-meta">${escape(rowContext)}</span>
                 ${scoreState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}" role="status">${escape(scoreState.label)} · ${signal.persistent_score === true ? 'strategy' : 'price'} bar ${escape(signalPriceBarAgeLabel(signal.persistent_score === true ? signal.score_bar_time : signal.price_bar_time))}</span>` : ''}
-                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span>${directionalVoteMarkup}<span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${sixIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded total' : 'Weighted total'} <strong>${scoreValue}</strong><span aria-hidden="true"> / 60</span> · six /10 indicators</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}${regimeSummary}${autocorrelationSummary}</span>
+                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span>${directionScoreMarkup}<span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${sixIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded setup strength' : 'Setup strength'} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 60}</span></span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}${regimeSummary}${autocorrelationSummary}</span>
                 ${autocorrelationGuidance}
                 ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
                 ${totalStrength ? `<span class="signal-total-strength signal-total-strength-${totalStrength.tone}" title="${escape(totalStrength.description)}">${escape(totalStrength.label)}<small>${escape(totalStrength.description)}</small></span>` : ''}
-                <span class="signal-win-probability${hasWinProbability ? '' : ' is-unavailable'}" title="${escape(winProbability.basis || winProbability.reason || 'Estimate uses after-fee holdout outcomes matched to the active score profile.')}"><strong>${escape(winProbabilityText)}</strong><small>${escape(winProbabilityDetail)}</small></span>
-                ${afterFeeMetricText ? `<span class="signal-after-fee-metric" title="${escape(hasAfterFeeMetric ? 'Historical product-scoped cohort evidence; the separate score-matched win estimate is shown above.' : 'After-fee status is informational; it does not filter signals.')}">${escape(afterFeeMetricText)}<small>${hasAfterFeeMetric ? 'Product-scoped cohort holdout evidence; the win estimate above is matched to the signal score.' : 'This signal remains visible without a validated profile.'}</small></span>` : ''}
+                <span class="signal-win-probability${hasWinProbability ? '' : ' is-unavailable'}" title="${escape(winProbability.basis || winProbability.reason || 'Estimate uses after-fee holdout outcomes matched to the active setup-strength profile.')}"><strong>${escape(winProbabilityText)}</strong><small>${escape(winProbabilityDetail)}</small></span>
+                ${afterFeeMetricText ? `<span class="signal-after-fee-metric" title="${escape(hasAfterFeeMetric ? 'Historical product-scoped cohort evidence; the separate setup-strength-matched win estimate is shown above.' : 'After-fee status is informational; it does not filter signals.')}">${escape(afterFeeMetricText)}<small>${hasAfterFeeMetric ? 'Product-scoped cohort holdout evidence; the win estimate above is matched to setup strength.' : 'This signal remains visible without a validated profile.'}</small></span>` : ''}
                 ${renderScoreBasis(signal)}
                 <span class="signal-row-footer"><span>${escape(evidence)}</span><span>Price ${escape(signalPriceBarAgeLabel(signal.price_bar_time))}</span><span>Scanned ${escape(ageLabel(signal.last_updated_at))}</span></span>
                 ${provenance.length ? `<span class="signal-row-provenance">${escape(provenance.join(' · '))}</span>` : ''}

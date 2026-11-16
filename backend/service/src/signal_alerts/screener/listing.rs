@@ -1,7 +1,7 @@
 use super::*;
 use rusqlite::OptionalExtension;
 
-const DIRECTIONAL_VOTE_POINTS: i64 = 50;
+const DIRECTION_SCORE_POINTS: i64 = 50;
 
 /// Saved Pintu futures signals must still belong to an active verified app
 /// contract. The registry may change between scans, so check it at read time.
@@ -252,7 +252,7 @@ fn score_indicator_name(filter: &str) -> Option<&'static str> {
     }
 }
 
-fn directional_vote_key(signal: &Value) -> (String, String, String, String) {
+fn direction_score_key(signal: &Value) -> (String, String, String, String) {
     (
         signal["exchange_id"]
             .as_str()
@@ -574,7 +574,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let mut stale_score_signal_count = 0usize;
     let mut matching_rows = 0usize;
     let mut signals = Vec::with_capacity(page_size);
-    let mut directional_vote_counts =
+    let mut direction_score_counts =
         std::collections::HashMap::<(String, String, String, String), (usize, usize)>::new();
     while let Some(row) = query_rows.next()? {
         if is_known_delisted_pintu_signal(row)? { continue; }
@@ -615,8 +615,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             && signal["score_basis"]["status"].as_str() != Some("not_qualifying");
         if is_current_market_entry {
             let direction = signal["direction"].as_str().unwrap_or_default();
-            let counts = directional_vote_counts
-                .entry(directional_vote_key(&signal))
+            let counts = direction_score_counts
+                .entry(direction_score_key(&signal))
                 .or_default();
             if direction.eq_ignore_ascii_case("LONG") {
                 counts.0 = counts.0.saturating_add(1);
@@ -624,7 +624,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
                 counts.1 = counts.1.saturating_add(1);
             }
         }
-        // Directional votes summarize all current entries for this app and
+        // Direction scores summarize all current entries for this app and
         // ticker/timeframe, independent of the screener's visible filters.
         if product_filter.is_some_and(|product| {
             !signal["product_id"]
@@ -697,26 +697,26 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         matching_rows = matching_rows.saturating_add(1);
     }
     for signal in &mut signals {
-        let Some((long_count, short_count)) = directional_vote_counts
-            .get(&directional_vote_key(signal))
+        let Some((long_count, short_count)) = direction_score_counts
+            .get(&direction_score_key(signal))
             .copied()
         else {
             continue;
         };
         let direction = signal["direction"].as_str().unwrap_or_default();
         let signal_vote = if direction.eq_ignore_ascii_case("LONG") {
-            DIRECTIONAL_VOTE_POINTS
+            DIRECTION_SCORE_POINTS
         } else if direction.eq_ignore_ascii_case("SHORT") {
-            -DIRECTIONAL_VOTE_POINTS
+            -DIRECTION_SCORE_POINTS
         } else {
             continue;
         };
         let net_score = i64::try_from(long_count)
             .unwrap_or(i64::MAX)
             .saturating_sub(i64::try_from(short_count).unwrap_or(i64::MAX))
-            .saturating_mul(DIRECTIONAL_VOTE_POINTS);
-        signal["directional_vote"] = json!({
-            "signal_score": signal_vote,
+            .saturating_mul(DIRECTION_SCORE_POINTS);
+        signal["direction_score"] = json!({
+            "score": signal_vote,
             "net_score": net_score,
             "long_count": long_count,
             "short_count": short_count,

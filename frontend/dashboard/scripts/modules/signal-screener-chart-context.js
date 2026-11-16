@@ -3,12 +3,13 @@ import { QuantChart } from './chart-math.js';
 import { marketSymbolForSignal } from './chart-market-identity.js';
 import {
     APP_LABELS,
-    DIRECTIONAL_VOTE_POINTS,
     oppositeEntryExitCue,
+    signalDirectionalScore,
     signalPriceBarAgeLabel,
     signalScoreState,
     signalScoreSummary,
     signalTotalStrength,
+    signedDirectionScore,
 } from './signal-screener-model.js';
 
 export function createSignalScreenerChartContext({
@@ -92,8 +93,8 @@ export function createSignalScreenerChartContext({
         const selectedSetupDetail = document.getElementById('selectedSignalSetupDetail');
         const selectedWinRate = document.getElementById('selectedSignalWinRate');
         const selectedWinRateDetail = document.getElementById('selectedSignalWinRateDetail');
-        const selectedDirectionalVote = document.getElementById('selectedSignalDirectionalVote');
-        const selectedDirectionalVoteDetail = document.getElementById('selectedSignalDirectionalVoteDetail');
+        const selectedDirectionScore = document.getElementById('selectedSignalDirectionScore');
+        const selectedDirectionScoreDetail = document.getElementById('selectedSignalDirectionScoreDetail');
         const selectedLongArea = document.getElementById('selectedSignalLongArea');
         const selectedShortArea = document.getElementById('selectedSignalShortArea');
         const selectedZoneStatus = document.getElementById('selectedSignalSetupZoneStatus');
@@ -118,11 +119,11 @@ export function createSignalScreenerChartContext({
             if (selectedSetupDetail) selectedSetupDetail.textContent = 'Select a signal to inspect its rules.';
             if (selectedWinRate) selectedWinRate.textContent = '—';
             if (selectedWinRateDetail) selectedWinRateDetail.textContent = 'Historical holdout evidence';
-            if (selectedDirectionalVote) {
-                selectedDirectionalVote.textContent = '—';
-                selectedDirectionalVote.removeAttribute('data-tone');
+            if (selectedDirectionScore) {
+                selectedDirectionScore.textContent = '—';
+                selectedDirectionScore.removeAttribute('data-tone');
             }
-            if (selectedDirectionalVoteDetail) selectedDirectionalVoteDetail.textContent = `Each current LONG contributes +${DIRECTIONAL_VOTE_POINTS} and SHORT −${DIRECTIONAL_VOTE_POINTS}. Net groups same-category ticker/timeframe entries across products in the selected app; visible filters do not change it.`;
+            if (selectedDirectionScoreDetail) selectedDirectionScoreDetail.textContent = 'Each current LONG gets a positive score and SHORT a negative score. The net groups same-category ticker/timeframe entries across products in the selected app; visible filters do not change it.';
             if (selectedLongArea) selectedLongArea.textContent = 'Select a signal';
             if (selectedShortArea) selectedShortArea.textContent = 'Select a signal';
             if (selectedZoneStatus) selectedZoneStatus.textContent = 'NWE zones use causal signal-timeframe bands and appear shaded on the chart.';
@@ -204,40 +205,31 @@ export function createSignalScreenerChartContext({
                 ? ` · 95% interval ${confidence[0].toFixed(1)}–${confidence[1].toFixed(1)}%`
                 : '';
             selectedWinRateDetail.textContent = hasWinRate
-                ? `${Math.trunc(winRateTrades)} after-fee holdout outcomes${confidenceText}${winRateStatus === 'TICKER_HOLDOUT_RATE' ? ' · long/short pooled · not score-matched' : ''}`
+                ? `${Math.trunc(winRateTrades)} after-fee holdout outcomes${confidenceText}${winRateStatus === 'TICKER_HOLDOUT_RATE' ? ' · long/short pooled · not matched to setup strength' : ''}`
                 : winRateStatus === 'INSUFFICIENT_SAMPLE'
                     ? `${Number.isFinite(winRateTrades) ? Math.trunc(winRateTrades) : 0} matching outcomes; 30 needed for a rate.`
                     : String(winRate.reason || 'No matching after-fee holdout result is available for this signal.');
             selectedWinRateDetail.title = selectedWinRateDetail.textContent;
         }
-        const directionalVote = signal.directional_vote || {};
-        const ownVote = Number(directionalVote.signal_score);
-        const netVote = Number(directionalVote.net_score);
-        const longVoteCount = Number(directionalVote.long_count);
-        const shortVoteCount = Number(directionalVote.short_count);
-        const hasDirectionalVote = [DIRECTIONAL_VOTE_POINTS, -DIRECTIONAL_VOTE_POINTS].includes(ownVote)
-            && Number.isInteger(netVote)
-            && Number.isInteger(longVoteCount) && longVoteCount >= 0
-            && Number.isInteger(shortVoteCount) && shortVoteCount >= 0;
-        const signedVote = value => value > 0 ? `+${value}` : String(value);
-        if (selectedDirectionalVote) {
-            selectedDirectionalVote.textContent = hasDirectionalVote
-                ? `${signal.direction} ${signedVote(ownVote)} · net ${signedVote(netVote)}`
-                : 'No current vote';
-            if (hasDirectionalVote) {
-                selectedDirectionalVote.dataset.tone = netVote > 0 ? 'long' : netVote < 0 ? 'short' : 'neutral';
+        const directionScore = signalDirectionalScore(signal);
+        if (selectedDirectionScore) {
+            selectedDirectionScore.textContent = directionScore
+                ? `${signal.direction} ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
+                : 'No current score';
+            if (directionScore) {
+                selectedDirectionScore.dataset.tone = directionScore.netScore > 0 ? 'long' : directionScore.netScore < 0 ? 'short' : 'neutral';
             } else {
-                selectedDirectionalVote.removeAttribute('data-tone');
+                selectedDirectionScore.removeAttribute('data-tone');
             }
-            selectedDirectionalVote.title = hasDirectionalVote
-                ? `One ±${DIRECTIONAL_VOTE_POINTS} vote per current setup. Net score is ${signedVote(netVote)}.`
-                : 'Only fresh current market-entry signals contribute votes.';
+            selectedDirectionScore.title = directionScore
+                ? `Signed direction score ${signedDirectionScore(directionScore.score)}. Net direction score is ${signedDirectionScore(directionScore.netScore)}.`
+                : 'Only fresh current market-entry signals have a direction score.';
         }
-        if (selectedDirectionalVoteDetail) {
-            selectedDirectionalVoteDetail.textContent = hasDirectionalVote
-                ? `${longVoteCount} LONG · ${shortVoteCount} SHORT for ${marketSymbol} ${String(signal.timeframe || '--').toUpperCase()} across products in the selected app. Visible filters do not change this net.`
-                : 'Stale, held, and non-qualifying rows do not vote. This does not change setup strength or win rate.';
-            selectedDirectionalVoteDetail.title = selectedDirectionalVoteDetail.textContent;
+        if (selectedDirectionScoreDetail) {
+            selectedDirectionScoreDetail.textContent = directionScore
+                ? `${directionScore.longCount} LONG · ${directionScore.shortCount} SHORT for ${marketSymbol} ${String(signal.timeframe || '--').toUpperCase()} across products in the selected app. Opposite scores cancel; this is separate from setup strength and win rate.`
+                : 'Stale, held, and non-qualifying rows have no current direction score. This does not change setup strength or win rate.';
+            selectedDirectionScoreDetail.title = selectedDirectionScoreDetail.textContent;
         }
         if (selectedLongArea) selectedLongArea.textContent = 'Loading signal-timeframe NWE…';
         if (selectedShortArea) selectedShortArea.textContent = 'Loading signal-timeframe NWE…';
