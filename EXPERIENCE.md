@@ -5,6 +5,12 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- A directional imbalance is not evidence of predictive quality. Expose bullish
+  and bearish contribution totals and cancellation, and partition the same
+  chronological holdout trade sequence by LONG/SHORT after configured fees.
+  Matching NWE/DSS rows reuse factors and are not independent confirmation.
+  Keep model thresholds unchanged until validation supports a new rule.
+
 - Hydrate chart indicators by exact candle timestamp rather than array offsets.
   Missing or newly appended bars can shift independently fetched indicator arrays.
   Cache identity must include candle times and OHLCV; equal row counts do not

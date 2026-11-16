@@ -774,6 +774,14 @@ export function initializeEntryValidation(doc = document) {
             metricCard('Profit factor', holdout.profit_factor_unbounded === true ? '∞' : metric(holdout.profit_factor), holdout.profit_factor_unbounded === true ? 'No observed holdout losses' : 'Observed wins / observed losses'),
             metricCard('Observed payoff', metric(holdout.payoff_ratio, '×'), `Avg win ${metric(holdout.average_win_pct, '%')} · avg loss ${metric(holdout.average_loss_pct, '%')}`),
         );
+        for (const side of ['long', 'short']) {
+            const outcomes = backtest.directional_holdout?.[side];
+            const available = outcomes?.fees_applied === true && Number(outcomes?.trades) > 0;
+            $('evidence-metrics').append(metricCard(`${side.toUpperCase()} holdout after fees`,
+                available ? metric(outcomes.win_rate_pct, '%') : 'Unavailable',
+                outcomes ? `${metric(outcomes.trades, ' trades', 0)} · mean net ${metric(outcomes.mean_return_pct, '%')} · same selected baseline exit policy`
+                    : 'Rerun this ticker to calculate results separately by direction'));
+        }
         renderChecks(model);
         renderRiskRewardRule(backtest);
         renderWeightLearning(backtest);

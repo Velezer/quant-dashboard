@@ -377,13 +377,16 @@ export function signalScoreSummary(signal, model, scoreState = null) {
                 : stateLabel.toLowerCase()}`
         : '';
     const directionScore = signalDirectionalScore(signal);
-    const directionSummary = directionScore
+    const directionSummaryBase = directionScore
         ? directionScore.lastKnown
             ? `Last direction ${signedDirectionScore(directionScore.score)} · current net unavailable`
             : directionScore.netUnavailable
                 ? `Direction score ${signedDirectionScore(directionScore.score)} · current net unavailable`
                 : `Direction score ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
         : 'Direction score unavailable';
+    const balance = signalScoreBalance(signal, model);
+    const directionSummary = directionSummaryBase + (balance
+        ? ` · bullish +${balance.bullish.toFixed(1)} / bearish −${balance.bearish.toFixed(1)} · ${balance.cancellationPct.toFixed(0)}% cancellation` : '');
     if (hasSixIndicatorScores(signal, model)) {
         const label = scoreState?.tone === 'stale' ? 'Last recorded indicator scores' : 'Indicator scores';
         const strength = signalTotalStrength(signal, model);
@@ -462,3 +465,14 @@ export function stockbitSignalModelsForSelection(models, exchange, product = 'al
     );
 }
 
+
+/** Describe cancellation without changing entry eligibility or implying accuracy. */
+export function signalScoreBalance(signal, model) {
+    const factors = signalIndicatorScores(signal, model);
+    if (factors.length !== 6 || factors.some(f => !Number.isFinite(f.weightedPoints))) return null;
+    const bullish = factors.reduce((sum, f) => sum + Math.max(0, f.weightedPoints), 0);
+    const bearish = factors.reduce((sum, f) => sum + Math.max(0, -f.weightedPoints), 0);
+    const gross = bullish + bearish;
+    return { bullish, bearish, net: bullish - bearish,
+        cancellationPct: gross > 0 ? (1 - Math.abs(bullish - bearish) / gross) * 100 : 0 };
+}

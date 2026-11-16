@@ -1,4 +1,4 @@
-import { hasSixIndicatorScores, oppositeEntryExitCue, signalDirectionalScore, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength, signedDirectionScore } from './signal-screener-model.js';
+import { signalScoreBalance, hasSixIndicatorScores, oppositeEntryExitCue, signalDirectionalScore, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength, signedDirectionScore } from './signal-screener-model.js';
 /** Builds one accessible signal row from normalized screener data. */
 export function createSignalScreenerCard({
     escape,
@@ -142,6 +142,8 @@ export function createSignalScreenerCard({
         const accessibleScore = sixIndicators
             ? `${Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax} setup strength; ` : ''}${signalIndicatorSummary(signal, scoreModel)}`
             : Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax}` : 'unavailable';
+        const balance = signalScoreBalance(signal, scoreModel);
+        const balanceText = balance ? `Bullish +${balance.bullish.toFixed(1)} · bearish −${balance.bearish.toFixed(1)} · ${balance.cancellationPct.toFixed(0)}% cancellation` : '';
         const directionScore = signalDirectionalScore(signal);
         const directionScoreTone = directionScore?.score > 0 ? 'long'
             : directionScore?.score < 0 ? 'short' : 'neutral';
@@ -183,6 +185,7 @@ export function createSignalScreenerCard({
                 <span class="signal-row-meta">${escape(rowContext)}</span>
                 ${scoreState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}" role="status">${escape(scoreState.label)} · ${signal.persistent_score === true ? 'strategy' : 'price'} bar ${escape(signalPriceBarAgeLabel(signal.persistent_score === true ? signal.score_bar_time : signal.price_bar_time))}</span>` : ''}
                 <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span>${directionScoreMarkup}<span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${sixIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded setup strength' : 'Setup strength'} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 60}</span></span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}${regimeSummary}${autocorrelationSummary}</span>
+                ${balance ? `<span class="signal-row-provenance" title="Opposing contributions cancel. This describes indicator disagreement, not win probability. NWE and DSS profiles share these factors; matching rows are not independent confirmations.">${escape(balanceText)}</span>` : ''}
                 ${autocorrelationGuidance}
                 ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
                 ${totalStrength ? `<span class="signal-total-strength signal-total-strength-${totalStrength.tone}" title="${escape(totalStrength.description)}">${escape(totalStrength.label)}<small>${escape(totalStrength.description)}</small></span>` : ''}

@@ -213,3 +213,17 @@ and [score presentation](../frontend/dashboard/scripts/modules/signal-screener-m
 8. Governance: scoring stays read-only with no execution or position state.
 9. Trajectory: hypothesis: explicit arithmetic makes indicator disagreement easier to interpret.
 10. Decision: use one signed calculation and revisit if displayed contributions do not reproduce its total or a backtest reuses a preselected side.
+
+## Directional imbalance and cancellation
+
+The screener and selected chart show bullish contribution, bearish contribution,
+and cancellation: `100 × (1 − |net| / (bullish + bearish))`. A zero-contribution
+row shows zero cancellation and remains neutral. Missing factors leave this
+diagnostic unavailable. Cancellation describes disagreement, not win probability.
+Matching NWE/DSS profiles reuse the same signed factors and must not count as
+independent confirmations.
+
+The backtest page partitions the selected baseline exit policy's original
+non-overlapping holdout trade sequence by LONG and SHORT. Each side shows sample
+size, win rate after configured fees, and mean net return. Old snapshots need a
+rerun. These diagnostics do not change weights or qualification thresholds.
