@@ -28,6 +28,9 @@ export function signalScoreState(signal, nowEpochMs = Date.now()) {
             return { label: 'NO MARKET ENTRY · SCORE 0', tone: 'inactive', current: false };
         }
         const timeframe = String(signal.timeframe || '').toUpperCase();
+        if (signal.market_entry_status === 'NO_MARKET_ENTRY') {
+            return { label: `LATEST CLOSED ${timeframe} · NO MARKET ENTRY`, tone: 'inactive', current: false };
+        }
         return signal.score_bar_is_forming
             ? { label: `MARKET ENTRY NOW · PROVISIONAL ${timeframe}`, tone: 'provisional', current: true }
             : { label: `MARKET ENTRY NOW · LATEST CLOSED ${timeframe}`, tone: 'current', current: true };
@@ -334,14 +337,22 @@ export function signalDirectionalScore(signal) {
     const expectedScore = direction === 'LONG' ? DIRECTION_SCORE_POINTS
         : direction === 'SHORT' ? -DIRECTION_SCORE_POINTS
             : null;
-    if (expectedScore === null || score !== expectedScore
-        || !Number.isSafeInteger(netScore)
-        || !Number.isSafeInteger(longCount) || longCount < 0
-        || !Number.isSafeInteger(shortCount) || shortCount < 0
-        || netScore !== (longCount - shortCount) * DIRECTION_SCORE_POINTS) {
-        return null;
+    if (expectedScore === null) return null;
+    const scoreState = signalScoreState(signal);
+    if (scoreState?.current
+        && signal?.market_entry_status !== 'NO_MARKET_ENTRY'
+        && score === expectedScore
+        && Number.isSafeInteger(netScore)
+        && Number.isSafeInteger(longCount) && longCount >= 0
+        && Number.isSafeInteger(shortCount) && shortCount >= 0
+        && netScore === (longCount - shortCount) * DIRECTION_SCORE_POINTS) {
+        return { score, netScore, longCount, shortCount };
     }
-    return { score, netScore, longCount, shortCount };
+    const lastScore = Number(signal?.last_direction_score);
+    if (!scoreState?.current && lastScore === expectedScore) {
+        return { score: lastScore, netScore: null, longCount: null, shortCount: null, lastKnown: true };
+    }
+    return null;
 }
 
 export function signedDirectionScore(value) {
@@ -363,7 +374,9 @@ export function signalScoreSummary(signal, model, scoreState = null) {
         : '';
     const directionScore = signalDirectionalScore(signal);
     const directionSummary = directionScore
-        ? `Direction score ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
+        ? directionScore.lastKnown
+            ? `Last direction ${signedDirectionScore(directionScore.score)} · current net unavailable`
+            : `Direction score ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
         : 'Direction score unavailable';
     if (hasSixIndicatorScores(signal, model)) {
         const label = scoreState?.tone === 'stale' ? 'Last recorded indicator scores' : 'Indicator scores';

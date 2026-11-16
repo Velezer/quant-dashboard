@@ -537,6 +537,17 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         let score_bar_is_forming = score_basis["score_bar_is_forming"]
             .as_bool()
             .unwrap_or(false);
+        let direction = row.get::<_, String>(8)?;
+        // Keep the saved sign on retained qualifying rows; the live net below
+        // is reserved for fresh market entries.
+        let last_direction_score = match (
+            score_status,
+            direction.to_ascii_uppercase().as_str(),
+        ) {
+            ("qualifying" | "stale", "LONG") => Some(DIRECTION_SCORE_POINTS),
+            ("qualifying" | "stale", "SHORT") => Some(-DIRECTION_SCORE_POINTS),
+            _ => None,
+        };
         Ok(json!({
             "exchange_id": row.get::<_, String>(0)?,
             "product_id": row.get::<_, String>(1)?,
@@ -546,7 +557,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             "signal_strategy_id": row.get::<_, String>(5)?,
             "signal_strategy_name": row.get::<_, String>(6)?,
             "timeframe": row.get::<_, String>(7)?,
-            "direction": row.get::<_, String>(8)?,
+            "direction": direction,
+            "last_direction_score": last_direction_score,
             "score": row.get::<_, f64>(9)?,
             "strategy_strength": row.get::<_, Option<f64>>(10)?,
             "confluence_score": row.get::<_, Option<f64>>(11)?,
@@ -697,6 +709,15 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         matching_rows = matching_rows.saturating_add(1);
     }
     for signal in &mut signals {
+        // A matching current row may share this ticker/timeframe key with a
+        // retained row. Never attach its live net to the stale/held row.
+        if signal["price_is_fresh"].as_bool() != Some(true)
+            || signal["market_entry_status"].as_str() == Some("NO_MARKET_ENTRY")
+            || signal["score_status"].as_str() == Some("stale")
+            || signal["score_basis"]["status"].as_str() == Some("not_qualifying")
+        {
+            continue;
+        }
         let Some((long_count, short_count)) = direction_score_counts
             .get(&direction_score_key(signal))
             .copied()

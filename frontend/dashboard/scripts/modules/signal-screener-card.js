@@ -149,13 +149,19 @@ export function createSignalScreenerCard({
         const directionScoreTone = directionScore?.score > 0 ? 'long'
             : directionScore?.score < 0 ? 'short' : 'neutral';
         const directionScoreText = directionScore
-            ? `Direction ${signedDirectionScore(directionScore.score)} · Net ${signedDirectionScore(directionScore.netScore)} · ${directionScore.longCount}L / ${directionScore.shortCount}S`
+            ? directionScore.lastKnown
+                ? `Last ${signal.direction} ${signedDirectionScore(directionScore.score)} · no current net`
+                : `Direction ${signedDirectionScore(directionScore.score)} · Net ${signedDirectionScore(directionScore.netScore)} · ${directionScore.longCount}L / ${directionScore.shortCount}S`
             : '';
         const directionScoreMarkup = directionScore
-            ? `<span class="signal-row-direction-score signal-row-direction-score-${directionScoreTone}" title="${escape(`Direction score ${signedDirectionScore(directionScore.score)} for this ${signal.direction} signal. Net sums current ${signal.symbol} ${signal.timeframe.toUpperCase()} entries across products in the selected app. Setup strength and win-rate evidence stay separate.`)}">${escape(directionScoreText)}</span>`
+            ? `<span class="signal-row-direction-score signal-row-direction-score-${directionScoreTone}${directionScore.lastKnown ? ' signal-row-direction-score-last-known' : ''}" title="${escape(directionScore.lastKnown
+                ? `Last saved ${signal.direction} direction score ${signedDirectionScore(directionScore.score)}. It is stale or held and is excluded from the current ticker/timeframe net.`
+                : `Direction score ${signedDirectionScore(directionScore.score)} for this ${signal.direction} signal. Net sums current ${signal.symbol} ${signal.timeframe.toUpperCase()} entries across products in the selected app. Setup strength and win-rate evidence stay separate.`)}">${escape(directionScoreText)}</span>`
             : '';
         const directionScoreAccessible = directionScore
-            ? `Signed direction score ${signedDirectionScore(directionScore.score)} for ${signal.direction}; net ${signedDirectionScore(directionScore.netScore)} from ${directionScore.longCount} long and ${directionScore.shortCount} short current entries in the selected app. `
+            ? directionScore.lastKnown
+                ? `Last saved signed ${signal.direction} direction ${signedDirectionScore(directionScore.score)}; current net is unavailable because this row is stale or held. `
+                : `Signed direction score ${signedDirectionScore(directionScore.score)} for ${signal.direction}; net ${signedDirectionScore(directionScore.netScore)} from ${directionScore.longCount} long and ${directionScore.shortCount} short current entries in the selected app. `
             : '';
         const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Setup-strength weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${autocorrelationScore ? `${autocorrelationExplanation} ` : ''}${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup strength is separate from the signed direction score; win-rate evidence is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
         const productLabel = signal.product_id === 'stockbit_regular'
