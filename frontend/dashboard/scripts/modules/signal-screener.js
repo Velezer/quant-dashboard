@@ -583,12 +583,12 @@ export function installSignalScreener() {
             if (indicatorFilter !== 'all') {
                 scoreFilterDescriptions.push(`${SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorFilter)?.label || 'the selected indicator'} at ${indicatorMinimumScore > 0 ? `${indicatorMinimumScore}/10 or higher` : 'any available /10 score'}`);
             }
-            if (minimumTotalScore > 0) scoreFilterDescriptions.push(`total score ${minimumTotalScore}/10 or higher`);
+            if (minimumTotalScore > 0) scoreFilterDescriptions.push(`setup strength ${minimumTotalScore}/10 or higher`);
             const hasScoreFilters = scoreFilterDescriptions.length > 0;
             const emptyText = requestState === 'error' && rows.length === 0
                 ? 'Signal data could not be loaded. Retry after checking the service connection.'
                 : hasScoreFilters
-                    ? `No current signal rows match ${scoreFilterDescriptions.join(' and ')}. Score filters only narrow saved rows; they do not change model weights or qualification rules.${summary.stale ? ' The saved snapshot may be outdated.' : ''}`
+                    ? `No current signal rows match ${scoreFilterDescriptions.join(' and ')}. Setup-strength and indicator filters only narrow saved rows; they do not change direction scores, model weights, or qualification rules.${summary.stale ? ' The saved snapshot may be outdated.' : ''}`
                 : summary.stale && rows.length === 0
                     ? 'The saved snapshot is stale and has no current signals. Retry the scan or wait for the running scan to complete.'
                 : staleScoreSignalCount > 0
@@ -616,7 +616,7 @@ export function installSignalScreener() {
                 : hasScoreFilters && indicatorFilter !== 'all'
                     ? `No ${SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorFilter)?.label || 'indicator'} matches`
                 : minimumTotalScore > 0
-                    ? 'No total score matches'
+                    ? 'No setup strength matches'
                 : appReadiness.hasScanDetails
                     ? `${appLabel(selectedApp)}: ${appReadiness.title}`
                 : searchQuery.trim()

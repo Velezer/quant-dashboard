@@ -277,12 +277,12 @@ export function signalTotalStrength(signal, model) {
     const known = indicators.every(item => item.points !== null);
     const total = known ? indicators.reduce((sum, item) => sum + (item.weightedPoints ?? item.points), 0) : null;
     const low = known && total < LOW_TOTAL_INDICATOR_POINTS;
-    const label = !known ? 'Total strength unavailable' : low ? 'Low total strength' : `${LOW_TOTAL_INDICATOR_POINTS}+ combined points`;
+    const label = !known ? 'Setup strength unavailable' : low ? 'Low setup strength' : `Setup strength ${LOW_TOTAL_INDICATOR_POINTS}+ points`;
     const retained = signalScoreState(signal)?.tone === 'stale';
     return {
         tone: !known ? 'unavailable' : low ? 'low' : 'standard',
         label: retained ? `Last recorded: ${label.toLowerCase()}` : label,
-        description: !known ? 'All six numeric indicator contributions are needed to classify total strength.'
+        description: !known ? 'All six numeric indicator contributions are needed to classify setup strength.'
             : `The six indicator readings are each out of 10, then combined using the active weights to produce ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} weighted points.`,
     };
 }

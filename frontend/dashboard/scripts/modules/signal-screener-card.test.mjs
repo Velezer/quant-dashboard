@@ -87,7 +87,7 @@ test('signal cards show signed direction score and keep setup strength distinct'
         direction_score: { score: 50, net_score: 0, long_count: 1, short_count: 1 },
     };
     const longCard = renderSignalCard(longSignal, 1, true);
-    assert.match(longCard, /Score \+50 · Net 0 · 1L \/ 1S/);
+    assert.match(longCard, /Direction \+50 · Net 0 · 1L \/ 1S/);
     assert.match(longCard, /Setup strength <strong>35\.4<\/strong>/);
     assert.match(longCard, /Signed direction score \+50 for LONG/);
     assert.doesNotMatch(longCard, /Vote \+50|Weighted total/);
@@ -100,7 +100,7 @@ test('signal cards show signed direction score and keep setup strength distinct'
         direction: 'SHORT',
         direction_score: { score: -50, net_score: 0, long_count: 1, short_count: 1 },
     };
-    assert.match(renderSignalCard(shortSignal, 2, false), /Score -50 · Net 0 · 1L \/ 1S/);
+    assert.match(renderSignalCard(shortSignal, 2, false), /Direction -50 · Net 0 · 1L \/ 1S/);
     assert.deepEqual(signalDirectionalScore(shortSignal), { score: -50, netScore: 0, longCount: 1, shortCount: 1 });
     assert.equal(signalDirectionalScore({ ...shortSignal, direction: 'LONG' }), null);
 });

@@ -217,7 +217,7 @@ export function createSignalScreenerChartContext({
                 ? `${signal.direction} ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
                 : 'No current score';
             if (directionScore) {
-                selectedDirectionScore.dataset.tone = directionScore.netScore > 0 ? 'long' : directionScore.netScore < 0 ? 'short' : 'neutral';
+                selectedDirectionScore.dataset.tone = directionScore.score > 0 ? 'long' : directionScore.score < 0 ? 'short' : 'neutral';
             } else {
                 selectedDirectionScore.removeAttribute('data-tone');
             }

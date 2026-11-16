@@ -192,7 +192,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         result.message = `${evaluated} ticker / timeframe checks were evaluated without a qualifying setup.${backtestGateSummary.length ? ` After-fee metrics (informational): ${backtestGateSummary.join('; ')}.` : ''} Other checks remain blocked: ${blockers.join('; ')}.`;
     } else if (!qualified && afterFeeChecks) {
         result.title = 'No qualifying setup in the last scan';
-        result.message = `${evaluated} ticker / timeframe checks had usable inputs but did not meet the technical setup and score rules. After-fee backtest metrics are informational and do not filter signals.${backtestGateSummary.length ? ` Status: ${backtestGateSummary.join('; ')}.` : ''}`;
+        result.message = `${evaluated} ticker / timeframe checks had usable inputs but did not meet the technical setup and setup-strength rules. After-fee backtest metrics are informational and do not filter signals.${backtestGateSummary.length ? ` Status: ${backtestGateSummary.join('; ')}.` : ''}`;
     } else if (!qualified) {
         result.title = 'No qualifying setup in the last scan';
         result.message = `${evaluated} ticker / timeframe checks had usable data but produced no qualifying signal. An empty result is valid when the model rules are not met.`;
