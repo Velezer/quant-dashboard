@@ -5,6 +5,12 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- Keep screener cards compact: ticker/timeframe, app/product/model context,
+  direction, signed score, price, win-rate availability, and stale/no-entry state.
+  Put factor breakdowns and research diagnostics in a closed native details
+  disclosure outside the chart-selection button so keyboard/touch users can
+  inspect them without selecting or nesting interactive controls.
+
 - A directional imbalance is not evidence of predictive quality. Expose bullish
   and bearish contribution totals and cancellation, and partition the same
   chronological holdout trade sequence by LONG/SHORT after configured fees.

@@ -179,12 +179,27 @@ export function createSignalScreenerCard({
         const provenance = [signal.data_provider, signal.data_source, signal.data_quality]
             .filter(value => String(value || '').trim() && value !== 'unknown')
             .map(value => String(value).replaceAll('_', ' '));
+        const compactState = scoreState?.current === false
+            ? scoreState.tone === 'stale' ? 'Stale · no market entry' : 'No market entry'
+            : scoreState?.tone === 'provisional' ? 'Provisional' : '';
+        const compactWinRate = hasWinProbability ? `After-fee win ${winProbabilityPct.toFixed(1)}%` : 'Win rate unavailable';
+        const compactScore = directionScore ? signedDirectionScore(directionScore.score) : '—';
+        const compactLabel = `${signal.symbol}, ${signal.timeframe}, ${directionLabel}, score ${compactScore}, price ${formatPrice(signal.current_price)}, ${compactWinRate}${compactState ? `, ${compactState}` : ''}. Select chart.`;
         return `<article class="signal-row-wrap" role="listitem">
-            <button type="button" class="signal-row${totalStrength?.tone === 'low' ? ' is-low-total-strength' : ''}${selected ? ' is-selected' : ''}" data-signal-id="${escape(signal.signal_id)}" aria-pressed="${selected}" aria-label="${escape(`${scoreAccessibleLabel} ${directionScoreAccessible}`)}">
-                <span class="signal-row-top"><span class="signal-row-rank">#${rank}</span><span class="signal-row-symbol">${escape(signal.symbol)}</span><span class="signal-row-timeframe">${escape(signal.timeframe.toUpperCase())}</span></span>
+            <button type="button" class="signal-row${totalStrength?.tone === 'low' ? ' is-low-total-strength' : ''}${selected ? ' is-selected' : ''}" data-signal-id="${escape(signal.signal_id)}" aria-pressed="${selected}" aria-label="${escape(compactLabel)}">
+                <span class="signal-row-top"><span class="signal-row-symbol">${escape(signal.symbol)}</span><span class="signal-row-timeframe">${escape(signal.timeframe.toUpperCase())}</span></span>
                 <span class="signal-row-meta">${escape(rowContext)}</span>
-                ${scoreState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}" role="status">${escape(scoreState.label)} · ${signal.persistent_score === true ? 'strategy' : 'price'} bar ${escape(signalPriceBarAgeLabel(signal.persistent_score === true ? signal.score_bar_time : signal.price_bar_time))}</span>` : ''}
-                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span>${directionScoreMarkup}<span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${sixIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded setup strength' : 'Setup strength'} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 60}</span></span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}${regimeSummary}${autocorrelationSummary}</span>
+                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-direction-score signal-row-direction-score-${directionScoreTone}">${escape(compactScore)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span></span>
+                <span class="signal-row-footer"><span>${escape(compactWinRate)}</span><span>Price ${escape(signalPriceBarAgeLabel(signal.price_bar_time))}</span></span>
+                ${compactState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}">${escape(compactState)}</span>` : ''}
+            </button>
+            <details class="signal-card-details">
+                <summary aria-label="Details for ${escape(signal.symbol)} ${escape(signal.timeframe)}">Details</summary>
+                <div class="signal-card-detail-body">
+                    <p>${escape(scoreAccessibleLabel)}</p>
+                    ${directionScoreMarkup}
+                    <span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong> / ${scoreScaleMax}</span>
+                    ${regimeSummary}${autocorrelationSummary}
                 ${balance ? `<span class="signal-row-provenance" title="Opposing contributions cancel. This describes indicator disagreement, not win probability. NWE and DSS profiles share these factors; matching rows are not independent confirmations.">${escape(balanceText)}</span>` : ''}
                 ${autocorrelationGuidance}
                 ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
@@ -194,7 +209,8 @@ export function createSignalScreenerCard({
                 ${renderScoreBasis(signal)}
                 <span class="signal-row-footer"><span>${escape(evidence)}</span><span>Price ${escape(signalPriceBarAgeLabel(signal.price_bar_time))}</span><span>Scanned ${escape(ageLabel(signal.last_updated_at))}</span></span>
                 ${provenance.length ? `<span class="signal-row-provenance">${escape(provenance.join(' · '))}</span>` : ''}
-            </button>
+                </div>
+            </details>
         </article>`;
     };
 }
