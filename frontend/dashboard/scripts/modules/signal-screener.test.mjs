@@ -482,6 +482,16 @@ test('retained scores remain visible while stale and unavailable values never be
         /^Direction score unavailable · Setup strength 0\.0\/20 · no market entry · score 0/,
     );
     assert.equal(signalDisplayScore({ score: 7.4, persistent_score: true, score_status: 'current' }), 7.4);
+    assert.equal(signalDisplayScore({
+        score: -50,
+        score_contract: 'signed_direction_vote_v1',
+        setup_strength: 22.5,
+        setup_strength_scale_max: 60,
+    }), 22.5);
+    assert.equal(signalDisplayScore({
+        score: -50,
+        score_contract: 'signed_direction_vote_v1',
+    }), null);
     for (const score of [null, undefined, '', ' ', NaN, 'invalid', true, {}, []]) {
         const unavailable = { ...staleSignal, score };
         assert.equal(signalDisplayScore(unavailable), null);

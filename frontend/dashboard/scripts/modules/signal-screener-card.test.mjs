@@ -70,7 +70,7 @@ test('signal cards show signed direction score and keep setup strength distinct'
         escape: escapeHtml,
         appLabel: () => 'Pintu',
         scoreModelFor: () => ({ short_label: 'NWE/DSS', score_scale_max: 60 }),
-        signalScoreState: () => null,
+        signalScoreState: () => ({ current: true }),
         signalScorePresentation: () => ({ scoreScaleMax: 60, legacy: false }),
         signalDisplayScore: () => 35.4,
         signalScoreWeightSummary: () => 'six indicators',
@@ -82,12 +82,13 @@ test('signal cards show signed direction score and keep setup strength distinct'
     const longSignal = {
         signal_id: 'btc-long-4h', symbol: 'BTC-USD', timeframe: '4h', direction: 'LONG',
         exchange_id: 'pintu', product_id: 'pintu_pro_spot', signal_strategy_name: 'NWE/DSS',
-        score: 35.4, current_price: 100, price_bar_time: 1, last_updated_at: 1,
+        score: 50, score_contract: 'signed_direction_vote_v1', setup_strength: 35.4,
+        current_price: 100, price_bar_time: 1, last_updated_at: 1,
         score_basis: {},
         direction_score: { score: 50, net_score: 0, long_count: 1, short_count: 1 },
     };
     const longCard = renderSignalCard(longSignal, 1, true);
-    assert.match(longCard, /Direction \+50 · Net 0 · 1L \/ 1S/);
+    assert.match(longCard, /LONG \+50 · Net 0 · 1L \/ 1S/);
     assert.match(longCard, /Setup strength <strong>35\.4<\/strong>/);
     assert.match(longCard, /Signed direction score \+50 for LONG/);
     assert.doesNotMatch(longCard, /Vote \+50|Weighted total/);
@@ -98,9 +99,11 @@ test('signal cards show signed direction score and keep setup strength distinct'
         ...longSignal,
         signal_id: 'btc-short-4h',
         direction: 'SHORT',
+        score: -50,
         direction_score: { score: -50, net_score: 0, long_count: 1, short_count: 1 },
     };
-    assert.match(renderSignalCard(shortSignal, 2, false), /Direction -50 · Net 0 · 1L \/ 1S/);
+    assert.match(renderSignalCard(shortSignal, 2, false), /SHORT −50 · Net 0 · 1L \/ 1S/);
+    assert.equal(signalDisplayScore(shortSignal), 35.4);
     assert.deepEqual(signalDirectionalScore(shortSignal), { score: -50, netScore: 0, longCount: 1, shortCount: 1 });
     assert.equal(signalDirectionalScore({ ...shortSignal, direction: 'LONG' }), null);
 });

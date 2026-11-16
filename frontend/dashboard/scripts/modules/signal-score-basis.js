@@ -32,7 +32,7 @@ export function createSignalScoreBasisMarkup({ escape, scoreModelFor }) {
                             : item.label === 'Autocorrelation' ? ` · lag-one ρ ${item.value.toFixed(2)}` : ''
                     : '';
                 const weighted = item.weightedPoints === null ? '—' : item.weightedPoints.toFixed(1);
-                return `<span class="signal-indicator-score"><span>${escape(item.label)}</span><strong>${item.points === null ? '—' : item.points.toFixed(1)}<small>/10</small></strong><span class="signal-indicator-weight">${scoreWeightLabel(item.weight)} · +${weighted}</span><span class="signal-indicator-state">${escape(state + value)}</span></span>`;
+                return `<span class="signal-indicator-score"><span>${escape(item.label)}</span><strong>${item.points === null ? '—' : item.points.toFixed(1)}<small>/10</small></strong><span class="signal-indicator-weight">${scoreWeightLabel(item.weight)} · strength +${weighted}</span><span class="signal-indicator-state">${escape(state + value)}</span></span>`;
             }).join('');
             const version = signalIndicatorScores(signal, scoreModel).find(item => Number.isFinite(Number(item.profileVersion)))?.profileVersion;
             const profile = version === null || version === undefined ? 'Equal-weight profile' : `Scoring profile v${escape(version)}`;

@@ -197,7 +197,8 @@ fn screener_returns_only_completed_scores_with_fresh_strategy_bars() {
         assert_eq!(signals[0]["symbol"], "FRESH.JK", "{timeframe}");
         assert_eq!(signals[0]["score_status"], "qualifying", "{timeframe}");
         assert_eq!(signals[0]["score_basis"]["status"], "qualifying", "{timeframe}");
-        assert_eq!(signals[0]["score"], 23.5, "{timeframe}");
+        assert_eq!(signals[0]["score"], 50, "{timeframe}");
+        assert_eq!(signals[0]["setup_strength"], 23.5, "{timeframe}");
         assert_eq!(signals[0]["timeframe"], timeframe);
         assert_eq!(signals[0]["price_timeframe"], "15m");
         assert_eq!(signals[0]["data_source"], "stockbit_regular_yfinance_fallback");

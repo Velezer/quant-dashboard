@@ -1,4 +1,5 @@
 export const DIRECTION_SCORE_POINTS = 50;
+export const SIGNED_DIRECTION_SCORE_CONTRACT = 'signed_direction_vote_v1';
 
 export const APP_LABELS = {
     stockbit: 'Stockbit',
@@ -157,7 +158,11 @@ export function signalPriceCoverageMessage(status, unavailableCount) {
 export function signalScorePresentation(signal, model) {
     const basis = signal?.score_basis || {};
     const scoreScaleMax = Number(
-        basis.score_scale_max ?? signal?.score_scale_max ?? model?.score_scale_max,
+        signal?.setup_strength_scale_max
+            ?? basis.setup_strength_scale_max
+            ?? basis.score_scale_max
+            ?? signal?.score_scale_max
+            ?? model?.score_scale_max,
     );
     const basisIsCurrent = basis.score_model_status !== 'legacy'
         && (!basis.model_id || !model?.score_model_id || basis.model_id === model.score_model_id);
@@ -312,14 +317,21 @@ export function isPersistentNoEntryScore(signal) {
 export function signalMeetsRenderMinimum(signal, model) {
     if (isPersistentNoEntryScore(signal)) return true;
     const { minimumScore } = signalScorePresentation(signal, model);
-    const score = Number(signal?.score);
+    const score = signalDisplayScore(signal);
     return !Number.isFinite(minimumScore)
         || (Number.isFinite(score) && score >= minimumScore);
 }
 
 export function signalDisplayScore(signal) {
     if (signal?.persistent_score === true && signal.score_status === 'not_qualifying') return 0;
-    const value = signal?.score;
+    // `score` is a signed vote on the current API. The positive weighted
+    // metric is setup strength. Fall back to `score` only for older payloads.
+    const hasSetupStrength = Object.prototype.hasOwnProperty.call(signal || {}, 'setup_strength');
+    const value = hasSetupStrength
+        ? signal.setup_strength
+        : signal?.score_contract === SIGNED_DIRECTION_SCORE_CONTRACT
+            ? null
+            : signal?.score;
     const isNumericInput = typeof value === 'number'
         || (typeof value === 'string' && value.trim() !== '');
     if (!isNumericInput) return null;
@@ -334,9 +346,11 @@ export function signalDirectionalScore(signal) {
     const netScore = Number(directionScore?.net_score);
     const longCount = Number(directionScore?.long_count);
     const shortCount = Number(directionScore?.short_count);
-    const expectedScore = direction === 'LONG' ? DIRECTION_SCORE_POINTS
-        : direction === 'SHORT' ? -DIRECTION_SCORE_POINTS
-            : null;
+    const pointsPerSignal = Number.isSafeInteger(Number(signal?.direction_score_points))
+        && Number(signal.direction_score_points) > 0
+        ? Number(signal.direction_score_points)
+        : DIRECTION_SCORE_POINTS;
+    const expectedScore = signedDirectionVote(direction, pointsPerSignal);
     if (expectedScore === null) return null;
     const scoreState = signalScoreState(signal);
     if (scoreState?.current
@@ -345,8 +359,21 @@ export function signalDirectionalScore(signal) {
         && Number.isSafeInteger(netScore)
         && Number.isSafeInteger(longCount) && longCount >= 0
         && Number.isSafeInteger(shortCount) && shortCount >= 0
-        && netScore === (longCount - shortCount) * DIRECTION_SCORE_POINTS) {
+        && netScore === (longCount - shortCount) * pointsPerSignal) {
         return { score, netScore, longCount, shortCount };
+    }
+    const rowScore = Number(signal?.score);
+    if (rowScore === expectedScore) {
+        const hasCurrentEntry = scoreState?.current
+            && signal?.market_entry_status !== 'NO_MARKET_ENTRY';
+        return {
+            score: rowScore,
+            netScore: null,
+            longCount: null,
+            shortCount: null,
+            netUnavailable: true,
+            ...(!hasCurrentEntry ? { lastKnown: true } : {}),
+        };
     }
     const lastScore = Number(signal?.last_direction_score);
     if (!scoreState?.current && lastScore === expectedScore) {
@@ -356,7 +383,17 @@ export function signalDirectionalScore(signal) {
 }
 
 export function signedDirectionScore(value) {
-    return value > 0 ? `+${value}` : String(value);
+    return value > 0 ? `+${value}` : value < 0 ? `−${Math.abs(value)}` : '0';
+}
+
+export function signedDirectionVote(direction, points = DIRECTION_SCORE_POINTS) {
+    const normalized = String(direction || '').toUpperCase();
+    const signedPoints = Number.isSafeInteger(Number(points)) && Number(points) > 0
+        ? Number(points)
+        : DIRECTION_SCORE_POINTS;
+    return normalized === 'LONG' ? signedPoints
+        : normalized === 'SHORT' ? -signedPoints
+            : null;
 }
 
 export function signalScoreSummary(signal, model, scoreState = null) {
@@ -376,7 +413,9 @@ export function signalScoreSummary(signal, model, scoreState = null) {
     const directionSummary = directionScore
         ? directionScore.lastKnown
             ? `Last direction ${signedDirectionScore(directionScore.score)} · current net unavailable`
-            : `Direction score ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
+            : directionScore.netUnavailable
+                ? `Direction score ${signedDirectionScore(directionScore.score)} · current net unavailable`
+                : `Direction score ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
         : 'Direction score unavailable';
     if (hasSixIndicatorScores(signal, model)) {
         const label = scoreState?.tone === 'stale' ? 'Last recorded indicator scores' : 'Indicator scores';
@@ -399,7 +438,7 @@ export function averageNormalizedScore(signals) {
     const scores = signals.map(signal => {
         const model = signalScorePresentation(signal, signal.scoreModel);
         const scaleMax = model.scoreScaleMax;
-        const score = Number(signal.score);
+        const score = signalDisplayScore(signal);
         return Number.isFinite(scaleMax) && scaleMax > 0 && Number.isFinite(score)
             ? Math.max(0, Math.min(1, score / scaleMax))
             : null;
