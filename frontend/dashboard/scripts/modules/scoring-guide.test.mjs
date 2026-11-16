@@ -2,12 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { exampleTotals, fetchGuideCatalog, guideModels } from './scoring-guide.js';
 
-test('the worked example adds four factors without changing their values', () => {
-    assert.deepEqual(exampleTotals([8, 6, 5, 6]), { price: 14, volume: 11, total: 25 });
-    assert.deepEqual(exampleTotals([0, 0, 0, 0]), { price: 0, volume: 0, total: 0 });
-    assert.deepEqual(exampleTotals([10, 10, 10, 10]), { price: 20, volume: 20, total: 40 });
-    assert.deepEqual(exampleTotals([1.5, 0, 3.5, 0]), { price: 1.5, volume: 3.5, total: 5 });
-    for (const values of [[11, 0, 0, 0], [-1, 0, 0, 0], [NaN, 1, 2, 3], [null, 1, 2, 3], [1, 2, 3]]) {
+test('the worked example adds six factors without changing their values', () => {
+    assert.deepEqual(exampleTotals([8, 6, 5, 6, 10, 5]), {
+        price: 14, volume: 11, markov: 10, autocorrelation: 5, total: 40,
+    });
+    assert.deepEqual(exampleTotals([0, 0, 0, 0, 0, 0]), {
+        price: 0, volume: 0, markov: 0, autocorrelation: 0, total: 0,
+    });
+    assert.deepEqual(exampleTotals([10, 10, 10, 10, 10, 10]), {
+        price: 20, volume: 20, markov: 10, autocorrelation: 10, total: 60,
+    });
+    assert.deepEqual(exampleTotals([1.5, 0, 3.5, 0, 10, 5]), {
+        price: 1.5, volume: 3.5, markov: 10, autocorrelation: 5, total: 20,
+    });
+    for (const values of [[11, 0, 0, 0, 0, 0], [-1, 0, 0, 0, 0, 0], [NaN, 1, 2, 3, 4, 5], [null, 1, 2, 3, 4, 5], [1, 2, 3]]) {
         assert.equal(exampleTotals(values), null);
     }
 });

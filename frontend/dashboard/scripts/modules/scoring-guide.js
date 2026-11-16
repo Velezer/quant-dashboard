@@ -94,7 +94,10 @@ function renderModel(doc, model) {
     const metrics = element(doc, 'div', 'model-metrics');
     const scale = numericValue(model.score_scale_max);
     const minimum = numericValue(model[`minimum_score_out_of_${scale}`] ?? model.minimum_score);
-    metrics.append(element(doc, 'span', '', scale === 60 ? 'Six indicators · /10 each' : `Scale /${scale}`));
+    metrics.append(
+        element(doc, 'span', '', 'Direction score · LONG +50 / SHORT −50'),
+        element(doc, 'span', '', scale === 60 ? 'Setup strength · six indicators /10 each' : `Setup strength · /${scale}`),
+    );
     if (scale === 60) {
         metrics.append(element(doc, 'span', '', 'Markov and autocorrelation fixed · 10 points each'));
         if (minimum !== null) metrics.append(element(doc, 'span', '', `Eligibility floor: ${minimum} points across indicators`));

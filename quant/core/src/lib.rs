@@ -14,6 +14,7 @@ pub mod indicators;
 pub mod markov;
 pub mod plans;
 pub mod risk;
+pub mod signal_score;
 pub mod strategies;
 pub mod venue_rules;
 
@@ -104,6 +105,7 @@ pub use risk::{
     MIN_GROWTH_TRADING_DAYS, MIN_SETUP_RISK_REWARD_MOVE_PCT, MIN_SETUP_TRADES_PER_DAY,
     MIN_SETUP_WIN_RATE_PCT,
 };
+pub use signal_score::{signed_direction_score, SIGNAL_DIRECTION_SCORE_POINTS};
 pub use strategies::{
     calculate_dss_bressert_mtf, crypto_dss_bressert_signal_strategy_id,
     crypto_nwe_signal_strategy_id, generate_idx_first_half_hour_momentum_signals,

@@ -1,6 +1,7 @@
 import { getDashboardBinding } from './runtime-context.js';
 import { readApiResponse } from './api.js';
 import { createBrowserSignalNotifications } from './browser-signal-notifications.js';
+import { signedDirectionScore, signedDirectionVote } from './signal-screener-model.js';
 
 /** Shows durable signal alerts from the app database. */
 export function installSignalAlerts() {
@@ -122,7 +123,8 @@ export function installSignalAlerts() {
             heading.className = 'flex items-center justify-between gap-2';
             const directionClass = alert.direction === 'LONG' ? 'text-emerald-300' : 'text-rose-300';
             const indicatorAlert = isIndicatorAlert(alert);
-            appendText(heading, 'strong', `${alert.direction} ${indicatorAlert ? 'indicator alert' : 'screener alert'} · ${alert.symbol}`, `text-xs font-bold ${directionClass}`);
+            const directionVote = indicatorAlert ? null : signedDirectionVote(alert.direction);
+            appendText(heading, 'strong', `${alert.direction}${directionVote === null ? '' : ` ${signedDirectionScore(directionVote)}`} ${indicatorAlert ? 'indicator alert' : 'screener alert'} · ${alert.symbol}`, `text-xs font-bold ${directionClass}`);
             const appIdentity = [alert.exchange_id, alert.product_id].filter(Boolean).join(' · ') || 'app';
             appendText(heading, 'span', `${appIdentity} · ${alert.timeframe || 'timeframe'}`, 'text-[9px] font-mono text-gray-500');
             item.append(heading);

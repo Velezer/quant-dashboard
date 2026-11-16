@@ -1,8 +1,6 @@
 use super::*;
 use rusqlite::OptionalExtension;
 
-const DIRECTION_SCORE_POINTS: i64 = 50;
-
 /// Saved Pintu futures signals must still belong to an active verified app
 /// contract. The registry may change between scans, so check it at read time.
 const PINTU_FUTURES_REGISTRY_GUARD: &str = "(signal_screener_rows.exchange_id <> 'pintu'
@@ -538,14 +536,12 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             .as_bool()
             .unwrap_or(false);
         let direction = row.get::<_, String>(8)?;
+        let setup_strength = row.get::<_, f64>(9)?;
+        let setup_strength_scale_max = score_basis["score_scale_max"].clone();
         // Keep the saved sign on retained qualifying rows; the live net below
         // is reserved for fresh market entries.
-        let last_direction_score = match (
-            score_status,
-            direction.to_ascii_uppercase().as_str(),
-        ) {
-            ("qualifying" | "stale", "LONG") => Some(DIRECTION_SCORE_POINTS),
-            ("qualifying" | "stale", "SHORT") => Some(-DIRECTION_SCORE_POINTS),
+        let last_direction_score = match score_status {
+            "qualifying" | "stale" => quant_core::signed_direction_score(&direction),
             _ => None,
         };
         Ok(json!({
@@ -559,7 +555,13 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             "timeframe": row.get::<_, String>(7)?,
             "direction": direction,
             "last_direction_score": last_direction_score,
-            "score": row.get::<_, f64>(9)?,
+            // `score` is the public signed vote; the stored positive model
+            // value is exposed separately as `setup_strength`.
+            "score": last_direction_score,
+            "score_contract": "signed_direction_vote_v1",
+            "direction_score_points": quant_core::SIGNAL_DIRECTION_SCORE_POINTS,
+            "setup_strength": setup_strength,
+            "setup_strength_scale_max": setup_strength_scale_max,
             "strategy_strength": row.get::<_, Option<f64>>(10)?,
             "confluence_score": row.get::<_, Option<f64>>(11)?,
             "win_probability": score_basis["win_probability"].clone(),
@@ -725,17 +727,13 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             continue;
         };
         let direction = signal["direction"].as_str().unwrap_or_default();
-        let signal_vote = if direction.eq_ignore_ascii_case("LONG") {
-            DIRECTION_SCORE_POINTS
-        } else if direction.eq_ignore_ascii_case("SHORT") {
-            -DIRECTION_SCORE_POINTS
-        } else {
+        let Some(signal_vote) = quant_core::signed_direction_score(direction) else {
             continue;
         };
         let net_score = i64::try_from(long_count)
             .unwrap_or(i64::MAX)
             .saturating_sub(i64::try_from(short_count).unwrap_or(i64::MAX))
-            .saturating_mul(DIRECTION_SCORE_POINTS);
+            .saturating_mul(quant_core::SIGNAL_DIRECTION_SCORE_POINTS);
         signal["direction_score"] = json!({
             "score": signal_vote,
             "net_score": net_score,
@@ -804,7 +802,9 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
 }
 
 fn normalized_total_score_out_of_ten(signal: &Value, models: &Value) -> Option<f64> {
-    let score = signal["score"].as_f64().filter(|score| score.is_finite())?;
+    let score = signal["setup_strength"]
+        .as_f64()
+        .filter(|score| score.is_finite())?;
     let strategy_id = signal["signal_strategy_id"].as_str()?;
     let model = models
         .as_array()

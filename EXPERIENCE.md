@@ -5,6 +5,13 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- Public screener score contract: `score` is the fixed signed direction vote
+  (+50 LONG, −50 SHORT), with `score_contract` identifying that schema.
+  Weighted positive strength lives in `setup_strength`, and its scale is
+  `setup_strength_scale_max`; the older `score_basis.score_scale_max` remains
+  for compatibility. Render and filter strength only from that field; never
+  compare the signed vote with /10, /20, /40, or /60 eligibility thresholds.
+  Persisted scanner and backtest calculations still operate on setup strength.
 - Keep the signed direction score (+50 LONG / −50 SHORT) distinct from weighted
   setup strength across the screener, selected-signal chart, scoring guide,
   filters, and backtest. The per-signal badge color follows its signed score,
