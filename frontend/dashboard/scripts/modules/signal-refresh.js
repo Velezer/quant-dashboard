@@ -18,6 +18,7 @@ export function installSignalRefresh() {
     let lastSignalCountRequestAt = 0;
     let pendingScanScope = '';
     let pendingScanAt = 0;
+    let scanBannerDismissed = false;
 
     async function fetchCurrentSignalCount(force = false) {
         if (!force && Date.now() - lastSignalCountRequestAt < SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS) return;
@@ -175,7 +176,7 @@ export function installSignalRefresh() {
 
     function showScanBanner(progress, symbol, exchangeId = '') {
         const banner = document.getElementById('scan-progress-banner');
-        if (!banner) return;
+        if (!banner || scanBannerDismissed) return;
         banner.classList.remove('hidden');
         const title = document.getElementById('scan-progress-title');
         const subtitle = document.getElementById('scan-progress-subtitle');
@@ -223,7 +224,13 @@ export function installSignalRefresh() {
         if (percentage) percentage.textContent = `${Math.round(pct)}%`;
     }
 
+    function dismissScanBanner() {
+        scanBannerDismissed = true;
+        document.getElementById('scan-progress-banner')?.classList.add('hidden');
+    }
+
     function hideScanBanner() {
+        scanBannerDismissed = false;
         document.getElementById('scan-progress-banner')?.classList.add('hidden');
         const icon = document.getElementById('refreshIcon');
         icon?.classList.remove('animate-spin');
@@ -281,6 +288,7 @@ export function installSignalRefresh() {
             const response = await fetch(refreshUrl, { method: 'POST' });
             const payload = await readApiResponse(response).catch(() => ({}));
             if (response.status === 202) {
+                scanBannerDismissed = false;
                 pendingScanScope = scopedExchange;
                 pendingScanAt = Date.now();
                 showToast(scopedExchange
@@ -290,6 +298,7 @@ export function installSignalRefresh() {
                 return;
             }
             if (response.status === 409) {
+                scanBannerDismissed = false;
                 pendingScanAt = 0;
                 pendingScanScope = '';
                 showToast('A signal scan is already running.');
@@ -337,6 +346,7 @@ export function installSignalRefresh() {
             } catch (_) { /* Keep the status stream alive if optional event metadata is malformed. */ }
         });
         eventSource.addEventListener('scan_started', event => {
+            scanBannerDismissed = false;
             pendingScanAt = 0;
             pendingScanScope = '';
             try {
@@ -408,5 +418,6 @@ export function installSignalRefresh() {
         updateSseBadge: { get: () => updateSseBadge },
         showToast: { get: () => showToast },
     });
+    document.getElementById('hideScanProgressBtn')?.addEventListener('click', dismissScanBanner);
     void fetchCurrentSignalCount();
 }
