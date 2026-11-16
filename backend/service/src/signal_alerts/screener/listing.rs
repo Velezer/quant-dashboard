@@ -555,8 +555,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             "timeframe": row.get::<_, String>(7)?,
             "direction": direction,
             "last_direction_score": last_direction_score,
-            // `score` is the public signed vote; the stored positive model
-            // value is exposed separately as `setup_strength`.
+            // The persisted magnitude and sum-derived direction reconstruct the
+            // signed indicator total without changing SQLite score constraints.
             "score": last_direction_score,
             "score_contract": "signed_indicator_sum_v1",
             "score_scale_max": setup_strength_scale_max,
