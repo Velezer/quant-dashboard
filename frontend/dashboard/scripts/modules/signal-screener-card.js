@@ -62,7 +62,7 @@ export function createSignalScreenerCard({
             ? 'mean-reversion tendency'
             : autocorrelationState.includes('CONTINUATION') ? 'continuation tendency' : '';
         const autocorrelationExplanation = autocorrelationAlignment === 'opposed'
-            ? `Opposes ${signal.direction}. This one /10 input lowers the /60 total; it does not cancel the ${signal.direction} signal or create a ${signal.direction === 'LONG' ? 'SHORT' : 'LONG'} signal. A ${signal.direction === 'LONG' ? 'SHORT' : 'LONG'} setup must qualify on its own.`
+            ? `Opposes ${signal.direction}. This one /10 input lowers setup strength; it does not change the ${signal.direction} direction score or create a ${signal.direction === 'LONG' ? 'SHORT' : 'LONG'} signal. A ${signal.direction === 'LONG' ? 'SHORT' : 'LONG'} setup must qualify on its own.`
             : autocorrelationAlignment === 'aligned'
                 ? `Supports ${signal.direction} as one of six score inputs. It adds to the total but is not a standalone signal or a win guarantee.`
                 : autocorrelationAlignment === 'neutral'
@@ -143,21 +143,21 @@ export function createSignalScreenerCard({
             : '';
         const entryStatus = scoreState?.current === false ? 'no current market-entry signal' : 'current technical market-entry signal';
         const accessibleScore = sixIndicators
-            ? `${Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax} weighted total; ` : ''}${signalIndicatorSummary(signal, scoreModel)}`
+            ? `${Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax} setup strength; ` : ''}${signalIndicatorSummary(signal, scoreModel)}`
             : Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax}` : 'unavailable';
         const directionScore = signalDirectionalScore(signal);
-        const directionScoreTone = directionScore?.netScore > 0 ? 'long'
-            : directionScore?.netScore < 0 ? 'short' : 'neutral';
+        const directionScoreTone = directionScore?.score > 0 ? 'long'
+            : directionScore?.score < 0 ? 'short' : 'neutral';
         const directionScoreText = directionScore
-            ? `Score ${signedDirectionScore(directionScore.score)} · Net ${signedDirectionScore(directionScore.netScore)} · ${directionScore.longCount}L / ${directionScore.shortCount}S`
+            ? `Direction ${signedDirectionScore(directionScore.score)} · Net ${signedDirectionScore(directionScore.netScore)} · ${directionScore.longCount}L / ${directionScore.shortCount}S`
             : '';
         const directionScoreMarkup = directionScore
-            ? `<span class="signal-row-direction-score signal-row-direction-score-${directionScoreTone}" title="${escape(`Signed direction score ${signedDirectionScore(directionScore.score)} for this ${signal.direction} signal. Net sums current ${signal.symbol} ${signal.timeframe.toUpperCase()} entries across products in the selected app. Setup strength and win-rate evidence stay separate.`)}">${escape(directionScoreText)}</span>`
+            ? `<span class="signal-row-direction-score signal-row-direction-score-${directionScoreTone}" title="${escape(`Direction score ${signedDirectionScore(directionScore.score)} for this ${signal.direction} signal. Net sums current ${signal.symbol} ${signal.timeframe.toUpperCase()} entries across products in the selected app. Setup strength and win-rate evidence stay separate.`)}">${escape(directionScoreText)}</span>`
             : '';
         const directionScoreAccessible = directionScore
             ? `Signed direction score ${signedDirectionScore(directionScore.score)} for ${signal.direction}; net ${signedDirectionScore(directionScore.netScore)} from ${directionScore.longCount} long and ${directionScore.shortCount} short current entries in the selected app. `
             : '';
-        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${autocorrelationScore ? `${autocorrelationExplanation} ` : ''}${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup strength is separate from the signed direction score; win-rate evidence is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
+        const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Setup-strength weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${autocorrelationScore ? `${autocorrelationExplanation} ` : ''}${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup strength is separate from the signed direction score; win-rate evidence is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
         const productLabel = signal.product_id === 'stockbit_regular'
             ? ''
             : signal.product_id.replaceAll('_', ' ');

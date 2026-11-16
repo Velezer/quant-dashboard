@@ -571,7 +571,7 @@
                 </div>
                 <details class="screener-guidance">
                     <summary>Signal rules and scoring</summary>
-                    <p class="text-[10px] leading-relaxed text-gray-400">Crypto NWE/DSS signals are recalculated each scan from the latest completed bar. Stockbit keeps a fresh zero-score row when a saved setup stops qualifying; it is labeled NO MARKET ENTRY and excluded from current signal and notification counts. The current strategy setup and base score floor determine which entry rows qualify; after-fee backtest metrics are shown as historical context and never filter signals. There is no separate signal-age expiry. A stale reference price remains labeled and is not a market entry. Score measures setup strength, not win probability or execution availability. <a href="/scoring" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2 hover:text-cyan-100 focus:outline focus:outline-2 focus:outline-cyan-400">How scoring works</a> · <a href="/entry-validation" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2">Validate entry models</a>. Price is a candle close, not live bid/ask; this is not an executable order and no order is placed.</p>
+                    <p class="text-[10px] leading-relaxed text-gray-400">The screener shows two separate measures. Direction score is +50 per LONG and −50 per SHORT; the net adds current same-category ticker/timeframe signals in this app, so opposite entries cancel. Setup strength is the weighted indicator total (six /10 readings, up to /60 for the current model); the setup-strength filter and backtest use this measure. Neither measure is win probability. Crypto NWE/DSS signals are recalculated each scan from the latest completed bar. Stockbit keeps a fresh zero-strength row when a saved setup stops qualifying; it is labeled NO MARKET ENTRY and excluded from current signal and notification counts. The current strategy setup and base setup-strength floor determine which entry rows qualify; after-fee backtest metrics are historical context and never filter signals. There is no separate signal-age expiry. A stale reference price remains labeled and is not a market entry. Freshness and execution availability are separate from both measures. <a href="/scoring" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2 hover:text-cyan-100 focus:outline focus:outline-2 focus:outline-cyan-400">How scoring works</a> · <a href="/entry-validation" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2">Validate entry models</a>. Price is a candle close, not live bid/ask; this is not an executable order and no order is placed.</p>
                 </details>
 
                 <div id="screener-status" class="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-2 text-[11px] leading-relaxed text-gray-300" role="status" aria-live="polite">
@@ -655,10 +655,10 @@
                         </div>
                         <p class="signal-indicator-filter-help">Choosing an indicator starts at 5+/10 so the list narrows immediately. Choose Any /10 to include every row with an available score. This only narrows the list; model qualification rules stay unchanged.</p>
                     </div>
-                    <div id="signalTotalScoreFilterPanel" class="signal-search-panel" aria-label="Filter signals by minimum total score">
-                        <label for="screenerMinimumTotalScore" class="signal-search-label">Minimum total score</label>
+                    <div id="signalTotalScoreFilterPanel" class="signal-search-panel" aria-label="Filter signals by minimum setup strength">
+                        <label for="screenerMinimumTotalScore" class="signal-search-label">Minimum setup strength</label>
                         <div class="signal-indicator-filter-controls">
-                            <select id="screenerMinimumTotalScore" aria-label="Minimum total score normalized to ten">
+                            <select id="screenerMinimumTotalScore" aria-label="Minimum setup strength normalized to ten">
                                 <option value="0">Any score</option>
                                 <option value="1">1+/10</option>
                                 <option value="2">2+/10</option>
@@ -672,7 +672,7 @@
                                 <option value="10">10/10</option>
                             </select>
                         </div>
-                        <p class="signal-indicator-filter-help">Scores are normalized to /10 using each model’s score scale. This narrows the saved rows and does not change model weights or qualification rules.</p>
+                        <p class="signal-indicator-filter-help">Setup strength is normalized to /10 using each model’s scale. This narrows saved rows; it does not change direction scores, model weights, or qualification rules.</p>
                     </div>
                 </details>
             </section>

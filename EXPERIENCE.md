@@ -5,6 +5,12 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- Keep the signed direction score (+50 LONG / −50 SHORT) distinct from weighted
+  setup strength across the screener, selected-signal chart, scoring guide,
+  filters, and backtest. The per-signal badge color follows its signed score,
+  not the ticker/timeframe net; a net of zero must not make a LONG or SHORT row
+  look neutral. Name /60 and legacy weighted values "setup strength" so users
+  do not mistake them for the direction score.
 - The Rust build workflow previously skipped frontend-only changes because its
   path filters named only backend and Rust sources. Keep `frontend/**` in both
   pull-request and branch-push filters, and confirm the release build check ran

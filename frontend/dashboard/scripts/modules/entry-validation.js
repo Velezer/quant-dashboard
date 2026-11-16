@@ -569,7 +569,7 @@ export function initializeEntryValidation(doc = document) {
             INVALID_HISTORY: 'Invalid candle history or fee inputs. The research candidate could not be fitted.',
             INSUFFICIENT_HISTORY: 'The strategy warm-up is incomplete. The equal-weight baseline remains available when history allows.',
             FEES_UNKNOWN: 'Fees are unknown, so weight fitting is disabled. The baseline result is gross-only.',
-            INSUFFICIENT_TRAINING_SAMPLE: 'No candidate had 30 or more non-overlapping training trades at the existing score floor.',
+            INSUFFICIENT_TRAINING_SAMPLE: 'No candidate had 30 or more non-overlapping training trades at the existing setup-strength floor.',
             AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED: 'Training candidates had enough trades, but none reached the 50% win-rate target after configured transaction fees.',
             NO_VALIDATION_EXIT: 'Training selected a weight candidate, but no exit rule met the validation sample minimum.',
             CANDIDATE_READY: 'Training selected a candidate at the 50% after-fee win-rate target; validation selected the exit. The untouched holdout reports the frozen rule once.',
@@ -636,7 +636,7 @@ export function initializeEntryValidation(doc = document) {
         const values = (items, suffix = '', digits = 2) => Array.isArray(items) ? items.map(value => `${metric(value, '', digits)}${suffix}`).join(' / ') : 'unavailable';
         const targetValues = search.target_after_fee_r_multiples ?? search.target_r_multiples;
         const targetSuffix = Array.isArray(search.target_after_fee_r_multiples) ? '× net risk after fees' : ' gross R';
-        const searchDescription = `Search grid: ${values(search.atr14_stop_multiples, ' × ATR14')} stops; ${values(targetValues, targetSuffix)} targets; ${values(search.maximum_hold_bars, ' bars', 0)} maximum holds; score floors ${values(search.score_floors_out_of_60, '/60', 0)}`;
+        const searchDescription = `Search grid: ${values(search.atr14_stop_multiples, ' × ATR14')} stops; ${values(targetValues, targetSuffix)} targets; ${values(search.maximum_hold_bars, ' bars', 0)} maximum holds; setup-strength floors ${values(search.score_floors_out_of_60, '/60', 0)}`;
         status('risk-reward-status', `${message} Qualification target: ${targetRate} after fees, with its 95% Wilson lower bound also at target. Payoff and net return are shown as diagnostics.`, feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? '' : 'pending');
         if (!candidate) {
             text('risk-reward-description', `${metric(rule?.eligible_validation_candidate_count, '', 0)} of ${metric(rule?.candidate_count, '', 0)} bracket combinations had enough validation trades. No rule was selected from holdout data.`);
@@ -652,7 +652,7 @@ export function initializeEntryValidation(doc = document) {
             : `target ${metric(afterFeeTarget, '× net risk after fees', 2)}`;
         const verdict = candidate.qualified === true ? 'Passed history, validation, and holdout checks.' : `Validation ${candidate.validation_passed === true ? 'passed' : 'failed'} · holdout ${candidate.holdout_passed === true ? 'passed' : 'failed'} · 1,000-day minimum ${candidate.history_span_passed === true ? 'passed' : 'not met'}.`;
         const wilsonLower = summary => Array.isArray(summary.win_rate_after_fees_wilson_95_pct) ? summary.win_rate_after_fees_wilson_95_pct[0] : null;
-        text('risk-reward-description', `${candidate.entry_rule || '4h NWE/DSS entry'} Score floor ${metric(candidate.minimum_score_out_of_60, '/60', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; ${targetDescription}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
+        text('risk-reward-description', `${candidate.entry_rule || '4h NWE/DSS entry'} Setup-strength floor ${metric(candidate.minimum_score_out_of_60, '/60', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; ${targetDescription}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
         metrics.replaceChildren(
             metricCard('Validation win rate', metric(validation.win_rate_after_fees_pct, '%', 1), `${metric(validation.trades, ' trades', 0)} · target ${targetRate}`),
             metricCard('Validation 95% lower bound', metric(wilsonLower(validation), '%', 1), `Must also reach ${targetRate}`),
