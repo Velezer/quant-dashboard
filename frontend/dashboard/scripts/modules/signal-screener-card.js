@@ -46,13 +46,10 @@ export function createSignalScreenerCard({
                 : '';
         const autocorrelationRho = Number(autocorrelationScore?.value);
         const autocorrelationState = String(autocorrelationScore?.state || 'UNAVAILABLE').toUpperCase();
-        const autocorrelationAlignment = autocorrelationState.startsWith('OPPOSED')
-            ? 'opposed'
-            : autocorrelationState.startsWith('ALIGNED')
-                ? 'aligned'
-                : autocorrelationState.startsWith('NO_DIRECTIONAL_EDGE')
-                    ? 'neutral'
-                    : 'unavailable';
+        const autocorrelationAlignment = autocorrelationScore?.points === null || !autocorrelationScore
+            || autocorrelationState === 'UNAVAILABLE' ? 'unavailable'
+            : Math.abs(autocorrelationScore.points) < 0.5 ? 'neutral'
+                : (autocorrelationScore.points > 0) === (signal.direction === 'LONG') ? 'aligned' : 'opposed';
         const autocorrelationRelation = autocorrelationAlignment === 'opposed'
             ? `Against ${signal.direction}`
             : autocorrelationAlignment === 'aligned'

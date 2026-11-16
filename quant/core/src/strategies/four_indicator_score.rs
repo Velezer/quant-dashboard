@@ -347,7 +347,7 @@ fn relative_volume_component(
     if !relative_volume.is_finite() {
         return unavailable();
     }
-    let candle_direction = (current.close - current.open).signum();
+    let candle_direction = if current.close > current.open { 1.0 } else if current.close < current.open { -1.0 } else { 0.0 };
     let state = if candle_direction == 0.0 {
         "NEUTRAL"
     } else if candle_direction == direction_sign {
