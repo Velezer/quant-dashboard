@@ -200,7 +200,10 @@ fn partitions_isolate_entries_exits_and_future_prices() {
     let mut bars: Vec<_> = (0..12).map(|index| bar(index, 100.0, 110.0)).collect();
     let observation = Observation {
         long: true,
-        total: 10.0,
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
         factors: [2.5; 4],
         available: [true; 4],
     };
@@ -233,7 +236,10 @@ fn unknown_fees_are_explicitly_gross_and_never_invent_net_returns() {
     let bars: Vec<_> = (0..6).map(|index| bar(index, 100.0, 110.0)).collect();
     let observation = Observation {
         long: true,
-        total: 40.0,
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
         factors: [10.0; 4],
         available: [true; 4],
     };
@@ -267,7 +273,10 @@ fn weight_grid_is_bounded_and_preserves_the_forty_point_budget() {
         score_with_weights(
             Observation {
                 long: true,
-                total: 0.0,
+                markov_score: 0.0,
+                markov_available: false,
+                autocorrelation_score: 0.0,
+                autocorrelation_available: false,
                 factors: [10.0, 0.0, 0.0, 0.0],
                 available: [true; 4]
             },
@@ -281,7 +290,10 @@ fn weight_grid_is_bounded_and_preserves_the_forty_point_budget() {
 fn weight_replay_uses_the_existing_score_floor_and_does_not_redistribute_missing_factors() {
     let observation = Observation {
         long: true,
-        total: 15.0,
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
         factors: [10.0, 0.0, 5.0, 0.0],
         available: [true, false, true, false],
     };
@@ -303,13 +315,19 @@ fn reverse_exit_requires_the_opposite_signal_to_qualify_under_the_tested_weights
     let bars: Vec<_> = (0..8).map(|index| bar(index, 100.0, 101.0)).collect();
     let long = Observation {
         long: true,
-        total: 40.0,
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
         factors: [10.0; 4],
         available: [true; 4],
     };
     let weak_short = Observation {
         long: false,
-        total: 20.0,
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
         factors: [0.0, 10.0, 0.0, 0.0],
         available: [true; 4],
     };
@@ -358,7 +376,10 @@ fn training_selects_a_weight_vector_without_reading_validation_or_holdout_prices
         .map(|index| {
             (index % 9 == 0).then_some(Observation {
                 long: true,
-                total: 10.0,
+                markov_score: 0.0,
+                markov_available: false,
+                autocorrelation_score: 0.0,
+                autocorrelation_available: false,
                 factors: [10.0, 0.0, 0.0, 0.0],
                 available: [true; 4],
             })
@@ -405,7 +426,10 @@ fn hour_pair_uses_next_bar_open_and_target_bar_close_in_wib() {
         .collect();
     let observation = Observation {
         long: true,
-        total: 40.0,
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
         factors: [10.0; 4],
         available: [true; 4],
     };
@@ -437,7 +461,10 @@ fn weighted_score_autocorrelation_uses_training_signal_events() {
         .map(|index| {
             Some(Observation {
                 long: true,
-                total: 0.0,
+                markov_score: 0.0,
+                markov_available: false,
+                autocorrelation_score: 0.0,
+                autocorrelation_available: false,
                 factors: [index as f64, 0.0, 0.0, 0.0],
                 available: [true; 4],
             })
@@ -464,7 +491,10 @@ fn hour_search_selects_the_validation_pair_with_the_highest_fee_aware_return() {
         .collect();
     let observation = Observation {
         long: true,
-        total: 40.0,
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
         factors: [10.0; 4],
         available: [true; 4],
     };
@@ -493,7 +523,10 @@ fn low_training_sample_does_not_create_a_weight_candidate() {
     let bars: Vec<_> = (0..120).map(|index| bar(index, 100.0, 110.0)).collect();
     let observation = Observation {
         long: true,
-        total: 40.0,
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
         factors: [10.0; 4],
         available: [true; 4],
     };
@@ -537,12 +570,15 @@ fn band_boundaries_include_exact_ten_and_forty_without_reclassifying_unavailable
         (30.0, 3),
         (40.0, 3),
     ] {
-        assert_eq!(band_index(score, TOTAL_SCORE_BAND_WIDTH), expected);
+        assert_eq!(band_index(score, TOTAL_SCORE_BAND_WIDTH, TOTAL_SCORE_BAND_COUNT), expected);
     }
     let bars: Vec<_> = (0..6).map(|index| bar(index, 100.0, 110.0)).collect();
     let observation = Observation {
         long: true,
-        total: 10.0,
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
         factors: [0.0, 10.0, 0.0, 0.0],
         available: [false, true, false, false],
     };
