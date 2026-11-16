@@ -1,6 +1,8 @@
 use super::*;
 use rusqlite::OptionalExtension;
 
+const DIRECTIONAL_VOTE_POINTS: i64 = 50;
+
 /// Saved Pintu futures signals must still belong to an active verified app
 /// contract. The registry may change between scans, so check it at read time.
 const PINTU_FUTURES_REGISTRY_GUARD: &str = "(signal_screener_rows.exchange_id <> 'pintu'
@@ -250,6 +252,28 @@ fn score_indicator_name(filter: &str) -> Option<&'static str> {
     }
 }
 
+fn directional_vote_key(signal: &Value) -> (String, String, String, String) {
+    (
+        signal["exchange_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_ascii_lowercase(),
+        signal["asset_category_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_ascii_lowercase(),
+        signal["symbol"]
+            .as_str()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_uppercase(),
+        signal["timeframe"]
+            .as_str()
+            .unwrap_or_default()
+            .to_ascii_lowercase(),
+    )
+}
+
 fn win_rate_confidence_interval_95_pct(wins: u64, trades: u64) -> Option<[f64; 2]> {
     if trades == 0 || wins > trades {
         return None;
@@ -479,26 +503,6 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         where_clause.push_str(&format!(" AND exchange_id=?{}", query_values.len() + 1));
         query_values.push(rusqlite::types::Value::Text(exchange.to_string()));
     }
-    if let Some(timeframe) = timeframe_filter {
-        where_clause.push_str(&format!(" AND timeframe=?{}", query_values.len() + 1));
-        query_values.push(rusqlite::types::Value::Text(timeframe.to_string()));
-    }
-    if let Some(product) = product_filter {
-        where_clause.push_str(&format!(" AND product_id=?{}", query_values.len() + 1));
-        query_values.push(rusqlite::types::Value::Text(product.to_string()));
-    }
-    if let Some(search) = search_filter {
-        where_clause.push_str(&format!(
-            " AND (symbol LIKE ?{0} ESCAPE '\\' COLLATE NOCASE OR signal_strategy_name LIKE ?{0} ESCAPE '\\' COLLATE NOCASE OR signal_strategy_id LIKE ?{0} ESCAPE '\\' COLLATE NOCASE)",
-            query_values.len() + 1,
-        ));
-        let escaped_search = search
-            .trim()
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
-        query_values.push(rusqlite::types::Value::Text(format!("%{escaped_search}%")));
-    }
     let page_size = limit.clamp(1, MAX_SIGNAL_SCREENER_PAGE_SIZE);
     let display_order = signal_screener_display_order_sql();
     let score_model_by_strategy = score_model_by_strategy();
@@ -570,6 +574,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let mut stale_score_signal_count = 0usize;
     let mut matching_rows = 0usize;
     let mut signals = Vec::with_capacity(page_size);
+    let mut directional_vote_counts =
+        std::collections::HashMap::<(String, String, String, String), (usize, usize)>::new();
     while let Some(row) = query_rows.next()? {
         if is_known_delisted_pintu_signal(row)? { continue; }
         let strategy = row.get::<_, String>(5)?;
@@ -604,6 +610,42 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             scan_interval_seconds,
             &score_model_by_strategy,
         );
+        let is_current_market_entry = is_current
+            && signal["market_entry_status"].as_str() != Some("NO_MARKET_ENTRY")
+            && signal["score_basis"]["status"].as_str() != Some("not_qualifying");
+        if is_current_market_entry {
+            let direction = signal["direction"].as_str().unwrap_or_default();
+            let counts = directional_vote_counts
+                .entry(directional_vote_key(&signal))
+                .or_default();
+            if direction.eq_ignore_ascii_case("LONG") {
+                counts.0 = counts.0.saturating_add(1);
+            } else if direction.eq_ignore_ascii_case("SHORT") {
+                counts.1 = counts.1.saturating_add(1);
+            }
+        }
+        // Directional votes summarize all current entries for this app and
+        // ticker/timeframe, independent of the screener's visible filters.
+        if product_filter.is_some_and(|product| {
+            !signal["product_id"]
+                .as_str()
+                .is_some_and(|row_product| row_product.eq_ignore_ascii_case(product))
+        }) || timeframe_filter.is_some_and(|timeframe| {
+            !signal["timeframe"]
+                .as_str()
+                .is_some_and(|row_timeframe| row_timeframe.eq_ignore_ascii_case(timeframe))
+        }) || search_filter.is_some_and(|search| {
+            let needle = search.trim().to_lowercase();
+            ![
+                signal["symbol"].as_str().unwrap_or_default(),
+                signal["signal_strategy_name"].as_str().unwrap_or_default(),
+                signal["signal_strategy_id"].as_str().unwrap_or_default(),
+            ]
+            .into_iter()
+            .any(|value| value.to_lowercase().contains(&needle))
+        }) {
+            continue;
+        }
         if !score_basis_matches_indicator_filter(
             &signal["score_basis"],
             indicator_filter,
@@ -653,6 +695,33 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             signals.push(signal);
         }
         matching_rows = matching_rows.saturating_add(1);
+    }
+    for signal in &mut signals {
+        let Some((long_count, short_count)) = directional_vote_counts
+            .get(&directional_vote_key(signal))
+            .copied()
+        else {
+            continue;
+        };
+        let direction = signal["direction"].as_str().unwrap_or_default();
+        let signal_vote = if direction.eq_ignore_ascii_case("LONG") {
+            DIRECTIONAL_VOTE_POINTS
+        } else if direction.eq_ignore_ascii_case("SHORT") {
+            -DIRECTIONAL_VOTE_POINTS
+        } else {
+            continue;
+        };
+        let net_score = i64::try_from(long_count)
+            .unwrap_or(i64::MAX)
+            .saturating_sub(i64::try_from(short_count).unwrap_or(i64::MAX))
+            .saturating_mul(DIRECTIONAL_VOTE_POINTS);
+        signal["directional_vote"] = json!({
+            "signal_score": signal_vote,
+            "net_score": net_score,
+            "long_count": long_count,
+            "short_count": short_count,
+            "scope": "all current qualifying signals for this ticker and timeframe in the selected app",
+        });
     }
     let page_offset = offset.min(matching_rows);
     let fetched_rows = signals.len();

@@ -1,4 +1,4 @@
-import { hasSixIndicatorScores, oppositeEntryExitCue, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength } from './signal-screener-model.js';
+import { DIRECTIONAL_VOTE_POINTS, hasSixIndicatorScores, oppositeEntryExitCue, signalIndicatorScores, signalIndicatorSummary, signalTotalStrength } from './signal-screener-model.js';
 /** Builds one accessible signal row from normalized screener data. */
 export function createSignalScreenerCard({
     escape,
@@ -146,6 +146,26 @@ export function createSignalScreenerCard({
             ? `${Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax} weighted total; ` : ''}${signalIndicatorSummary(signal, scoreModel)}`
             : Number.isFinite(displayScore) ? `${scoreValue} out of ${scoreScaleMax}` : 'unavailable';
         const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Score weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${autocorrelationScore ? `${autocorrelationExplanation} ` : ''}${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup score measures strength; the estimate is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
+        const directionalVote = signal.directional_vote || {};
+        const signalVote = Number(directionalVote.signal_score);
+        const netVote = Number(directionalVote.net_score);
+        const longVoteCount = Number(directionalVote.long_count);
+        const shortVoteCount = Number(directionalVote.short_count);
+        const hasDirectionalVote = [DIRECTIONAL_VOTE_POINTS, -DIRECTIONAL_VOTE_POINTS].includes(signalVote)
+            && Number.isInteger(netVote)
+            && Number.isInteger(longVoteCount) && longVoteCount >= 0
+            && Number.isInteger(shortVoteCount) && shortVoteCount >= 0;
+        const signedVote = value => value > 0 ? `+${value}` : String(value);
+        const voteTone = netVote > 0 ? 'long' : netVote < 0 ? 'short' : 'neutral';
+        const directionalVoteText = hasDirectionalVote
+            ? `Vote ${signedVote(signalVote)} · Net ${signedVote(netVote)} · ${longVoteCount}L / ${shortVoteCount}S`
+            : '';
+        const directionalVoteMarkup = hasDirectionalVote
+            ? `<span class="signal-row-direction-vote signal-row-direction-vote-${voteTone}" title="${escape(`This ${signal.direction} signal contributes ${signedVote(signalVote)}. Net adds one ±${DIRECTIONAL_VOTE_POINTS} vote per current ${signal.symbol} ${signal.timeframe.toUpperCase()} entry in the selected app, across products and independent of visible filters. Setup strength and win-rate evidence stay separate.`)}">${escape(directionalVoteText)}</span>`
+            : '';
+        const directionalVoteAccessible = hasDirectionalVote
+            ? `Directional vote ${signedVote(signalVote)} for ${signal.direction}; net ${signedVote(netVote)} from ${longVoteCount} long and ${shortVoteCount} short current entries in the selected app. `
+            : '';
         const productLabel = signal.product_id === 'stockbit_regular'
             ? ''
             : signal.product_id.replaceAll('_', ' ');
@@ -157,11 +177,11 @@ export function createSignalScreenerCard({
             .filter(value => String(value || '').trim() && value !== 'unknown')
             .map(value => String(value).replaceAll('_', ' '));
         return `<article class="signal-row-wrap" role="listitem">
-            <button type="button" class="signal-row${totalStrength?.tone === 'low' ? ' is-low-total-strength' : ''}${selected ? ' is-selected' : ''}" data-signal-id="${escape(signal.signal_id)}" aria-pressed="${selected}" aria-label="${escape(scoreAccessibleLabel)}">
+            <button type="button" class="signal-row${totalStrength?.tone === 'low' ? ' is-low-total-strength' : ''}${selected ? ' is-selected' : ''}" data-signal-id="${escape(signal.signal_id)}" aria-pressed="${selected}" aria-label="${escape(`${scoreAccessibleLabel} ${directionalVoteAccessible}`)}">
                 <span class="signal-row-top"><span class="signal-row-rank">#${rank}</span><span class="signal-row-symbol">${escape(signal.symbol)}</span><span class="signal-row-timeframe">${escape(signal.timeframe.toUpperCase())}</span></span>
                 <span class="signal-row-meta">${escape(rowContext)}</span>
                 ${scoreState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}" role="status">${escape(scoreState.label)} · ${signal.persistent_score === true ? 'strategy' : 'price'} bar ${escape(signalPriceBarAgeLabel(signal.persistent_score === true ? signal.score_bar_time : signal.price_bar_time))}</span>` : ''}
-                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${sixIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded total' : 'Weighted total'} <strong>${scoreValue}</strong><span aria-hidden="true"> / 60</span> · six /10 indicators</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}${regimeSummary}${autocorrelationSummary}</span>
+                <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span>${directionalVoteMarkup}<span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span>${sixIndicators ? `<span class="signal-row-score">${scoreState?.tone === 'stale' ? 'Last recorded total' : 'Weighted total'} <strong>${scoreValue}</strong><span aria-hidden="true"> / 60</span> · six /10 indicators</span>` : `<span class="signal-row-score">${escape(scoreLabel)} <strong>${scoreValue}</strong><span aria-hidden="true"> / ${Number.isFinite(scoreScaleMax) ? scoreScaleMax : 10}</span></span>`}${regimeSummary}${autocorrelationSummary}</span>
                 ${autocorrelationGuidance}
                 ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
                 ${totalStrength ? `<span class="signal-total-strength signal-total-strength-${totalStrength.tone}" title="${escape(totalStrength.description)}">${escape(totalStrength.label)}<small>${escape(totalStrength.description)}</small></span>` : ''}
