@@ -5,6 +5,12 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- Stockbit same-timeframe stored history must remain scoreable when matching
+  15m prices are absent. Use its candle close as an explicit reference-only
+  price, retain current-model stale score rows in both API and browser, and
+  exclude them from current-entry counts. Never roll a source using another
+  source's 15m timestamp. Legacy models still require current-model rescoring.
+
 - Keep screener cards compact: ticker/timeframe, app/product/model context,
   direction, signed score, price, win-rate availability, and stale/no-entry state.
   Put factor breakdowns and research diagnostics in a closed native details

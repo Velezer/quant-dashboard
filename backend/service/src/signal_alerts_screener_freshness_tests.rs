@@ -120,6 +120,17 @@ fn list_signal_screener_withholds_stale_stockbit_score_rows() {
     assert!(signals.is_empty(), "a legacy score must not appear as a current entry");
     assert_eq!(payload["summary"]["matching_rows"], 0);
     assert_eq!(payload["summary"]["stale_price_signal_count"], 0);
+    connection.execute("UPDATE signals.signal_screener_rows SET score_basis_json=?1", [
+        json!({"model_id": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
+            "score_scale_max":60,"minimum_score_out_of_60":1,
+            "score_model_status":"current","status":"stale"}).to_string()
+    ]).unwrap();
+    let retained = list_signal_screener(&connection, 900, Some("stockbit"), Some("4h")).unwrap();
+    assert_eq!(retained["signals"].as_array().unwrap().len(), 1);
+    assert_eq!(retained["signals"][0]["score_status"], "stale");
+    assert_eq!(retained["signals"][0]["price_is_fresh"], false);
+    assert!(retained["signals"][0]["direction_score"].is_null());
+
 }
 
 #[test]

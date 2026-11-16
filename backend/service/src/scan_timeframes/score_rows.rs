@@ -333,15 +333,19 @@ pub(super) fn append_stockbit_model_result(
     current_price: Option<&CurrentPrice>,
     markov_regime: Option<quant_core::RegimeId>,
 ) -> Option<ReadinessIssue> {
-    let Some(current_price) = current_price.filter(|price| price.source == source) else {
-        return None;
-    };
     let Some(score_bar) = bars
         .last()
         .filter(|bar| bar.close.is_finite() && bar.close > 0.0)
     else {
         return None;
     };
+    let reference_price = CurrentPrice {
+        value: score_bar.close, signal_bar_time: score_bar.time,
+        source: source.to_string(), provider: provider.to_string(),
+    };
+    let matching_price = current_price.filter(|price| price.source == source);
+    let reference_only = matching_price.is_none();
+    let current_price = matching_price.unwrap_or(&reference_price);
     let latest_signal = model_signals.last();
     let profile = active_scoring_profile(input, score_model_id, timeframe, source);
     let (score_components, score_groups) = latest_signal
@@ -408,8 +412,8 @@ pub(super) fn append_stockbit_model_result(
                 score_bar,
                 score_bar,
                 current_price,
-                "15m",
-                false,
+                if reference_only { timeframe } else { "15m" },
+                reference_only,
                 source,
                 provider,
                 score_components.clone(),

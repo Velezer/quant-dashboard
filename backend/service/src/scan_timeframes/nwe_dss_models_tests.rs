@@ -90,3 +90,32 @@ fn crypto_dss_rows_keep_dss_and_nwe_points_on_the_correct_indicators() {
         assert_eq!(row["Data_Source"], source.0);
     }
 }
+
+#[test]
+fn stockbit_4h_scores_without_a_15m_price_as_a_reference_only() {
+    let now_ns = crate::now_secs() as i64 * NANOS_PER_SECOND;
+    let bars = (0..70).map(|i| {
+        let close = 100.0 - i as f64 * 0.1;
+        StrategyBar { time: now_ns - (70-i) * 4 * 3600 * NANOS_PER_SECOND,
+            open:close+0.05, high:close+0.1, low:close-0.05, close, volume:1000.0 }
+    }).collect::<Vec<_>>();
+    let db = Connection::open_in_memory().unwrap();
+    let retained = std::collections::BTreeSet::new();
+    let input = TimeframeScanInput { app_connection:&db,market_connection:&db,sync_state:None,
+        exchange_id:"stockbit",product_id:"stockbit_regular",category_id:"idx_stock",
+        symbol:"TEST.JK",asset:"TEST.JK",strategy:"test",evidence_class:"idx_stock",
+        class:"idx",exchange:"stockbit",time_window:"test",base_timeframe:"15m",
+        is_tokenized:false,is_multibagger:false,retained_stockbit_signal_rows:&retained,
+        active_scoring_profiles:None };
+    let model = quant_core::EntryModelKind::Dss;
+    let signals = quant_core::generate_signed_entry_signal(&bars, model).into_iter().collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    append_stockbit_model_result(&mut candidates,&mut Vec::new(),&input,&signals,&bars,
+        &quant_core::stockbit_dss_bressert_signal_strategy_id("4h").unwrap(),model.score_model_id(),
+        "4h","stockbit_test","test","DSS Bressert",None,Some(quant_core::RegimeId::BearTrend));
+    let candidate = candidates.first().expect("stored 4h history must score without 15m price");
+    assert_eq!(candidate["Current_Price_Reference_Only"],true);
+    assert_eq!(candidate["Current_Price_Timeframe"],"4h");
+    assert_eq!(candidate["Current_Price"], bars.last().unwrap().close);
+    assert!(crate::signal_alerts::signal_screener_row(candidate).is_some());
+}
