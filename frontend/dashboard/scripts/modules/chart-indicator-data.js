@@ -30,3 +30,15 @@ export function normalizeChartIndicators(raw) {
     }
     return normalized;
 }
+
+/** Match indicator output to the exact stored candle, never an array offset. */
+export function chartIndicatorPointsByTime(points) {
+    return new Map((Array.isArray(points) ? points : [])
+        .filter(point => point && point.time != null)
+        .map(point => [String(point.time), point]));
+}
+
+export function chartIndicatorSeriesKey(candles) {
+    return candles.map(candle => [candle.time, candle.open, candle.high, candle.low,
+        candle.close, candle.volume].join(':')).join('|');
+}

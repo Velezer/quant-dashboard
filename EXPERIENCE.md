@@ -5,6 +5,11 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- Hydrate chart indicators by exact candle timestamp rather than array offsets.
+  Missing or newly appended bars can shift independently fetched indicator arrays.
+  Cache identity must include candle times and OHLCV; equal row counts do not
+  prove the same series or unchanged forming bars.
+
 - Signed entry scoring must start with independent bullish/bearish factor
   observations: each raw component is −10…+10, and weighted contributions sum
   to the signed total (−60…+60 under the six-factor budget). Positive totals
