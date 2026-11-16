@@ -710,6 +710,7 @@
 .signal-row-direction-score-long { border-color:#166534; background:#052e16; color:#86efac; }
 .signal-row-direction-score-short { border-color:#9f1239; background:#4c0519; color:#fda4af; }
 .signal-row-direction-score-neutral { border-color:#475569; background:#1f2937; color:#e2e8f0; }
+.signal-row-direction-score-last-known { border-style:dashed; }
 .signal-row-regime-score { display:inline-grid; grid-template-columns:auto auto minmax(0,1fr); align-items:center; gap:.25rem; max-width:100%; border:1px solid #4c3b78; border-radius:.35rem; background:#211a35; padding:.2rem .4rem; color:#ddd6fe; font:600 9px/1.35 ui-monospace,monospace; }
 .signal-row-regime-score > span { color:#c4b5fd; text-transform:uppercase; letter-spacing:.04em; }
 .signal-row-regime-score strong { color:#f5f3ff; white-space:nowrap; }

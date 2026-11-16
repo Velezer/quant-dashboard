@@ -214,7 +214,9 @@ export function createSignalScreenerChartContext({
         const directionScore = signalDirectionalScore(signal);
         if (selectedDirectionScore) {
             selectedDirectionScore.textContent = directionScore
-                ? `${signal.direction} ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
+                ? directionScore.lastKnown
+                    ? `Last ${signal.direction} ${signedDirectionScore(directionScore.score)} · no current net`
+                    : `${signal.direction} ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
                 : 'No current score';
             if (directionScore) {
                 selectedDirectionScore.dataset.tone = directionScore.score > 0 ? 'long' : directionScore.score < 0 ? 'short' : 'neutral';
@@ -222,12 +224,16 @@ export function createSignalScreenerChartContext({
                 selectedDirectionScore.removeAttribute('data-tone');
             }
             selectedDirectionScore.title = directionScore
-                ? `Signed direction score ${signedDirectionScore(directionScore.score)}. Net direction score is ${signedDirectionScore(directionScore.netScore)}.`
+                ? directionScore.lastKnown
+                    ? `Last saved ${signal.direction} direction score ${signedDirectionScore(directionScore.score)}. It is not a current market entry and is excluded from the ticker/timeframe net.`
+                    : `Signed direction score ${signedDirectionScore(directionScore.score)}. Net direction score is ${signedDirectionScore(directionScore.netScore)}.`
                 : 'Only fresh current market-entry signals have a direction score.';
         }
         if (selectedDirectionScoreDetail) {
             selectedDirectionScoreDetail.textContent = directionScore
-                ? `${directionScore.longCount} LONG · ${directionScore.shortCount} SHORT for ${marketSymbol} ${String(signal.timeframe || '--').toUpperCase()} across products in the selected app. Opposite scores cancel; this is separate from setup strength and win rate.`
+                ? directionScore.lastKnown
+                    ? `This is the last saved direction for the retained row. It is excluded from the current ${marketSymbol} ${String(signal.timeframe || '--').toUpperCase()} net, which counts fresh market-entry signals only.`
+                    : `${directionScore.longCount} LONG · ${directionScore.shortCount} SHORT for ${marketSymbol} ${String(signal.timeframe || '--').toUpperCase()} across products in the selected app. Opposite scores cancel; this is separate from setup strength and win rate.`
                 : 'Stale, held, and non-qualifying rows have no current direction score. This does not change setup strength or win rate.';
             selectedDirectionScoreDetail.title = selectedDirectionScoreDetail.textContent;
         }
