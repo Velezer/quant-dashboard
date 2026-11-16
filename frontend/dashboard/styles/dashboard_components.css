@@ -1011,3 +1011,10 @@
         font-size: 11px;
     }
 }
+
+.signal-card-details { margin: .15rem .35rem .4rem; color: #9ca3af; font-size: 11px; }
+.signal-card-details > summary { cursor: pointer; min-height: 32px; padding: .4rem; width: fit-content; }
+.signal-card-details > summary:focus-visible { outline: 2px solid #22d3ee; border-radius: .3rem; }
+.signal-card-detail-body { display: flex; flex-direction: column; gap: .5rem; padding: .5rem; border: 1px solid #30343f; border-radius: .5rem; overflow-wrap: anywhere; }
+.signal-card-detail-body > p { margin: 0; line-height: 1.5; }
+.signal-card-detail-body .signal-row-provenance { white-space: normal; }
