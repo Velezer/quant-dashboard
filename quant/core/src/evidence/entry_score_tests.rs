@@ -696,3 +696,19 @@ fn entry_score_ten_thousand_bar_runtime_inspection() {
         }
     }
 }
+
+#[test]
+fn directional_holdout_partitions_the_same_trade_sequence() {
+    let bars = alternating_bars(8);
+    let observation = |points| Observation { long: true, factors: [points, 0.0, 0.0, 0.0],
+        available: [true;4], markov_score: 0.0, markov_available: false,
+        autocorrelation_score: 0.0, autocorrelation_available: false };
+    let mut observations = vec![None; bars.len()];
+    observations[0] = Some(observation(8.0));
+    observations[3] = Some(observation(-8.0));
+    let result = evaluate_window(&bars, &observations, 0, bars.len(), policy(1, true));
+    assert_eq!(result.overall.trades, 2);
+    assert_eq!(result.long.trades, 1);
+    assert_eq!(result.short.trades, 1);
+    assert_eq!(result.long.wins + result.short.wins, result.overall.wins);
+}

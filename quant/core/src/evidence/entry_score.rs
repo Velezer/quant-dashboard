@@ -8,6 +8,9 @@ use serde_json::{json, Value};
 mod risk_reward;
 #[path = "entry_score/autocorrelation.rs"]
 mod autocorrelation;
+#[path = "entry_score/report_format.rs"]
+mod report_format;
+use report_format::{score_bands_json, summary_json};
 
 const TRAINING_SHARE: usize = 60;
 const VALIDATION_END_SHARE: usize = 80;
@@ -35,7 +38,7 @@ const FACTOR_NAMES: [&str; 4] = [
     "Estimated Volume Delta (OHLCV proxy)",
 ];
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
-    "entry_signed_six_indicator_after_fee_v13";
+    "entry_signed_six_indicator_directional_evidence_v14";
 pub const ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID: &str = risk_reward::PROTOCOL_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,6 +55,8 @@ struct Observation {
 #[derive(Clone, Copy, Default)]
 struct WindowSummary {
     overall: TradeSummary,
+    long: TradeSummary,
+    short: TradeSummary,
     total_bands: [TradeSummary; TOTAL_SCORE_BAND_COUNT],
     factor_bands: [[TradeSummary; FACTOR_SCORE_BAND_COUNT]; 4],
     markov_score_bands: [TradeSummary; FACTOR_SCORE_BAND_COUNT],
@@ -174,6 +179,7 @@ fn evaluate_window(
             )
         };
         add(&mut result.overall);
+        if direction == "LONG" { add(&mut result.long); } else { add(&mut result.short); }
         let weighted_score = score_with_weights(observation, policy.weights);
         add(&mut result.total_bands[band_index(
             weighted_score,
@@ -630,47 +636,15 @@ fn policy_comparison_json(
         ),
         "validation_exit_candidates": selection.candidates,
         "holdout": summary_json(holdout.overall, fees_known),
+        "directional_holdout": { "long": summary_json(holdout.long, fees_known),
+            "short": summary_json(holdout.short, fees_known),
+            "basis": "Same selected baseline exit policy and non-overlapping holdout trades, partitioned by entry direction; not independent model confirmations" },
         "holdout_score_bands": score_bands_json(
             &holdout.total_bands,
             TOTAL_SCORE_BAND_WIDTH,
             fees_known,
         ),
     })
-}
-
-fn summary_json(summary: TradeSummary, fees_known: bool) -> Value {
-    let mut value = summary.to_json(fees_known);
-    if value["profit_factor_unbounded"] == true {
-        value["profit_factor"] = Value::Null;
-    }
-    value
-}
-
-fn score_bands_json(bands: &[TradeSummary], width: f64, fees_known: bool) -> Value {
-    let last_band = bands.len().saturating_sub(1);
-    Value::Array(
-        bands
-            .iter()
-            .enumerate()
-            .map(|(index, summary)| {
-                let mut value = summary_json(*summary, fees_known);
-                value["label"] = Value::from(format!(
-                    "{}–{}{}",
-                    index as f64 * width,
-                    (index + 1) as f64 * width,
-                    if index == last_band {
-                        " inclusive"
-                    } else {
-                        " (upper exclusive)"
-                    }
-                ));
-                value["min_score"] = Value::from(index as f64 * width);
-                value["max_score"] = Value::from((index + 1) as f64 * width);
-                value["max_inclusive"] = Value::from(index == last_band);
-                value
-            })
-            .collect(),
-    )
 }
 
 fn score_discrimination_supported(bands: &[TradeSummary]) -> bool {
@@ -1017,6 +991,9 @@ pub fn evaluate_entry_score_backtest(
         "training": summary_json(training.overall, fees_known),
         "validation": summary_json(baseline_selection.validation.overall, fees_known),
         "holdout": summary_json(holdout.overall, fees_known),
+        "directional_holdout": { "long": summary_json(holdout.long, fees_known),
+            "short": summary_json(holdout.short, fees_known),
+            "basis": "Same selected baseline exit policy and non-overlapping holdout trades, partitioned by entry direction; not independent model confirmations" },
         "holdout_score_bands": score_bands_json(&holdout.total_bands, TOTAL_SCORE_BAND_WIDTH, fees_known),
         "holdout_factor_bands": holdout_factor_bands,
         "weight_learning": weight_learning,
