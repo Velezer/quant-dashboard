@@ -33,7 +33,7 @@ pub(super) fn append_nwe_dss_model_signals(
         }
         let (signals, strategy_id, indicator) = match model {
             quant_core::EntryModelKind::Nwe => (
-                quant_core::generate_stockbit_nwe_4h_signals(bars),
+                quant_core::generate_signed_entry_signal(bars, model).into_iter().collect::<Vec<_>>(),
                 if is_stockbit_signal_scope {
                     quant_core::stockbit_nwe_signal_strategy_id(timeframe)
                 } else {
@@ -46,7 +46,7 @@ pub(super) fn append_nwe_dss_model_signals(
                 },
             ),
             quant_core::EntryModelKind::Dss => (
-                quant_core::generate_stockbit_dss_bressert_4h_signals(bars),
+                quant_core::generate_signed_entry_signal(bars, model).into_iter().collect::<Vec<_>>(),
                 if is_stockbit_signal_scope {
                     quant_core::stockbit_dss_bressert_signal_strategy_id(timeframe)
                 } else {
@@ -55,14 +55,7 @@ pub(super) fn append_nwe_dss_model_signals(
                 "DSS Bressert",
             ),
         };
-        let has_directional_signal = signals
-            .last()
-            .is_some_and(|signal| matches!(signal.direction.as_str(), "LONG" | "SHORT"));
-        let markov_regime = if has_directional_signal {
-            *markov_regime_cache.get_or_insert_with(|| latest_markov_regime(bars))
-        } else {
-            None
-        };
+        let markov_regime = *markov_regime_cache.get_or_insert_with(|| latest_markov_regime(bars));
 
         if is_stockbit_signal_scope {
             let Some(strategy_id) = strategy_id else {
@@ -166,14 +159,14 @@ fn append_crypto_model_signal(
     );
     let score = score_groups.map(|(_, _, _, _, total)| total);
     let after_fee_issue = if profile.is_none_or(|profile| {
-        score.is_none_or(|score| score < profile.minimum_score)
+        score.is_none_or(|score| score.abs() < profile.minimum_score)
     }) {
         let (reason, explanation) = match (profile, score) {
             (None, _) => (
                 "after_fee_profile_missing",
                 "No active after-fee profile is available; equal-weight scoring is used and this setup is still shown.",
             ),
-            (Some(profile), Some(score)) if score < profile.minimum_score => (
+            (Some(profile), Some(score)) if score.abs() < profile.minimum_score => (
                 "below_after_fee_score_cutoff",
                 "The setup is below the historical after-fee score cutoff; the metric is informational and does not hide this signal.",
             ),
@@ -220,8 +213,8 @@ fn latest_crypto_signal_for_latest_bar<'a>(
     signals: &'a [quant_core::StrategySignal],
     bars: &[StrategyBar],
 ) -> Option<(usize, &'a quant_core::StrategySignal)> {
-    let latest_index = signals.len().min(bars.len()).checked_sub(1)?;
-    let latest_signal = signals.get(latest_index)?;
+    let latest_index = bars.len().checked_sub(1)?;
+    let latest_signal = signals.last()?;
     matches!(latest_signal.direction.as_str(), "LONG" | "SHORT")
         .then_some((latest_index, latest_signal))
 }

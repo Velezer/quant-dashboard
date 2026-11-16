@@ -218,9 +218,9 @@ fn stockbit_score_updates_renew_the_persisted_row_on_each_scan() {
         .as_array()
         .and_then(|rows| rows.first())
         .expect("saved signal should remain visible after the scan");
-    assert_eq!(row["score"], 50);
+    assert_eq!(row["score"], 8.0);
     assert_eq!(row["setup_strength"], 8.0);
-    assert_eq!(row["score_contract"], "signed_direction_vote_v1");
+    assert_eq!(row["score_contract"], "signed_indicator_sum_v1");
     assert_eq!(row["direction"], "LONG");
     assert_eq!(row["score_status"], "qualifying");
     assert_eq!(row["score_bar_time"], forming_bar);
@@ -811,7 +811,7 @@ fn screener_read_prioritizes_15m_rows_when_response_is_capped() {
     assert_eq!(signals.len(), 2_000);
     assert_eq!(signals[0]["exchange_id"], "pluang");
     assert_eq!(signals[0]["timeframe"], "15m");
-    assert_eq!(signals[0]["score"], 50);
+    assert_eq!(signals[0]["score"], signals[0]["setup_strength"]);
     assert!(signals[0]["setup_strength"].as_f64().unwrap_or_default() >= 1.0);
 }
 

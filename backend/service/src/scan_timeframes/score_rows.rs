@@ -81,7 +81,7 @@ fn win_probability_for_score(
             });
         }
     }
-    if score < profile.minimum_score {
+    if score.abs() < profile.minimum_score {
         return serde_json::json!({
             "status": "BELOW_PROFILE_GATE",
             "reason": "This score is below the validated profile's score gate, so that profile's win estimate does not apply.",
@@ -177,6 +177,9 @@ pub(super) fn append_timeframe_signal_candidate(
     score_groups: Option<(f64, f64, f64, f64, f64)>,
     profile: Option<&crate::research_reports::ActiveScoringProfile>,
 ) {
+    if score_groups.is_some_and(|groups| groups.4.abs() < quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60) {
+        return;
+    }
     let data_quality = if is_research_proxy_source(source) {
         "RESEARCH_PROXY"
     } else {
@@ -192,7 +195,7 @@ pub(super) fn append_timeframe_signal_candidate(
         .cloned()
         .unwrap_or(Value::Null);
     let win_probability = win_probability_for_score(
-        score_groups.map(|groups| groups.4),
+        score_groups.map(|groups| groups.4.abs()),
         profile,
         input.exchange_id,
         input.product_id,
@@ -204,8 +207,8 @@ pub(super) fn append_timeframe_signal_candidate(
         "Symbol": input.asset,
         "Data_Symbol": input.symbol,
         "Signal_Strategy_ID": strategy_id,
-        "Signal_Direction": signal.direction,
-        "Signal_Strength": score_groups.map(|(_, _, _, _, total)| total).unwrap_or(signal.strength),
+        "Signal_Direction": score_groups.map(|groups| if groups.4 > 0.0 { "LONG" } else { "SHORT" }).unwrap_or(signal.direction.as_str()),
+        "Signal_Strength": score_groups.map(|(_, _, _, _, total)| total.abs()).unwrap_or(signal.strength),
         "Strategy_Strength": score_groups.map(|(price, _, _, _, _)| price).unwrap_or(signal.strategy_strength),
         "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _, _)| volume)
             .or_else(|| signal.confluence.as_ref().map(|score| score.score)),
@@ -339,9 +342,7 @@ pub(super) fn append_stockbit_model_result(
     else {
         return None;
     };
-    let latest_signal = model_signals
-        .last()
-        .filter(|signal| matches!(signal.direction.as_str(), "LONG" | "SHORT"));
+    let latest_signal = model_signals.last();
     let profile = active_scoring_profile(input, score_model_id, timeframe, source);
     let (score_components, score_groups) = latest_signal
         .map(|signal| six_indicator_score_outputs(bars, signal, indicator, profile, markov_regime))
@@ -361,10 +362,11 @@ pub(super) fn append_stockbit_model_result(
                 Some((0.0, 0.0, 0.0, 0.0, 0.0)),
             )
         });
-    let has_after_fee_setup = latest_signal.is_some();
+    let has_after_fee_setup = latest_signal.is_some()
+        && score_groups.is_some_and(|groups| groups.4.abs() >= quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60);
     let after_fee_issue = if has_after_fee_setup
         && profile.is_none_or(|profile| {
-            score_groups.is_none_or(|(_, _, _, _, total)| total < profile.minimum_score)
+            score_groups.is_none_or(|(_, _, _, _, total)| total.abs() < profile.minimum_score)
         })
     {
         let (reason, explanation) = match (profile, score_groups) {
@@ -372,7 +374,7 @@ pub(super) fn append_stockbit_model_result(
                 "after_fee_profile_missing",
                 "No active after-fee profile is available; equal-weight scoring is used and this setup is still shown.",
             ),
-            (Some(profile), Some((_, _, _, _, score))) if score < profile.minimum_score => (
+            (Some(profile), Some((_, _, _, _, score))) if score.abs() < profile.minimum_score => (
                 "below_after_fee_score_cutoff",
                 "The setup is below the historical after-fee score cutoff; the metric is informational and does not hide this signal.",
             ),
@@ -426,7 +428,7 @@ pub(super) fn append_stockbit_model_result(
         .cloned()
         .unwrap_or(Value::Null);
     let win_probability = win_probability_for_score(
-        score_groups.map(|groups| groups.4),
+        score_groups.map(|groups| groups.4.abs()),
         profile,
         input.exchange_id,
         input.product_id,
@@ -454,9 +456,9 @@ pub(super) fn append_stockbit_model_result(
             }),
             "Signal_Win_Probability": win_probability,
             "timeframe": timeframe,
-            "Signal_Direction": latest_signal.map(|signal| signal.direction.as_str()),
+            "Signal_Direction": score_groups.and_then(|groups| if groups.4 > 0.0 { Some("LONG") } else if groups.4 < 0.0 { Some("SHORT") } else { None }),
             "Signal_Bar_Time": latest_signal.map(|_| score_bar.time),
-            "Signal_Strength": score_groups.map(|(_, _, _, _, total)| total).unwrap_or(0.0),
+            "Signal_Strength": score_groups.map(|(_, _, _, _, total)| total.abs()).unwrap_or(0.0),
             "Strategy_Strength": score_groups.map(|(price, _, _, _, _)| price).unwrap_or(0.0),
             "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _, _)| volume),
             "Signal_Markov_Regime_Score": score_groups.map(|(_, _, markov, _, _)| markov),

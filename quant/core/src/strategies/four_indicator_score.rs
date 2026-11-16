@@ -48,6 +48,15 @@ pub struct SixIndicatorScore {
     pub components: [ScoreComponent; 6],
 }
 
+impl SixIndicatorScore {
+    /// Direction follows the signed weighted total; an exact zero is neutral.
+    pub fn direction(&self) -> Option<&'static str> {
+        if self.total_score > 0.0 { Some("LONG") }
+        else if self.total_score < 0.0 { Some("SHORT") }
+        else { None }
+    }
+}
+
 /// Add fixed-weight Markov and lag-one return-autocorrelation readings to the
 /// four learned score factors. Both additions are causal and each has a fixed
 /// 10-point weight; neither is a win-probability estimate.
@@ -150,17 +159,16 @@ fn strategy_return_autocorrelation_component(
     let correlation = (covariance / (previous_variance.sqrt() * deviation)).clamp(-1.0, 1.0);
     let slope = covariance / previous_variance;
     let forecast = mean_next + slope * (returns[return_count - 1] - mean_previous);
-    let direction_sign = if direction == "LONG" { 1.0 } else { -1.0 };
-    let directional_forecast_z = direction_sign * forecast / deviation;
+    let directional_forecast_z = forecast / deviation;
     if !correlation.is_finite() || !directional_forecast_z.is_finite() {
         return unavailable();
     }
-    let points = (5.0 + 5.0 * directional_forecast_z.clamp(-1.0, 1.0))
-        .clamp(0.0, FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX);
+    let points = FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX
+        * directional_forecast_z.clamp(-1.0, 1.0);
     let alignment = if directional_forecast_z > 0.05 {
-        "ALIGNED"
+        "BULLISH"
     } else if directional_forecast_z < -0.05 {
-        "OPPOSED"
+        "BEARISH"
     } else {
         "NO_DIRECTIONAL_EDGE"
     };
@@ -181,21 +189,21 @@ fn strategy_return_autocorrelation_component(
     }
 }
 
-fn markov_regime_component(direction: &str, regime: Option<crate::RegimeId>) -> ScoreComponent {
+fn markov_regime_component(_direction: &str, regime: Option<crate::RegimeId>) -> ScoreComponent {
     let state = regime.map(|regime| regime.name()).unwrap_or("UNAVAILABLE");
     let aligned_direction = match regime {
         Some(crate::RegimeId::BullTrend | crate::RegimeId::Accumulation) => Some("LONG"),
         Some(crate::RegimeId::BearTrend | crate::RegimeId::Distribution) => Some("SHORT"),
         _ => None,
     };
-    let points = if aligned_direction == Some(direction) {
-        FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX
-    } else {
-        0.0
+    let points = match aligned_direction {
+        Some("LONG") => FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
+        Some("SHORT") => -FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
+        _ => 0.0,
     };
     let component_state = match (regime, aligned_direction) {
-        (Some(_), Some(aligned)) if aligned == direction => format!("ALIGNED_{state}"),
-        (Some(_), Some(_)) => format!("OPPOSED_{state}"),
+        (Some(_), Some("LONG")) => format!("BULLISH_{state}"),
+        (Some(_), Some("SHORT")) => format!("BEARISH_{state}"),
         (Some(crate::RegimeId::PullbackReset), None) => "PULLBACK_RESET_NO_DIRECTION".to_string(),
         (Some(crate::RegimeId::ConsolidationChop), None) => "CONSOLIDATION_CHOP".to_string(),
         _ => state.to_string(),
@@ -232,7 +240,7 @@ pub fn score_four_indicators(
     )
 }
 
-/// Score the same raw 0–10 indicator readings with a validated 40-point
+/// Score the same raw signed −10–10 indicator readings with a validated 40-point
 /// weight vector. Raw indicator points remain visible; weights affect only
 /// their contribution to the total score.
 pub fn score_four_indicators_with_weights(
@@ -296,7 +304,7 @@ fn valid_four_indicator_weights(weights: [u8; 4]) -> bool {
 
 fn bounded_price_component(value: f64) -> f64 {
     if value.is_finite() {
-        value.clamp(0.0, FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX)
+        value.clamp(-FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX, FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX)
     } else {
         0.0
     }
@@ -305,7 +313,7 @@ fn bounded_price_component(value: f64) -> f64 {
 fn relative_volume_component(
     bars: &[StrategyBar],
     current: &StrategyBar,
-    direction_sign: f64,
+    _direction_sign: f64,
 ) -> ScoreComponent {
     let unavailable = || ScoreComponent {
         indicator: "Relative Volume",
@@ -339,20 +347,20 @@ fn relative_volume_component(
     if !relative_volume.is_finite() {
         return unavailable();
     }
-    let candle_direction = (current.close - current.open).signum();
+    let candle_direction = if current.close > current.open { 1.0 } else if current.close < current.open { -1.0 } else { 0.0 };
     let state = if candle_direction == 0.0 {
         "NEUTRAL"
-    } else if candle_direction == direction_sign {
-        "ALIGNED"
+    } else if candle_direction > 0.0 {
+        "BULLISH"
     } else {
-        "OPPOSED"
+        "BEARISH"
     };
-    let points = if state == "ALIGNED" {
+    let points = if candle_direction != 0.0 {
         ((relative_volume - FOUR_INDICATOR_MIN_RELATIVE_VOLUME_MULTIPLE)
             / (FOUR_INDICATOR_MAX_RELATIVE_VOLUME_MULTIPLE_FOR_FULL_SCORE
                 - FOUR_INDICATOR_MIN_RELATIVE_VOLUME_MULTIPLE))
             .clamp(0.0, 1.0)
-            * FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX
+            * FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX * candle_direction
     } else {
         0.0
     };
@@ -366,7 +374,7 @@ fn relative_volume_component(
     }
 }
 
-fn estimated_delta_component(current: &StrategyBar, direction_sign: f64) -> ScoreComponent {
+fn estimated_delta_component(current: &StrategyBar, _direction_sign: f64) -> ScoreComponent {
     let unavailable = || ScoreComponent {
         indicator: "Estimated Volume Delta (OHLCV proxy)",
         state: "UNAVAILABLE".to_string(),
@@ -388,20 +396,20 @@ fn estimated_delta_component(current: &StrategyBar, direction_sign: f64) -> Scor
     // Close-location value estimates candle pressure; it is not true buy/sell delta.
     let close_location =
         ((2.0 * current.close - current.high - current.low) / range).clamp(-1.0, 1.0);
-    let aligned_pressure = direction_sign * close_location;
+    let aligned_pressure = close_location;
     let state = if aligned_pressure > 0.0 {
-        "ALIGNED_PROXY"
+        "BULLISH_PROXY"
     } else if aligned_pressure < 0.0 {
-        "OPPOSED_PROXY"
+        "BEARISH_PROXY"
     } else {
         "NEUTRAL_PROXY"
     };
     ScoreComponent {
         indicator: "Estimated Volume Delta (OHLCV proxy)",
         state: state.to_string(),
-        points: aligned_pressure.max(0.0) * FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
+        points: close_location * FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
         weight_points: FOUR_INDICATOR_EQUAL_WEIGHTS[3],
-        weighted_points: aligned_pressure.max(0.0) * FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
+        weighted_points: close_location * FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
         value: Some(close_location),
     }
 }

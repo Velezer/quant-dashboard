@@ -1,5 +1,4 @@
-export const DIRECTION_SCORE_POINTS = 50;
-export const SIGNED_DIRECTION_SCORE_CONTRACT = 'signed_direction_vote_v1';
+export const SIGNED_DIRECTION_SCORE_CONTRACT = 'signed_indicator_sum_v1';
 
 export const APP_LABELS = {
     stockbit: 'Stockbit',
@@ -258,7 +257,7 @@ export function signalIndicatorScores(signal, model) {
     return SIGNAL_SCORE_INDICATORS.map(({ id, indicator, label }) => {
         const component = components.find(item => componentMatchesIndicator(item, { id, indicator }));
         const value = component?.points;
-        const points = typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 10 ? value : null;
+        const points = typeof value === 'number' && Number.isFinite(value) && value >= -10 && value <= 10 ? value : null;
         const weightPoints = typeof component?.weight_points === 'number' && Number.isFinite(component.weight_points)
             ? component.weight_points : 10;
         const weightedPoints = typeof component?.weighted_points === 'number' && Number.isFinite(component.weighted_points)
@@ -273,7 +272,7 @@ export function signalIndicatorScoreForFilter(signal, model, indicatorId) {
     const indicator = SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorId);
     if (!indicator) return null;
     const score = signalIndicatorScores(signal, model).find(item => item.id === indicator.id);
-    return score && score.state.toUpperCase() !== 'UNAVAILABLE' ? score.points : null;
+    return score && score.state.toUpperCase() !== 'UNAVAILABLE' ? Math.abs(score.points) : null;
 }
 
 // A presentation threshold only; registered model eligibility owns its own floor.
@@ -284,20 +283,20 @@ export function signalTotalStrength(signal, model) {
     const indicators = signalIndicatorScores(signal, model);
     const known = indicators.every(item => item.points !== null);
     const total = known ? indicators.reduce((sum, item) => sum + (item.weightedPoints ?? item.points), 0) : null;
-    const low = known && total < LOW_TOTAL_INDICATOR_POINTS;
+    const low = known && Math.abs(total) < LOW_TOTAL_INDICATOR_POINTS;
     const label = !known ? 'Setup strength unavailable' : low ? 'Low setup strength' : `Setup strength ${LOW_TOTAL_INDICATOR_POINTS}+ points`;
     const retained = signalScoreState(signal)?.tone === 'stale';
     return {
         tone: !known ? 'unavailable' : low ? 'low' : 'standard',
         label: retained ? `Last recorded: ${label.toLowerCase()}` : label,
         description: !known ? 'All six numeric indicator contributions are needed to classify setup strength.'
-            : `The six indicator readings are each out of 10, then combined using the active weights to produce ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} weighted points.`,
+            : `The six signed readings range from −10 to +10. Their weighted sum determines direction; its magnitude is ${low ? 'less than' : 'at least'} ${LOW_TOTAL_INDICATOR_POINTS} weighted points.`,
     };
 }
 
 export function signalIndicatorSummary(signal, model) {
     return signalIndicatorScores(signal, model).map(item =>
-        `${item.label} ${item.points === null ? '—' : item.points.toFixed(1)}/10 (${scoreWeightLabel(item.weight)}, contributes ${item.weightedPoints === null ? '—' : item.weightedPoints.toFixed(1)}${item.state.toUpperCase() === 'UNAVAILABLE' ? ', unavailable' : ''})`
+        `${item.label} ${item.points === null ? '—' : signedDirectionScore(item.points)}/10 (${scoreWeightLabel(item.weight)}, contributes ${item.weightedPoints === null ? '—' : signedDirectionScore(item.weightedPoints)}${item.state.toUpperCase() === 'UNAVAILABLE' ? ', unavailable' : ''})`
     ).join(' · ');
 }
 
@@ -340,60 +339,28 @@ export function signalDisplayScore(signal) {
 }
 
 export function signalDirectionalScore(signal) {
-    const directionScore = signal?.direction_score;
-    const direction = String(signal?.direction || '').toUpperCase();
-    const score = Number(directionScore?.score);
-    const netScore = Number(directionScore?.net_score);
-    const longCount = Number(directionScore?.long_count);
-    const shortCount = Number(directionScore?.short_count);
-    const pointsPerSignal = Number.isSafeInteger(Number(signal?.direction_score_points))
-        && Number(signal.direction_score_points) > 0
-        ? Number(signal.direction_score_points)
-        : DIRECTION_SCORE_POINTS;
-    const expectedScore = signedDirectionVote(direction, pointsPerSignal);
-    if (expectedScore === null) return null;
-    const scoreState = signalScoreState(signal);
-    if (scoreState?.current
-        && signal?.market_entry_status !== 'NO_MARKET_ENTRY'
-        && score === expectedScore
-        && Number.isSafeInteger(netScore)
-        && Number.isSafeInteger(longCount) && longCount >= 0
-        && Number.isSafeInteger(shortCount) && shortCount >= 0
-        && netScore === (longCount - shortCount) * pointsPerSignal) {
-        return { score, netScore, longCount, shortCount };
-    }
-    const rowScore = Number(signal?.score);
-    if (rowScore === expectedScore) {
-        const hasCurrentEntry = scoreState?.current
-            && signal?.market_entry_status !== 'NO_MARKET_ENTRY';
-        return {
-            score: rowScore,
-            netScore: null,
-            longCount: null,
-            shortCount: null,
-            netUnavailable: true,
-            ...(!hasCurrentEntry ? { lastKnown: true } : {}),
-        };
-    }
-    const lastScore = Number(signal?.last_direction_score);
-    if (!scoreState?.current && lastScore === expectedScore) {
-        return { score: lastScore, netScore: null, longCount: null, shortCount: null, lastKnown: true };
-    }
-    return null;
+    if (isPersistentNoEntryScore(signal)) return null;
+    const raw = signal?.score;
+    const score = typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+    const contract = signal?.score_contract || signal?.score_basis?.score_contract;
+    if (contract !== SIGNED_DIRECTION_SCORE_CONTRACT || score === null) return null;
+    const state = signalScoreState(signal);
+    const lastKnown = !state.current || signal.market_entry_status === 'NO_MARKET_ENTRY';
+    const net = signal?.direction_score;
+    const netScore = typeof net?.net_score === 'number' && Number.isFinite(net.net_score) ? net.net_score : null;
+    return {
+        score,
+        netScore: lastKnown ? null : netScore,
+        longCount: lastKnown ? null : net?.long_count ?? null,
+        shortCount: lastKnown ? null : net?.short_count ?? null,
+        ...(lastKnown ? { lastKnown: true } : netScore === null ? { netUnavailable: true } : {}),
+    };
 }
 
 export function signedDirectionScore(value) {
-    return value > 0 ? `+${value}` : value < 0 ? `−${Math.abs(value)}` : '0';
-}
-
-export function signedDirectionVote(direction, points = DIRECTION_SCORE_POINTS) {
-    const normalized = String(direction || '').toUpperCase();
-    const signedPoints = Number.isSafeInteger(Number(points)) && Number(points) > 0
-        ? Number(points)
-        : DIRECTION_SCORE_POINTS;
-    return normalized === 'LONG' ? signedPoints
-        : normalized === 'SHORT' ? -signedPoints
-            : null;
+    if (!Number.isFinite(value)) return '—';
+    const magnitude = Math.abs(value).toFixed(1);
+    return value > 0 ? `+${magnitude}` : value < 0 ? `−${magnitude}` : '0.0';
 }
 
 export function signalScoreSummary(signal, model, scoreState = null) {

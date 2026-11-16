@@ -4,7 +4,7 @@ import { renderAutocorrelationRiskSizing } from './entry-validation-risk-sizing.
 
 const PAGE_SIZE = 50;
 const APP_LABELS = { stockbit: 'Stockbit', pintu: 'Pintu', pluang: 'Pluang', tokocrypto: 'Tokocrypto' };
-const RISK_REWARD_PROTOCOL_ID = 'entry_score_risk_reward_after_fee_win_rate_v4';
+const RISK_REWARD_PROTOCOL_ID = 'entry_score_signed_risk_reward_after_fee_v5';
 
 function numeric(value) {
     if (!['number', 'string'].includes(typeof value) || (typeof value === 'string' && !value.trim())) return null;

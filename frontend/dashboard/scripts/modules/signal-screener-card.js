@@ -38,7 +38,7 @@ export function createSignalScreenerCard({
             : null;
         const currentModelScaleMax = Number(scoreModel?.score_scale_max);
         const regimeSummary = markovScore
-            ? `<span class="signal-row-regime-score" title="Markov regime contributes a fixed 10-point weight to the current /60 scoring model"><span>Regime</span><strong>${markovScore.points === null ? '—' : markovScore.points.toFixed(1)}/10</strong><small>${escape(markovScore.state.replaceAll('_', ' ').toLowerCase())}</small></span>`
+            ? `<span class="signal-row-regime-score" title="Markov regime contributes a fixed 10-point weight to the current /60 scoring model"><span>Regime</span><strong>${markovScore.points === null ? '—' : signedDirectionScore(markovScore.points)}/10</strong><small>${escape(markovScore.state.replaceAll('_', ' ').toLowerCase())}</small></span>`
             : currentModelScaleMax === 60
                 ? presentation.legacy && presentation.scoreScaleMax < 60
                     ? `<span class="signal-row-regime-score signal-row-regime-legacy" title="This saved row uses the previous scoring model and has no recorded Markov regime score"><span>Regime</span><strong>Not scored</strong><small>legacy /${presentation.scoreScaleMax} row</small></span>`
@@ -46,13 +46,10 @@ export function createSignalScreenerCard({
                 : '';
         const autocorrelationRho = Number(autocorrelationScore?.value);
         const autocorrelationState = String(autocorrelationScore?.state || 'UNAVAILABLE').toUpperCase();
-        const autocorrelationAlignment = autocorrelationState.startsWith('OPPOSED')
-            ? 'opposed'
-            : autocorrelationState.startsWith('ALIGNED')
-                ? 'aligned'
-                : autocorrelationState.startsWith('NO_DIRECTIONAL_EDGE')
-                    ? 'neutral'
-                    : 'unavailable';
+        const autocorrelationAlignment = autocorrelationScore?.points === null || !autocorrelationScore
+            || autocorrelationState === 'UNAVAILABLE' ? 'unavailable'
+            : Math.abs(autocorrelationScore.points) < 0.5 ? 'neutral'
+                : (autocorrelationScore.points > 0) === (signal.direction === 'LONG') ? 'aligned' : 'opposed';
         const autocorrelationRelation = autocorrelationAlignment === 'opposed'
             ? `Against ${signal.direction}`
             : autocorrelationAlignment === 'aligned'
@@ -62,14 +59,14 @@ export function createSignalScreenerCard({
             ? 'mean-reversion tendency'
             : autocorrelationState.includes('CONTINUATION') ? 'continuation tendency' : '';
         const autocorrelationExplanation = autocorrelationAlignment === 'opposed'
-            ? `Opposes ${signal.direction}. This one /10 input lowers setup strength; it does not change the ${signal.direction} direction score or create a ${signal.direction === 'LONG' ? 'SHORT' : 'LONG'} signal. A ${signal.direction === 'LONG' ? 'SHORT' : 'LONG'} setup must qualify on its own.`
+            ? `Opposes ${signal.direction}. Its signed contribution offsets the other indicators in the total. The total sign determines the final direction.`
             : autocorrelationAlignment === 'aligned'
                 ? `Supports ${signal.direction} as one of six score inputs. It adds to the total but is not a standalone signal or a win guarantee.`
                 : autocorrelationAlignment === 'neutral'
-                    ? 'Near-neutral forecast, around 5/10. It does not vote buy or sell.'
+                    ? 'Near-neutral forecast contributes around zero. Positive points support LONG and negative points support SHORT.'
                     : 'No reading: this factor contributes 0/10, and the other factors keep their weights.';
         const autocorrelationSummary = autocorrelationScore
-            ? `<span class="signal-row-regime-score" title="${escape(`${autocorrelationExplanation} ρ is the lag-one return correlation; the /10 points come from a causal forecast aligned to the signal direction.`)}"><span>Autocorrelation · 1 of 6</span><strong>${autocorrelationScore.points === null ? '—' : `${autocorrelationScore.points.toFixed(1)}/10 · ${autocorrelationRelation}`}</strong><small>${Number.isFinite(autocorrelationRho) ? `ρ ${autocorrelationRho >= 0 ? '+' : ''}${autocorrelationRho.toFixed(2)}` : 'ρ unavailable'}${autocorrelationTendency ? ` · ${autocorrelationTendency}` : ''}</small></span>`
+            ? `<span class="signal-row-regime-score" title="${escape(`${autocorrelationExplanation} ρ is the lag-one return correlation; the /10 points come from a causal forecast: positive is bullish and negative is bearish.`)}"><span>Autocorrelation · 1 of 6</span><strong>${autocorrelationScore.points === null ? '—' : `${signedDirectionScore(autocorrelationScore.points)}/10 · ${autocorrelationRelation}`}</strong><small>${Number.isFinite(autocorrelationRho) ? `ρ ${autocorrelationRho >= 0 ? '+' : ''}${autocorrelationRho.toFixed(2)}` : 'ρ unavailable'}${autocorrelationTendency ? ` · ${autocorrelationTendency}` : ''}</small></span>`
             : '';
         const autocorrelationGuidance = autocorrelationScore
             ? `<span class="signal-autocorrelation-guidance is-${autocorrelationAlignment}" role="note">${escape(autocorrelationExplanation)}</span>`

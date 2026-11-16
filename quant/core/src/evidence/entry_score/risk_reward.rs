@@ -20,7 +20,7 @@ const MAX_AUTOCORRELATION_RETURN_BARS: usize = 128;
 const MIN_AUTOCORRELATION_RETURN_SAMPLES: usize = 30;
 const HYPOTHETICAL_BASE_RISK_PCT: f64 = 1.0;
 const MINIMUM_RISK_MODEL_TRADES: usize = 30;
-pub(super) const PROTOCOL_ID: &str = "entry_score_risk_reward_after_fee_win_rate_v4";
+pub(super) const PROTOCOL_ID: &str = "entry_score_signed_risk_reward_after_fee_v5";
 pub(super) const RISK_SIZING_PROTOCOL_ID: &str = "causal_return_autocorrelation_horizon_variance_v1";
 
 #[derive(Clone, Copy)]
@@ -437,6 +437,7 @@ fn evaluate_rule_with_observer(
         else {
             continue;
         };
+        let observation = Observation { long: super::score_with_weights(observation, policy.weights) > 0.0, ..observation };
         let entry_index = signal_index.saturating_add(1);
         let last_index = entry_index
             .saturating_add(rule.maximum_hold_bars.saturating_sub(1));

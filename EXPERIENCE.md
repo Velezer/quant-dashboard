@@ -5,22 +5,20 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
-- Public screener score contract: `score` is the fixed signed direction vote
-  (+50 LONG, −50 SHORT), with `score_contract` identifying that schema.
-  Weighted positive strength lives in `setup_strength`, and its scale is
-  `setup_strength_scale_max`; the older `score_basis.score_scale_max` remains
-  for compatibility. Render and filter strength only from that field; never
-  compare the signed vote with /10, /20, /40, or /60 eligibility thresholds.
-  Persisted scanner and backtest calculations still operate on setup strength.
-- Keep the signed direction score (+50 LONG / −50 SHORT) distinct from weighted
-  setup strength across the screener, selected-signal chart, scoring guide,
-  filters, and backtest. The per-signal badge color follows its signed score,
-  not the ticker/timeframe net; a net of zero must not make a LONG or SHORT row
-  look neutral. Retained stale rows may show their saved signed direction as
-  "Last" with current net unavailable; only fresh market entries contribute to
-  the current net. A verified closed-market Stockbit row is not a current entry
-  even when its completed-bar score remains valid. Name /60 and legacy weighted
-  values "setup strength" so users do not mistake them for the direction score.
+- Signed entry scoring must start with independent bullish/bearish factor
+  observations: each raw component is −10…+10, and weighted contributions sum
+  to the signed total (−60…+60 under the six-factor budget). Positive totals
+  determine LONG, negative totals SHORT, and zero is neutral. Never assign a
+  fixed ±50 after first choosing a side, or clip opposing factors to zero.
+  Apply the eligibility floor and strength filters to the total's magnitude.
+  Live scans and backtests must use the same observations and derive direction
+  again for every candidate weight vector. Version model/protocol identities
+  so old directional-support profiles cannot enter the signed model.
+- Keep signed component values, weighted contributions, total, source, and
+  freshness visible together in the screener and selected chart. A stale row
+  keeps its last recorded signed calculation and no-current-entry warning;
+  closed-market Stockbit references never become current entries. Historical
+  win rates and raw correlation ρ remain separate metrics.
 - The Rust build workflow previously skipped frontend-only changes because its
   path filters named only backend and Rust sources. Keep `frontend/**` in both
   pull-request and branch-push filters, and confirm the release build check ran
@@ -86,12 +84,6 @@ lesson only when it will improve future tasks.
   timeframe chart bundle. Label NWE proximity zones as contextual references,
   show both directions, and keep an explicit unavailable state when endpoint
   bands are missing; do not fabricate a win rate or entry price.
-- Keep the signed direction score separate from setup strength and win-rate
-  evidence, and label it as a score in the screener and selected-signal view.
-  Each current LONG/SHORT market-entry row contributes +50/−50;
-  net same-category ticker/timeframe rows across all products for the selected
-  app, independent of visible screener filters, and exclude stale, held, and
-  non-qualifying rows.
 - A crypto chart may be display-ready while its latest continuous segment is
   too short for an indicator-dependent setup. Put the history-repair action
   beside the unavailable setup zone and show the contiguous-bar count and

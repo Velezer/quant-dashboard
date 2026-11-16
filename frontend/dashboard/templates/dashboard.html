@@ -141,7 +141,7 @@
                     <div class="selected-signal-setup-cell selected-signal-direction-score">
                         <span>DIRECTION SCORE</span>
                         <strong id="selectedSignalDirectionScore">—</strong>
-                        <small id="selectedSignalDirectionScoreDetail">Each LONG gets +50 and each SHORT gets −50. The net groups same-category ticker/timeframe entries across products in the selected app; opposite scores cancel.</small>
+                        <small id="selectedSignalDirectionScoreDetail">Each indicator contributes −10 to +10. Add its weighted contribution: positive total means LONG, negative means SHORT, zero means neutral.</small>
                     </div>
                     <div class="selected-signal-setup-cell selected-signal-long-area">
                         <span>NWE LONG ZONE · LOWER BAND</span>
@@ -571,7 +571,7 @@
                 </div>
                 <details class="screener-guidance">
                     <summary>Signal rules and scoring</summary>
-                    <p class="text-[10px] leading-relaxed text-gray-400">The screener shows two separate measures. Direction score is +50 per LONG and −50 per SHORT; the net adds current same-category ticker/timeframe signals in this app, so opposite entries cancel. Setup strength is the weighted indicator total (six /10 readings, up to /60 for the current model); the setup-strength filter and backtest use this measure. Neither measure is win probability. Crypto NWE/DSS signals are recalculated each scan from the latest completed bar. Stockbit keeps a fresh zero-strength row when a saved setup stops qualifying; it is labeled NO MARKET ENTRY and excluded from current signal and notification counts. The current strategy setup and base setup-strength floor determine which entry rows qualify; after-fee backtest metrics are historical context and never filter signals. There is no separate signal-age expiry. A stale reference price remains labeled and is not a market entry. Freshness and execution availability are separate from both measures. <a href="/scoring" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2 hover:text-cyan-100 focus:outline focus:outline-2 focus:outline-cyan-400">How scoring works</a> · <a href="/entry-validation" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2">Validate entry models</a>. Price is a candle close, not live bid/ask; this is not an executable order and no order is placed.</p>
+                    <p class="text-[10px] leading-relaxed text-gray-400">Each of six indicators contributes signed points from −10 to +10. Their weighted sum ranges from −60 to +60: positive means LONG, negative means SHORT, and zero means neutral. Setup strength is the absolute total; filters use its magnitude and the backtest uses the same signed calculation. Neither measure is win probability. Crypto NWE/DSS signals are recalculated each scan from the latest completed bar. Stockbit keeps a fresh zero-strength row when a saved setup stops qualifying; it is labeled NO MARKET ENTRY and excluded from current signal and notification counts. The current strategy setup and base setup-strength floor determine which entry rows qualify; after-fee backtest metrics are historical context and never filter signals. There is no separate signal-age expiry. A stale reference price remains labeled and is not a market entry. Freshness and execution availability are separate from both measures. <a href="/scoring" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2 hover:text-cyan-100 focus:outline focus:outline-2 focus:outline-cyan-400">How scoring works</a> · <a href="/entry-validation" class="font-semibold text-cyan-300 underline decoration-cyan-700 underline-offset-2">Validate entry models</a>. Price is a candle close, not live bid/ask; this is not an executable order and no order is placed.</p>
                 </details>
 
                 <div id="screener-status" class="rounded-lg border border-gray-700 bg-gray-950/70 px-3 py-2 text-[11px] leading-relaxed text-gray-300" role="status" aria-live="polite">
@@ -672,7 +672,7 @@
                                 <option value="10">10/10</option>
                             </select>
                         </div>
-                        <p class="signal-indicator-filter-help">Setup strength is normalized to /10 using each model’s scale. This narrows saved rows; it does not change direction scores, model weights, or qualification rules.</p>
+                        <p class="signal-indicator-filter-help">The absolute signed total is normalized to /10 using each model’s scale. This narrows saved rows; it does not change direction scores, model weights, or qualification rules.</p>
                     </div>
                 </details>
             </section>
