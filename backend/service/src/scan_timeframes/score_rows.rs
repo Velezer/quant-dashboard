@@ -344,7 +344,10 @@ pub(super) fn append_stockbit_model_result(
         source: source.to_string(), provider: provider.to_string(),
     };
     let matching_price = current_price.filter(|price| price.source == source);
-    let reference_only = matching_price.is_none();
+    let price_timeframe = if matching_price.is_some() { "15m" } else { timeframe };
+    let reference_only = matching_price.is_none_or(|price| {
+        !crate::completed_bar_is_fresh_at(input.symbol, "15m", price.signal_bar_time, current_time_ns())
+    });
     let current_price = matching_price.unwrap_or(&reference_price);
     let latest_signal = model_signals.last();
     let profile = active_scoring_profile(input, score_model_id, timeframe, source);
@@ -412,7 +415,7 @@ pub(super) fn append_stockbit_model_result(
                 score_bar,
                 score_bar,
                 current_price,
-                if reference_only { timeframe } else { "15m" },
+                price_timeframe,
                 reference_only,
                 source,
                 provider,
