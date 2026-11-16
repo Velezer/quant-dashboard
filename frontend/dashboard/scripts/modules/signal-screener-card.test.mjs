@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSignalScoreBasisMarkup } from './signal-score-basis.js';
 import { createSignalScreenerCard } from './signal-screener-card.js';
-import { oppositeEntryExitCue, signalDisplayScore, signalScoreState } from './signal-screener-model.js';
+import { oppositeEntryExitCue, signalDirectionalScore, signalDisplayScore, signalScoreState, signalScoreSummary } from './signal-screener-model.js';
 
 function escapeHtml(value) {
     return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
@@ -58,11 +58,51 @@ test('signal card presenter preserves stale labels, score basis, provenance, and
     assert.match(markup, /6\.0<small>\/10<\/small>/);
     assert.match(markup, /—<small>\/10<\/small>/);
     assert.doesNotMatch(markup, /out of 40|\/40|\/ 40/);
-    assert.doesNotMatch(markup, /Market-entry score <strong>0\.0<\/strong>/);
+    assert.doesNotMatch(markup, /Setup strength <strong>0\.0<\/strong>/);
     assert.match(markup, /no current market-entry signal, indicator scores NWE.*unavailable.*DSS Bressert 6\.0\/10/);
     assert.match(markup, /RESEARCH ONLY/);
     assert.match(markup, /authorized provider · venue native · validated/);
     assert.match(markup, /signal-score-basis/);
+});
+
+test('signal cards show signed direction score and keep setup strength distinct', () => {
+    const renderSignalCard = createSignalScreenerCard({
+        escape: escapeHtml,
+        appLabel: () => 'Pintu',
+        scoreModelFor: () => ({ short_label: 'NWE/DSS', score_scale_max: 60 }),
+        signalScoreState: () => null,
+        signalScorePresentation: () => ({ scoreScaleMax: 60, legacy: false }),
+        signalDisplayScore: () => 35.4,
+        signalScoreWeightSummary: () => 'six indicators',
+        signalPriceBarAgeLabel: () => 'fresh',
+        formatPrice: () => '100.00',
+        ageLabel: () => '1 minute ago',
+        renderScoreBasis: () => '',
+    });
+    const longSignal = {
+        signal_id: 'btc-long-4h', symbol: 'BTC-USD', timeframe: '4h', direction: 'LONG',
+        exchange_id: 'pintu', product_id: 'pintu_pro_spot', signal_strategy_name: 'NWE/DSS',
+        score: 35.4, current_price: 100, price_bar_time: 1, last_updated_at: 1,
+        score_basis: {},
+        direction_score: { score: 50, net_score: 0, long_count: 1, short_count: 1 },
+    };
+    const longCard = renderSignalCard(longSignal, 1, true);
+    assert.match(longCard, /Score \+50 · Net 0 · 1L \/ 1S/);
+    assert.match(longCard, /Setup strength <strong>35\.4<\/strong>/);
+    assert.match(longCard, /Signed direction score \+50 for LONG/);
+    assert.doesNotMatch(longCard, /Vote \+50|Weighted total/);
+    assert.deepEqual(signalDirectionalScore(longSignal), { score: 50, netScore: 0, longCount: 1, shortCount: 1 });
+    assert.match(signalScoreSummary(longSignal, { score_scale_max: 60 }), /^Direction score \+50 · net 0 · Setup strength 35\.4\/60/);
+
+    const shortSignal = {
+        ...longSignal,
+        signal_id: 'btc-short-4h',
+        direction: 'SHORT',
+        direction_score: { score: -50, net_score: 0, long_count: 1, short_count: 1 },
+    };
+    assert.match(renderSignalCard(shortSignal, 2, false), /Score -50 · Net 0 · 1L \/ 1S/);
+    assert.deepEqual(signalDirectionalScore(shortSignal), { score: -50, netScore: 0, longCount: 1, shortCount: 1 });
+    assert.equal(signalDirectionalScore({ ...shortSignal, direction: 'LONG' }), null);
 });
 
 test('signal cards distinguish a fresh non-qualifying zero from an unavailable score', () => {
@@ -86,12 +126,12 @@ test('signal cards distinguish a fresh non-qualifying zero from an unavailable s
     };
     const nonQualifying = renderSignalCard(signal, 1, false);
     assert.match(nonQualifying, /NO MARKET ENTRY · SCORE 0/);
-    assert.match(nonQualifying, /Market-entry score <strong>0\.0<\/strong>/);
-    assert.doesNotMatch(nonQualifying, /Last recorded score/);
+    assert.match(nonQualifying, /Setup strength <strong>0\.0<\/strong>/);
+    assert.doesNotMatch(nonQualifying, /Last recorded setup strength/);
 
     const unavailable = renderSignalCard({ ...signal, score_status: 'stale', score: null }, 1, false);
-    assert.match(unavailable, /Last recorded score <strong>—<\/strong>/);
-    assert.match(unavailable, /no current market-entry signal, last recorded score unavailable/);
+    assert.match(unavailable, /Last recorded setup strength <strong>—<\/strong>/);
+    assert.match(unavailable, /no current market-entry signal, last recorded setup strength unavailable/);
     assert.doesNotMatch(unavailable, /<strong>0\.0<\/strong>/);
 
     const current = { ...signal, direction: 'SHORT', score_status: 'qualifying', score: 12, price_is_fresh: true, price_fresh_until_ms: Date.now() + 60_000 };

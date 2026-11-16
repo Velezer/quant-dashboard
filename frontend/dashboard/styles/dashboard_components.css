@@ -706,10 +706,10 @@
 .signal-row-price { color: #f3f4f6; font: 600 12px ui-monospace, monospace; }
 .signal-row-score { color: #9ca3af; font-size: 10px; }
 .signal-row-score strong { color: #f9fafb; font: 700 14px ui-monospace, monospace; }
-.signal-row-direction-vote { display:inline-flex; align-items:center; border:1px solid #475569; border-radius:.35rem; background:#111827; padding:.2rem .4rem; color:#cbd5e1; font:700 9px/1.35 ui-monospace,monospace; white-space:nowrap; }
-.signal-row-direction-vote-long { border-color:#166534; background:#052e16; color:#86efac; }
-.signal-row-direction-vote-short { border-color:#9f1239; background:#4c0519; color:#fda4af; }
-.signal-row-direction-vote-neutral { border-color:#475569; background:#1f2937; color:#e2e8f0; }
+.signal-row-direction-score { display:inline-flex; align-items:center; border:1px solid #475569; border-radius:.35rem; background:#111827; padding:.2rem .4rem; color:#cbd5e1; font:700 9px/1.35 ui-monospace,monospace; white-space:nowrap; }
+.signal-row-direction-score-long { border-color:#166534; background:#052e16; color:#86efac; }
+.signal-row-direction-score-short { border-color:#9f1239; background:#4c0519; color:#fda4af; }
+.signal-row-direction-score-neutral { border-color:#475569; background:#1f2937; color:#e2e8f0; }
 .signal-row-regime-score { display:inline-grid; grid-template-columns:auto auto minmax(0,1fr); align-items:center; gap:.25rem; max-width:100%; border:1px solid #4c3b78; border-radius:.35rem; background:#211a35; padding:.2rem .4rem; color:#ddd6fe; font:600 9px/1.35 ui-monospace,monospace; }
 .signal-row-regime-score > span { color:#c4b5fd; text-transform:uppercase; letter-spacing:.04em; }
 .signal-row-regime-score strong { color:#f5f3ff; white-space:nowrap; }
@@ -857,10 +857,10 @@
     white-space:normal;
 }
 .selected-signal-win-rate > strong { color:#a5f3fc; }
-.selected-signal-direction-vote > strong { color:#e2e8f0; }
-#selectedSignalDirectionalVote[data-tone="long"] { color:#86efac; }
-#selectedSignalDirectionalVote[data-tone="short"] { color:#fda4af; }
-#selectedSignalDirectionalVote[data-tone="neutral"] { color:#e2e8f0; }
+.selected-signal-direction-score > strong { color:#e2e8f0; }
+#selectedSignalDirectionScore[data-tone="long"] { color:#86efac; }
+#selectedSignalDirectionScore[data-tone="short"] { color:#fda4af; }
+#selectedSignalDirectionScore[data-tone="neutral"] { color:#e2e8f0; }
 .selected-signal-long-area { border-color:#166653; }
 .selected-signal-long-area > span { color:#5eead4; }
 .selected-signal-short-area { border-color:#713642; }

@@ -439,11 +439,11 @@ test('selected signal summary stays concise and preserves the score scale', () =
     };
     assert.equal(
         signalScoreSummary(currentSignal, currentModel, { label: 'CLOSED · 1H' }),
-        'Market-entry setup score 9.6/20 · closed · Strategy 50%, Confluence 50% · setup strength, not win probability or execution availability',
+        'Direction score unavailable · Setup strength 9.6/20 · closed · Strategy 50%, Confluence 50% · setup strength is separate from the direction score, win probability, and execution availability',
     );
     assert.equal(
         signalScoreSummary(currentSignal, currentModel, { label: 'PROVISIONAL · 1H' }),
-        'Market-entry setup score 9.6/20 · forming · Strategy 50%, Confluence 50% · setup strength, not win probability or execution availability',
+        'Direction score unavailable · Setup strength 9.6/20 · forming · Strategy 50%, Confluence 50% · setup strength is separate from the direction score, win probability, and execution availability',
     );
 
     const legacySignal = {
@@ -458,7 +458,7 @@ test('selected signal summary stays concise and preserves the score scale', () =
     };
     assert.equal(
         signalScoreSummary(legacySignal, currentModel),
-        'Market-entry setup score 7.4/10 · Strategy 70%, Confluence 30% · setup strength, not win probability or execution availability',
+        'Direction score unavailable · Setup strength 7.4/10 · Strategy 70%, Confluence 30% · setup strength is separate from the direction score, win probability, and execution availability',
     );
 });
 
@@ -473,13 +473,13 @@ test('retained scores remain visible while stale and unavailable values never be
     assert.equal(signalDisplayScore(staleSignal), 12);
     assert.equal(
         signalScoreSummary(staleSignal, model, signalScoreState(staleSignal)),
-        'Last recorded setup score 12.0/20 · stale · no market entry · held · Strategy 50%, Confluence 50% · setup strength, not win probability or execution availability',
+        'Direction score unavailable · Last recorded setup strength 12.0/20 · stale · no market entry · held · Strategy 50%, Confluence 50% · setup strength is separate from the direction score, win probability, and execution availability',
     );
     const nonQualifyingSignal = { ...staleSignal, score: 0, score_status: 'not_qualifying' };
     assert.equal(signalDisplayScore(nonQualifyingSignal), 0);
     assert.match(
         signalScoreSummary(nonQualifyingSignal, model, signalScoreState(nonQualifyingSignal)),
-        /^Market-entry setup score 0\.0\/20 · no market entry · score 0/,
+        /^Direction score unavailable · Setup strength 0\.0\/20 · no market entry · score 0/,
     );
     assert.equal(signalDisplayScore({ score: 7.4, persistent_score: true, score_status: 'current' }), 7.4);
     for (const score of [null, undefined, '', ' ', NaN, 'invalid', true, {}, []]) {
@@ -487,7 +487,7 @@ test('retained scores remain visible while stale and unavailable values never be
         assert.equal(signalDisplayScore(unavailable), null);
         assert.match(
             signalScoreSummary(unavailable, model, signalScoreState(unavailable)),
-            /^Last recorded setup score unavailable/,
+            /^Direction score unavailable · Last recorded setup strength unavailable/,
         );
     }
 });

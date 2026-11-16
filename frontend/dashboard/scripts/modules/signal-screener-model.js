@@ -1,4 +1,4 @@
-export const DIRECTIONAL_VOTE_POINTS = 50;
+export const DIRECTION_SCORE_POINTS = 50;
 
 export const APP_LABELS = {
     stockbit: 'Stockbit',
@@ -324,6 +324,30 @@ export function signalDisplayScore(signal) {
     return Number.isFinite(score) ? score : null;
 }
 
+export function signalDirectionalScore(signal) {
+    const directionScore = signal?.direction_score;
+    const direction = String(signal?.direction || '').toUpperCase();
+    const score = Number(directionScore?.score);
+    const netScore = Number(directionScore?.net_score);
+    const longCount = Number(directionScore?.long_count);
+    const shortCount = Number(directionScore?.short_count);
+    const expectedScore = direction === 'LONG' ? DIRECTION_SCORE_POINTS
+        : direction === 'SHORT' ? -DIRECTION_SCORE_POINTS
+            : null;
+    if (expectedScore === null || score !== expectedScore
+        || !Number.isSafeInteger(netScore)
+        || !Number.isSafeInteger(longCount) || longCount < 0
+        || !Number.isSafeInteger(shortCount) || shortCount < 0
+        || netScore !== (longCount - shortCount) * DIRECTION_SCORE_POINTS) {
+        return null;
+    }
+    return { score, netScore, longCount, shortCount };
+}
+
+export function signedDirectionScore(value) {
+    return value > 0 ? `+${value}` : String(value);
+}
+
 export function signalScoreSummary(signal, model, scoreState = null) {
     const presentation = signalScorePresentation(signal, model);
     const scoreScaleMax = Number.isFinite(presentation.scoreScaleMax)
@@ -337,23 +361,25 @@ export function signalScoreSummary(signal, model, scoreState = null) {
                 ? 'closed'
                 : stateLabel.toLowerCase()}`
         : '';
+    const directionScore = signalDirectionalScore(signal);
+    const directionSummary = directionScore
+        ? `Direction score ${signedDirectionScore(directionScore.score)} · net ${signedDirectionScore(directionScore.netScore)}`
+        : 'Direction score unavailable';
     if (hasSixIndicatorScores(signal, model)) {
         const label = scoreState?.tone === 'stale' ? 'Last recorded indicator scores' : 'Indicator scores';
         const strength = signalTotalStrength(signal, model);
         const total = signalDisplayScore(signal);
-        const totalLabel = Number.isFinite(total) ? `Weighted total ${total.toFixed(1)}/60 · ` : '';
+        const totalLabel = Number.isFinite(total) ? `Setup strength ${total.toFixed(1)}/60 · ` : '';
         const indicators = `${totalLabel}${label}: ${signalIndicatorSummary(signal, model)}${state}`;
         const summary = strength.tone === 'low' ? `${strength.label} · ${indicators}` : `${indicators} · ${strength.label}`;
-        return `${summary} · ${strength.description} · setup strength, not win probability or execution availability`;
+        return `${directionSummary} · ${summary} · ${strength.description} · setup strength is separate from the direction score, win probability, and execution availability`;
     }
     const displayScore = signalDisplayScore(signal);
-    const scoreLabel = scoreState?.tone === 'stale'
-        ? 'Last recorded setup score'
-        : 'Market-entry setup score';
+    const scoreLabel = scoreState?.tone === 'stale' ? 'Last recorded setup strength' : 'Setup strength';
     const scoreValue = Number.isFinite(displayScore)
         ? `${displayScore.toFixed(1)}/${scoreScaleMax}`
         : 'unavailable';
-    return `${scoreLabel} ${scoreValue}${state} · ${signalScoreWeightSummary(signal, model)} · setup strength, not win probability or execution availability`;
+    return `${directionSummary} · ${scoreLabel} ${scoreValue}${state} · ${signalScoreWeightSummary(signal, model)} · setup strength is separate from the direction score, win probability, and execution availability`;
 }
 
 export function averageNormalizedScore(signals) {
