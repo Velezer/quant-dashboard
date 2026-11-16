@@ -2,7 +2,7 @@
 
 Open **Backtest entry models per ticker** from the scoring guide, or choose
 **Validate entry models** on the screener. The `/entry-validation` page runs the
-current four-indicator NWE-led and DSS-led entry models for the selected app,
+current six-indicator signed NWE/DSS entry models for the selected app,
 product, ticker, and timeframe. Choose one ticker or run every eligible ticker
 in the selected scope. Scope runs follow every registry page, process tickers
 sequentially, save each completed result, and offer stop-after-current and
@@ -52,8 +52,8 @@ historical result is a target, not a future win guarantee.
 
 The `/entry-validation` page shows active profile versions and the latest
 cohort blockers. Each signal scan loads one profile snapshot at its start and
-uses that version throughout the scan. Signal rows retain raw component points
-out of 10, each component's weight and weighted contribution, and the profile
+uses that version throughout the scan. Signal rows retain raw signed component points
+from −10 to +10, each component's weight and weighted contribution, and the profile
 version. Newly promoted weights apply on the next scan.
 
 ## Reading a report
@@ -61,19 +61,22 @@ version. Newly promoted weights apply on the next scan.
 Each saved report identifies its registered instrument, model and score version,
 timeframe, selected candle source, sample dates, candle fingerprint, and
 protocol version. It separates the strategy warm-up, training, exit-selection,
-and untouched holdout windows. The equal-weight baseline's four total-score
-bands and each indicator's points out of 10 show observed holdout trades,
+and untouched holdout windows. The equal-weight baseline's total-magnitude
+bands and each indicator's signed points from −10 to +10 show observed holdout trades,
 win-rate interval, returns, wins/losses, and profit factor. Scores rank signals;
 they are not win probabilities.
 
-The protocol replays the live lead signal and shared four component scores using
-only candles available at that signal. The score floor remains 1 point out of
-40. A qualifying signal enters at the next bar open. The nominal 60/20/20
-chronological splits apply to bars after the model's indicator warm-up; no
-position crosses a split boundary.
+The protocol evaluates the same independent signed factors used in live scans
+using only candles available at each scored bar. Each weighted total determines
+LONG when positive, SHORT when negative, and neutral when zero. The magnitude
+floor is 1 point out of the 60-point budget. A qualifying signal enters at the
+next bar open. The nominal 60/20/20 chronological splits apply to bars after
+the model's indicator warm-up; no position crosses a split boundary.
 
 Weight learning tests 165 predeclared nonnegative weight vectors in steps of 5
-that sum to 40. Missing factor values contribute zero and their weight is not
+that sum to 40, with fixed 10-point Markov and autocorrelation weights. Each
+vector recomputes the signed total and its direction before entry and reverse
+exit checks. Missing factor values contribute zero and their weight is not
 redistributed. Training candidates need at least 30 non-overlapping outcomes
 and 50% winners after configured transaction fees using a fixed 8-bar timeout.
 Among those candidates, the fitter maximizes the Wilson 95% lower bound for

@@ -50,6 +50,8 @@ jobs:
         run: |
           /usr/bin/time -v -o "$BUILD_METRICS_DIR/service-time.txt" \
             cargo build --locked --release -p rust_chart_api
+      - name: Verify signed indicator cancellation
+        run: cargo test --locked --release -p quant_core signed_score_tests
       - name: Run SQLite journal regressions
         run: |
           set -o pipefail

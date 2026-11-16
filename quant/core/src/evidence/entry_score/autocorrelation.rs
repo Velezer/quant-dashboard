@@ -62,7 +62,7 @@ fn next_bar_strategy_return_pct(
     }
 
     let price_change = (exit_price - entry_price) / entry_price * 100.0;
-    let (gross_return_pct, entry_fee_pct, exit_fee_pct) = if observation.long {
+    let (gross_return_pct, entry_fee_pct, exit_fee_pct) = if super::score_with_weights(observation, policy.weights) > 0.0 {
         (price_change, policy.buy_fee_pct, policy.sell_fee_pct)
     } else {
         (-price_change, policy.sell_fee_pct, policy.buy_fee_pct)

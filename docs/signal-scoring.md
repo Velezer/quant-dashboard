@@ -23,7 +23,7 @@ multiplying it.
 Each scan recalculates crypto NWE/DSS from the latest completed bar in the
 selected timeframe. A row requires a directional setup, sufficient history,
 fresh matching reference price when a current market entry is claimed, and a
-score at or above the base floor. It does not require an active cohort profile
+signed-total magnitude at or above the base floor. It does not require an active cohort profile
 or a score above the backtested cutoff. Candidate weights are promoted only
 when the cohort reaches at least 50% after-fee wins, a 95% Wilson lower bound
 of at least 50%, positive mean net return, and profit factor above 1 on
@@ -34,18 +34,20 @@ qualify. Notification history has a separate two-hour retention window based
 on when the alert was created. A stale reference price can remain visible with
 its freshness label, but it is not a current market entry.
 
-## Total-strength display distinction
+## Signed total and magnitude
 
-For current six-indicator rows, sum the six unrounded numeric contributions.
-A sum below 10 shows **Low total strength** with an amber label and left border;
-exactly 10 or above shows the neutral **10+ combined points** label. Missing
-numeric contributions show **Total strength unavailable**. An indicator with
-recorded zero points and an unavailable state keeps that state visible. Stale
-rows qualify the label as last recorded. This is a presentation distinction,
-not a change to eligibility, ordering, evidence validation, or notifications.
-Legacy score models keep their recorded scales and do not use this distinction.
-The six separate /10 values, their learned or fixed weights, and contributions
-remain the primary score display.
+Every indicator is evaluated independently on the same causal candle history.
+Bullish evidence is positive, bearish evidence negative, and neutral evidence
+zero. The weighted total determines the side: positive means LONG, negative
+means SHORT, and exactly zero means no directional entry. Opposing components
+cancel within that calculation; no fixed ±50 vote is assigned afterward.
+
+The total's absolute value is its magnitude. Apply the base floor and strength
+filters to that magnitude so a strong negative total is not accidentally
+filtered out. For the current six-factor budget the total ranges from −60 to
++60. A magnitude below 10 receives the low-strength display distinction; missing
+numeric components remain unavailable. Stale rows show their last recorded
+calculation and cannot claim a current market entry.
 
 ## After-fee historical metric
 
@@ -63,46 +65,37 @@ Historical results do not estimate an individual signal's future win rate.
 Spread, slippage, depth, market impact, funding, and borrow remain outside the
 fee-adjusted return.
 
-## Six indicator scores (`/60` total)
+## Six signed indicator scores (−60…+60 total)
 
-The registered NWE/DSS score models
-`nwe_dss_relative_volume_estimated_delta_markov_autocorrelation_rank_v8` and
-`dss_bressert_near_cross_nwe_volume_markov_autocorrelation_rank_v6` use six
-factors, each shown on a 0–10 scale. The first four share 40 weight points;
-validated after-fee profiles can redistribute those points, while the baseline
-assigns 10 to each. Markov and lag-one return autocorrelation each receive a
-fixed 10-point weight, making the total scale `/60`. NWE and DSS form the price
-subtotal; relative volume and the OHLCV delta estimate form the volume
-subtotal. Markov and autocorrelation are separate fifth and sixth components.
-The base score floor is 1/60. The six raw values, current weights, and weighted
-contributions are shown separately.
+The active signed NWE/DSS models evaluate six factors, each on a −10…+10
+scale. The first four share 40 nonnegative weight points; validated after-fee
+profiles may redistribute them, while the baseline assigns 10 to each. Markov
+and lag-one return autocorrelation each keep a fixed 10-point weight.
+A component contributes `raw points × weight points / 10`. The six unrounded
+contributions sum to the signed total. The base magnitude floor is 1 point.
 
-| Factor | Rule |
+| Factor | Signed meaning |
 | --- | --- |
-| Nadaraya-Watson Envelope (NWE) | Uses the score supplied by the registered NWE setup for the selected timeframe and direction, bounded to 0–10. Cross and proximity rules belong to that strategy version. |
-| DSS Bressert | Uses the score supplied by the registered DSS setup for the selected timeframe and direction, bounded to 0–10. Cross and near-cross rules belong to that strategy version. |
-| Relative volume | Divide the current bar's volume by the mean volume of the preceding 20 bars for the same registered instrument, timeframe, and source. If the current candle direction agrees with the signal, score `10 × clamp((relative volume − 1) / (2 − 1), 0, 1)`; otherwise score zero. |
-| Estimated Volume Delta (OHLCV proxy) | Compute close location as `(2 × close − high − low) / (high − low)`, clamp it to −1…1, then multiply by +1 for LONG or −1 for SHORT. Score `10 × max(aligned close location, 0)`. This estimates candle pressure; it is not aggressor-side trade delta. |
-| Markov Regime | Classify the current scored bar using only data through that bar. Bull trend and accumulation align with LONG; bear trend and distribution align with SHORT. An aligned state receives 10 points; an opposing, neutral, or unavailable state receives zero. Its 10-point weight is fixed. Transition probabilities are not used as win probabilities or entry forecasts. |
-| Lag-one Return Autocorrelation | From up to 128 same-timeframe close-to-close log returns through the scored bar, estimate a causal one-step AR(1) forecast from adjacent returns. Require at least 30 lag-one pairs. Standardize the forecast by recent return deviation, align it with LONG or SHORT, and score `clamp(5 + 5 × clamp(direction × forecast / deviation, −1, 1), 0, 10)`. The component value is Pearson lag-one correlation `ρ`; its weight is fixed at 10. |
+| Nadaraya-Watson Envelope (NWE) | Causal endpoint lower-band evidence is positive; upper-band evidence is negative. The registered strategy owns cross and proximity parameters. |
+| DSS Bressert | Causal bullish cross or approach evidence is positive; bearish evidence is negative. The registered strategy owns oscillator and trigger parameters. |
+| Relative volume | Compare current volume with the preceding 20-bar mean. Rising candles contribute positive points and falling candles negative points. Magnitude is `10 × clamp(relative volume − 1, 0, 1)`; a flat candle contributes zero. |
+| Estimated Volume Delta (OHLCV proxy) | `10 × clamp((2 × close − high − low) / (high − low), −1, 1)`. Positive close location is bullish and negative close location bearish. This is a candle-pressure estimate, not aggressor-side trade delta. |
+| Markov Regime | Causal bull trend or accumulation contributes +10; bear trend or distribution contributes −10; neutral or unavailable state contributes zero. Its weight is fixed. |
+| Lag-one Return Autocorrelation | Use a causal one-step AR(1) forecast from up to 128 same-timeframe log returns, requiring at least 30 adjacent pairs. Standardize the forecast by recent return deviation and map it to −10…+10. Positive forecast points are bullish, negative bearish, and zero neutral. The separately displayed Pearson correlation ρ describes dependence, not direction or win probability. |
 
-The two volume factors use related OHLCV observations, so they are not two
-independent trade-flow measurements. A relative-volume factor is unavailable
-when the current bar or any of its preceding 20 baseline bars has missing,
-non-finite, or non-positive volume, or when there is insufficient baseline
-history. The delta proxy is unavailable when its required current-bar values or
-positive high-low range are invalid. An unavailable factor contributes zero
-points and stays labeled unavailable; it is not treated as neutral agreement.
-Stale, incomplete, or cross-source bars do not become current score inputs.
+Neither the signal's prior side nor a lead-indicator label changes a factor's
+sign. In particular, an opposing regime or forecast subtracts from the total.
+Volume and delta use related OHLCV observations and are not independent trade
+flow measurements. Missing, non-finite, or invalid factor inputs contribute
+zero while retaining an unavailable label; their weights are not redistributed.
+Required model warm-up, candle provenance, freshness, and venue shorting rules
+remain separate entry checks.
 
-NWE and DSS calculations are deliberately not reduced to one shared formula:
-the factor values come from each registered strategy version. The four learned
-factors' weighted contributions total at most 40; fixed Markov and
-autocorrelation contributions add at most 10 each. Autocorrelation is
-unavailable with fewer than 30 adjacent return pairs or zero variance. An
-unavailable factor contributes zero without redistributing weight, so the
-score can be below 60 even when other factors are strong. Its state and `ρ`
-remain visible beside the points.
+Changing weights can change the total's sign. The backtest therefore determines
+entry and reverse-exit directions from the weighted signed total for every
+candidate profile rather than replaying a side chosen before weighting.
+Old positive-support model rows and learned profiles retain their model and
+protocol identities and cannot be silently reused as signed-model evidence.
 
 ## Strategy/confluence blend (`/10`)
 
@@ -207,3 +200,16 @@ and [score presentation](../frontend/dashboard/scripts/modules/signal-screener-m
    between unavailable fresh inputs and a freshly computed zero.
 10. **Decision:** Correct the shared display helper and labels. Reconsider if a
     stale row loses its warning, changes scale, or changes its stored score.
+
+## Decision record: signed contributions determine entry direction
+
+1. Direct effect: opposite indicator contributions cancel; total sign sets the side.
+2. Immediate consequence: filters compare magnitude and retain strong SHORT rows.
+3. Response: new scans recompute the signed model from causal history.
+4. Interactions: live and backtest policies share factors; each weight vector derives its own side.
+5. Accumulation: model/protocol versions isolate historical positive-support evidence.
+6. Failure boundaries: zero is neutral; unavailable factors keep their labels and zero contribution.
+7. Recovery: stale inputs retain warnings, and the existing scan/backtest controls recalculate data.
+8. Governance: scoring stays read-only with no execution or position state.
+9. Trajectory: hypothesis: explicit arithmetic makes indicator disagreement easier to interpret.
+10. Decision: use one signed calculation and revisit if displayed contributions do not reproduce its total or a backtest reuses a preselected side.

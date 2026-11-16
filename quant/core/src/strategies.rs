@@ -51,6 +51,7 @@ pub use dss_bressert_4h::{
     STOCKBIT_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID,
 };
 pub use entry_score::{
+    generate_signed_entry_signal,
     score_entry_signal, score_entry_signal_with_markov, score_entry_signal_with_weights,
     EntryModelKind,
 };
@@ -129,3 +130,7 @@ mod stockbit_nwe_4h_tests;
 #[cfg(test)]
 #[path = "strategies/tokocrypto_tests.rs"]
 mod tokocrypto_tests;
+
+#[cfg(test)]
+#[path = "strategies/signed_score_tests.rs"]
+mod signed_score_tests;

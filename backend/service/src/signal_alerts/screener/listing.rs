@@ -389,11 +389,11 @@ fn score_basis_matches_indicator_filter(
     }
     let Some(points) = component["points"]
         .as_f64()
-        .filter(|points| points.is_finite() && (0.0..=10.0).contains(points))
+        .filter(|points| points.is_finite() && (-10.0..=10.0).contains(points))
     else {
         return false;
     };
-    points >= minimum_score.unwrap_or(0.0).clamp(0.0, 10.0)
+    points.abs() >= minimum_score.unwrap_or(0.0).clamp(0.0, 10.0)
 }
 
 fn score_meets_render_minimum(
@@ -541,7 +541,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         // Keep the saved sign on retained qualifying rows; the live net below
         // is reserved for fresh market entries.
         let last_direction_score = match score_status {
-            "qualifying" | "stale" => quant_core::signed_direction_score(&direction),
+            "qualifying" | "stale" => Some(if direction.eq_ignore_ascii_case("SHORT") { -setup_strength } else { setup_strength }),
             _ => None,
         };
         Ok(json!({
@@ -558,8 +558,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             // `score` is the public signed vote; the stored positive model
             // value is exposed separately as `setup_strength`.
             "score": last_direction_score,
-            "score_contract": "signed_direction_vote_v1",
-            "direction_score_points": quant_core::SIGNAL_DIRECTION_SCORE_POINTS,
+            "score_contract": "signed_indicator_sum_v1",
+            "score_scale_max": setup_strength_scale_max,
             "setup_strength": setup_strength,
             "setup_strength_scale_max": setup_strength_scale_max,
             "strategy_strength": row.get::<_, Option<f64>>(10)?,
@@ -589,7 +589,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let mut matching_rows = 0usize;
     let mut signals = Vec::with_capacity(page_size);
     let mut direction_score_counts =
-        std::collections::HashMap::<(String, String, String, String), (usize, usize)>::new();
+        std::collections::HashMap::<(String, String, String, String), (usize, usize, f64)>::new();
     while let Some(row) = query_rows.next()? {
         if is_known_delisted_pintu_signal(row)? { continue; }
         let strategy = row.get::<_, String>(5)?;
@@ -637,6 +637,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             } else if direction.eq_ignore_ascii_case("SHORT") {
                 counts.1 = counts.1.saturating_add(1);
             }
+            counts.2 += signal["score"].as_f64().unwrap_or_default();
         }
         // Direction scores summarize all current entries for this app and
         // ticker/timeframe, independent of the screener's visible filters.
@@ -720,20 +721,13 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         {
             continue;
         }
-        let Some((long_count, short_count)) = direction_score_counts
+        let Some((long_count, short_count, net_score)) = direction_score_counts
             .get(&direction_score_key(signal))
             .copied()
         else {
             continue;
         };
-        let direction = signal["direction"].as_str().unwrap_or_default();
-        let Some(signal_vote) = quant_core::signed_direction_score(direction) else {
-            continue;
-        };
-        let net_score = i64::try_from(long_count)
-            .unwrap_or(i64::MAX)
-            .saturating_sub(i64::try_from(short_count).unwrap_or(i64::MAX))
-            .saturating_mul(quant_core::SIGNAL_DIRECTION_SCORE_POINTS);
+        let Some(signal_vote) = signal["score"].as_f64() else { continue; };
         signal["direction_score"] = json!({
             "score": signal_vote,
             "net_score": net_score,

@@ -14,7 +14,6 @@ pub mod indicators;
 pub mod markov;
 pub mod plans;
 pub mod risk;
-pub mod signal_score;
 pub mod strategies;
 pub mod venue_rules;
 
@@ -105,7 +104,6 @@ pub use risk::{
     MIN_GROWTH_TRADING_DAYS, MIN_SETUP_RISK_REWARD_MOVE_PCT, MIN_SETUP_TRADES_PER_DAY,
     MIN_SETUP_WIN_RATE_PCT,
 };
-pub use signal_score::{signed_direction_score, SIGNAL_DIRECTION_SCORE_POINTS};
 pub use strategies::{
     calculate_dss_bressert_mtf, crypto_dss_bressert_signal_strategy_id,
     crypto_nwe_signal_strategy_id, generate_idx_first_half_hour_momentum_signals,
@@ -117,7 +115,7 @@ pub use strategies::{
     generate_tokocrypto_confluence_signals, indicator_combination_indicator_ids,
     is_pintu_golden_cross_strategy, is_tokenized_stock_confluence_strategy,
     is_tokocrypto_confluence_strategy, is_tokocrypto_spot_confluence_strategy, round_price_up,
-    score_four_indicators, score_four_indicators_with_weights, score_entry_signal,
+    generate_signed_entry_signal, score_four_indicators, score_four_indicators_with_weights, score_entry_signal,
     score_entry_signal_with_markov, score_entry_signal_with_weights, EntryModelKind,
     stockbit_dss_bressert_signal_strategy_id,
     stockbit_nwe_4h_minimum_history_bars, stockbit_nwe_signal_strategy_id,

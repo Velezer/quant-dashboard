@@ -40,11 +40,11 @@ pub(super) fn score_components_match(
     group_tolerance_inclusive: bool,
 ) -> bool {
     if !strategy_strength.is_finite()
-        || strategy_strength < 0.0
-        || strategy_strength > group_score_max
+        || (!six_indicator_score_model && strategy_strength < 0.0)
+        || strategy_strength.abs() > group_score_max
         || !confluence_score.is_finite()
-        || confluence_score < 0.0
-        || confluence_score > group_score_max
+        || (!six_indicator_score_model && confluence_score < 0.0)
+        || confluence_score.abs() > group_score_max
         || (!six_indicator_score_model
             && (total_score - strategy_strength - confluence_score).abs()
                 > SIGNAL_SCORE_SUM_TOLERANCE)
@@ -58,7 +58,8 @@ pub(super) fn score_components_match(
                 .get("points")
                 .and_then(Value::as_f64)
                 .filter(|points| {
-                    points.is_finite() && (0.0..=component_points_max).contains(points)
+                    points.is_finite() && points.abs() <= component_points_max
+                        && (six_indicator_score_model || *points >= 0.0)
                 })
         })
         .collect::<Option<Vec<_>>>()
@@ -81,7 +82,7 @@ pub(super) fn score_components_match(
                 .any(|(component, expected)| {
                     component.get("indicator").and_then(Value::as_str) != Some(expected)
                 })
-            || !matches!(raw_component_points[4], 0.0 | 10.0)
+            || !matches!(raw_component_points[4], -10.0 | 0.0 | 10.0)
         {
             return false;
         }
@@ -141,7 +142,7 @@ pub(super) fn score_components_match(
             && groups_match(component_points[1] - confluence_score)
     };
     component_groups_match
-        && (component_points.iter().sum::<f64>() - total_score).abs() <= SIGNAL_SCORE_SUM_TOLERANCE
+        && (if six_indicator_score_model { component_points.iter().sum::<f64>().abs() } else { component_points.iter().sum::<f64>() } - total_score).abs() <= SIGNAL_SCORE_SUM_TOLERANCE
 }
 
 pub(super) fn initialize_schema(connection: &Connection) -> Result<(), rusqlite::Error> {

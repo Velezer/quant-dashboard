@@ -23,7 +23,7 @@ pub const STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID: &str = "stockbit_nwe_band_proximit
 pub const STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID_LEGACY: &str =
     "nwe_dss_relative_volume_estimated_delta_rank_v6";
 pub const STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID: &str =
-    "nwe_dss_relative_volume_estimated_delta_markov_autocorrelation_rank_v8";
+    "signed_six_indicator_nwe_v9";
 pub const CRYPTO_NWE_4H_SIGNAL_STRATEGY_ID: &str = "crypto_nwe_band_proximity_4h_v1";
 pub const STOCKBIT_NWE_4H_PRODUCT_ID: &str = "stockbit_regular";
 pub const STOCKBIT_NWE_4H_EXCHANGE_ID: &str = "stockbit";

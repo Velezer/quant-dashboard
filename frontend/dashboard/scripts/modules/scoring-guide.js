@@ -1,7 +1,7 @@
 /** Adds an illustrative points example and the deployment's existing model catalog. */
 export function exampleTotals(points) {
     if (!Array.isArray(points) || points.length !== 6
-        || points.some(value => !Number.isFinite(value) || value < 0 || value > 10)) return null;
+        || points.some(value => !Number.isFinite(value) || value < -10 || value > 10)) return null;
     const [nwe, dss, volume, delta, markov, autocorrelation] = points;
     return { price: nwe + dss, volume: volume + delta, markov, autocorrelation,
         total: nwe + dss + volume + delta + markov + autocorrelation };
@@ -50,11 +50,13 @@ function setupExample(doc) {
         if (!totals) return;
         inputs.forEach((input, index) => {
             doc.getElementById(`example-${factors[index]}-value`).value = points[index].toFixed(1);
-            input.setAttribute('aria-valuetext', `${points[index]} of ${input.max} points`);
-            doc.getElementById(`example-bar-${factors[index]}`).style.width = `${points[index] / Number(input.max) * 100}%`;
+            input.setAttribute('aria-valuetext', `${points[index]} signed points, range minus ten to plus ten`);
+            doc.getElementById(`example-bar-${factors[index]}`).style.width = `${Math.abs(points[index]) / Number(input.max) * 100}%`;
             doc.getElementById(`example-summary-${factors[index]}`).value = points[index].toFixed(1);
         });
-        doc.getElementById('example-total-value').value = totals.total.toFixed(1);
+        doc.getElementById('example-total-value').value = `${totals.total > 0 ? '+' : ''}${totals.total.toFixed(1)}`;
+        const direction = doc.getElementById('example-direction');
+        if (direction) direction.textContent = totals.total > 0 ? 'LONG' : totals.total < 0 ? 'SHORT' : 'NEUTRAL';
         doc.getElementById('example-mode').textContent = inputs.every(input => input.value === input.defaultValue)
             ? 'Worked example values'
             : 'Hypothetical points · candle example unchanged';
@@ -95,7 +97,7 @@ function renderModel(doc, model) {
     const scale = numericValue(model.score_scale_max);
     const minimum = numericValue(model[`minimum_score_out_of_${scale}`] ?? model.minimum_score);
     metrics.append(
-        element(doc, 'span', '', 'Direction score · LONG +50 / SHORT −50'),
+        element(doc, 'span', '', 'Signed total · positive LONG / negative SHORT / zero neutral'),
         element(doc, 'span', '', scale === 60 ? 'Setup strength · six indicators /10 each' : `Setup strength · /${scale}`),
     );
     if (scale === 60) {

@@ -35,7 +35,7 @@ const FACTOR_NAMES: [&str; 4] = [
     "Estimated Volume Delta (OHLCV proxy)",
 ];
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
-    "entry_six_indicator_weight_fit_markov_autocorrelation_fixed_10_after_fee_win_rate_50_v12";
+    "entry_signed_six_indicator_after_fee_v13";
 pub const ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID: &str = risk_reward::PROTOCOL_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -93,7 +93,7 @@ struct HourSelection {
 }
 
 fn band_index(points: f64, width: f64, count: usize) -> usize {
-    ((points / width).floor() as usize).min(count.saturating_sub(1))
+    ((points.abs() / width).floor() as usize).min(count.saturating_sub(1))
 }
 
 fn score_with_weights(observation: Observation, weights: [u8; 4]) -> f64 {
@@ -111,8 +111,9 @@ fn markov_points(observation: Observation) -> f64 {
 }
 
 fn qualifies(observation: Observation, policy: EvaluationPolicy) -> bool {
-    (observation.long || policy.allow_short)
-        && score_with_weights(observation, policy.weights) >= policy.minimum_score
+    (score_with_weights(observation, policy.weights) > 0.0 || policy.allow_short)
+        && score_with_weights(observation, policy.weights).abs() > 0.0
+        && score_with_weights(observation, policy.weights).abs() >= policy.minimum_score
 }
 
 fn evaluate_window(
@@ -143,7 +144,7 @@ fn evaluate_window(
             let scan_end = timeout_exit.min(end - 1);
             let reverse_exit = (entry..=scan_end).find(|candidate| {
                 observations[*candidate]
-                    .is_some_and(|next| next.long != observation.long && qualifies(next, policy))
+                    .is_some_and(|next| (score_with_weights(next, policy.weights) > 0.0) != (score_with_weights(observation, policy.weights) > 0.0) && qualifies(next, policy))
             });
             match reverse_exit {
                 Some(candidate) => candidate,
@@ -160,7 +161,7 @@ fn evaluate_window(
             }
             timeout_exit
         };
-        let direction = if observation.long { "LONG" } else { "SHORT" };
+        let direction = if score_with_weights(observation, policy.weights) > 0.0 { "LONG" } else { "SHORT" };
         let add = |summary: &mut TradeSummary| {
             summary.add(
                 bars,
@@ -420,7 +421,7 @@ fn evaluate_hour_window(
                 hour_of_wib(bars[*candidate].time.saturating_add(bar_interval_ns)) == exit_hour
             })
             .unwrap_or(timeout_exit);
-        let direction = if observation.long { "LONG" } else { "SHORT" };
+        let direction = if score_with_weights(observation, policy.weights) > 0.0 { "LONG" } else { "SHORT" };
         summary.add(
             bars,
             entry,
