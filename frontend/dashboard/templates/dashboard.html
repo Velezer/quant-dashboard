@@ -98,12 +98,15 @@
                     <span id="scan-progress-subtitle" class="text-[11px] text-blue-300 font-mono">Analyzing symbol: <span id="scan-current-symbol" class="text-white font-bold">BTC-USD</span></span>
                 </div>
             </div>
-            <div class="flex items-center gap-3 w-48 sm:w-64">
+            <div id="scan-progress-controls" class="flex items-center gap-3 w-48 sm:w-64">
                 <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden border border-blue-700/50">
                     <div id="scan-progress-bar" class="bg-gradient-to-r from-blue-500 to-cyan-400 h-2 rounded-full transition-all duration-200" style="width: 0%"></div>
                 </div>
                 <span id="scan-progress-pct" class="text-xs font-mono font-bold text-cyan-300 min-w-[36px] text-right">0%</span>
             </div>
+            <button id="hideScanProgressBtn" type="button" class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-blue-800 text-lg leading-none text-blue-300 transition hover:bg-blue-900 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400" title="Hide scan progress" aria-label="Hide scan progress">
+                <span aria-hidden="true">×</span>
+            </button>
         </div>
 
         <!-- Top KPI Cards (Simplified & Clean) -->

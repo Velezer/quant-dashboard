@@ -156,7 +156,7 @@
 
     .tv-terminal #scan-progress-banner:not(.hidden) {
         display: grid !important;
-        grid-template-columns: minmax(0, 1fr) 104px;
+        grid-template-columns: minmax(0, 1fr) 104px 28px;
         align-items: center;
         gap: 8px !important;
         margin: 6px 0 0 !important;
@@ -202,7 +202,7 @@
         vertical-align: top;
     }
 
-    .tv-terminal #scan-progress-banner > div:last-child {
+    .tv-terminal #scan-progress-controls {
         width: 104px !important;
         min-width: 0;
         align-self: center;
