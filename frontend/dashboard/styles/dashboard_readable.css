@@ -33,7 +33,8 @@
 .tv-terminal .selected-signal-setup-cell strong { font: 600 13px/1.5 system-ui !important; }
 .tv-terminal .selected-signal-setup-cell small,
 .tv-terminal .selected-signal-setup-note { font: 400 12px/1.6 system-ui !important; color: var(--desk-muted) !important; }
-.tv-terminal #chart-score-summary, .tv-terminal #chart-evidence-badge { display: none !important; }
+.tv-terminal #chart-score-summary { font-size: 11px !important; color: var(--desk-muted); }
+.tv-terminal #chart-evidence-badge { font-size: 10px !important; }
 .tv-terminal #chart-symbol-badge { font: 700 17px/1.4 system-ui !important; }
 .tv-terminal #chart-style-badge { font-size: 11px !important; }
 .tv-terminal #chartShell { background: #0e1722 !important; border-color: var(--desk-line) !important; }
