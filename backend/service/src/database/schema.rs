@@ -1,4 +1,8 @@
 pub(super) const APP_RUNTIME_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS app.gainer_research_reports (
+    id INTEGER PRIMARY KEY CHECK(id=1), protocol_id TEXT NOT NULL,
+    computed_at INTEGER NOT NULL, report_json TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS app.storage_layout_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS app.storage_split_migrations (
     migration_id TEXT PRIMARY KEY, source_path TEXT NOT NULL, source_hash TEXT NOT NULL,

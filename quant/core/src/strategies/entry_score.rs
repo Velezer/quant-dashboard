@@ -123,3 +123,21 @@ pub(crate) fn visit_entry_signals(
         visitor(index, &input_signal(closes[index], index, &dss, &nwe));
     }
 }
+
+/// Visit sampled, causal equal-weight signed scores without replaying indicators.
+/// Callers choose timestamps before looking at forward outcomes.
+pub fn visit_sampled_entry_scores(
+    bars: &[StrategyBar], kind: EntryModelKind,
+    sample: impl Fn(usize) -> bool, mut visitor: impl FnMut(usize, f64),
+) {
+    let regimes = crate::classify_regimes(bars, &crate::MarkovRegimeConfig::default());
+    visit_entry_signals(bars, kind, |index, signal| {
+        if !sample(index) { return; }
+        if let Some(score) = score_entry_signal_with_markov(
+            &bars[..=index], signal, kind, FOUR_INDICATOR_EQUAL_WEIGHTS,
+            regimes.get(index).copied().flatten(),
+        ) {
+            if score.total_score.is_finite() { visitor(index, score.total_score); }
+        }
+    });
+}

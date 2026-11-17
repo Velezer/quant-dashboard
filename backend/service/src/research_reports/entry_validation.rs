@@ -13,7 +13,7 @@ mod scheduler;
 #[path = "entry_validation/scoring_profiles.rs"]
 mod scoring_profiles;
 mod gainer;
-pub(crate) use gainer::gainer_observations;
+pub(crate) use gainer::{gainer_observations, gainer_saved};
 pub(crate) use scheduler::background_daily_refresh_loop;
 pub(crate) use scoring_profiles::{
     active_profile_snapshot as entry_validation_active_profile_snapshot,
@@ -319,10 +319,12 @@ fn candle_fingerprint(bars: &[StrategyBar]) -> String {
 }
 
 fn fee_metadata(instrument: &Value) -> (f64, f64, bool, Value) {
-    let (buy, sell, known, label) = match quant_core::venue_fee_policy(
-        text(instrument, "exchange_id"),
-        text(instrument, "product_id"),
-    ) {
+    let policy = if text(instrument, "exchange_id") == "tokocrypto" && text(instrument, "product_id") == "tokocrypto_spot" {
+        quant_core::venue_rules::tokocrypto_spot_published_fee_policy(text(instrument, "quote_currency"))
+    } else {
+        quant_core::venue_fee_policy(text(instrument, "exchange_id"), text(instrument, "product_id"))
+    };
+    let (buy, sell, known, label) = match policy {
         VenueFeePolicy::Known {
             buy_fee_pct,
             sell_fee_pct,

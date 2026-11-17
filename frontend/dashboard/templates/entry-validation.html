@@ -35,9 +35,11 @@
         </section>
         <section class="scope-panel" aria-labelledby="gainer-title">
             <h2 id="gainer-title">Tokocrypto · next 4h gainer research</h2>
-            <p>Compare a fixed DSS-led signed-score ranking with the equal-weight universe and prior-4h momentum. Uses completed bars and one observation per instrument. This recent research sample cannot establish a next-gainer prediction.</p>
+            <p>Compare a fixed DSS-led signed-score ranking with the equal-weight universe and prior-4h momentum. Uses completed bars and one observation per instrument. Results remain unvalidated research. Inspect paired holdout performance, coverage and uncertainty before interpreting the ranking.</p>
             <p>Enter assumed costs in percent. Verify actual fees for your account and product. Blank means unknown; zero must be entered explicitly. Half the spread and the full slippage assumption apply at each fill.</p>
+            <div id="gainer-fee-reference" class="small-text" aria-live="polite">Loading published fee provenance…</div>
             <div class="scope-form">
+                <label>Fee scenario<select id="gainer-fee-mode"><option value="published">Published standard rates by quote</option><option value="manual">Manual research assumptions</option></select></label>
                 <label>Buy fee %<input id="gainer-buy" type="number" min="0" max="10" step="any"></label>
                 <label>Sell fee %<input id="gainer-sell" type="number" min="0" max="10" step="any"></label>
                 <label>Quoted spread %<input id="gainer-spread" type="number" min="0" max="10" step="any"></label>
@@ -45,9 +47,17 @@
             </div>
             <button id="gainer-run" type="button" class="primary-button">Run Tokocrypto ranking study</button>
             <button id="gainer-stop" type="button" class="secondary-button" disabled>Stop after current ticker</button>
+            <button id="gainer-retry" type="button" class="secondary-button" disabled>Retry failed tickers</button>
+            <button id="gainer-save" type="button" class="secondary-button" disabled>Save aggregate report</button>
+            <button id="gainer-load" type="button" class="secondary-button">Load saved report</button>
             <a href="/">Recover history on screener</a>
-            <p id="gainer-status" role="status" aria-live="polite">Ready. All eligible Tokocrypto Spot tickers are read sequentially. Results stay in this page.</p>
+            <p id="gainer-status" role="status" aria-live="polite">Ready. All eligible Tokocrypto Spot tickers are read sequentially. Save aggregate report keeps the research summary after reload.</p>
+            <p id="gainer-errors" role="status" class="small-text"></p>
             <div id="gainer-results" aria-live="polite"></div>
+            <details class="disclosure"><summary>Inspect ticker history and listing coverage</summary>
+                <p>Listing age remains unknown unless the venue supplies a listing date. Registry dates and earliest retained candles are shown independently. A short history never lowers the 1,000-day qualification minimum. Use the screener’s Sync Market action to advance historical pages; retry the study after ingestion. This table reflects the current run; only aggregate counts are saved.</p>
+                <div class="table-scroll" tabindex="0" role="region" aria-label="Ticker coverage diagnostics"><table><thead><tr><th scope="col">Ticker</th><th scope="col">Source</th><th scope="col">Coverage</th><th scope="col">Stored dates</th><th scope="col">Gaps / cap</th><th scope="col">Registered</th><th scope="col">Listing age</th></tr></thead><tbody id="gainer-coverage"><tr><td colspan="7">Run research to inspect coverage.</td></tr></tbody></table></div>
+            </details>
         </section>
         <section class="hero" aria-labelledby="page-title">
             <div><p class="eyebrow accent">4H ENTRY RESEARCH · AFTER FEES</p><h1 id="page-title">Find rules that reach a 50% win rate.</h1><p class="lede">Start with 4h NWE and DSS entries. Search causal setup-strength floors and ATR brackets, then evaluate the frozen rule on untouched data. The qualification target is win rate after configured transaction fees; payoff and return are reported for context, not used as targets.</p></div>

@@ -135,3 +135,16 @@ pub const STOCKBIT_MIN_CANDIDATE_PRICE_IDR: f64 = 60.0;
 pub fn stockbit_candidate_price_eligible(price: f64) -> bool {
     price.is_finite() && price >= STOCKBIT_MIN_CANDIDATE_PRICE_IDR
 }
+
+/// Standard Spot rates published 18 June 2026; no account-specific discounts.
+/// Apply to historical research as an explicit current-fee scenario, not a
+/// reconstruction of earlier tax/fee schedules. Tokenized stocks stay unknown.
+pub fn tokocrypto_spot_published_fee_policy(quote: &str) -> VenueFeePolicy {
+    let (buy, sell, label) = match quote {
+        "IDR" => (0.2222, 0.4322, "Tokocrypto standard IDR taker totals incl. tax and ICEx; published 2026-06-18; historical current-fee scenario"),
+        "USDT" => (0.4044, 0.4044, "Tokocrypto standard USDT/crypto totals incl. tax and ICEx; published 2026-06-18; historical current-fee scenario"),
+        _ => return venue_fee_policy("tokocrypto", "tokocrypto_spot"),
+    };
+    VenueFeePolicy::Known { buy_fee_pct: buy, sell_fee_pct: sell,
+        fee_model: label, official_fee_rules_url: Some(TOKOCRYPTO_FEE_RULES_URL) }
+}
