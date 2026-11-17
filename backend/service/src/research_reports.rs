@@ -4,7 +4,7 @@ mod entry_validation;
 pub(super) use entry_validation::{
     background_daily_refresh_loop, entry_validation_daily_status, entry_validation_list,
     entry_validation_saved, entry_validation_timeframe, entry_validation_update_control,
-    run_entry_validation,
+    run_entry_validation, gainer_observations,
     entry_validation_active_profile_snapshot, ActiveScoringProfile, ActiveScoringProfiles,
 };
 pub(crate) use entry_validation::ENTRY_VALIDATION_WORK;

@@ -1,3 +1,4 @@
+import { installGainerResearch } from './gainer-research.js';
 import { requestJson } from './api.js';
 import { renderStrategyAutocorrelation } from './strategy-autocorrelation-chart.js';
 import { renderAutocorrelationRiskSizing } from './entry-validation-risk-sizing.js';
@@ -99,6 +100,7 @@ function dateText(timestamp, detailed = false) {
 export function initializeEntryValidation(doc = document) {
     const $ = id => doc.getElementById(id);
     if (!$('scope-form')) return;
+    installGainerResearch();
     const scopeControls = ['validation-app', 'validation-product', 'validation-timeframe', 'validation-search', 'apply-scope'];
     let scope = { exchange: 'stockbit', product: 'all', timeframe: '4h', search: '' };
     let list = null;

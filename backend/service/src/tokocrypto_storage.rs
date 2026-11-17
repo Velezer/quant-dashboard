@@ -38,12 +38,38 @@ pub fn sync_registered_intraday_asset(
         contract_metadata_json,
         requested_tokenized,
     )?;
-    sync_intraday_market(
+    let result = sync_intraday_market(
         connection,
         &venue,
         requested_tokenized,
         registered_storage_symbol,
-    )
+    )?;
+    // Refresh latest prices first, then advance exactly one historical page.
+    let oldest: Option<i64> = connection.query_row(
+        "SELECT MIN(ts) FROM bars WHERE symbol=?1 AND interval='1h' AND source=?2",
+        params![registered_storage_symbol, SOURCE], |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    if let Some(oldest) = oldest {
+        let target = (crate::now_secs() as i64 - crate::MIN_ENGINE_HISTORY_DAYS * crate::SECONDS_PER_DAY)
+            .saturating_mul(crate::NANOS_PER_SECOND);
+        let exhausted: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ingestion_runs WHERE symbol=?1 AND interval='1h_history_backfill' AND source=?2 AND status='complete')",
+            params![registered_storage_symbol, SOURCE], |row| row.get(0),
+        ).map_err(|error| error.to_string())?;
+        if oldest > target && !exhausted {
+            match super::tokocrypto::fetch_klines_before(&venue, "1h", oldest / 1_000_000) {
+                Ok(bars) if !bars.is_empty() => {
+                    persist_sync(connection, registered_storage_symbol, &result.asset_category, &[("1h", &bars)])?;
+                }
+                Ok(_) => {
+                    connection.execute("INSERT INTO ingestion_runs (symbol,interval,source,exchange_id,data_provider,attempted_at,status,rows_received) VALUES (?1,'1h_history_backfill',?2,'tokocrypto','tokocrypto',?3,'complete',0)",
+                        params![registered_storage_symbol, SOURCE, crate::format_timestamp(crate::now_secs())]).map_err(|error| error.to_string())?;
+                },
+                Err(error) => record_failure(connection, registered_storage_symbol, "1h_history_backfill", &error),
+            }
+        }
+    }
+    Ok(result)
 }
 
 fn sync_intraday_market(

@@ -52,6 +52,18 @@ pub fn fetch_klines(
     require_completed_candles(parse_klines(&body, limit, now_ms)?)
 }
 
+/// One bounded historical page, strictly before the stored oldest candle.
+pub fn fetch_klines_before(symbol: &VenueSymbol, interval: &str, before_ms: i64) -> Result<Vec<MarketBar>, String> {
+    if before_ms <= 0 { return Err("Invalid historical candle cursor".into()); }
+    let url = format!("{}&endTime={}", kline_url(symbol, interval, MAX_KLINES)?, before_ms - 1);
+    let body = get_public_json(&url, 12)?;
+    let bars = parse_klines(&body, MAX_KLINES, now_millis()?)?;
+    if bars.iter().any(|bar| bar.open_time_ms >= before_ms) {
+        return Err("Tokocrypto historical endpoint did not honor the backward cursor".into());
+    }
+    Ok(bars)
+}
+
 fn require_completed_candles(bars: Vec<MarketBar>) -> Result<Vec<MarketBar>, String> {
     if bars.is_empty() {
         Err("Tokocrypto returned no completed candles".into())

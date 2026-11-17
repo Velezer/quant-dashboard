@@ -12,6 +12,8 @@ mod store;
 mod scheduler;
 #[path = "entry_validation/scoring_profiles.rs"]
 mod scoring_profiles;
+mod gainer;
+pub(crate) use gainer::gainer_observations;
 pub(crate) use scheduler::background_daily_refresh_loop;
 pub(crate) use scoring_profiles::{
     active_profile_snapshot as entry_validation_active_profile_snapshot,

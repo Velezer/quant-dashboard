@@ -19,10 +19,26 @@ fn same_origin_request(request: &str) -> bool {
 }
 
 pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(),RequestContext<'a>> {
-    if !matches!(request.route,"/api/entry-validation"|"/api/entry-validation/report"|"/api/entry-validation/run"|"/api/entry-validation/status"|"/api/entry-validation/control") {
+    if !matches!(request.route,"/api/entry-validation"|"/api/entry-validation/report"|"/api/entry-validation/run"|"/api/entry-validation/status"|"/api/entry-validation/control"|"/api/entry-validation/gainer") {
         return Err(request);
     }
     let RequestContext {stream,db,method,path,route,request_text,..} = request;
+    if route == "/api/entry-validation/gainer" {
+        if method != "GET" { api_error(stream,"405 Method Not Allowed","Use GET for ranking research."); return Ok(()) }
+        let values = query_values(path);
+        let instrument = values.get("instrument_id").map(String::as_str).unwrap_or("");
+        let _permit = match ENTRY_VALIDATION_WORK.try_lock() {
+            Ok(value) => value,
+            Err(TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(TryLockError::WouldBlock) => { api_error(stream,"503 Service Unavailable","Another backtest is active. Retry after it finishes."); return Ok(()) }
+        };
+        let connection = match open_db_minimal(db) { Ok(value) => value, Err(error) => { api_error(stream,"500 Internal Server Error",error); return Ok(()) } };
+        match gainer_observations(&connection, db, instrument) {
+            Ok(value) => respond(stream,crate::wire::encode(&value).unwrap_or_default(),"200 OK"),
+            Err(error) => api_error(stream,"400 Bad Request",error),
+        }
+        return Ok(())
+    }
     if route == "/api/entry-validation/status" {
         if method != "GET" { api_error(stream,"405 Method Not Allowed","Use GET to read daily backtest status."); return Ok(()) }
         let connection = match open_db_minimal(db) {Ok(value)=>value,Err(error)=>{api_error(stream,"500 Internal Server Error",error);return Ok(())}};
