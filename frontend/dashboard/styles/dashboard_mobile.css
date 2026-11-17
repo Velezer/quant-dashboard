@@ -101,11 +101,6 @@
         line-height: 1;
     }
 
-    .tv-terminal.signals-workspace-active #top-app-bar #signalAlertsToggle #signalCurrentCount {
-        margin: 0 !important;
-        font-size: 10px !important;
-    }
-
     .tv-terminal #signalAlertsDetails[open] #signalAlertsPanel {
         position: fixed !important;
         top: 84px !important;

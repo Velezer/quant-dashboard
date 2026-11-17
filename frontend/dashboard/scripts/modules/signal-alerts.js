@@ -6,16 +6,12 @@ import { signedDirectionScore } from './signal-screener-model.js';
 /** Shows durable signal alerts from the app database. */
 export function installSignalAlerts() {
     const details = document.getElementById('signalAlertsDetails');
-    const signalCountBadge = document.getElementById('signalCurrentCount');
     const status = document.getElementById('signalAlertsStatus');
     const retryButton = document.getElementById('signalAlertsRetry');
     const markReadButton = document.getElementById('signalAlertsMarkRead');
     const list = document.getElementById('signalAlertsList');
     let alerts = [];
     let unreadCount = 0;
-    let currentSignalCount = null;
-    let currentSignalCountStale = true;
-    let currentSignalCountError = '';
     let hasLoaded = false;
     let requestInFlight = false;
     let refreshQueued = false;
@@ -49,25 +45,6 @@ export function installSignalAlerts() {
         status.textContent = message;
         status.dataset.state = state;
         status.className = `mt-2 text-xs ${state === 'error' || state === 'stale' ? 'text-amber-300' : 'text-gray-400'}`;
-    }
-
-    function renderSignalCount() {
-        if (!signalCountBadge) return;
-        const countKnown = Number.isSafeInteger(currentSignalCount) && currentSignalCount >= 0;
-        const badgeState = !countKnown || currentSignalCountStale ? 'stale' : currentSignalCount > 0 ? 'active' : 'empty';
-        signalCountBadge.textContent = countKnown ? String(currentSignalCount) : '—';
-        signalCountBadge.setAttribute('aria-label', countKnown
-            ? `${currentSignalCount} current signal${currentSignalCount === 1 ? '' : 's'}${currentSignalCountStale ? ', snapshot stale' : ''}`
-            : `Current signal count unavailable${currentSignalCountError ? `: ${currentSignalCountError}` : ''}`);
-        signalCountBadge.title = countKnown
-            ? `Current screener signal count${currentSignalCountStale ? ' · snapshot may be stale' : ''}`
-            : `Current signal count unavailable${currentSignalCountError ? ` · ${currentSignalCountError}` : ''}`;
-        signalCountBadge.dataset.state = badgeState;
-        signalCountBadge.className = `ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-mono ${badgeState === 'active' ? 'bg-cyan-900 text-cyan-100' : badgeState === 'stale' ? 'bg-amber-900 text-amber-100' : 'bg-gray-700 text-gray-300'}`;
-        const summary = document.getElementById('signalAlertsToggle');
-        if (summary) summary.setAttribute('aria-label', countKnown
-            ? `Open notifications; ${currentSignalCount} current signal${currentSignalCount === 1 ? '' : 's'}`
-            : 'Open notifications; current signal count unavailable');
     }
 
     function formatTimestamp(value, nanoseconds = false) {
@@ -111,8 +88,7 @@ export function installSignalAlerts() {
     }
 
     function renderAlerts() {
-        if (!signalCountBadge || !list) return;
-        renderSignalCount();
+        if (!list) return;
         if (markReadButton) markReadButton.disabled = unreadCount === 0;
         list.replaceChildren();
 
@@ -224,19 +200,6 @@ export function installSignalAlerts() {
 
     if (retryButton) retryButton.addEventListener('click', () => void loadAlerts());
     window.addEventListener('dashboard:signal-inbox-refresh', () => void loadAlerts());
-    window.addEventListener('dashboard:current-signal-count', event => {
-        const count = event.detail?.count;
-        if (Number.isSafeInteger(count) && count >= 0) {
-            currentSignalCount = count;
-            currentSignalCountStale = event.detail?.stale === true;
-            currentSignalCountError = '';
-        } else {
-            currentSignalCount = null;
-            currentSignalCountStale = true;
-            currentSignalCountError = String(event.detail?.error || '').slice(0, 160);
-        }
-        renderSignalCount();
-    });
     if (markReadButton) markReadButton.addEventListener('click', () => void markAllRead());
     if (list) list.addEventListener('click', async event => {
         const button = event.target.closest('[data-open-signal-alert]');
