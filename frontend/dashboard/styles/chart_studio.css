@@ -1,0 +1,471 @@
+/* Chart-only presentation layer. Keep dashboard and screener styling separate. */
+.tv-terminal.signals-workspace-active .tv-chart-column #chartShell {
+    gap: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 1px solid #26384b !important;
+    border-radius: 14px !important;
+    background: #0c1420 !important;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, .22), inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.tv-terminal.signals-workspace-active .tv-chart-column .tv-symbol-toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 13px 13px 0 0;
+    background: linear-gradient(110deg, #172536, #111d2b 58%, #142131) !important;
+}
+
+.tv-terminal.signals-workspace-active .tv-chart-column .tv-symbol-line {
+    display: flex;
+    min-width: 0;
+    min-height: 54px !important;
+    height: auto !important;
+    padding: 9px 16px !important;
+    flex-wrap: wrap !important;
+    gap: 8px 12px !important;
+    overflow: visible !important;
+    white-space: normal !important;
+    border-bottom: 1px solid #26384b;
+}
+
+.tv-terminal.signals-workspace-active #chart-symbol-badge {
+    max-width: min(100%, 340px);
+    color: #f4f8fc !important;
+    font: 700 20px/1.25 Inter, system-ui, sans-serif !important;
+    letter-spacing: -.025em;
+}
+
+.tv-terminal.signals-workspace-active #chart-signal-timeframe-badge,
+.tv-terminal.signals-workspace-active #chart-timeframe-context {
+    display: inline-flex !important;
+    min-height: 26px;
+    align-items: center;
+    padding: 3px 9px !important;
+    border: 1px solid #2d6271;
+    border-radius: 999px;
+    background: #10323d;
+    color: #9be9dc !important;
+    font-size: 11px !important;
+}
+
+.tv-terminal.signals-workspace-active #chart-style-badge,
+.tv-terminal.signals-workspace-active #chart-evidence-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    font-size: 11px !important;
+}
+
+.tv-terminal.signals-workspace-active #chart-score-summary {
+    flex: 0 1 auto !important;
+    max-width: min(100%, 420px) !important;
+    font: 600 11px/1.4 ui-monospace, monospace !important;
+}
+
+.tv-terminal.signals-workspace-active #tv-chart-toolbar {
+    display: flex !important;
+    min-width: 0;
+    min-height: 54px !important;
+    height: auto !important;
+    padding: 7px 12px !important;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap !important;
+    gap: 7px !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-bottom: 1px solid #26384b !important;
+    background: #111c2a !important;
+}
+
+.tv-terminal.signals-workspace-active .tv-timeframe-group {
+    display: inline-flex;
+    flex: 0 0 auto;
+    min-height: 38px;
+    align-items: center;
+    padding: 3px 6px !important;
+    gap: 3px !important;
+    border: 1px solid #324358 !important;
+    border-radius: 9px !important;
+    background: #0a1420 !important;
+    box-shadow: none !important;
+}
+
+.tv-terminal.signals-workspace-active .tv-timeframe-group > span:first-child {
+    padding: 0 7px !important;
+    color: #8ea4bc !important;
+    font-size: 10px !important;
+    letter-spacing: .08em;
+}
+
+.tv-terminal.signals-workspace-active #chartTimeframeButtons { gap: 2px !important; }
+.tv-terminal.signals-workspace-active #chartTimeframeButtons .chart-timeframe-btn {
+    min-width: 40px !important;
+    min-height: 32px !important;
+    padding: 0 8px !important;
+    border: 1px solid transparent;
+    border-radius: 6px !important;
+    color: #b7c6d7 !important;
+    font: 650 11px/1 system-ui, sans-serif !important;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.tv-terminal.signals-workspace-active #chartTimeframeButtons .chart-timeframe-btn:hover,
+.tv-terminal.signals-workspace-active #chartTimeframeButtons .chart-timeframe-btn:focus-visible {
+    border-color: #345367;
+    background: #172a3a !important;
+    color: #f1f8ff !important;
+    outline: none;
+}
+
+.tv-terminal.signals-workspace-active #chartTimeframeButtons .chart-timeframe-btn[aria-pressed="true"] {
+    border-color: #278b92;
+    background: linear-gradient(145deg, #15535b, #123a49) !important;
+    color: #c8fff4 !important;
+    box-shadow: inset 0 0 0 1px rgba(112, 231, 207, .08);
+}
+
+.tv-terminal.signals-workspace-active #tv-chart-toolbar > button,
+.tv-terminal.signals-workspace-active #tv-chart-toolbar > #chartDataDebugBtn {
+    min-height: 38px !important;
+    padding: 0 11px !important;
+    border: 1px solid #2b4558 !important;
+    border-radius: 8px !important;
+    background: #152536 !important;
+    color: #c2d5e4 !important;
+    font: 650 11px/1.2 system-ui, sans-serif !important;
+}
+
+.tv-terminal.signals-workspace-active #tv-chart-toolbar > #toggleMarkovRegimeBtn[aria-pressed="true"] {
+    border-color: #66539c !important;
+    background: #28234a !important;
+    color: #ded1ff !important;
+}
+
+.tv-terminal.signals-workspace-active #markov-regime-status {
+    max-width: 220px;
+    overflow: hidden;
+    color: #c1b0fa !important;
+    font-size: 11px !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tv-terminal.signals-workspace-active #chartToolsDetails > summary {
+    min-height: 38px !important;
+    padding: 0 12px !important;
+    border: 1px solid #34465b !important;
+    border-radius: 8px;
+    background: #101b28;
+    color: #c3d2e2;
+    font-size: 11px !important;
+}
+
+.tv-terminal.signals-workspace-active #chartToolsDetails[open] > summary {
+    border-color: #41818b !important;
+    color: #a9f1e5;
+}
+
+.tv-terminal.signals-workspace-active #chartToolsDetails .chart-tools-menu {
+    top: calc(100% + 7px);
+    display: grid;
+    min-width: 260px;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid #34465b;
+    border-radius: 10px;
+    background: #101a27;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, .48);
+}
+
+.tv-terminal.signals-workspace-active #chartToolsDetails .chart-tools-menu > .tv-tool-group {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 5px !important;
+}
+
+.tv-terminal.signals-workspace-active #chart-time-scale-controls {
+    min-height: 38px;
+    padding-left: 7px;
+    border-left-color: #34465b !important;
+}
+
+.tv-terminal.signals-workspace-active #chart-time-scale-controls > span:first-child {
+    color: #8ea4bc !important;
+    font-size: 10px !important;
+    letter-spacing: .07em;
+}
+
+.tv-terminal.signals-workspace-active #chart-time-scale-controls .tv-icon-tool {
+    min-width: 36px;
+    min-height: 34px;
+    border: 1px solid #2c4054;
+    border-radius: 7px;
+    background: #101b28;
+    color: #c2d3e4;
+    font-size: 14px;
+}
+
+.tv-terminal.signals-workspace-active #chartZoomReadout { color: #91a4b8 !important; }
+
+.tv-terminal.signals-workspace-active #tv-ohlc-bar {
+    display: flex;
+    min-width: 0;
+    min-height: 54px !important;
+    height: auto !important;
+    flex: 0 0 auto !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 14px;
+    padding: 8px 14px !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-bottom: 1px solid #243548 !important;
+    border-radius: 0 !important;
+    background: #0f1926 !important;
+}
+
+.tv-terminal.signals-workspace-active #tv-ohlc-bar > div:first-child {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    flex-wrap: wrap !important;
+    gap: 6px 12px !important;
+    overflow: visible !important;
+}
+
+.tv-terminal.signals-workspace-active #tv-ohlc-symbol {
+    color: #eff6ff !important;
+    font-size: 13px !important;
+}
+
+.tv-terminal.signals-workspace-active .chart-ohlc-readings {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 12px !important;
+    color: #8fa2b5;
+    font: 500 11px/1.4 ui-monospace, SFMono-Regular, monospace;
+}
+
+.tv-terminal.signals-workspace-active .chart-ohlc-metric {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    white-space: nowrap;
+}
+
+.tv-terminal.signals-workspace-active .chart-ohlc-metric > span {
+    color: #768ba1;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.tv-terminal.signals-workspace-active .chart-ohlc-metric > b:not(#tv-ohlc-c) {
+    color: #d8e3ed;
+    font: 600 11px/1.4 ui-monospace, SFMono-Regular, monospace;
+}
+
+.tv-terminal.signals-workspace-active #tv-ohlc-c { font: 600 11px/1.4 ui-monospace, SFMono-Regular, monospace; }
+.tv-terminal.signals-workspace-active .chart-ohlc-change { font: 700 11px/1.4 ui-monospace, monospace; }
+
+.tv-terminal.signals-workspace-active #nwe-envelope-status,
+.tv-terminal.signals-workspace-active #volumeDeltaStatus {
+    display: inline-flex;
+    align-items: center;
+    min-height: 25px;
+    padding: 2px 8px !important;
+    border: 1px solid #514276;
+    border-radius: 999px;
+    background: #211c39;
+    color: #d0c0ff !important;
+    font-size: 10px !important;
+}
+
+.tv-terminal.signals-workspace-active #tv-ohlc-bar > div:last-child {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+}
+
+.tv-terminal.signals-workspace-active #chart-data-warning,
+.tv-terminal.signals-workspace-active #chart-continuity-warning {
+    max-width: 260px !important;
+    max-height: none !important;
+    padding: 5px 8px !important;
+    border-radius: 7px;
+    overflow: visible !important;
+    white-space: normal !important;
+    font-size: 10px !important;
+}
+
+.tv-terminal.signals-workspace-active #chartDataDiagnostics {
+    flex: 0 0 auto !important;
+    min-height: 36px !important;
+    height: auto !important;
+    border: 0 !important;
+    border-bottom: 1px solid #223245 !important;
+    border-radius: 0 !important;
+    background: #101b28 !important;
+}
+
+.tv-terminal.signals-workspace-active #chartDataDiagnostics > summary {
+    min-height: 36px !important;
+    height: auto !important;
+    padding: 7px 14px !important;
+    color: #9fb1c3 !important;
+    font-size: 11px !important;
+}
+
+.tv-terminal.signals-workspace-active #chartContainer {
+    flex: 1 1 0% !important;
+    min-height: 250px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background-color: #0a121d !important;
+    background-image: linear-gradient(rgba(124, 151, 181, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(124, 151, 181, .025) 1px, transparent 1px);
+    background-size: 48px 48px;
+}
+
+.tv-terminal.signals-workspace-active #chart-status-overlay > div {
+    max-width: min(500px, 100%);
+    border: 1px solid #3b4d61;
+    border-radius: 14px;
+    background: rgba(11, 20, 31, .94);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
+}
+
+.tv-terminal.signals-workspace-active #markov-regime-legend {
+    flex: 0 0 auto;
+    border: 0 !important;
+    border-top: 1px solid #26384b !important;
+    border-radius: 0 !important;
+    background: #0f1926 !important;
+}
+
+.tv-terminal.signals-workspace-active #markov-regime-legend > summary {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    color: #91a4b8 !important;
+    font-size: 11px !important;
+}
+
+.tv-terminal.signals-workspace-active #chart-pane-resizer {
+    min-height: 8px !important;
+    height: 8px !important;
+    flex: 0 0 8px !important;
+    background: #0c1420 !important;
+}
+
+.tv-terminal.signals-workspace-active .dss-indicator-disclosure {
+    flex: 0 0 auto !important;
+    min-height: 48px !important;
+    border: 0 !important;
+    border-top: 1px solid #26384b !important;
+    border-radius: 0 0 13px 13px !important;
+    background: #101b28 !important;
+}
+
+.tv-terminal.signals-workspace-active .dss-indicator-disclosure:not([open]) {
+    height: auto !important;
+}
+
+.tv-terminal.signals-workspace-active .dss-indicator-summary {
+    min-height: 48px !important;
+    padding: 7px 14px !important;
+    gap: 8px 10px !important;
+    border: 0 !important;
+    background: #101b28 !important;
+}
+
+.tv-terminal.signals-workspace-active .dss-summary-title { color: #e2edf7; font-size: 12px; }
+.tv-terminal.signals-workspace-active .dss-summary-value { font-size: 12px !important; }
+.tv-terminal.signals-workspace-active .dss-signal-status,
+.tv-terminal.signals-workspace-active .dss-compute-status { font-size: 10px !important; }
+.tv-terminal.signals-workspace-active .dss-scale-fit { min-height: 30px; padding-inline: 9px; }
+.tv-terminal.signals-workspace-active .dss-disclosure-cue { color: #9fb1c3; font-size: 11px; }
+.tv-terminal.signals-workspace-active #dssLegendDetails > summary { min-height: 34px; padding: 8px 14px; font-size: 11px; }
+.tv-terminal.signals-workspace-active #dssChartContainer { background: #0a121d; }
+
+@media (max-width: 1023px) {
+    .tv-terminal.signals-workspace-active .tv-chart-column #chartShell { border-radius: 12px !important; }
+    .tv-terminal.signals-workspace-active .tv-chart-column .tv-symbol-line { min-height: 48px !important; padding: 8px 12px !important; gap: 7px !important; }
+    .tv-terminal.signals-workspace-active #chart-symbol-badge { font-size: 17px !important; }
+    .tv-terminal.signals-workspace-active #chart-score-summary { display: none !important; }
+    .tv-terminal.signals-workspace-active #tv-chart-toolbar {
+        min-height: 0 !important;
+        height: auto !important;
+        padding: 8px !important;
+        gap: 7px !important;
+        overflow: visible !important;
+    }
+    .tv-terminal.signals-workspace-active .tv-timeframe-group {
+        flex: 1 0 100%;
+        width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: thin;
+        touch-action: pan-x;
+    }
+    .tv-terminal.signals-workspace-active #chartTimeframeButtons { flex: 0 0 auto; }
+    .tv-terminal.signals-workspace-active #chartTimeframeButtons .chart-timeframe-btn { min-height: 36px !important; }
+    .tv-terminal.signals-workspace-active #tv-chart-toolbar > button,
+    .tv-terminal.signals-workspace-active #tv-chart-toolbar > #chartDataDebugBtn { min-height: 38px !important; }
+    .tv-terminal.signals-workspace-active #markov-regime-status { flex: 1 1 100%; max-width: 100%; padding: 2px 4px; }
+    .tv-terminal.signals-workspace-active #chart-time-scale-controls { flex: 1 1 auto; min-width: 0; }
+    .tv-terminal.signals-workspace-active #chart-time-scale-controls .tv-chart-help { display: none !important; }
+    .tv-terminal.signals-workspace-active #tv-ohlc-bar { align-items: flex-start; padding: 8px 10px !important; gap: 7px; }
+    .tv-terminal.signals-workspace-active #tv-ohlc-bar > div:first-child { gap: 6px 8px !important; }
+    .tv-terminal.signals-workspace-active #tv-ohlc-bar > div:first-child > div.chart-ohlc-readings {
+        flex: 1 0 100%;
+        width: 100%;
+        flex-wrap: wrap !important;
+        gap: 6px 10px !important;
+        overflow: visible !important;
+    }
+    .tv-terminal.signals-workspace-active #tv-ohlc-bar > div:last-child { justify-content: flex-start; flex-wrap: wrap; }
+    .tv-terminal.signals-workspace-active #chart-data-warning,
+    .tv-terminal.signals-workspace-active #chart-continuity-warning { max-width: 100% !important; }
+    .tv-terminal.signals-workspace-active #chartContainer { min-height: 280px !important; }
+    .tv-terminal.signals-workspace-active #markov-regime-legend > summary { min-height: 38px; line-height: 1.45; }
+    .tv-terminal.signals-workspace-active .dss-indicator-summary { min-height: 50px !important; padding: 7px 10px !important; }
+    .tv-terminal.signals-workspace-active #chartToolsDetails[open] .chart-tools-menu {
+        position: absolute;
+        z-index: 50;
+        top: calc(100% + 6px);
+        right: auto;
+        left: 50%;
+        width: calc(100vw - 28px);
+        max-width: calc(100vw - 28px);
+        min-width: 0;
+        transform: translateX(-50%);
+        box-sizing: border-box;
+    }
+    .tv-terminal.signals-workspace-active #tv-chart-toolbar { position: relative; }
+    .tv-terminal.signals-workspace-active #chartToolsDetails { position: static; }
+    .tv-terminal.signals-workspace-active #chartToolsDetails .chart-tools-menu > .tv-tool-group {
+        width: 100%;
+        box-sizing: border-box;
+    }
+}
+
+@media (max-width: 380px) {
+    .tv-terminal.signals-workspace-active .tv-timeframe-group > span:first-child { display: none; }
+    .tv-terminal.signals-workspace-active #tv-chart-toolbar > button { padding-inline: 8px !important; }
+    .tv-terminal.signals-workspace-active #chart-time-scale-controls > span:first-child { display: none; }
+    .tv-terminal.signals-workspace-active #chart-time-scale-controls .tv-icon-tool { min-width: 32px; }
+}
