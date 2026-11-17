@@ -321,6 +321,15 @@ pub(crate) fn is_announced_delisted_pintu_future(symbol: &str) -> bool {
         || PINTU_PRO_FUTURES_2025_DELISTED_SYMBOLS.contains(&symbol)
 }
 
+/// Product correction reported by the app owner: SPCXX is not offered in
+/// Pintu Futures. This is a product exclusion, not an official delisting notice.
+pub(crate) fn is_unavailable_pintu_future(symbol: &str) -> bool {
+    let normalized = symbol.trim().to_ascii_uppercase();
+    let base = normalized.strip_suffix("USDT-PERP").unwrap_or(&normalized);
+    let base = base.strip_suffix("-USD").unwrap_or(base);
+    base == "SPCXX" || is_announced_delisted_pintu_future(&normalized)
+}
+
 pub fn parse_pro_futures(body: &[u8]) -> Result<Vec<Listing>, String> {
     let value: Value = serde_json::from_slice(body).map_err(|e| e.to_string())?;
     if value.get("code").and_then(Value::as_i64) != Some(0) {
@@ -339,7 +348,7 @@ pub fn parse_pro_futures(body: &[u8]) -> Result<Vec<Listing>, String> {
         if key != symbol {
             return Err("Pintu Pro Futures key mismatch".into());
         }
-        if is_announced_delisted_pintu_future(symbol) {
+        if is_unavailable_pintu_future(symbol) {
             continue;
         }
         if let Some(base) = symbol.strip_suffix("USDT-PX") {

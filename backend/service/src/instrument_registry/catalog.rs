@@ -5,7 +5,7 @@ pub(crate) fn research_eligibility(
     listing_status: &str,
     venue_verified: bool,
 ) -> &'static str {
-    if listing_status == "venue_delisted" {
+    if matches!(listing_status, "venue_delisted" | "product_unavailable") {
         "excluded"
     } else if matches!(
         crate::normalize_exchange_id(exchange).as_str(),
@@ -35,6 +35,7 @@ pub(crate) fn seed_pintu(conn: &Connection) -> Result<(), rusqlite::Error> {
     for contract in contracts {
         let field = |name: &str| contract.get(name).and_then(Value::as_str).unwrap_or("");
         let venue_symbol = field("venue_symbol");
+        if crate::pintu_listing::is_unavailable_pintu_future(venue_symbol) { continue; }
         let Some(base) = venue_symbol.strip_suffix("USDT-PERP") else {
             continue;
         };

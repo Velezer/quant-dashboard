@@ -17,7 +17,7 @@ fn official_delistings_do_not_reenter_registry_from_the_ticker_feed() {
     // First, middle, and last examples from the two March notices, plus OM
     // and a contract from the February notice.
     let delisted = [
-        "MBOXUSDT-PERP", "DYDXUSDT-PERP", "JASMYUSDT-PERP", "ARUSDT-PERP",
+        "SPCXXUSDT-PERP", "MBOXUSDT-PERP", "DYDXUSDT-PERP", "JASMYUSDT-PERP", "ARUSDT-PERP",
         "ALTUSDT-PERP", "1INCHUSDT-PERP", "USTCUSDT-PERP", "OMUSDT-PERP",
         "OXTUSDT-PERP", "ALPHAUSDT-PERP", "HIFIUSDT-PERP", "BAKEUSDT-PERP",
         "FLMUSDT-PERP", "PERPUSDT-PERP", "BEAMXUSDT-PERP", "GHSTUSDT-PERP",
@@ -55,4 +55,14 @@ fn march_notice_exclusions_cover_all_published_contracts() {
     {
         assert!(is_announced_delisted_pintu_future(symbol), "{symbol}");
     }
+}
+
+#[test]
+fn unavailable_product_aliases_do_not_become_official_delisting_notices() {
+    for symbol in ["SPCXX", "SPCXXUSDT-PERP", "SPCXX-USD", "spcxx"] {
+        assert!(is_unavailable_pintu_future(symbol));
+    }
+    assert!(!is_announced_delisted_pintu_future("SPCXXUSDT-PERP"));
+    assert!(!is_unavailable_pintu_future("BTCUSDT-PERP"));
+    assert!(!is_unavailable_pintu_future("SPCXX2USDT-PERP"));
 }

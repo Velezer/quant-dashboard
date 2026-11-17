@@ -124,7 +124,7 @@ fn list_signal_screener_withholds_stale_stockbit_score_rows() {
     connection.execute("UPDATE signals.signal_screener_rows SET score_basis_json=?1", [
         json!({"model_id": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
             "score_scale_max":60,"minimum_score_out_of_60":1,
-            "score_model_status":"current","status":"stale"}).to_string()
+            "score_model_status":"current","status":"stale","price_reference_only":true}).to_string()
     ]).unwrap();
     let retained = list_signal_screener(&connection, 900, Some("stockbit"), Some("4h")).unwrap();
     assert_eq!(retained["signals"].as_array().unwrap().len(), 1);

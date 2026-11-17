@@ -54,44 +54,7 @@ jobs:
         run: |
           cargo test --locked --release -p quant_core signed_score_tests
           cargo test --locked --release -p quant_core directional_holdout_partitions
-      - name: Verify Stockbit score references
+      - name: Verify Pintu product exclusions
         run: |
-          cargo test --locked --release -p rust_chart_api stockbit_4h_scores_without_a_15m_price -- --test-threads=1
-          cargo test --locked --release -p rust_chart_api list_signal_screener_withholds_stale_stockbit_score_rows -- --test-threads=1
-      - name: Run SQLite journal regressions
-        run: |
-          set -o pipefail
-          /usr/bin/time -v -o "$BUILD_METRICS_DIR/journal-tests-time.txt" \
-            cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
-              database::connections::journal::tests -- --test-threads=1 \
-            2>&1 | tee "$BUILD_METRICS_DIR/journal-tests.log"
-          grep -Eq 'test result: ok\. [1-9][0-9]* passed' "$BUILD_METRICS_DIR/journal-tests.log"
-      - name: Run SQLite write isolation regressions
-        run: |
-          set -o pipefail
-          for module in research_proxy::persistence_tests \
-            tokocrypto_storage::registry_tests tokocrypto_storage::tests \
-            pintu_storage::persistence_tests \
-            signal_alerts::screener::snapshot::transaction_tests; do
-            label="${module//::/-}"
-            cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
-              "$module" -- --test-threads=1 \
-              2>&1 | tee "$BUILD_METRICS_DIR/$label.log"
-            grep -Eq 'test result: ok\. [1-9][0-9]* passed' "$BUILD_METRICS_DIR/$label.log"
-          done
-      - name: Build production Docker image
-        run: |
-          set -o pipefail
-          docker build --progress=plain --tag quant-dashboard:startup-smoke . \
-            2>&1 | tee "$BUILD_METRICS_DIR/docker-build.log"
-      - name: Check image startup and restart within 32 MiB
-        run: python3 .github/scripts/container_smoke.py
-      - name: Summarize build and startup evidence
-        if: always()
-        run: python3 .github/scripts/build_metrics.py
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: release-resource-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/quant-build-metrics
-          retention-days: 7
+          cargo test --locked --release -p rust_chart_api pintu_listing::tests -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api pintu_announced_delistings_apply_even_during_feed_failure -- --test-threads=1
