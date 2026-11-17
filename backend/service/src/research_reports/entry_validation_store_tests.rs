@@ -48,12 +48,12 @@ fn report(conn: &Connection, id: &str, timeframe: &str) -> Value {
         "models":[{
             "kind":"nwe","label":"NWE","score_model_id":"nwe-model-version",
             "entry_validation_status":"VALIDATION_PENDING","sizing_eligible":false,
-            "backtest":{"selected_exit_bars":8,"holdout":{"trades":20,"win_rate_pct":75,"mean_return_pct":1.5}},
+            "backtest":{"selected_exit_bars":8,"holdout":{"trades":20,"win_rate_pct":75,"win_rate_after_fees_pct":60,"payoff_ratio":1.7,"payoff_ratio_after_fees":1.1,"mean_return_pct":1.5,"mean_net_return_pct":0.75}},
             "blocking_reasons":["Execution costs are incomplete"]
         },{
             "kind":"dss","label":"DSS Bressert","score_model_id":"dss-model-version",
             "entry_validation_status":"VALIDATION_PENDING","sizing_eligible":false,
-            "backtest":{"selected_exit_bars":4,"holdout":{"trades":15,"win_rate_pct":60,"mean_return_pct":0.5}},
+            "backtest":{"selected_exit_bars":4,"holdout":{"trades":15,"win_rate_pct":60,"win_rate_after_fees_pct":40,"payoff_ratio":1.4,"payoff_ratio_after_fees":0.8,"mean_return_pct":0.5,"mean_net_return_pct":-0.1}},
             "blocking_reasons":["Execution costs are incomplete"]
         }],
         "sizing":{"status":"BLOCKED"},"sizing_eligible":true
@@ -117,10 +117,23 @@ fn snapshots_upsert_only_the_exact_instrument_and_timeframe_and_preserve_aggrega
     let count: usize = conn.query_row("SELECT COUNT(*) FROM app.entry_model_validation_reports",[],|row|row.get(0)).unwrap();
     assert_eq!(count,1);
     assert_eq!(get_report(&conn,"pintu.spot.btc","15m").unwrap().unwrap()["history"]["data_fingerprint"],"updated-fingerprint");
+    conn.execute(
+        "UPDATE app.entry_model_validation_reports
+            SET summary_json=json_set(summary_json,
+                '$.models[0].holdout_win_rate_pct',75,
+                '$.models[0].holdout_payoff_ratio',1.7,
+                '$.models[0].holdout_mean_return_pct',1.5)
+          WHERE instrument_id='pintu.spot.btc' AND timeframe='15m'",
+        [],
+    )
+    .unwrap();
     let page = list(&conn,"pintu",None,"15m",None,0,100).unwrap();
     let summary = page["rows"].as_array().unwrap().iter().find(|row|row["instrument_id"]=="pintu.spot.btc").unwrap()["evidence"].clone();
     assert_eq!(summary["history_bars"],1500);
     assert_eq!(summary["models"][0]["holdout_trades"],20);
+    assert_eq!(summary["models"][0]["holdout_win_rate_pct"],60);
+    assert_eq!(summary["models"][0]["holdout_payoff_ratio"],1.1);
+    assert_eq!(summary["models"][0]["holdout_mean_return_pct"],0.75);
     assert_eq!(summary["models"][0]["selected_exit_bars"],8);
     assert_eq!(summary["sizing_eligible"],false);
     assert_eq!(summary["protocol_current"],true);
@@ -169,6 +182,60 @@ fn registry_eligibility_and_verification_remain_distinct_from_saved_evidence() {
     conn.execute("UPDATE app.instruments SET is_active=0 WHERE instrument_id='excluded'",[]).unwrap();
     assert!(instrument(&conn,"excluded").unwrap().is_none());
     assert_eq!(list(&conn,"pintu",None,"15m",None,0,100).unwrap()["total"],1);
+}
+
+#[test]
+fn market_ingestion_queues_only_empty_reports_for_the_matching_shared_crypto_category() {
+    let conn = connection();
+    insert(&conn, "pintu.futures.btc", "pintu", "pintu_pro_futures", "BTC", true);
+    insert(&conn, "pluang.perpetual.btc", "pluang", "pluang_perpetual", "BTC", true);
+    insert(&conn, "pintu.spot.btc", "pintu", "pintu_pro_spot", "BTC", true);
+    conn.execute(
+        "UPDATE app.instruments SET asset_category_id='crypto_perpetual'
+          WHERE instrument_id IN ('pintu.futures.btc','pluang.perpetual.btc')",
+        [],
+    )
+    .unwrap();
+    for id in [
+        "pintu.futures.btc",
+        "pluang.perpetual.btc",
+        "pintu.spot.btc",
+    ] {
+        let mut saved = report(&conn, id, "4h");
+        saved["status"] = json!("NO_HISTORY");
+        saved["history"]["bars"] = json!(0);
+        saved["history"]["data_fingerprint"] = Value::Null;
+        save_report(&conn, &saved).unwrap();
+    }
+
+    let queued = queue_no_history_rechecks(
+        &conn,
+        "pintu",
+        "pintu_pro_futures",
+        "BTC-USD",
+        "BTC",
+        "crypto_perpetual",
+        2_000,
+    )
+    .unwrap();
+    assert_eq!(queued, 2);
+    assert_eq!(pending_history_recheck_count(&conn).unwrap(), 2);
+
+    let first = next_pending_history_recheck(&conn).unwrap().unwrap();
+    assert_eq!(first.timeframe, "4h");
+    assert!(
+        ["pintu.futures.btc", "pluang.perpetual.btc"].contains(&first.instrument_id.as_str())
+    );
+    defer_history_recheck(&conn, &first.instrument_id, &first.timeframe, 4_000, "busy")
+        .unwrap();
+    let second = next_pending_history_recheck(&conn).unwrap().unwrap();
+    assert_ne!(second.instrument_id, first.instrument_id);
+    complete_history_recheck(&conn, &second.instrument_id, &second.timeframe).unwrap();
+    let deferred = next_pending_history_recheck(&conn).unwrap().unwrap();
+    assert_eq!(deferred.instrument_id, first.instrument_id);
+    assert_eq!(deferred.next_attempt_at, 4_000);
+    complete_history_recheck(&conn, &deferred.instrument_id, &deferred.timeframe).unwrap();
+    assert_eq!(pending_history_recheck_count(&conn).unwrap(), 0);
 }
 
 #[test]

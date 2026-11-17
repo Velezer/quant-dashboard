@@ -107,9 +107,9 @@ fn report_summary(report: &Value) -> Value {
                     model.get("entry_validation_status").cloned()
                 },
                 "holdout_trades": model.pointer("/backtest/holdout/trades"),
-                "holdout_win_rate_pct": model.pointer("/backtest/holdout/win_rate_pct"),
-                "holdout_payoff_ratio": model.pointer("/backtest/holdout/payoff_ratio"),
-                "holdout_mean_return_pct": model.pointer("/backtest/holdout/mean_return_pct"),
+                "holdout_win_rate_pct": model.pointer("/backtest/holdout/win_rate_after_fees_pct"),
+                "holdout_payoff_ratio": model.pointer("/backtest/holdout/payoff_ratio_after_fees"),
+                "holdout_mean_return_pct": model.pointer("/backtest/holdout/mean_net_return_pct"),
                 "risk_reward_protocol_id": model.pointer("/backtest/risk_reward_rule/protocol_id"),
                 "risk_reward_status": if risk_reward_is_current {
                     model.pointer("/backtest/risk_reward_rule/status")
@@ -191,6 +191,116 @@ pub(super) fn get_report(conn: &Connection, instrument_id: &str, timeframe: &str
         params![instrument_id,timeframe], |row| row.get::<_, String>(0),
     ).optional()?;
     encoded.map(decode_json).transpose()
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct PendingHistoryRecheck {
+    pub(super) instrument_id: String,
+    pub(super) timeframe: String,
+    pub(super) queued_at: i64,
+    pub(super) next_attempt_at: i64,
+}
+
+/// Queue only reports that were calculated before any candles existed. Market
+/// sync calls this after it stores provider rows, so a report cannot stay
+/// `NO_HISTORY` for the rest of the daily cycle after its first usable history
+/// arrives. Shared crypto aliases are rechecked together by category.
+pub(super) fn queue_no_history_rechecks(
+    conn: &Connection,
+    exchange_id: &str,
+    product_id: &str,
+    storage_symbol: &str,
+    underlying_symbol: &str,
+    asset_category_id: &str,
+    queued_at: i64,
+) -> Result<usize, rusqlite::Error> {
+    conn.execute(
+        "INSERT OR IGNORE INTO app.entry_model_validation_recheck_queue
+            (instrument_id,timeframe,queued_at,next_attempt_at)
+         SELECT i.instrument_id,r.timeframe,?1,?1
+           FROM app.entry_model_validation_reports AS r
+           JOIN app.instruments AS i ON i.instrument_id=r.instrument_id
+          WHERE r.protocol_id=?2
+            AND json_extract(r.report_json,'$.status')='NO_HISTORY'
+            AND i.is_active=1 AND i.venue_verified=1
+            AND i.listing_status IN ('venue_active','public_listed_snapshot')
+            AND ((i.exchange_id=?3 AND i.product_id=?4 AND i.storage_symbol=?5)
+                 OR (?6 IN ('crypto_spot','crypto_perpetual','crypto_futures')
+                     AND i.asset_category_id=?6
+                     AND upper(trim(i.underlying_symbol))=upper(trim(?7))))",
+        params![
+            queued_at,
+            super::PROTOCOL_ID,
+            exchange_id,
+            product_id,
+            storage_symbol,
+            asset_category_id,
+            underlying_symbol,
+        ],
+    )
+}
+
+pub(super) fn next_pending_history_recheck(
+    conn: &Connection,
+) -> Result<Option<PendingHistoryRecheck>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT instrument_id,timeframe,queued_at,next_attempt_at
+           FROM app.entry_model_validation_recheck_queue
+          ORDER BY next_attempt_at,queued_at,instrument_id,timeframe LIMIT 1",
+        [],
+        |row| {
+            Ok(PendingHistoryRecheck {
+                instrument_id: row.get(0)?,
+                timeframe: row.get(1)?,
+                queued_at: row.get(2)?,
+                next_attempt_at: row.get(3)?,
+            })
+        },
+    )
+    .optional()
+}
+
+pub(super) fn pending_history_recheck_count(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM app.entry_model_validation_recheck_queue",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|count| usize::try_from(count).unwrap_or(usize::MAX))
+}
+
+pub(super) fn complete_history_recheck(
+    conn: &Connection,
+    instrument_id: &str,
+    timeframe: &str,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "DELETE FROM app.entry_model_validation_recheck_queue
+          WHERE instrument_id=?1 AND timeframe=?2",
+        params![instrument_id, timeframe],
+    )?;
+    Ok(())
+}
+
+pub(super) fn defer_history_recheck(
+    conn: &Connection,
+    instrument_id: &str,
+    timeframe: &str,
+    next_attempt_at: i64,
+    error: &str,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE app.entry_model_validation_recheck_queue
+            SET attempt_count=attempt_count+1,next_attempt_at=?3,last_error=?4
+          WHERE instrument_id=?1 AND timeframe=?2",
+        params![
+            instrument_id,
+            timeframe,
+            next_attempt_at,
+            error.chars().take(500).collect::<String>(),
+        ],
+    )?;
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -326,6 +436,7 @@ pub(super) fn daily_refresh_status(conn: &Connection) -> Result<Value, rusqlite:
         "timeframe":state.current_timeframe,
         "label":state.current_label,
     }));
+    let pending_history_rechecks = pending_history_recheck_count(conn)?;
     Ok(json!({
         "status":status,"active":active,
         "control":{"paused":control.paused,"run_requested":control.run_requested},
@@ -334,6 +445,7 @@ pub(super) fn daily_refresh_status(conn: &Connection) -> Result<Value, rusqlite:
         "next_due_at":(state.next_due_at > 0).then_some(state.next_due_at),
         "total_pairs":state.total_pairs,"processed_pairs":state.cursor,
         "completed_pairs":state.completed_pairs,"failed_pairs":state.failed_pairs,
+        "pending_history_rechecks":pending_history_rechecks,
         "progress_pct":if state.total_pairs == 0 {0.0} else {
             (state.cursor.min(state.total_pairs) as f64 / state.total_pairs as f64 * 100.0).clamp(0.0,100.0)
         },
@@ -518,7 +630,13 @@ pub(super) fn list(
     row_values.push(timeframe.to_string());
     let frame_parameter = row_values.len();
     let mut statement = conn.prepare(&format!(
-        "SELECT {INSTRUMENT_COLUMNS},r.summary_json,r.protocol_id
+        "SELECT {INSTRUMENT_COLUMNS},r.summary_json,r.protocol_id,
+                json_extract(r.report_json,'$.models[0].backtest.holdout.win_rate_after_fees_pct'),
+                json_extract(r.report_json,'$.models[0].backtest.holdout.payoff_ratio_after_fees'),
+                json_extract(r.report_json,'$.models[0].backtest.holdout.mean_net_return_pct'),
+                json_extract(r.report_json,'$.models[1].backtest.holdout.win_rate_after_fees_pct'),
+                json_extract(r.report_json,'$.models[1].backtest.holdout.payoff_ratio_after_fees'),
+                json_extract(r.report_json,'$.models[1].backtest.holdout.mean_net_return_pct')
            FROM app.instruments i LEFT JOIN app.entry_model_validation_reports r
              ON r.instrument_id=i.instrument_id AND r.timeframe=?{frame_parameter}
            WHERE {filter} ORDER BY i.exchange_id,i.product_id,i.symbol,i.instrument_id
@@ -528,8 +646,33 @@ pub(super) fn list(
         let mut instrument = read_instrument(row)?;
         let encoded: Option<String> = row.get(13)?;
         let protocol: Option<String> = row.get(14)?;
+        // Keep old saved summaries honest after the after-fee display contract
+        // changed, without loading the full report JSON into the response.
+        let after_fee_metrics = [
+            (
+                row.get::<_, Option<f64>>(15)?,
+                row.get::<_, Option<f64>>(16)?,
+                row.get::<_, Option<f64>>(17)?,
+            ),
+            (
+                row.get::<_, Option<f64>>(18)?,
+                row.get::<_, Option<f64>>(19)?,
+                row.get::<_, Option<f64>>(20)?,
+            ),
+        ];
         let mut evidence = encoded.map(decode_json).transpose()?.unwrap_or(Value::Null);
-        if evidence.is_object() { evidence["protocol_current"] = json!(protocol.as_deref() == Some(super::PROTOCOL_ID)); }
+        if evidence.is_object() {
+            evidence["protocol_current"] = json!(protocol.as_deref() == Some(super::PROTOCOL_ID));
+            if let Some(models) = evidence["models"].as_array_mut() {
+                for (index, model) in models.iter_mut().enumerate() {
+                    if let Some((win_rate, payoff, mean_net_return)) = after_fee_metrics.get(index) {
+                        model["holdout_win_rate_pct"] = json!(win_rate);
+                        model["holdout_payoff_ratio"] = json!(payoff);
+                        model["holdout_mean_return_pct"] = json!(mean_net_return);
+                    }
+                }
+            }
+        }
         instrument["evidence"] = evidence;
         Ok(instrument)
     })?.collect::<Result<Vec<_>, _>>()?;

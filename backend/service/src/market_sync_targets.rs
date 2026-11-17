@@ -340,7 +340,7 @@ fn has_fresh_shared_reference(
 pub(super) fn sync_prepared_candle_target(
     target: &PreparedCandleSyncTarget,
     market_database: &str,
-) -> Result<(usize, bool), String> {
+) -> Result<(usize, bool, bool), String> {
     let tokocrypto_market =
         target
             .tokocrypto_market
@@ -384,6 +384,7 @@ pub(super) fn sync_prepared_candle_target(
     );
     let mut refreshed = 0;
     let mut stockbit_15m_refreshed = false;
+    let mut received_rows = false;
     if target.chart_priority.is_some()
         && matches!(
             instrument.asset_category_id,
@@ -461,6 +462,7 @@ pub(super) fn sync_prepared_candle_target(
                 continue;
             };
             let report = adapter.sync(&market_connection, &interval_request);
+            received_rows |= report.received_rows();
             let succeeded = report
                 .outcomes
                 .iter()
@@ -490,6 +492,7 @@ pub(super) fn sync_prepared_candle_target(
                     continue;
                 }
                 let report = adapter.sync(&market_connection, &interval_request);
+                received_rows |= report.received_rows();
                 let succeeded = report
                     .outcomes
                     .iter()
@@ -502,6 +505,7 @@ pub(super) fn sync_prepared_candle_target(
             continue;
         }
         let report = adapter.sync(&market_connection, &request);
+        received_rows |= report.received_rows();
         let succeeded = report.all_succeeded();
         let error = report.error_summary();
         let continue_chain =
@@ -527,7 +531,7 @@ pub(super) fn sync_prepared_candle_target(
         }
     }
     record_hourly_instrument_attempt(&market_connection, instrument);
-    Ok((refreshed, stockbit_15m_refreshed))
+    Ok((refreshed, stockbit_15m_refreshed, received_rows))
 }
 
 pub(super) fn sync_prepared_candle_targets(
@@ -540,6 +544,7 @@ pub(super) fn sync_prepared_candle_targets(
     let next_target = std::sync::atomic::AtomicUsize::new(0);
     let refreshed = std::sync::atomic::AtomicUsize::new(0);
     let stockbit_refreshed = std::sync::atomic::AtomicUsize::new(0);
+    let received_rows_targets = std::sync::Mutex::new(Vec::<usize>::new());
     let open_failures = std::sync::Mutex::new(Vec::<(usize, String)>::new());
     std::thread::scope(|scope| {
         let mut workers = Vec::with_capacity(worker_count);
@@ -547,6 +552,7 @@ pub(super) fn sync_prepared_candle_targets(
             let next_target = &next_target;
             let refreshed = &refreshed;
             let stockbit_refreshed = &stockbit_refreshed;
+            let received_rows_targets = &received_rows_targets;
             let open_failures = &open_failures;
             let storage_symbol_gate = storage_symbol_gate;
             workers.push(scope.spawn(move || loop {
@@ -556,11 +562,17 @@ pub(super) fn sync_prepared_candle_targets(
                 };
                 let _storage_symbol_guard = storage_symbol_gate.lock(&target.storage_symbol);
                 match sync_prepared_candle_target(target, market_database) {
-                    Ok((count, stockbit_15m_succeeded)) => {
+                    Ok((count, stockbit_15m_succeeded, received_rows)) => {
                         refreshed.fetch_add(count, std::sync::atomic::Ordering::Relaxed);
                         if stockbit_15m_succeeded {
                             stockbit_refreshed
                                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        if received_rows {
+                            received_rows_targets
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .push(index);
                         }
                     }
                     Err(error) => open_failures
@@ -574,6 +586,31 @@ pub(super) fn sync_prepared_candle_targets(
             let _ = worker.join();
         }
     });
+
+    for index in received_rows_targets
+        .into_inner()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    {
+        let target = &targets[index];
+        match crate::research_reports::queue_no_history_rechecks_after_market_sync(
+            connection,
+            &target.exchange_id,
+            &target.product_id,
+            &target.storage_symbol,
+            &target.underlying_symbol,
+            &target.asset_category_id,
+        ) {
+            Ok(queued) if queued > 0 => eprintln!(
+                "[EntryValidation] Queued {queued} stale no-history report(s) after candle ingestion for {}/{} {}.",
+                target.exchange_id, target.product_id, target.storage_symbol
+            ),
+            Ok(_) => {}
+            Err(error) => eprintln!(
+                "[EntryValidation] Could not queue no-history report refresh for {}/{} {}: {error}",
+                target.exchange_id, target.product_id, target.storage_symbol
+            ),
+        }
+    }
 
     for (index, error) in open_failures
         .into_inner()
