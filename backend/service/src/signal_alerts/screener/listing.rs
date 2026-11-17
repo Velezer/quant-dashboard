@@ -507,6 +507,10 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         where_clause.push_str(&format!(" AND exchange_id=?{}", query_values.len() + 1));
         query_values.push(rusqlite::types::Value::Text(exchange.to_string()));
     }
+    if let Some(timeframe) = timeframe_filter {
+        where_clause.push_str(&format!(" AND timeframe=?{}", query_values.len() + 1));
+        query_values.push(rusqlite::types::Value::Text(timeframe.to_string()));
+    }
     let page_size = limit.clamp(1, MAX_SIGNAL_SCREENER_PAGE_SIZE);
     let display_order = signal_screener_display_order_sql();
     let score_model_by_strategy = score_model_by_strategy();
@@ -651,10 +655,6 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             !signal["product_id"]
                 .as_str()
                 .is_some_and(|row_product| row_product.eq_ignore_ascii_case(product))
-        }) || timeframe_filter.is_some_and(|timeframe| {
-            !signal["timeframe"]
-                .as_str()
-                .is_some_and(|row_timeframe| row_timeframe.eq_ignore_ascii_case(timeframe))
         }) || search_filter.is_some_and(|search| {
             let needle = search.trim().to_lowercase();
             ![

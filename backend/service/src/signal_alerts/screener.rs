@@ -135,6 +135,10 @@ pub(crate) fn initialize_screener_schema(connection: &Connection) -> Result<(), 
         "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_score
              ON signal_screener_rows(score DESC,last_updated_at DESC);",
     )?;
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_exchange_timeframe
+             ON signal_screener_rows(exchange_id,timeframe);",
+    )?;
     let display_order = signal_screener_display_order_sql();
     connection.execute_batch(&format!(
         "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_display_order

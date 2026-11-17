@@ -30,10 +30,12 @@ export function createSignalScreenerSummary({
         const priceCoverageMessage = signalPriceCoverageMessage(priceDataStatus, priceDataUnavailableCount);
         const attemptError = String(summaryStatus.last_error || getRequestError() || '').trim();
         const stockbitSignalSelected = stockbitSignalModelsForView().length > 0;
-        if (requestState === 'loading' && rows.length === 0) {
-            status.textContent = summary.generated_at || summaryStatus.last_success_at
-                ? 'Loading the latest signal snapshot…'
-                : 'Loading the first signal snapshot. Use Refresh signals above to start a scan.';
+        if (requestState === 'loading') {
+            status.textContent = visibleCount > 0
+                ? 'Updating the selected signal view. Matching saved rows stay visible while it loads.'
+                : rows.length > 0
+                    ? 'Loading results for the selected app and filters…'
+                    : 'Loading signal results for the selected app and filters…';
             retry.classList.add('hidden');
         } else if (requestState === 'error') {
             status.textContent = rows.length

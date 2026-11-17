@@ -9,6 +9,7 @@ const SIGNAL_REQUEST_TIMEOUT_MS = 60_000;
 export function installSignalRefresh() {
     let lastRequestAt = 0;
     let requestSerial = 0;
+    let activeSignalRequestController = null;
     let signalRequestsInFlight = 0;
     let nextScanEpoch = 0;
     let countdownPoll = null;
@@ -19,6 +20,12 @@ export function installSignalRefresh() {
     let pendingScanScope = '';
     let pendingScanAt = 0;
     let scanBannerDismissed = false;
+
+    function cancelPendingSignalRequest() {
+        requestSerial += 1;
+        activeSignalRequestController?.abort();
+        activeSignalRequestController = null;
+    }
 
     async function fetchCurrentSignalCount(force = false) {
         if (!force && Date.now() - lastSignalCountRequestAt < SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS) return;
@@ -52,10 +59,12 @@ export function installSignalRefresh() {
     }
 
     async function fetchFreshSignals({ quiet = false, append = false, offset = 0 } = {}) {
+        activeSignalRequestController?.abort();
         const currentRequest = ++requestSerial;
         lastRequestAt = Date.now();
         signalRequestsInFlight += 1;
         const controller = new AbortController();
+        activeSignalRequestController = controller;
         const requestTimeout = setTimeout(() => controller.abort(), SIGNAL_REQUEST_TIMEOUT_MS);
         if (!quiet && !getDashboardBinding('DATA')) getDashboardBinding('setScreenerLoading')?.();
         try {
@@ -113,6 +122,7 @@ export function installSignalRefresh() {
             }
         } finally {
             clearTimeout(requestTimeout);
+            if (activeSignalRequestController === controller) activeSignalRequestController = null;
             signalRequestsInFlight -= 1;
         }
     }
@@ -411,6 +421,7 @@ export function installSignalRefresh() {
 
     publishDashboardBindings('signal-refresh', {
         fetchFreshSignals: { get: () => fetchFreshSignals },
+        cancelPendingSignalRequest: { get: () => cancelPendingSignalRequest },
         startCountdown: { get: () => startCountdown },
         initEventSource: { get: () => initEventSource },
         triggerManualRefresh: { get: () => triggerManualRefresh },

@@ -4,6 +4,8 @@ import { readApiResponse } from './api.js';
 import { appSignalReadiness, readinessTime } from './signal-readiness-model.js';
 export { appSignalReadiness } from './signal-readiness-model.js';
 
+const LIVE_SCORING_CACHE_TTL_MS = 30_000;
+
 export function installSignalAppReadiness() {
     const panel = document.getElementById('appSignalReadinessPanel');
     const resultsPanel = document.getElementById('signalResultsPanel');
@@ -16,11 +18,13 @@ export function installSignalAppReadiness() {
     const listingCache = new Map();
     let liveScoringCache = null;
     let liveScoringRequest = null;
+    let liveScoringCacheLoadedAt = 0;
     let selected = 'stockbit';
     let selectedSummary = {};
     let selectedScope = {};
     let shownKey = '';
     let serial = 0;
+    let liveScoringLoadScheduleVersion = 0;
     resultsPanel?.setAttribute('data-scan-info-open', 'false');
 
     function setScanInfoOpen(open, restoreFocus = false) {
@@ -61,17 +65,43 @@ export function installSignalAppReadiness() {
     }
 
     async function loadLiveScoring() {
-        if (liveScoringCache) return liveScoringCache;
+        if (Date.now() - liveScoringCacheLoadedAt < LIVE_SCORING_CACHE_TTL_MS) return liveScoringCache;
         if (!liveScoringRequest) {
             liveScoringRequest = (async () => {
                 const response = await fetch('/api/entry-validation/status', { cache: 'no-store' });
                 const payload = await readApiResponse(response);
-                if (!response.ok || !payload?.live_scoring) return null;
-                liveScoringCache = payload.live_scoring;
+                if (response.ok && payload?.live_scoring) liveScoringCache = payload.live_scoring;
+                liveScoringCacheLoadedAt = Date.now();
                 return liveScoringCache;
-            })().catch(() => null).finally(() => { liveScoringRequest = null; });
+            })().catch(() => {
+                liveScoringCacheLoadedAt = Date.now();
+                return liveScoringCache;
+            }).finally(() => { liveScoringRequest = null; });
         }
         return liveScoringRequest;
+    }
+
+    function scheduleLiveScoringLoad(app, showSerial) {
+        const scheduleVersion = ++liveScoringLoadScheduleVersion;
+        let started = false;
+        let fallbackTimer = 0;
+        const start = () => {
+            if (started) return;
+            started = true;
+            window.clearTimeout(fallbackTimer);
+            if (scheduleVersion !== liveScoringLoadScheduleVersion
+                || showSerial !== serial || selected !== app
+                || Date.now() - liveScoringCacheLoadedAt < LIVE_SCORING_CACHE_TTL_MS) return;
+            void loadLiveScoring().then(scoring => {
+                if (scoring && serial === showSerial && selected === app) renderCurrent();
+            });
+        };
+        fallbackTimer = window.setTimeout(start, 50);
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(() => window.setTimeout(start, 0));
+        } else {
+            window.setTimeout(start, 0);
+        }
     }
 
     function render(readiness) {
@@ -128,11 +158,9 @@ export function installSignalAppReadiness() {
         serial++;
         if (recheck) recheck.disabled = false;
         renderCurrent();
-        if (!liveScoringCache) {
+        if (Date.now() - liveScoringCacheLoadedAt >= LIVE_SCORING_CACHE_TTL_MS) {
             const showSerial = serial;
-            void loadLiveScoring().then(scoring => {
-                if (scoring && serial === showSerial && selected === app) renderCurrent();
-            });
+            scheduleLiveScoringLoad(app, showSerial);
         }
     }
 
