@@ -374,7 +374,7 @@ pub(super) fn sync_prepared_candle_target(
     let market_connection =
         match open_market_history_for_symbol(market_database, &target.storage_symbol, true) {
             Ok(Some(connection)) => connection,
-            Ok(None) => return Ok((0, false)),
+            Ok(None) => return Ok((0, false, false)),
             Err(error) => return Err(error.to_string()),
         };
     let _ = market_connection.pragma_update(
