@@ -76,6 +76,7 @@ fn list_signal_screener_withholds_stale_stockbit_score_rows() {
     super::super::initialize_screener_schema(&connection)
         .expect("signal snapshot schema should initialize");
 
+    crate::database::initialize_app_runtime_storage_schema(&connection).unwrap();
     let now = crate::now_secs() as i64;
     let now_ns = now.saturating_mul(1_000_000_000);
     let old_signal_bar = now_ns
