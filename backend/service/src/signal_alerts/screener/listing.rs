@@ -327,49 +327,110 @@ fn has_score_matched_win_probability(value: &Value) -> bool {
         && value["sample_trades"].as_u64().is_some_and(|trades| trades > 0)
 }
 
-fn load_ticker_holdout_win_rate(
-    connection: &Connection,
+type TickerHoldoutLookupKey = (String, String, String, String, String, String);
+
+fn ticker_holdout_lookup_key(
     signal: &Value,
-    score_model_id: &str,
-) -> Result<Option<Value>, rusqlite::Error> {
-    let report = connection
-        .query_row(
-            "SELECT json_object(
-                'win_rate_after_fees_pct',json_extract(model.value,'$.backtest.holdout.win_rate_after_fees_pct'),
-                'trades',json_extract(model.value,'$.backtest.holdout.trades'),
-                'wins',json_extract(model.value,'$.backtest.holdout.wins'),
-                'computed_at',validation_report.computed_at,
-                'source_family',json_extract(validation_report.report_json,'$.source.id'))
-               FROM app.instruments AS validation_instrument
-               JOIN app.entry_model_validation_reports AS validation_report
-                 ON validation_report.instrument_id=validation_instrument.instrument_id
-                AND validation_report.timeframe=?5
-                AND validation_report.protocol_id=?6
-               JOIN json_each(
-                    CASE WHEN json_valid(validation_report.report_json)
-                         THEN validation_report.report_json ELSE '{\"models\":[]}' END,
-                    '$.models') AS model
-                 ON json_extract(model.value,'$.score_model_id')=?7
-                AND json_extract(model.value,'$.backtest.holdout.fees_applied')=1
-              WHERE validation_instrument.exchange_id=?1
-                AND validation_instrument.product_id=?2
-                AND validation_instrument.asset_category_id=?3
-                AND validation_instrument.symbol=?4
-                AND validation_instrument.is_active=1
-              LIMIT 1",
-            rusqlite::params![
-                signal["exchange_id"].as_str().unwrap_or_default(),
-                signal["product_id"].as_str().unwrap_or_default(),
-                signal["asset_category_id"].as_str().unwrap_or_default(),
-                signal["symbol"].as_str().unwrap_or_default(),
-                signal["timeframe"].as_str().unwrap_or_default(),
-                quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
-                score_model_id,
-            ],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
-    Ok(ticker_holdout_win_rate(report.as_deref()))
+    strategies: &std::collections::HashMap<&str, &str>,
+) -> Option<TickerHoldoutLookupKey> {
+    let score_model_id = signal["score_basis"]["model_id"]
+        .as_str()
+        .or_else(|| {
+            strategies
+                .get(signal["signal_strategy_id"].as_str().unwrap_or_default())
+                .copied()
+        })?;
+    Some((
+        signal["exchange_id"].as_str()?.to_string(),
+        signal["product_id"].as_str()?.to_string(),
+        signal["asset_category_id"].as_str()?.to_string(),
+        signal["symbol"].as_str()?.to_string(),
+        signal["timeframe"].as_str()?.to_string(),
+        score_model_id.to_string(),
+    ))
+}
+
+fn load_ticker_holdout_win_rates(
+    connection: &Connection,
+    lookup_keys: &std::collections::BTreeSet<TickerHoldoutLookupKey>,
+) -> Result<std::collections::HashMap<TickerHoldoutLookupKey, Value>, rusqlite::Error> {
+    if lookup_keys.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let requested = lookup_keys
+        .iter()
+        .map(|key| {
+            json!({
+                "exchange_id": key.0.as_str(),
+                "product_id": key.1.as_str(),
+                "asset_category_id": key.2.as_str(),
+                "symbol": key.3.as_str(),
+                "timeframe": key.4.as_str(),
+                "score_model_id": key.5.as_str(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_json = Value::Array(requested).to_string();
+    let mut statement = connection.prepare(
+        "WITH requested AS (
+             SELECT json_extract(value,'$.exchange_id') AS exchange_id,
+                    json_extract(value,'$.product_id') AS product_id,
+                    json_extract(value,'$.asset_category_id') AS asset_category_id,
+                    json_extract(value,'$.symbol') AS symbol,
+                    json_extract(value,'$.timeframe') AS timeframe,
+                    json_extract(value,'$.score_model_id') AS score_model_id
+               FROM json_each(?1)
+         )
+         SELECT requested.exchange_id,requested.product_id,requested.asset_category_id,
+                requested.symbol,requested.timeframe,requested.score_model_id,
+                json_object(
+                    'win_rate_after_fees_pct',json_extract(model.value,'$.backtest.holdout.win_rate_after_fees_pct'),
+                    'trades',json_extract(model.value,'$.backtest.holdout.trades'),
+                    'wins',json_extract(model.value,'$.backtest.holdout.wins'),
+                    'computed_at',validation_report.computed_at,
+                    'source_family',json_extract(validation_report.report_json,'$.source.id'))
+           FROM requested
+           JOIN app.instruments AS validation_instrument
+             ON validation_instrument.exchange_id=requested.exchange_id
+            AND validation_instrument.product_id=requested.product_id
+            AND validation_instrument.asset_category_id=requested.asset_category_id
+            AND validation_instrument.symbol=requested.symbol
+            AND validation_instrument.is_active=1
+           JOIN app.entry_model_validation_reports AS validation_report
+             ON validation_report.instrument_id=validation_instrument.instrument_id
+            AND validation_report.timeframe=requested.timeframe
+            AND validation_report.protocol_id=?2
+           JOIN json_each(
+                CASE WHEN json_valid(validation_report.report_json)
+                     THEN validation_report.report_json ELSE '{\"models\":[]}' END,
+                '$.models') AS model
+             ON json_extract(model.value,'$.score_model_id')=requested.score_model_id
+            AND json_extract(model.value,'$.backtest.holdout.fees_applied')=1",
+    )?;
+    let rows = statement.query_map(
+        rusqlite::params![requested_json, quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID],
+        |row| {
+            Ok((
+                (
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                ),
+                row.get::<_, String>(6)?,
+            ))
+        },
+    )?;
+    let mut win_rates = std::collections::HashMap::with_capacity(lookup_keys.len());
+    for row in rows {
+        let (key, report) = row?;
+        if let Some(win_rate) = ticker_holdout_win_rate(Some(&report)) {
+            win_rates.insert(key, win_rate);
+        }
+    }
+    Ok(win_rates)
 }
 
 fn score_basis_matches_indicator_filter(
@@ -697,25 +758,27 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             continue;
         }
         if matching_rows >= offset && signals.len() < page_size {
-            if !has_score_matched_win_probability(&signal["win_probability"]) {
-                let score_model_id = signal["score_basis"]["model_id"]
-                    .as_str()
-                    .or_else(|| {
-                        score_model_by_strategy
-                            .get(signal["signal_strategy_id"].as_str().unwrap_or_default())
-                            .copied()
-                    });
-                if let Some(score_model_id) = score_model_id {
-                    if let Some(win_rate) =
-                        load_ticker_holdout_win_rate(connection, &signal, score_model_id)?
-                    {
-                        signal["win_probability"] = win_rate;
-                    }
-                }
-            }
             signals.push(signal);
         }
         matching_rows = matching_rows.saturating_add(1);
+    }
+    let holdout_lookup_keys = signals
+        .iter()
+        .filter(|signal| !has_score_matched_win_probability(&signal["win_probability"]))
+        .filter_map(|signal| ticker_holdout_lookup_key(signal, &score_model_by_strategy))
+        .collect::<std::collections::BTreeSet<_>>();
+    let ticker_holdout_win_rates =
+        load_ticker_holdout_win_rates(connection, &holdout_lookup_keys)?;
+    for signal in &mut signals {
+        if has_score_matched_win_probability(&signal["win_probability"]) {
+            continue;
+        }
+        let Some(key) = ticker_holdout_lookup_key(signal, &score_model_by_strategy) else {
+            continue;
+        };
+        if let Some(win_rate) = ticker_holdout_win_rates.get(&key) {
+            signal["win_probability"] = win_rate.clone();
+        }
     }
     for signal in &mut signals {
         // A matching current row may share this ticker/timeframe key with a
@@ -780,7 +843,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let last_success = status["last_success_at"].as_i64();
     let stale =
         last_success.is_none_or(|timestamp| now.saturating_sub(timestamp) > scan_interval_seconds);
-    Ok(json!({
+    let mut response = json!({
             "signals": signals,
         "summary": {
             "total_signals": signal_count,
@@ -798,7 +861,11 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             "readiness": readiness,
             "status": status,
         }
-    }))
+    });
+    if offset == 0 {
+        response["master_data"] = master_data;
+    }
+    Ok(response)
 }
 
 fn normalized_total_score_out_of_ten(signal: &Value, models: &Value) -> Option<f64> {

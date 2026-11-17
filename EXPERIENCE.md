@@ -355,3 +355,10 @@ lesson only when it will improve future tasks.
   long samples, and verify past scores against live prefixes after appending
   future bars. Preserve quote-specific fee provenance and never infer listing
   dates from registration time or the oldest stored candle.
+
+- During progressive signal scans, do not recalculate whole-screener counts on
+  every ticker batch; preserve the last completed count and finalize it once
+  when the app/full snapshot commits. Enrich a screener page's missing ticker
+  holdout win rates with one set-based report query, not one JSON query per
+  signal row. Keep price freshness and `NO_MARKET_ENTRY` semantics intact while
+  optimizing this path.
