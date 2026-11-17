@@ -372,7 +372,7 @@ fn recent_proxy_result(
     None
 }
 
-fn provider_history_backfill_complete(
+pub(crate) fn provider_history_backfill_complete(
     connection: &Connection,
     symbol: &str,
     interval: &str,

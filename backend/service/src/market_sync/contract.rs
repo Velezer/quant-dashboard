@@ -30,6 +30,7 @@ pub(super) struct PreparedCandleSyncTarget {
     pub(super) underlying_symbol: String,
     pub(super) asset_category_id: String,
     pub(super) shared_reference_symbols: Vec<String>,
+    pub(super) owns_shared_history_backfill: bool,
     pub(super) tokocrypto_market: Option<PreparedTokocryptoMarket>,
     pub(super) chart_priority: Option<super::ChartSyncPriority>,
 }

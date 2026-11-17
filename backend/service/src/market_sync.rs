@@ -179,11 +179,22 @@ fn sync_hourly_chart_targets(
                     .cloned();
                 let shared_reference_symbols = targets::shared_reference_storage_symbols(
                     connection,
-                    &exchange_id,
                     &storage_symbol,
                     &underlying_symbol,
                     &asset_category_id,
                 )?;
+                let history_owner = targets::shared_history_backfill_owner(
+                    connection,
+                    &underlying_symbol,
+                    &asset_category_id,
+                )?;
+                let owns_shared_history_backfill = history_owner.as_ref().is_some_and(
+                    |(owner_exchange, owner_product, owner_symbol)| {
+                        owner_exchange == &exchange_id
+                            && owner_product == &product_id
+                            && owner_symbol == &storage_symbol
+                    },
+                );
                 let tokocrypto_market = if exchange_id == "tokocrypto" {
                     match instrument_registry::lookup_tokocrypto_market(
                         connection,
@@ -215,6 +226,7 @@ fn sync_hourly_chart_targets(
                     underlying_symbol,
                     asset_category_id,
                     shared_reference_symbols,
+                    owns_shared_history_backfill,
                     tokocrypto_market,
                     chart_priority,
                 })
@@ -317,16 +329,28 @@ fn sync_daily_chart_targets(
         };
         let shared_reference_symbols = targets::shared_reference_storage_symbols(
             connection,
-            &exchange_id,
             &storage_symbol,
             &underlying_symbol,
             &asset_category_id,
         )?;
+        let history_owner = targets::shared_history_backfill_owner(
+            connection,
+            &underlying_symbol,
+            &asset_category_id,
+        )?;
+        let owns_shared_history_backfill = history_owner.as_ref().is_some_and(
+            |(owner_exchange, owner_product, owner_symbol)| {
+                owner_exchange == &exchange_id
+                    && owner_product == &product_id
+                    && owner_symbol == &storage_symbol
+            },
+        );
         let reusable_shared_intervals = targets::fresh_shared_reference_intervals(
             market_database,
             instrument,
             &shared_reference_symbols,
             request.window.intervals(),
+            owns_shared_history_backfill,
         );
         let market_connection =
             match open_market_history_for_symbol(market_database, &storage_symbol, true) {

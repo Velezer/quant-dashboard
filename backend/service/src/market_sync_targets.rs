@@ -75,7 +75,6 @@ impl Drop for StorageSymbolSyncGuard<'_> {
 /// exist in this ticker shard or a verified same-category peer shard.
 pub(super) fn shared_reference_storage_symbols(
     app_connection: &Connection,
-    exchange_id: &str,
     storage_symbol: &str,
     underlying_symbol: &str,
     asset_category_id: &str,
@@ -96,17 +95,58 @@ pub(super) fn shared_reference_storage_symbols(
             AND candidate.listing_status IN ('venue_active','public_listed_snapshot')
             AND candidate.asset_category_id=?1
             AND upper(trim(candidate.underlying_symbol))=upper(trim(?2))
-            AND candidate.exchange_id<>?3
-            AND candidate.storage_symbol<>?4
+            AND candidate.storage_symbol<>?3
           ORDER BY candidate.storage_symbol",
     )?;
     let rows = statement
         .query_map(
-            params![asset_category_id, underlying_symbol, exchange_id, storage_symbol],
+            params![asset_category_id, underlying_symbol, storage_symbol],
             |row| row.get::<_, String>(0),
         )?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// Choose one registered app target to advance each shared crypto source's
+/// paginated history. Other app aliases can keep using its fresh candles
+/// without each downloading the same provider pages.
+pub(super) fn shared_history_backfill_owner(
+    app_connection: &Connection,
+    underlying_symbol: &str,
+    asset_category_id: &str,
+) -> Result<Option<(String, String, String)>, rusqlite::Error> {
+    if !matches!(
+        asset_category_id,
+        "crypto_spot" | "crypto_perpetual" | "crypto_futures"
+    ) || underlying_symbol.trim().is_empty()
+    {
+        return Ok(None);
+    }
+    app_connection
+        .query_row(
+            "SELECT exchange_id,product_id,storage_symbol
+               FROM app.instruments
+              WHERE is_active=1 AND venue_verified=1 AND storage_symbol<>''
+                AND listing_status IN ('venue_active','public_listed_snapshot')
+                AND asset_category_id=?1
+                AND upper(trim(underlying_symbol))=upper(trim(?2))
+              ORDER BY CASE
+                    WHEN ?1='crypto_spot' AND exchange_id='pintu'
+                         AND product_id='pintu_retail_spot' THEN 0
+                    WHEN ?1='crypto_spot' AND exchange_id='pintu'
+                         AND product_id='pintu_pro_spot' THEN 1
+                    WHEN ?1 IN ('crypto_perpetual','crypto_futures')
+                         AND exchange_id='pintu' AND product_id='pintu_pro_futures' THEN 0
+                    WHEN exchange_id='pluang' THEN 2
+                    WHEN exchange_id='tokocrypto' THEN 3
+                    WHEN exchange_id='pintu' THEN 4
+                    ELSE 5
+                  END,exchange_id,product_id,storage_symbol
+              LIMIT 1",
+            params![asset_category_id, underlying_symbol],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
 }
 
 pub(super) fn fresh_shared_reference_intervals(
@@ -114,6 +154,7 @@ pub(super) fn fresh_shared_reference_intervals(
     instrument: super::RegisteredCandleInstrument<'_>,
     candidate_symbols: &[String],
     intervals: &[&'static str],
+    owns_history_backfill: bool,
 ) -> HashSet<&'static str> {
     let mut fresh = HashSet::new();
     let now_ns = super::now_millis().saturating_mul(quant_core::NANOS_PER_MILLISECOND);
@@ -134,7 +175,7 @@ pub(super) fn fresh_shared_reference_intervals(
             }
         }
     }
-    if fresh.len() == intervals.len() {
+    if fresh.len() == intervals.len() && !owns_history_backfill {
         return fresh;
     }
 
@@ -165,7 +206,92 @@ pub(super) fn fresh_shared_reference_intervals(
             }
         }
     }
+
+    // A fresh last candle is enough for aliases to reuse a shared series, but
+    // it must not suppress the single owner's next historical page. A
+    // completed provider cursor anywhere in the reference set is sufficient
+    // to stop backfill; otherwise keep the owner's interval eligible.
+    if owns_history_backfill {
+        for interval in intervals {
+            if !shared_history_complete_anywhere(
+                market_database,
+                instrument,
+                candidate_symbols,
+                interval,
+            ) {
+                fresh.remove(interval);
+            }
+        }
+    }
     fresh
+}
+
+fn shared_history_complete_anywhere(
+    market_database: &str,
+    instrument: super::RegisteredCandleInstrument<'_>,
+    candidate_symbols: &[String],
+    interval: &str,
+) -> bool {
+    if let Ok(Some(connection)) =
+        open_market_history_for_symbol(market_database, instrument.storage_symbol, false)
+    {
+        if shared_history_complete_in_connection(
+            &connection,
+            instrument.storage_symbol,
+            instrument,
+            interval,
+        ) {
+            return true;
+        }
+    }
+    for candidate_symbol in candidate_symbols {
+        let Ok(Some(connection)) =
+            open_market_history_for_symbol(market_database, candidate_symbol, false)
+        else {
+            continue;
+        };
+        if shared_history_complete_in_connection(
+            &connection,
+            candidate_symbol,
+            instrument,
+            interval,
+        ) {
+            return true;
+        }
+    }
+    false
+}
+
+fn shared_history_complete_in_connection(
+    connection: &Connection,
+    storage_symbol: &str,
+    instrument: super::RegisteredCandleInstrument<'_>,
+    interval: &str,
+) -> bool {
+    selected_candle_source_for_product(
+        connection,
+        storage_symbol,
+        instrument.exchange_id,
+        instrument.product_id,
+        interval,
+    )
+    .ok()
+    .flatten()
+    .filter(|source| {
+        crate::research_proxy::shared::is_shared_source_for_category(
+            source,
+            instrument.asset_category_id,
+        )
+    })
+    .is_some_and(|source| {
+        crate::research_proxy::provider_history_backfill_complete(
+            connection,
+            storage_symbol,
+            interval,
+            &source,
+        )
+        .unwrap_or(false)
+    })
 }
 
 fn has_fresh_shared_reference(
@@ -243,6 +369,7 @@ pub(super) fn sync_prepared_candle_target(
         instrument,
         &target.shared_reference_symbols,
         request.window.intervals(),
+        target.owns_shared_history_backfill,
     );
     let market_connection =
         match open_market_history_for_symbol(market_database, &target.storage_symbol, true) {
@@ -340,12 +467,7 @@ pub(super) fn sync_prepared_candle_target(
                 .any(|outcome| outcome.result.is_ok());
             refreshed += usize::from(succeeded);
             if succeeded {
-                already_fresh.extend(fresh_shared_reference_intervals(
-                    market_database,
-                    instrument,
-                    &target.shared_reference_symbols,
-                    std::slice::from_ref(&interval),
-                ));
+                already_fresh.insert(interval);
             }
         }
     }
