@@ -344,4 +344,7 @@ lesson only when it will improve future tasks.
   start its own API call during that render. Push app/timeframe predicates into
   SQLite before per-row freshness work, while leaving product/search filtering
   after direction-score aggregation when those summaries must cover the whole
-  ticker/timeframe.
+  ticker/timeframe. For the global current-signal count, prefilter by indexed
+  price timeframe and freshness cutoff; handle Stockbit's closed-session
+  reference rows in a separate `UNION ALL` branch so its exception does not
+  turn the freshness query into a full table scan.

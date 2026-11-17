@@ -403,16 +403,13 @@ fn score_basis_matches_indicator_filter(
 }
 
 fn score_meets_render_minimum(
-    strategy: String,
+    strategy: &str,
     score: f64,
-    basis_json: &str,
+    basis: &Value,
     strategies: &std::collections::HashMap<&str, &str>,
-    models: &Value,
+    models: &std::collections::HashMap<&str, &Value>,
 ) -> bool {
-    let basis = serde_json::from_str::<Value>(basis_json).unwrap_or(Value::Null);
-    let mut signal = json!({"signal_strategy_id": strategy, "score": score, "score_basis": basis});
-    mark_legacy_score(&mut signal, strategies);
-    signal_meets_render_minimum(&signal, models)
+    score_basis_meets_render_minimum(strategy, Some(score), basis, strategies, models)
 }
 
 #[cfg(test)]
@@ -515,6 +512,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let display_order = signal_screener_display_order_sql();
     let score_model_by_strategy = score_model_by_strategy();
     let master_data = crate::master_data::signal_screener_master_data_for_connection(connection)?;
+    let signal_score_models = signal_score_model_index(&master_data["signal_score_models"]);
     let query = format!(
         "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,signal_strategy_id,
                 signal_strategy_name,timeframe,direction,score,strategy_strength,confluence_score,
@@ -616,11 +614,11 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         ) && score_basis["status"].as_str() == Some("not_qualifying");
         if !is_stockbit_no_entry
             && !score_meets_render_minimum(
-                strategy,
+                &strategy,
                 score,
-                &score_basis_json,
+                &score_basis,
                 &score_model_by_strategy,
-                &master_data["signal_score_models"],
+                &signal_score_models,
             )
         {
             continue;
@@ -831,32 +829,70 @@ pub(crate) fn count_current_signal_screener_rows(
     let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
     let score_models = score_model_by_strategy();
     let master_data = crate::master_data::signal_screener_master_data_for_connection(&transaction)?;
+    let signal_score_models = signal_score_model_index(&master_data["signal_score_models"]);
+    let mut freshness_cutoffs = Vec::new();
+    let mut freshness_filters = Vec::new();
+    for timeframe in quant_core::SIGNAL_SCREENER_TIMEFRAMES {
+        for (is_idx, symbol) in [(true, "IDX.JK"), (false, "")] {
+            let maximum_age_seconds =
+                crate::freshness_threshold_seconds(symbol, timeframe).max(0);
+            let cutoff_ns = now_ns.saturating_sub(
+                maximum_age_seconds.saturating_mul(crate::NANOS_PER_SECOND),
+            );
+            freshness_cutoffs.push(cutoff_ns);
+            let parameter = freshness_cutoffs.len();
+            let symbol_predicate = if is_idx {
+                "substr(storage_symbol,-3)='.JK'"
+            } else {
+                "substr(storage_symbol,-3)<>'.JK'"
+            };
+            freshness_filters.push(format!(
+                "(price_timeframe='{timeframe}' AND {symbol_predicate} AND price_bar_time>=?{parameter})"
+            ));
+        }
+    }
+    let freshness_filter = format!("({})", freshness_filters.join(" OR "));
+    let selected_columns = "exchange_id,product_id,asset_category_id,symbol,storage_symbol,
+                            signal_strategy_id,timeframe,score,score_basis_json,price_timeframe,
+                            price_bar_time,last_updated_at,data_source,current_price";
+    let query = if expected_stockbit_closed_session_day(now).is_some() {
+        let stockbit_scope = stockbit_signal_score_row_scope_sql();
+        format!(
+            "SELECT {selected_columns} FROM signals.signal_screener_rows
+               WHERE {freshness_filter}
+                 AND NOT ({stockbit_scope})
+                 AND {PINTU_FUTURES_REGISTRY_GUARD}
+             UNION ALL
+             SELECT {selected_columns} FROM signals.signal_screener_rows
+               WHERE ({stockbit_scope})
+                 AND {PINTU_FUTURES_REGISTRY_GUARD}"
+        )
+    } else {
+        format!(
+            "SELECT {selected_columns} FROM signals.signal_screener_rows
+               WHERE {freshness_filter}
+                 AND {PINTU_FUTURES_REGISTRY_GUARD}"
+        )
+    };
     let mut signal_count = 0usize;
     {
-        let mut statement = transaction.prepare(&format!(
-            "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,
-                    signal_strategy_id,timeframe,score,score_basis_json,price_timeframe,
-                    price_bar_time,last_updated_at,data_source,current_price
-               FROM signals.signal_screener_rows
-              WHERE {PINTU_FUTURES_REGISTRY_GUARD}",
-        ))?;
-        let mut rows = statement.query([])?;
+        let mut statement = transaction.prepare(&query)?;
+        let mut rows = statement.query(rusqlite::params_from_iter(freshness_cutoffs.iter()))?;
         while let Some(row) = rows.next()? {
             if is_unavailable_pintu_signal(row)? { continue; }
             let strategy = row.get::<_, String>(5)?;
             let score = row.get::<_, f64>(7)?;
-            let score_basis_json = row.get::<_, String>(8)?;
+            let score_basis = serde_json::from_str::<Value>(&row.get::<_, String>(8)?)
+                .unwrap_or(Value::Null);
             if !score_meets_render_minimum(
-                strategy.clone(),
+                &strategy,
                 score,
-                &score_basis_json,
+                &score_basis,
                 &score_models,
-                &master_data["signal_score_models"],
+                &signal_score_models,
             ) {
                 continue;
             }
-            let score_basis =
-                serde_json::from_str::<Value>(&score_basis_json).unwrap_or(Value::Null);
             let score_status = score_basis["status"].as_str().unwrap_or("stale");
             let score_bar_time = score_basis["score_bar_time"]
                 .as_i64()
@@ -912,17 +948,25 @@ pub(crate) fn count_current_signal_screener_rows(
 }
 
 
-fn signal_meets_render_minimum(signal: &Value, models: &Value) -> bool {
-    let basis = &signal["score_basis"];
-    let score = signal["score"].as_f64();
-    let model = models
+fn signal_score_model_index(models: &Value) -> std::collections::HashMap<&str, &Value> {
+    models
         .as_array()
         .into_iter()
         .flatten()
-        .find(|model| model["id"] == signal["signal_strategy_id"]);
+        .filter_map(|model| Some((model["id"].as_str()?, model)))
+        .collect()
+}
+
+fn score_basis_meets_render_minimum(
+    strategy: &str,
+    score: Option<f64>,
+    basis: &Value,
+    strategies: &std::collections::HashMap<&str, &str>,
+    models: &std::collections::HashMap<&str, &Value>,
+) -> bool {
+    let model = models.get(strategy).copied();
     let scale = basis["score_scale_max"]
         .as_f64()
-        .or_else(|| signal["score_scale_max"].as_f64())
         .or_else(|| model.and_then(|model| model["score_scale_max"].as_f64()));
     let minimum_key = match scale {
         Some(60.0) => "minimum_score_out_of_60",
@@ -933,10 +977,13 @@ fn signal_meets_render_minimum(signal: &Value, models: &Value) -> bool {
     };
     let stored_model_id = basis["model_id"].as_str();
     let current_model_id = model.and_then(|model| model["score_model_id"].as_str());
+    let legacy_model_id = strategies.get(strategy).copied();
     let is_six_indicator_score_model = stored_model_id
         .or(current_model_id)
         .is_some_and(super::super::is_six_indicator_score_model);
-    let basis_is_current = basis["score_model_status"].as_str() != Some("legacy")
+    let is_legacy = basis["score_model_status"].as_str() == Some("legacy")
+        || legacy_model_id.is_some_and(|current| current != stored_model_id.unwrap_or_default());
+    let basis_is_current = !is_legacy
         && match (stored_model_id, current_model_id) {
             (Some(stored), Some(current)) => stored == current,
             _ => true,
