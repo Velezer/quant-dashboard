@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="/web/styles/dashboard_mobile.css">
     <link rel="stylesheet" href="/web/styles/dashboard_desktop.css">
     <link rel="stylesheet" href="/web/styles/dashboard_readable.css">
+    <link rel="stylesheet" href="/web/styles/chart_studio.css">
 </head>
 <body class="tv-terminal bg-gray-950 text-gray-200 min-h-screen flex flex-col font-sans selection:bg-blue-500 selection:text-white p-4 md:p-6">
 
@@ -426,12 +427,12 @@
                         <span id="tv-ohlc-tf" class="text-[10px] px-1.5 py-0.2 rounded bg-blue-900/60 text-blue-300 font-bold border border-blue-800">1D</span>
                         <span id="tv-ohlc-exchange" class="text-[10px] px-1.5 py-0.2 rounded bg-emerald-900/60 text-emerald-300 font-bold border border-emerald-800">APP --</span>
                         <span id="tv-ohlc-source" class="hidden text-[10px] px-1.5 py-0.2 rounded bg-purple-900/60 text-purple-300 font-bold border border-purple-800" aria-live="polite"></span>
-                        <div class="flex items-center gap-3 text-xs flex-wrap">
-                            <span>O <b id="tv-ohlc-o" class="text-gray-200">--</b></span>
-                            <span>H <b id="tv-ohlc-h" class="text-gray-200">--</b></span>
-                            <span>L <b id="tv-ohlc-l" class="text-gray-200">--</b></span>
-                            <span>C <b id="tv-ohlc-c" class="text-gray-200">--</b></span>
-                            <span id="tv-ohlc-chg" class="font-bold">--</span>
+                        <div class="chart-ohlc-readings">
+                            <span class="chart-ohlc-metric"><span>O</span><b id="tv-ohlc-o">--</b></span>
+                            <span class="chart-ohlc-metric"><span>H</span><b id="tv-ohlc-h">--</b></span>
+                            <span class="chart-ohlc-metric"><span>L</span><b id="tv-ohlc-l">--</b></span>
+                            <span class="chart-ohlc-metric"><span>C</span><b id="tv-ohlc-c">--</b></span>
+                            <span id="tv-ohlc-chg" class="chart-ohlc-change">--</span>
                             <span id="nwe-envelope-status" class="font-bold text-violet-300 border-l border-gray-700 pl-2" role="status" aria-live="polite" title="Research-only price location; not a buy or sell signal.">NWE: Select a signal</span>
                             <span id="volumeDeltaStatus" class="hidden font-bold text-teal-300 border-l border-gray-700 pl-2" role="status" aria-live="polite"></span>
                         </div>

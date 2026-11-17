@@ -34,6 +34,11 @@ lesson only when it will improve future tasks.
   Cache identity must include candle times and OHLCV; equal row counts do not
   prove the same series or unchanged forming bars.
 
+- Scope chart presentation changes to the chart column, preserve all existing
+  control IDs and dynamic OHLC color classes, and review chart tools while open
+  on narrow screens. A toolbar can look tidy while its popover still widens the
+  whole phone page.
+
 - Signed entry scoring must start with independent bullish/bearish factor
   observations: each raw component is −10…+10, and weighted contributions sum
   to the signed total (−60…+60 under the six-factor budget). Positive totals
