@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectScope, metric, normalizeList, processQueue, reportModelState } from './entry-validation.js';
+import { collectScope, metric, normalizeList, processQueue, reportModelState, riskRewardRuleForBacktest } from './entry-validation.js';
 
 test('missing and malformed financial metrics remain unavailable rather than zero', () => {
     for (const value of [null, undefined, '', ' ', false, true, {}, [], NaN, Infinity]) assert.equal(metric(value), '—');
@@ -14,6 +14,16 @@ test('completed research is separate from validation and old protocol evidence s
     assert.equal(reportModelState({ entry_validation_status: 'VALIDATED_HOLDOUT' }, 'v1', 'v1').tone, 'valid');
     assert.deepEqual(reportModelState({ entry_validation_status: 'VALIDATED_HOLDOUT' }, 'v2', 'v1'), { label: 'Outdated protocol', tone: 'pending' });
     assert.equal(reportModelState({ status: 'INSUFFICIENT_HISTORY' }, 'v1', 'v1').label, 'Insufficient history');
+});
+
+test('4h status reads the current after-fee rule from the weight-learning result', () => {
+    const rule = { protocol_id: 'entry_score_signed_risk_reward_after_fee_v5', status: 'INSUFFICIENT_HISTORY' };
+    const backtest = { status: 'HOLDOUT_RESEARCH_COMPLETE', weight_learning: { risk_reward_rule: rule } };
+    assert.equal(riskRewardRuleForBacktest(backtest), rule);
+    assert.deepEqual(reportModelState({ backtest }, 'v1', 'v1', '4h'), {
+        label: 'Research complete · not validated', tone: 'pending',
+    });
+    assert.equal(reportModelState({ backtest: { status: 'HOLDOUT_RESEARCH_COMPLETE', risk_reward_rule: rule } }, 'v1', 'v1', '4h').label, 'R:R must be rerun');
 });
 
 test('malformed pages and non-advancing cursors do not look like an empty success', () => {

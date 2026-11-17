@@ -87,6 +87,7 @@ jobs:
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
             snapshots_upsert_only_the_exact_instrument_and_timeframe_and_preserve_aggregate_evidence -- \
             --test-threads=1
+          node --test frontend/dashboard/scripts/modules/entry-validation.test.mjs
       - name: Verify screener filter and response contracts
         run: |
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api signal_screener_route_accepts_all_six_visible_indicator_filters -- --test-threads=1

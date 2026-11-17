@@ -18,9 +18,13 @@ export function metric(value, suffix = '', digits = 2) {
     return number === null ? '—' : `${number.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}${suffix}`;
 }
 
+export function riskRewardRuleForBacktest(backtest) {
+    return backtest?.weight_learning?.risk_reward_rule || null;
+}
+
 export function reportModelState(model, currentProtocol, reportProtocol, timeframe = null) {
     if (reportProtocol && currentProtocol && reportProtocol !== currentProtocol) return { label: 'Outdated protocol', tone: 'pending' };
-    const riskRewardProtocol = model?.risk_reward_protocol_id || model?.backtest?.risk_reward_rule?.protocol_id;
+    const riskRewardProtocol = model?.risk_reward_protocol_id || riskRewardRuleForBacktest(model?.backtest)?.protocol_id;
     if (timeframe === '4h' && riskRewardProtocol !== RISK_REWARD_PROTOCOL_ID) {
         return { label: 'R:R must be rerun', tone: 'pending' };
     }
@@ -404,10 +408,10 @@ export function initializeEntryValidation(doc = document) {
             button.addEventListener('click', () => { void selectTicker(item); }); action.append(button);
             row.append(identity, stateCell, miniCell(models, model => {
                 const usesBracket = numeric(model.risk_reward_holdout_trades) !== null;
-                return `${usesBracket ? '4h rule' : 'Baseline exit'} · ${metric(usesBracket ? model.risk_reward_holdout_trades : model.holdout_trades, '', 0)} trades · ${metric(usesBracket ? model.risk_reward_holdout_win_rate_pct : model.holdout_win_rate_pct, '%', 1)} after configured fees · net payoff ${metric(usesBracket ? model.risk_reward_holdout_payoff_ratio_after_fees : model.holdout_payoff_ratio, '×', 2)}`;
+                return `${usesBracket ? '4h R:R candidate' : 'Baseline exit'} · ${metric(usesBracket ? model.risk_reward_holdout_trades : model.holdout_trades, '', 0)} trades · ${metric(usesBracket ? model.risk_reward_holdout_win_rate_pct : model.holdout_win_rate_pct, '%', 1)} after configured fees · net payoff ${metric(usesBracket ? model.risk_reward_holdout_payoff_ratio_after_fees : model.holdout_payoff_ratio, '×', 2)}`;
             }), miniCell(models, model => {
                 const usesBracket = numeric(model.risk_reward_holdout_trades) !== null;
-                return `${usesBracket ? '4h rule' : 'Baseline exit'} · net return ${metric(usesBracket ? model.risk_reward_holdout_mean_return_pct : model.holdout_mean_return_pct, '%')}`;
+                return `${usesBracket ? '4h R:R candidate' : 'Baseline exit'} · net return ${metric(usesBracket ? model.risk_reward_holdout_mean_return_pct : model.holdout_mean_return_pct, '%')}`;
             }), snapshot, action);
             body.append(row);
         }
@@ -473,9 +477,11 @@ export function initializeEntryValidation(doc = document) {
     }
     function renderChecks(model) {
         const checks = { ...(model.checks || model.backtest?.checks || {}) };
+        const riskRewardRule = riskRewardRuleForBacktest(model.backtest);
         const oldFeeBasis = report?.timeframe === '4h'
-            && model.backtest?.risk_reward_rule?.protocol_id !== RISK_REWARD_PROTOCOL_ID;
+            && riskRewardRule?.protocol_id !== RISK_REWARD_PROTOCOL_ID;
         if (oldFeeBasis) checks.asymmetric_risk_reward_rule = false;
+        else if (report?.timeframe === '4h') checks.asymmetric_risk_reward_rule = riskRewardRule?.candidate?.qualified === true;
         const labels = {
             registered_identity: 'Registered ticker and model identity match',
             holdout_sample_sufficient: 'Enough completed holdout trades', history_span_sufficient: 'Enough total calendar history',
@@ -604,7 +610,7 @@ export function initializeEntryValidation(doc = document) {
         renderHourRule(learning?.hour_rule);
     }
     function renderRiskRewardRule(backtest) {
-        const rule = backtest.risk_reward_rule;
+        const rule = riskRewardRuleForBacktest(backtest);
         const metrics = $('risk-reward-metrics');
         const state = $('risk-reward-state');
         if (!metrics || !state) return;

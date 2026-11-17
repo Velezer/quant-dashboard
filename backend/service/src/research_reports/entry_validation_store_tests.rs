@@ -141,7 +141,7 @@ fn snapshots_upsert_only_the_exact_instrument_and_timeframe_and_preserve_aggrega
 }
 
 #[test]
-fn counts_are_ticker_counts_and_never_infer_validation_from_profitable_backtests() {
+fn four_hour_counts_require_a_qualified_current_after_fee_rule() {
     let conn = connection();
     insert(&conn,"one","pintu","pintu_pro_spot","ONE",true);
     insert(&conn,"two","pintu","pintu_pro_spot","TWO",true);
@@ -157,7 +157,7 @@ fn counts_are_ticker_counts_and_never_infer_validation_from_profitable_backtests
     three["status"] = json!("NO_HISTORY");
     save_report(&conn,&three).unwrap();
     let page = list(&conn,"pintu",None,"4h",None,0,100).unwrap();
-    assert_eq!(page["summary"],json!({"registered":3,"backtested":2,"validated":1}));
+    assert_eq!(page["summary"],json!({"registered":3,"backtested":2,"validated":0}));
     let filtered = list(&conn,"pintu",None,"4h",Some("ONE"),0,100).unwrap();
     assert_eq!(filtered["summary"],json!({"registered":1,"backtested":1,"validated":0}));
     assert_eq!(list(&conn,"pintu",None,"15m",None,0,100).unwrap()["summary"]["backtested"],0);
@@ -165,6 +165,49 @@ fn counts_are_ticker_counts_and_never_infer_validation_from_profitable_backtests
     let old = list(&conn,"pintu",None,"4h",None,0,100).unwrap();
     assert_eq!(old["summary"]["validated"],0);
     assert_eq!(old["summary"]["backtested"],1);
+}
+
+#[test]
+fn four_hour_after_fee_rule_summary_repairs_old_compact_rows_from_saved_report() {
+    let conn = connection();
+    insert(&conn,"pintu.futures.rule","pintu","pintu_pro_futures","RULE",true);
+    let mut saved = report(&conn,"pintu.futures.rule","4h");
+    saved["models"][0]["entry_validation_status"] = json!("VALIDATED_HOLDOUT");
+    saved["models"][0]["backtest"]["weight_learning"]["risk_reward_rule"] = json!({
+        "protocol_id":quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID,
+        "preferred_timeframe":"4h","status":"QUALIFIED",
+        "candidate":{"qualified":true,
+            "validation":{"win_rate_after_fees_pct":54.5},
+            "holdout":{"trades":30,"win_rate_after_fees_pct":53.3,
+                "payoff_ratio_after_fees":1.7,"mean_net_return_pct":0.4}}
+    });
+    save_report(&conn,&saved).unwrap();
+    let old_summary = json!({"protocol_id":super::super::PROTOCOL_ID,
+        "models":[
+            {"kind":"nwe","entry_validation_status":"VALIDATION_PENDING",
+             "risk_reward_protocol_id":null,"risk_reward_status":null,
+             "risk_reward_holdout_trades":null,"risk_reward_validation_win_rate_pct":null,
+             "risk_reward_holdout_win_rate_pct":null,"risk_reward_holdout_payoff_ratio_after_fees":null,
+             "risk_reward_holdout_mean_return_pct":null},
+            {"kind":"dss","entry_validation_status":"VALIDATION_PENDING"}
+        ]});
+    conn.execute(
+        "UPDATE app.entry_model_validation_reports SET summary_json=?1 WHERE instrument_id=?2",
+        params![old_summary.to_string(),"pintu.futures.rule"],
+    ).unwrap();
+
+    let page = list(&conn,"pintu",Some("pintu_pro_futures"),"4h",None,0,100).unwrap();
+    let evidence = &page["rows"][0]["evidence"];
+    let model = &evidence["models"][0];
+    assert_eq!(page["summary"]["validated"],1);
+    assert_eq!(model["entry_validation_status"],"VALIDATED_HOLDOUT");
+    assert_eq!(model["risk_reward_protocol_id"],quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID);
+    assert_eq!(model["risk_reward_status"],"QUALIFIED");
+    assert_eq!(model["risk_reward_holdout_trades"],30);
+    assert_eq!(model["risk_reward_validation_win_rate_pct"],54.5);
+    assert_eq!(model["risk_reward_holdout_win_rate_pct"],53.3);
+    assert_eq!(model["risk_reward_holdout_payoff_ratio_after_fees"],1.7);
+    assert_eq!(model["risk_reward_holdout_mean_return_pct"],0.4);
 }
 
 #[test]
