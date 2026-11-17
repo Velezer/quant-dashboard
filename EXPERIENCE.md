@@ -198,6 +198,17 @@ lesson only when it will improve future tasks.
   scans, persist immutable profile versions and pin one profile snapshot per
   scan. Stamp signal output with that version so a promotion cannot mix scores
   within a scan and prior results remain reproducible.
+- A daily entry-validation cursor can pass a ticker before gradual candle
+  ingestion reaches it. When sync adds rows, enqueue a deduplicated recheck for
+  saved `NO_HISTORY` reports in that exact instrument and shared crypto
+  category; let the single backtest worker drain it between scan pairs and
+  expose the pending count. Any successful manual or scheduled rerun clears its
+  queue row.
+- Keep entry-validation list summaries on explicit after-configured-fee fields.
+  Unknown fee models must render after-fee win rate, net payoff, and net return
+  as unavailable; overlay these fields from saved report JSON so older compact
+  summaries cannot keep showing a gross holdout rate under an after-fee target
+  label.
 - A composite score is setup strength, not an individual win probability.
   Retain the model's base score floor for signals. Calibrated after-fee
   thresholds are historical metrics used to evaluate profile promotion, not

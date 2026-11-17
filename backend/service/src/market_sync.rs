@@ -495,6 +495,24 @@ fn sync_daily_chart_targets(
             rows_received,
             &attempt_error,
         );
+        if rows_received > 0 {
+            match crate::research_reports::queue_no_history_rechecks_after_market_sync(
+                connection,
+                &exchange_id,
+                &product_id,
+                &storage_symbol,
+                &underlying_symbol,
+                &asset_category_id,
+            ) {
+                Ok(queued) if queued > 0 => eprintln!(
+                    "[EntryValidation] Queued {queued} stale no-history report(s) after daily candle ingestion for {exchange_id}/{product_id} {storage_symbol}."
+                ),
+                Ok(_) => {}
+                Err(error) => eprintln!(
+                    "[EntryValidation] Could not queue no-history report refresh for {exchange_id}/{product_id} {storage_symbol}: {error}"
+                ),
+            }
+        }
         attempted += 1;
     }
     let _ = record_daily_backlog(connection);

@@ -166,6 +166,9 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
         }
         return Ok(DAILY_REFRESH_WAIT_SECONDS);
     }
+    if let Some(wait_seconds) = process_pending_history_recheck(state, &connection, now)? {
+        return Ok(wait_seconds);
+    }
     if unfinished
         && !protocol_changed
         && persisted.status == "error"
@@ -379,6 +382,14 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
         connection
             .execute_batch("PRAGMA shrink_memory;")
             .map_err(|error| error.to_string())?;
+        let pending_recheck_is_due = store::next_pending_history_recheck(&connection)
+            .map_err(|error| error.to_string())?
+            .is_some_and(|pending| pending.next_attempt_at <= now_secs() as i64);
+        if pending_recheck_is_due {
+            store::wait_daily_refresh(&connection, now_secs() as i64)
+                .map_err(|error| error.to_string())?;
+            return Ok(1);
+        }
         thread::sleep(Duration::from_millis(DAILY_REFRESH_PAUSE_MILLISECONDS));
     }
 
@@ -401,5 +412,92 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
         "[EntryValidation] Daily refresh complete: {} reports processed, {} failed.",
         targets.len(), refresh_summary.failed_pairs
     );
+    let pending_recheck_is_due = store::next_pending_history_recheck(&connection)
+        .map_err(|error| error.to_string())?
+        .is_some_and(|pending| pending.next_attempt_at <= completed_at);
+    if pending_recheck_is_due {
+        return Ok(1);
+    }
     Ok(next_due_at.saturating_sub(completed_at).max(1) as u64)
+}
+
+fn process_pending_history_recheck(
+    state: &AppState,
+    connection: &Connection,
+    now: i64,
+) -> Result<Option<u64>, String> {
+    let Some(pending) = store::next_pending_history_recheck(connection)
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    if pending.next_attempt_at > now {
+        return Ok(None);
+    }
+    if state.is_scanning.load(Ordering::Relaxed) {
+        return Ok(Some(DAILY_REFRESH_WAIT_SECONDS));
+    }
+    let permit = match ENTRY_VALIDATION_WORK.try_lock() {
+        Ok(permit) if state.is_scanning.load(Ordering::Relaxed) => {
+            drop(permit);
+            return Ok(Some(DAILY_REFRESH_WAIT_SECONDS));
+        }
+        Ok(permit) => permit,
+        Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+        Err(std::sync::TryLockError::WouldBlock) => {
+            return Ok(Some(DAILY_REFRESH_WAIT_SECONDS));
+        }
+    };
+    if store::instrument(connection, &pending.instrument_id)
+        .map_err(|error| error.to_string())?
+        .is_none()
+    {
+        store::complete_history_recheck(
+            connection,
+            &pending.instrument_id,
+            &pending.timeframe,
+        )
+        .map_err(|error| error.to_string())?;
+        drop(permit);
+        return Ok(Some(1));
+    }
+    eprintln!(
+        "[EntryValidation] Rechecking {} {} after candle history arrived (queued {}).",
+        pending.instrument_id, pending.timeframe, pending.queued_at
+    );
+    let result = run_entry_validation(
+        connection,
+        &state.market_database,
+        &pending.instrument_id,
+        &pending.timeframe,
+    );
+    drop(permit);
+    match result {
+        Ok(report) => {
+            eprintln!(
+                "[EntryValidation] Refreshed {} {} from {} candles; report status {}.",
+                pending.instrument_id,
+                pending.timeframe,
+                report.pointer("/history/bars").and_then(Value::as_u64).unwrap_or(0),
+                report.get("status").and_then(Value::as_str).unwrap_or("unknown")
+            );
+            Ok(Some(1))
+        }
+        Err(error) => {
+            let retry_at = now.saturating_add(DAILY_REFRESH_RETRY_SECONDS as i64);
+            store::defer_history_recheck(
+                connection,
+                &pending.instrument_id,
+                &pending.timeframe,
+                retry_at,
+                &error,
+            )
+            .map_err(|save_error| save_error.to_string())?;
+            eprintln!(
+                "[EntryValidation] Recheck failed for {} {} and will retry: {error}",
+                pending.instrument_id, pending.timeframe
+            );
+            Ok(Some(DAILY_REFRESH_RETRY_SECONDS))
+        }
+    }
 }

@@ -73,6 +73,17 @@ jobs:
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
             only_the_selected_shared_history_owner_advances_incomplete_fresh_history -- \
             --test-threads=1
+      - name: Verify after-fee summaries and history-arrival rechecks
+        run: |
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            first_ingested_candles_refresh_a_saved_no_history_report_and_clear_its_queue_item -- \
+            --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            market_ingestion_queues_only_empty_reports_for_the_matching_shared_crypto_category -- \
+            --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            snapshots_upsert_only_the_exact_instrument_and_timeframe_and_preserve_aggregate_evidence -- \
+            --test-threads=1
       - name: Verify screener filter and response contracts
         run: |
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api signal_screener_route_accepts_all_six_visible_indicator_filters -- --test-threads=1

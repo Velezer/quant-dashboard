@@ -91,6 +91,32 @@ pub(crate) fn entry_validation_update_control(
     entry_validation_daily_status(connection)
 }
 
+pub(crate) fn queue_no_history_rechecks_after_market_sync(
+    connection: &Connection,
+    exchange_id: &str,
+    product_id: &str,
+    storage_symbol: &str,
+    underlying_symbol: &str,
+    asset_category_id: &str,
+) -> Result<usize, rusqlite::Error> {
+    let queued_at = now_secs().min(i64::MAX as u64) as i64;
+    let queued = crate::database::retry_sqlite_busy(|| {
+        store::queue_no_history_rechecks(
+            connection,
+            exchange_id,
+            product_id,
+            storage_symbol,
+            underlying_symbol,
+            asset_category_id,
+            queued_at,
+        )
+    })?;
+    if queued > 0 {
+        scheduler::notify_daily_refresh_worker();
+    }
+    Ok(queued)
+}
+
 pub(crate) fn run_entry_validation(
     connection: &Connection,
     market_directory: &str,
@@ -132,6 +158,8 @@ fn run_entry_validation_once(
         .ok_or_else(|| "The exact active registered instrument was not found.".to_string())?;
     let report = build_report(connection, market_directory, instrument, timeframe)?;
     store::save_report(connection, &report).map_err(|error| error.to_string())?;
+    store::complete_history_recheck(connection, instrument_id, timeframe)
+        .map_err(|error| error.to_string())?;
     Ok(report)
 }
 

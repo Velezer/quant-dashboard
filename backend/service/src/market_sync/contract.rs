@@ -127,6 +127,12 @@ impl CandleProviderReport {
         !self.outcomes.is_empty() && self.outcomes.iter().all(|outcome| outcome.result.is_ok())
     }
 
+    pub(super) fn received_rows(&self) -> bool {
+        self.outcomes
+            .iter()
+            .any(|outcome| outcome.result.as_ref().is_ok_and(|rows| *rows > 0))
+    }
+
     pub(super) fn error_summary(&self) -> String {
         self.outcomes
             .iter()

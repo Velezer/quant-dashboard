@@ -207,6 +207,53 @@ fn missing_history_pending_identity_and_unsupported_model_are_distinct_saved_sta
 }
 
 #[test]
+fn first_ingested_candles_refresh_a_saved_no_history_report_and_clear_its_queue_item() {
+    let path = temporary_database_path("entry-history-arrival-recheck");
+    let conn = open_db_minimal(&path).unwrap();
+    register_fixture(&conn, "entry.arrived", "pluang_spot", true, "crypto_spot");
+    let empty = run_entry_validation(&conn, &path, "entry.arrived", "15m").unwrap();
+    assert_eq!(empty["status"], "NO_HISTORY");
+
+    seed_history(&conn, "pluang_spot_binance_spot_proxy", "pluang_spot", 100.0);
+    let queued = queue_no_history_rechecks_after_market_sync(
+        &conn,
+        "pluang",
+        "pluang_spot",
+        "ENTRYTEST-USD",
+        "ENTRYTEST",
+        "crypto_spot",
+    )
+    .unwrap();
+    assert_eq!(queued, 1);
+    let pending: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM app.entry_model_validation_recheck_queue
+              WHERE instrument_id='entry.arrived' AND timeframe='15m'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(pending, 1);
+
+    let refreshed = run_entry_validation(&conn, &path, "entry.arrived", "15m").unwrap();
+    assert_eq!(refreshed["history"]["bars"], 32);
+    assert_ne!(refreshed["status"], "NO_HISTORY");
+    let pending: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM app.entry_model_validation_recheck_queue
+              WHERE instrument_id='entry.arrived' AND timeframe='15m'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(pending, 0);
+
+    drop(conn);
+    remove_temporary_database(&path);
+    remove_temporary_database(&database::app_database_path(&path));
+}
+
+#[test]
 fn candle_change_detector_is_stable_and_covers_every_ohlcv_field() {
     let bar = StrategyBar {
         time: 1,
