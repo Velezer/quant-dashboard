@@ -522,8 +522,8 @@ fn insert_pintu_registry_fixture(
 }
 
 #[test]
-fn pintu_futures_screener_and_count_require_current_verified_product_listing() {
-    let mut connection = screener_connection();
+fn pintu_futures_screener_requires_current_verified_product_listing() {
+    let connection = screener_connection();
     let fresh_bar = (crate::now_secs() as i64)
         .saturating_mul(crate::NANOS_PER_SECOND)
         .saturating_sub(16 * 60 * crate::NANOS_PER_SECOND);
@@ -564,8 +564,6 @@ fn pintu_futures_screener_and_count_require_current_verified_product_listing() {
     assert_eq!(first["summary"]["has_more"], true);
     assert_eq!(second["signals"][0]["symbol"], "CCC");
     assert_eq!(second["summary"]["has_more"], false);
-    assert_eq!(super::count_current_signal_screener_rows(&mut connection, 900).unwrap()["signal_count"], 3);
-
     connection.execute(
         "UPDATE app.instruments SET listing_status='venue_delisted', venue_verified=0
           WHERE exchange_id='pintu' AND product_id='pintu_pro_futures' AND symbol='AAA'",
@@ -575,7 +573,6 @@ fn pintu_futures_screener_and_count_require_current_verified_product_listing() {
         Some("pintu_pro_futures"), None, 0, 1).unwrap();
     assert_eq!(after["summary"]["matching_rows"], 1);
     assert_eq!(after["signals"][0]["symbol"], "CCC");
-    assert_eq!(super::count_current_signal_screener_rows(&mut connection, 900).unwrap()["signal_count"], 2);
 }
 
 #[test]
@@ -610,7 +607,7 @@ fn snapshot_stores_all_scan_rows_even_beyond_a_single_page() {
 
 #[test]
 fn screener_read_omits_old_signal_bars_but_reports_stale_prices() {
-    let mut connection = screener_connection();
+    let connection = screener_connection();
     let now_ns = i64::try_from(crate::now_secs())
         .unwrap_or(i64::MAX)
         .saturating_mul(1_000_000_000);
@@ -632,9 +629,6 @@ fn screener_read_omits_old_signal_bars_but_reports_stale_prices() {
     assert_eq!(payload["summary"]["matching_rows"], 1);
     assert_eq!(payload["summary"]["stale_price_signal_count"], 1);
     assert_eq!(payload["summary"]["status"]["last_attempt_status"], "ready");
-    let notification_count = super::count_current_signal_screener_rows(&mut connection, 900)
-        .expect("notification count should use current market entries");
-    assert_eq!(notification_count["signal_count"], 1);
 }
 
 #[test]
@@ -721,8 +715,8 @@ fn screener_pages_filter_and_reach_rows_beyond_the_first_page() {
 }
 
 #[test]
-fn below_floor_rows_do_not_consume_pages_or_inflate_the_count() {
-    let mut connection = screener_connection();
+fn below_floor_rows_do_not_consume_screener_pages() {
+    let connection = screener_connection();
     let now_ns = (crate::now_secs() as i64).saturating_mul(crate::NANOS_PER_SECOND);
     let fresh_bar = now_ns.saturating_sub(16 * 60 * crate::NANOS_PER_SECOND);
     let rows = ["BELOW.JK", "LIVE-A.JK", "LIVE-B.JK"]
@@ -742,8 +736,6 @@ fn below_floor_rows_do_not_consume_pages_or_inflate_the_count() {
     assert_eq!(first["signals"][0]["symbol"], "LIVE-A.JK");
     assert_eq!(second["signals"][0]["symbol"], "LIVE-B.JK");
     assert_eq!(second["summary"]["has_more"], false);
-    let count = super::count_current_signal_screener_rows(&mut connection, 900).unwrap();
-    assert_eq!(count["signal_count"], 2);
 }
 
 #[test]

@@ -139,10 +139,6 @@ pub(crate) fn initialize_screener_schema(connection: &Connection) -> Result<(), 
         "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_exchange_timeframe
              ON signal_screener_rows(exchange_id,timeframe);",
     )?;
-    connection.execute_batch(
-        "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_price_timeframe_bar_time
-             ON signal_screener_rows(price_timeframe,price_bar_time);",
-    )?;
     let display_order = signal_screener_display_order_sql();
     connection.execute_batch(&format!(
         "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_display_order
@@ -591,7 +587,7 @@ mod listing;
 #[cfg(test)]
 use listing::list_signal_screener;
 pub(crate) use listing::{
-    count_current_signal_screener_rows, list_signal_screener_page_with_minimum_total_score,
+    list_signal_screener_page_with_minimum_total_score,
 };
 #[cfg(test)]
 pub(crate) use listing::list_signal_screener_page;
