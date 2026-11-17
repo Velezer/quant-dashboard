@@ -320,3 +320,9 @@ lesson only when it will improve future tasks.
   after-fee holdout counts and uncertainty; distinguish score-band estimates
   from a profile-gate fallback, and say when evidence is insufficient instead
   of treating setup score as a probability.
+
+- For chart workspace readability, keep setup evidence and momentum in native
+  closed disclosures and preserve their existing IDs and toggle listeners.
+  Check the final computed CSS: older ID-qualified grid rules can squeeze a
+  new disclosure into one cell despite a later class rule. Verify selected
+  mobile state explicitly (`signal-chart-selected`) at 320px and 390px.
