@@ -9,7 +9,7 @@ use super::master_data::tokenized_stock_symbols;
 use super::tokocrypto::{fetch_klines, MarketBar, VenueSymbol};
 use rusqlite::{params, Connection};
 
-const SOURCE: &str = "tokocrypto_native";
+pub(crate) const SOURCE: &str = "tokocrypto_native";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncResult {
@@ -38,12 +38,34 @@ pub fn sync_registered_intraday_asset(
         contract_metadata_json,
         requested_tokenized,
     )?;
-    sync_intraday_market(
+    let result = sync_intraday_market(
         connection,
         &venue,
         requested_tokenized,
         registered_storage_symbol,
-    )
+    )?;
+    // Refresh latest prices first, then advance exactly one historical page.
+    let oldest: Option<i64> = connection.query_row(
+        "SELECT MIN(ts) FROM bars WHERE symbol=?1 AND interval='1h' AND source=?2",
+        params![registered_storage_symbol, SOURCE], |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    if let Some(oldest) = oldest {
+        let exhausted: bool = connection.query_row(
+            "SELECT COALESCE((SELECT status='complete' AND attempted_at>?3 FROM ingestion_runs WHERE symbol=?1 AND interval='1h_history_backfill' AND source=?2 ORDER BY id DESC LIMIT 1),0)",
+            params![registered_storage_symbol, SOURCE, crate::format_timestamp(crate::now_secs().saturating_sub(7 * crate::SECONDS_PER_DAY as u64))], |row| row.get(0),
+        ).map_err(|error| error.to_string())?;
+        if !exhausted {
+            match super::tokocrypto::fetch_klines_before(&venue, "1h", oldest / 1_000_000) {
+                Ok(bars) if !bars.is_empty() => {
+                    persist_sync(connection, registered_storage_symbol, &result.asset_category, &[("1h", &bars)])?;
+                    record_backfill_state(connection, registered_storage_symbol, "paging", bars.len())?;
+                }
+                Ok(_) => record_backfill_state(connection, registered_storage_symbol, "complete", 0)?,
+                Err(error) => record_failure(connection, registered_storage_symbol, "1h_history_backfill", &error),
+            }
+        }
+    }
+    Ok(result)
 }
 
 fn sync_intraday_market(
@@ -536,3 +558,18 @@ mod registry_tests;
 #[cfg(test)]
 #[path = "tokocrypto_storage_incremental_tests.rs"]
 mod incremental_tests;
+
+fn record_backfill_state(connection: &Connection, symbol: &str, status: &str, rows: usize) -> Result<(), String> {
+    let attempted_at = crate::format_timestamp(crate::now_secs());
+    let updated = connection.execute("UPDATE ingestion_runs SET attempted_at=?1,status=?2,rows_received=?3,error=NULL WHERE id=(SELECT id FROM ingestion_runs WHERE symbol=?4 AND interval='1h_history_backfill' AND source=?5 ORDER BY id DESC LIMIT 1)",
+        params![attempted_at,status,rows,symbol,SOURCE]).map_err(|error| error.to_string())?;
+    if updated == 0 {
+        connection.execute("INSERT INTO ingestion_runs(symbol,interval,source,exchange_id,data_provider,attempted_at,status,rows_received) VALUES(?1,'1h_history_backfill',?2,'tokocrypto','tokocrypto',?3,?4,?5)",
+            params![symbol,SOURCE,attempted_at,status,rows]).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "tokocrypto_backfill_tests.rs"]
+mod history_tests;

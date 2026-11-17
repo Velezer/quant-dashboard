@@ -182,7 +182,7 @@ export function createSignalScreenerCard({
         const compactState = scoreState?.current === false
             ? scoreState.tone === 'stale' ? 'Stale · no market entry' : 'No market entry'
             : scoreState?.tone === 'provisional' ? 'Provisional' : '';
-        const compactWinRate = hasWinProbability ? `After-fee win ${winProbabilityPct.toFixed(1)}%` : 'Win rate unavailable';
+        const compactWinRate = hasWinProbability ? `After-fee win ${winProbabilityPct.toFixed(1)}%` : 'Unvalidated · win rate unavailable';
         const compactScore = directionScore ? signedDirectionScore(directionScore.score) : '—';
         const compactLabel = `${signal.symbol}, ${signal.timeframe}, ${directionLabel}, score ${compactScore}, price ${formatPrice(signal.current_price)}, ${compactWinRate}${compactState ? `, ${compactState}` : ''}. Select chart.`;
         return `<article class="signal-row-wrap" role="listitem">

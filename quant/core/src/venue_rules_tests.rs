@@ -84,3 +84,12 @@ fn stockbit_candidate_floor_is_inclusive_at_rp60() {
     assert!(stockbit_candidate_price_eligible(61.0));
     assert!(!stockbit_candidate_price_eligible(f64::NAN));
 }
+
+#[test]
+fn tokocrypto_published_quote_policy_preserves_unknown_scopes() {
+    use crate::venue_rules::tokocrypto_spot_published_fee_policy;
+    assert!(matches!(tokocrypto_spot_published_fee_policy("IDR"), VenueFeePolicy::Known {buy_fee_pct:0.2222,sell_fee_pct:0.4322,..}));
+    assert!(matches!(tokocrypto_spot_published_fee_policy("USDT"), VenueFeePolicy::Known {buy_fee_pct:0.4044,sell_fee_pct:0.4044,..}));
+    assert!(matches!(tokocrypto_spot_published_fee_policy("OTHER"), VenueFeePolicy::Unknown {..}));
+    assert!(matches!(venue_fee_policy("tokocrypto", "tokocrypto_tokenized_stock"), VenueFeePolicy::Unknown {..}));
+}

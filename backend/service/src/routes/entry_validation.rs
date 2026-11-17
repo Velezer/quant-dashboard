@@ -19,10 +19,45 @@ fn same_origin_request(request: &str) -> bool {
 }
 
 pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(),RequestContext<'a>> {
-    if !matches!(request.route,"/api/entry-validation"|"/api/entry-validation/report"|"/api/entry-validation/run"|"/api/entry-validation/status"|"/api/entry-validation/control") {
+    if !matches!(request.route,"/api/entry-validation"|"/api/entry-validation/report"|"/api/entry-validation/run"|"/api/entry-validation/status"|"/api/entry-validation/control"|"/api/entry-validation/gainer"|"/api/entry-validation/gainer-report") {
         return Err(request);
     }
     let RequestContext {stream,db,method,path,route,request_text,..} = request;
+    if route == "/api/entry-validation/gainer-report" {
+        if !matches!(method, "GET" | "POST") { api_error(stream,"405 Method Not Allowed","Use GET or POST for saved research."); return Ok(()) }
+        let report = if method == "POST" {
+            if !has_json_content_type(request_text) || !same_origin_request(request_text) { api_error(stream,"403 Forbidden","Save research from this dashboard using JSON."); return Ok(()) }
+            match crate::wire::decode::<Value>(&read_post_body(request_text)) {
+                Ok(value) => Some(value), Err(error) => { api_error(stream,"400 Bad Request",error); return Ok(()) }
+            }
+        } else { None };
+        let connection = match open_db_minimal(db) { Ok(value) => value, Err(error) => { api_error(stream,"500 Internal Server Error",error); return Ok(()) } };
+        match gainer_saved(&connection, report) {
+            Ok(value) => respond(stream,crate::wire::encode(&value).unwrap_or_default(),"200 OK"),
+            Err(error) => api_error(stream,"400 Bad Request",error),
+        }
+        return Ok(())
+    }
+    if route == "/api/entry-validation/gainer" {
+        if method != "GET" { api_error(stream,"405 Method Not Allowed","Use GET for ranking research."); return Ok(()) }
+        let values = query_values(path);
+        let instrument = values.get("instrument_id").map(String::as_str).unwrap_or("");
+        let _permit = match ENTRY_VALIDATION_WORK.try_lock() {
+            Ok(value) => value,
+            Err(TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(TryLockError::WouldBlock) => { api_error(stream,"503 Service Unavailable","Another backtest is active. Retry after it finishes."); return Ok(()) }
+        };
+        let connection = match open_db_minimal(db) { Ok(value) => value, Err(error) => { api_error(stream,"500 Internal Server Error",error); return Ok(()) } };
+        let cutoff = match values.get("cutoff").and_then(|value| value.parse::<i64>().ok()) {
+            Some(value) if value > 0 && value <= now_secs() as i64 => value,
+            _ => { api_error(stream,"400 Bad Request","Choose a valid frozen research cutoff."); return Ok(()) }
+        };
+        match gainer_observations(&connection, db, instrument, cutoff) {
+            Ok(value) => respond(stream,crate::wire::encode(&value).unwrap_or_default(),"200 OK"),
+            Err(error) => api_error(stream,"400 Bad Request",error),
+        }
+        return Ok(())
+    }
     if route == "/api/entry-validation/status" {
         if method != "GET" { api_error(stream,"405 Method Not Allowed","Use GET to read daily backtest status."); return Ok(()) }
         let connection = match open_db_minimal(db) {Ok(value)=>value,Err(error)=>{api_error(stream,"500 Internal Server Error",error);return Ok(())}};

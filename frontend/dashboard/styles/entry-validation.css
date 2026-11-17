@@ -102,3 +102,9 @@ td { padding:13px; vertical-align:top; border-top:1px solid #263447; color:#c7d3
 @media (max-width:760px) { .risk-sizing-inputs { grid-template-columns:repeat(2,minmax(0,1fr)); }.risk-sizing-study .evidence-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:480px) { .risk-sizing-inputs { grid-template-columns:1fr; }.risk-sizing-study .evidence-metrics { grid-template-columns:1fr; } }
 @media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
+
+.gainer-research { overflow-wrap:anywhere; }
+.gainer-research .scope-form { grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr)); }
+.gainer-research .scope-form input,.gainer-research .scope-form select { min-width:0; max-width:100%; }
+.gainer-research > button { margin:4px 4px 4px 0; }
+.gainer-research .table-scroll { max-width:100%; }

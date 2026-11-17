@@ -50,6 +50,12 @@ jobs:
         run: |
           /usr/bin/time -v -o "$BUILD_METRICS_DIR/service-time.txt" \
             cargo build --locked --release -p rust_chart_api
+      - name: Verify gainer research causality and persistence
+        run: |
+          cargo test --locked --release -p quant_core sampled_entry_tests
+          cargo test --locked --release -p quant_core tokocrypto_published_quote_policy
+          cargo test --locked --release -p rust_chart_api gainer_tests -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api native_backfill_ -- --test-threads=1
       - name: Verify signed indicator cancellation
         run: |
           cargo test --locked --release -p quant_core signed_score_tests
