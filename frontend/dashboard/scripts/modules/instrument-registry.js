@@ -36,6 +36,7 @@ export function installInstrumentRegistry() {
                 manual_unverified: 'Manual · unverified',
                 venue_active: 'App listed',
                 venue_delisted: 'No longer in latest app listing',
+                product_unavailable: 'Not offered in this app product',
                 classification_pending: 'App listed · asset type pending',
             };
             const instrumentRegistryProducts = {

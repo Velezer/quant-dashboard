@@ -346,6 +346,7 @@ fn tokocrypto_next_rows_and_duplicate_stock_markets_reconcile_to_app_tickers() {
 fn pintu_announced_delistings_apply_even_during_feed_failure() {
     let connection = fixture_database();
     for (id, exchange, product, category, symbol, venue, source) in [
+        ("pintu.pintu_pro_futures.spcxx", "pintu", "pintu_pro_futures", "crypto_perpetual", "SPCXX", "SPCXXUSDT-PERP", "pintu_pro_futures_app_listing"),
         ("pintu.pintu_pro_futures.1inch", "pintu", "pintu_pro_futures", "crypto_perpetual", "1INCH", "1INCHUSDT-PERP", "pintu_pro_futures_app_listing"),
         ("pintu.pintu_pro_futures.gala", "pintu", "pintu_pro_futures", "crypto_perpetual", "GALA", "", "pintu_pro_futures_app_listing"),
         ("pintu.pintu_pro_futures.btc", "pintu", "pintu_pro_futures", "crypto_perpetual", "BTC", "BTCUSDT-PERP", "pintu_pro_futures_app_listing"),
@@ -368,7 +369,7 @@ fn pintu_announced_delistings_apply_even_during_feed_failure() {
     ).unwrap();
 
     let failed = super::sync::sync_pintu_with_fetch(&connection, || Err("synthetic feed outage".into()));
-    assert_eq!(failed.deactivated, 2);
+    assert_eq!(failed.deactivated, 3);
     assert!(failed.error.as_deref().unwrap().contains("synthetic feed outage"));
     for id in ["pintu.pintu_pro_futures.1inch", "pintu.pintu_pro_futures.gala"] {
         let state: (String, i64, i64) = connection.query_row(
@@ -377,6 +378,11 @@ fn pintu_announced_delistings_apply_even_during_feed_failure() {
         ).unwrap();
         assert_eq!(state, ("venue_delisted".into(), 0, 0), "{id}");
     }
+    let unavailable: (String, i64, i64) = connection.query_row(
+        "SELECT listing_status,venue_verified,execution_supported FROM instruments WHERE symbol='SPCXX'",
+        [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+    assert_eq!(unavailable, ("product_unavailable".into(),0,0));
+    assert_eq!(super::catalog::research_eligibility("pintu", "product_unavailable", false), "excluded");
     for id in ["pintu.pintu_pro_futures.btc", "pintu.pintu_retail_spot.1inch", "pluang.pluang_perpetual.1inch"] {
         let state: (String, i64, i64) = connection.query_row(
             "SELECT listing_status,venue_verified,execution_supported FROM instruments WHERE instrument_id=?1",
@@ -392,6 +398,7 @@ fn pintu_announced_delistings_apply_even_during_feed_failure() {
     // Even if a provider again reports the old ticker, reconciliation cannot
     // reactivate it; an unaffected futures contract remains active.
     let reported = vec![
+        crate::pintu_listing::Listing { product_id: "pintu_pro_futures", base: "SPCXX".into(), venue_symbol: "SPCXXUSDT-PERP".into(), quote: "USDT", category: "crypto_perpetual", source_url: crate::pintu_listing::PRO_FUTURES_URL },
         crate::pintu_listing::Listing { product_id: "pintu_pro_futures", base: "1INCH".into(), venue_symbol: "1INCHUSDT-PERP".into(), quote: "USDT", category: "crypto_perpetual", source_url: crate::pintu_listing::PRO_FUTURES_URL },
         crate::pintu_listing::Listing { product_id: "pintu_pro_futures", base: "BTC".into(), venue_symbol: "BTCUSDT-PERP".into(), quote: "USDT", category: "crypto_perpetual", source_url: crate::pintu_listing::PRO_FUTURES_URL },
     ];

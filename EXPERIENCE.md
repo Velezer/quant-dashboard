@@ -5,6 +5,12 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- A Pintu ticker-feed entry is not proof that its Futures product offers it.
+  Keep explicit product exclusions separate from official delisting notices,
+  enforce them during import, reconciliation, and saved-signal reads, and
+  invalidate existing venue verification even when a live refresh fails.
+  Preserve candle history and show the registry's product-unavailable reason.
+
 - Keep screener cards compact: ticker/timeframe, app/product/model context,
   direction, signed score, price, win-rate availability, and stale/no-entry state.
   Put factor breakdowns and research diagnostics in a closed native details

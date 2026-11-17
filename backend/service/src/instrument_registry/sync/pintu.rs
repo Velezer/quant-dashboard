@@ -10,13 +10,13 @@ pub(crate) fn sync_pintu_with_fetch(
 ) -> SyncResult {
     let exchange_id = "pintu".to_string();
     // Published delistings remain valid even when a live feed is unavailable.
-    let announced_delisted = match apply_announced_futures_delistings(conn) {
+    let announced_delisted = match apply_futures_product_exclusions(conn) {
         Ok(count) => count,
         Err(error) => return SyncResult {
             exchange_id,
             inserted: 0,
             deactivated: 0,
-            error: Some(format!("Failed to apply Pintu's announced futures delistings: {error}")),
+            error: Some(format!("Failed to apply Pintu Futures product exclusions: {error}")),
         },
     };
     let listings = match fetch() {
@@ -52,14 +52,14 @@ pub(crate) fn sync_pintu_with_fetch(
     result
 }
 
-/// Apply known first-party notices independently of the live ticker feed.
+/// Apply official notices and explicit product exclusions even if the feed fails.
 /// Keep unrelated registrations and candle history intact.
-fn apply_announced_futures_delistings(conn: &Connection) -> Result<usize, rusqlite::Error> {
+fn apply_futures_product_exclusions(conn: &Connection) -> Result<usize, rusqlite::Error> {
     let rows = {
         let mut stmt = conn.prepare(
             "SELECT instrument_id,symbol,venue_symbol FROM instruments
               WHERE exchange_id='pintu' AND product_id='pintu_pro_futures' AND is_active=1
-                AND (listing_status<>'venue_delisted' OR venue_verified<>0)",
+                AND (listing_status NOT IN ('venue_delisted','product_unavailable') OR venue_verified<>0)",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
@@ -73,7 +73,11 @@ fn apply_announced_futures_delistings(conn: &Connection) -> Result<usize, rusqli
         } else {
             venue
         };
-        crate::pintu_listing::is_announced_delisted_pintu_future(&contract).then_some(id)
+        if !crate::pintu_listing::is_unavailable_pintu_future(&contract) { return None; }
+        let status = if crate::pintu_listing::is_announced_delisted_pintu_future(&contract) {
+            "venue_delisted"
+        } else { "product_unavailable" };
+        Some((id, status))
     }).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(0);
@@ -82,13 +86,13 @@ fn apply_announced_futures_delistings(conn: &Connection) -> Result<usize, rusqli
     conn.execute_batch("SAVEPOINT pintu_announced_delistings")?;
     let updated = (|| {
         let mut count = 0usize;
-        for id in ids {
+        for (id, status) in ids {
             count += conn.execute(
-                "UPDATE instruments SET listing_status='venue_delisted',venue_verified=0,
+                "UPDATE instruments SET listing_status=?2,venue_verified=0,
                         execution_supported=0,updated_at=unixepoch()
                   WHERE instrument_id=?1 AND exchange_id='pintu'
                     AND product_id='pintu_pro_futures'",
-                [&id],
+                params![id, status],
             )?;
         }
         Ok::<usize, rusqlite::Error>(count)
@@ -136,7 +140,7 @@ pub(crate) fn reconcile_pintu(
         let mut inserted = 0;
         for listing in listings {
             if listing.product_id == "pintu_pro_futures"
-                && crate::pintu_listing::is_announced_delisted_pintu_future(&listing.venue_symbol)
+                && crate::pintu_listing::is_unavailable_pintu_future(&listing.venue_symbol)
             {
                 continue;
             }
@@ -223,7 +227,7 @@ pub(crate) fn reconcile_pintu(
         let mut counts = std::collections::BTreeMap::<(&str, &str), usize>::new();
         for listing in listings {
             if listing.product_id == "pintu_pro_futures"
-                && crate::pintu_listing::is_announced_delisted_pintu_future(&listing.venue_symbol)
+                && crate::pintu_listing::is_unavailable_pintu_future(&listing.venue_symbol)
             {
                 continue;
             }

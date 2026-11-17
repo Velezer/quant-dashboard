@@ -17,19 +17,20 @@ const PINTU_FUTURES_REGISTRY_GUARD: &str = "(signal_screener_rows.exchange_id <>
     ))";
 
 // Apply official delisting notices even when the last registry refresh failed.
-fn is_known_delisted_pintu_signal(row: &rusqlite::Row<'_>) -> Result<bool, rusqlite::Error> {
+fn is_unavailable_pintu_signal(row: &rusqlite::Row<'_>) -> Result<bool, rusqlite::Error> {
     let exchange = row.get::<_, String>(0)?;
     let product = row.get::<_, String>(1)?;
     if exchange != "pintu" || product != "pintu_pro_futures" {
         return Ok(false);
     }
     let symbol = row.get::<_, String>(3)?.trim().to_ascii_uppercase();
+    let symbol = symbol.strip_suffix("-USD").unwrap_or(&symbol).to_string();
     let contract = if symbol.ends_with("USDT-PERP") {
         symbol
     } else {
         format!("{symbol}USDT-PERP")
     };
-    Ok(crate::pintu_listing::is_announced_delisted_pintu_future(&contract))
+    Ok(crate::pintu_listing::is_unavailable_pintu_future(&contract))
 }
 
 fn score_model_by_strategy() -> std::collections::HashMap<&'static str, &'static str> {
@@ -591,7 +592,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let mut direction_score_counts =
         std::collections::HashMap::<(String, String, String, String), (usize, usize, f64)>::new();
     while let Some(row) = query_rows.next()? {
-        if is_known_delisted_pintu_signal(row)? { continue; }
+        if is_unavailable_pintu_signal(row)? { continue; }
         let strategy = row.get::<_, String>(5)?;
         let score = row.get::<_, f64>(9)?;
         let timeframe = row.get::<_, String>(7)?;
@@ -834,7 +835,7 @@ pub(crate) fn count_current_signal_screener_rows(
         ))?;
         let mut rows = statement.query([])?;
         while let Some(row) = rows.next()? {
-            if is_known_delisted_pintu_signal(row)? { continue; }
+            if is_unavailable_pintu_signal(row)? { continue; }
             let strategy = row.get::<_, String>(5)?;
             let score = row.get::<_, f64>(7)?;
             let score_basis_json = row.get::<_, String>(8)?;
