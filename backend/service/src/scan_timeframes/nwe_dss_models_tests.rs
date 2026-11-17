@@ -100,6 +100,8 @@ fn stockbit_4h_scores_without_a_15m_price_as_a_reference_only() {
             open:close+0.05, high:close+0.1, low:close-0.05, close, volume:1000.0 }
     }).collect::<Vec<_>>();
     let db = Connection::open_in_memory().unwrap();
+    db.execute_batch("ATTACH DATABASE ':memory:' AS app;").unwrap();
+    crate::master_data::initialize(&db).unwrap();
     let retained = std::collections::BTreeSet::new();
     let input = TimeframeScanInput { app_connection:&db,market_connection:&db,sync_state:None,
         exchange_id:"stockbit",product_id:"stockbit_regular",category_id:"idx_stock",
