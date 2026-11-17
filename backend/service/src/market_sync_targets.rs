@@ -10,6 +10,11 @@ use super::{
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashSet;
 
+#[path = "market_sync_targets/history_rechecks.rs"]
+mod history_rechecks;
+use history_rechecks::record_received_intervals;
+pub(super) use history_rechecks::mature_entry_validation_timeframes;
+
 #[cfg(test)]
 #[path = "market_sync_peer_reference_tests.rs"]
 mod peer_reference_tests;
@@ -340,7 +345,7 @@ fn has_fresh_shared_reference(
 pub(super) fn sync_prepared_candle_target(
     target: &PreparedCandleSyncTarget,
     market_database: &str,
-) -> Result<(usize, bool, bool), String> {
+) -> Result<(usize, bool, bool, Vec<String>), String> {
     let tokocrypto_market =
         target
             .tokocrypto_market
@@ -374,7 +379,7 @@ pub(super) fn sync_prepared_candle_target(
     let market_connection =
         match open_market_history_for_symbol(market_database, &target.storage_symbol, true) {
             Ok(Some(connection)) => connection,
-            Ok(None) => return Ok((0, false, false)),
+            Ok(None) => return Ok((0, false, false, Vec::new())),
             Err(error) => return Err(error.to_string()),
         };
     let _ = market_connection.pragma_update(
@@ -384,7 +389,7 @@ pub(super) fn sync_prepared_candle_target(
     );
     let mut refreshed = 0;
     let mut stockbit_15m_refreshed = false;
-    let mut received_rows = false;
+    let mut received_intervals = HashSet::new();
     if target.chart_priority.is_some()
         && matches!(
             instrument.asset_category_id,
@@ -462,7 +467,7 @@ pub(super) fn sync_prepared_candle_target(
                 continue;
             };
             let report = adapter.sync(&market_connection, &interval_request);
-            received_rows |= report.received_rows();
+            record_received_intervals(&mut received_intervals, &report);
             let succeeded = report
                 .outcomes
                 .iter()
@@ -492,7 +497,7 @@ pub(super) fn sync_prepared_candle_target(
                     continue;
                 }
                 let report = adapter.sync(&market_connection, &interval_request);
-                received_rows |= report.received_rows();
+                record_received_intervals(&mut received_intervals, &report);
                 let succeeded = report
                     .outcomes
                     .iter()
@@ -505,7 +510,7 @@ pub(super) fn sync_prepared_candle_target(
             continue;
         }
         let report = adapter.sync(&market_connection, &request);
-        received_rows |= report.received_rows();
+        record_received_intervals(&mut received_intervals, &report);
         let succeeded = report.all_succeeded();
         let error = report.error_summary();
         let continue_chain =
@@ -531,7 +536,19 @@ pub(super) fn sync_prepared_candle_target(
         }
     }
     record_hourly_instrument_attempt(&market_connection, instrument);
-    Ok((refreshed, stockbit_15m_refreshed, received_rows))
+    let mature_timeframes = mature_entry_validation_timeframes(
+        &market_connection,
+        &target.exchange_id,
+        &target.product_id,
+        &target.storage_symbol,
+        &received_intervals,
+    );
+    Ok((
+        refreshed,
+        stockbit_15m_refreshed,
+        !received_intervals.is_empty(),
+        mature_timeframes,
+    ))
 }
 
 pub(super) fn sync_prepared_candle_targets(
@@ -544,7 +561,8 @@ pub(super) fn sync_prepared_candle_targets(
     let next_target = std::sync::atomic::AtomicUsize::new(0);
     let refreshed = std::sync::atomic::AtomicUsize::new(0);
     let stockbit_refreshed = std::sync::atomic::AtomicUsize::new(0);
-    let received_rows_targets = std::sync::Mutex::new(Vec::<usize>::new());
+    let received_rows_targets =
+        std::sync::Mutex::new(Vec::<(usize, Vec<String>)>::new());
     let open_failures = std::sync::Mutex::new(Vec::<(usize, String)>::new());
     std::thread::scope(|scope| {
         let mut workers = Vec::with_capacity(worker_count);
@@ -562,7 +580,7 @@ pub(super) fn sync_prepared_candle_targets(
                 };
                 let _storage_symbol_guard = storage_symbol_gate.lock(&target.storage_symbol);
                 match sync_prepared_candle_target(target, market_database) {
-                    Ok((count, stockbit_15m_succeeded, received_rows)) => {
+                    Ok((count, stockbit_15m_succeeded, received_rows, mature_timeframes)) => {
                         refreshed.fetch_add(count, std::sync::atomic::Ordering::Relaxed);
                         if stockbit_15m_succeeded {
                             stockbit_refreshed
@@ -572,7 +590,7 @@ pub(super) fn sync_prepared_candle_targets(
                             received_rows_targets
                                 .lock()
                                 .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                .push(index);
+                                .push((index, mature_timeframes));
                         }
                     }
                     Err(error) => open_failures
@@ -587,26 +605,27 @@ pub(super) fn sync_prepared_candle_targets(
         }
     });
 
-    for index in received_rows_targets
+    for (index, mature_timeframes) in received_rows_targets
         .into_inner()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
     {
         let target = &targets[index];
-        match crate::research_reports::queue_no_history_rechecks_after_market_sync(
+        match crate::research_reports::queue_history_rechecks_after_market_sync(
             connection,
             &target.exchange_id,
             &target.product_id,
             &target.storage_symbol,
             &target.underlying_symbol,
             &target.asset_category_id,
+            &mature_timeframes,
         ) {
             Ok(queued) if queued > 0 => eprintln!(
-                "[EntryValidation] Queued {queued} stale no-history report(s) after candle ingestion for {}/{} {}.",
+                "[EntryValidation] Queued {queued} stale entry-validation report(s) after candle ingestion for {}/{} {}.",
                 target.exchange_id, target.product_id, target.storage_symbol
             ),
             Ok(_) => {}
             Err(error) => eprintln!(
-                "[EntryValidation] Could not queue no-history report refresh for {}/{} {}: {error}",
+                "[EntryValidation] Could not queue entry-validation report refresh for {}/{} {}: {error}",
                 target.exchange_id, target.product_id, target.storage_symbol
             ),
         }

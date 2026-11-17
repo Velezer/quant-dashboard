@@ -215,13 +215,14 @@ fn first_ingested_candles_refresh_a_saved_no_history_report_and_clear_its_queue_
     assert_eq!(empty["status"], "NO_HISTORY");
 
     seed_history(&conn, "pluang_spot_binance_spot_proxy", "pluang_spot", 100.0);
-    let queued = queue_no_history_rechecks_after_market_sync(
+    let queued = queue_history_rechecks_after_market_sync(
         &conn,
         "pluang",
         "pluang_spot",
         "ENTRYTEST-USD",
         "ENTRYTEST",
         "crypto_spot",
+        &[],
     )
     .unwrap();
     assert_eq!(queued, 1);
