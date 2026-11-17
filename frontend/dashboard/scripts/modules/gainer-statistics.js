@@ -56,7 +56,7 @@ export function summarizeCohorts(cohorts, universeSize) {
         const rows = cohorts.get(time).filter(row => row.exit_time < boundary && row.signal_time >= start);
         purged += cohorts.get(time).length - rows.length;
         if (rows.length < Math.max(10, Math.ceil(universeSize * 0.8))) { excluded++; continue; }
-        const byScore = [...rows].sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol)).filter(row => row.score > 0);
+        const byScore = [...rows].sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol)).filter(row => row.eligible === true);
         if (!byScore.length) { excluded++; continue; }
         const byMomentum = [...rows].sort((a, b) => b.momentum - a.momentum || a.symbol.localeCompare(b.symbol));
         const byOutcome = [...rows].sort((a, b) => b.gross_return - a.gross_return || a.symbol.localeCompare(b.symbol));

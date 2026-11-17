@@ -30,8 +30,8 @@ pub(crate) fn gainer_observations(connection: &Connection, directory: &str, id: 
     use rusqlite::OptionalExtension;
     if let Some(market) = open_market_history_for_symbol(directory, text(&instrument, "storage_symbol"), false).map_err(|error| error.to_string())? {
         let state: Option<(String, Option<String>, Option<String>)> = market.query_row(
-            "SELECT status,attempted_at,error FROM ingestion_runs WHERE symbol=?1 AND interval='1h_history_backfill' AND source='tokocrypto_native' ORDER BY id DESC LIMIT 1",
-            [text(&instrument, "storage_symbol")], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(|error| error.to_string())?;
+            "SELECT status,attempted_at,error FROM ingestion_runs WHERE symbol=?1 AND interval='1h_history_backfill' AND source=?2 ORDER BY id DESC LIMIT 1",
+            params![text(&instrument, "storage_symbol"),crate::tokocrypto_storage::SOURCE], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(|error| error.to_string())?;
         if let Some((status, attempted_at, error)) = state {
             history["native_backfill"] = json!({"status":status,"attempted_at":attempted_at,"error":error});
         }
@@ -51,7 +51,7 @@ pub(crate) fn gainer_observations(connection: &Connection, directory: &str, id: 
                 if ![signal.open, signal.close, previous.close, entry.open, exit.open, signal.volume, entry.volume].iter().all(|value| value.is_finite() && *value > 0.0) { return; }
                 observations.push(json!({"time":entry.time / NANOS_PER_SECOND,
                     "signal_time":signal.time / NANOS_PER_SECOND,"exit_time":exit.time / NANOS_PER_SECOND,
-                    "score":score,"momentum":signal.close / previous.close - 1.0,
+                    "score":score,"eligible":score >= quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60,"momentum":signal.close / previous.close - 1.0,
                     "gross_return":exit.open / entry.open - 1.0}));
             });
         segment_start = end;

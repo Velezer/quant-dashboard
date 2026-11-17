@@ -348,3 +348,10 @@ lesson only when it will improve future tasks.
   notification badge; current screener rows and unread alert history are
   different concepts, and the alert panel can show its unread count from the
   alert-history response it already loads.
+
+- Cross-sectional research must freeze the universe, cutoff and costs across
+  retries, purge outcomes across common time splits, and deduplicate instrument
+  identities. Use the causal strategy visitor with precomputed indicators for
+  long samples, and verify past scores against live prefixes after appending
+  future bars. Preserve quote-specific fee provenance and never infer listing
+  dates from registration time or the oldest stored candle.

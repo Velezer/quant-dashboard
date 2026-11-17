@@ -17,7 +17,7 @@ test('uncertainty requires 30 observations and responds to dispersion', () => {
 });
 
 function cohort(time, count = 10) {
-    return Array.from({length:count}, (_, index) => ({ symbol: String(index), score: index + 1, momentum: -index,
+    return Array.from({length:count}, (_, index) => ({ symbol: String(index), score: index + 1, eligible: true, momentum: -index,
         gross_return: index / 100, net_return: index - 1, signal_time: time - 1, exit_time: time + 1 }));
 }
 
@@ -42,7 +42,7 @@ test('partial universe coverage cannot become successful evidence', () => {
 });
 
 test('signed bearish scores do not enter a long gainer ranking', () => {
-    const rows = cohort(10).map(row => ({...row, score: -1}));
+    const rows = cohort(10).map(row => ({...row, score: -1, eligible: false}));
     const report = summarizeCohorts(new Map([[10, rows]]), 10);
     assert.equal(report.splits.holdout.count, 0);
 });

@@ -84,7 +84,7 @@ export function installGainerResearch() {
         const summary = summarizeCohorts(cohorts, state.universe.length);
         state.report = { protocol_id: GAINER_PROTOCOL, cutoff: state.cutoff, status: 'UNVALIDATED_RESEARCH',
             coverage: { universe: state.universe.length, attempted: state.payloads.size + state.failures.size, failed: state.failures.size, missing, short, proxies, minimumHistoryDays,
-                listingAgeUnknown: state.payloads.size, stopped: stopping, excludedCohorts: summary.excluded, purged: summary.purged },
+                listingAgeUnknown: state.payloads.size, stopped: stopping || state.payloads.size + state.failures.size < state.universe.length, excludedCohorts: summary.excluded, purged: summary.purged },
             costs: state.costs, provenance, splits: summary.splits, metrics: summary.metrics, limitations: LIMITATIONS };
         render(state.report); showCoverage(state.payloads);
         $('gainer-errors').textContent = [...state.failures.values()].map(item => `${item.symbol}: ${item.error}`).join(' · ');
@@ -98,7 +98,9 @@ export function installGainerResearch() {
                 const payload = await requestJson(`/api/entry-validation/gainer?instrument_id=${encodeURIComponent(item.instrument_id)}&cutoff=${state.cutoff}`, { signal: AbortSignal.timeout(120000) });
                 if (payload.protocol_id !== GAINER_PROTOCOL || !Array.isArray(payload.observations) || payload.instrument?.instrument_id !== item.instrument_id) throw new Error('Protocol or exact instrument mismatch.');
                 if (state.costs.mode === 'published' && payload.costs?.fees_known !== true) throw new Error('Published fees unavailable for this quote. Choose a manual scenario and start a new run.');
-                if (payload.observations.some(row => !['time', 'signal_time', 'exit_time', 'score', 'momentum', 'gross_return'].every(key => Number.isFinite(row[key])))) throw new Error('Malformed observation.');
+                if (payload.observations.some(row => typeof row.eligible !== 'boolean' || !['time', 'signal_time', 'exit_time', 'score', 'momentum', 'gross_return'].every(key => Number.isFinite(row[key])))) throw new Error('Malformed observation.');
+                const priorPolicy = [...state.payloads.values()].find(previous => previous.costs?.quote === payload.costs?.quote)?.costs;
+                if (state.costs.mode === 'published' && priorPolicy && JSON.stringify(priorPolicy) !== JSON.stringify(payload.costs)) throw new Error('Published fee policy changed during this snapshot. Start a new run.');
                 if (state.observationsTotal + payload.observations.length > 1_000_000) throw new Error('Browser research limit of 1,000,000 observations reached. Full-scope evidence is unavailable.');
                 let buy = state.costs.buy / 100, sell = state.costs.sell / 100;
                 if (state.costs.mode === 'published') { buy = payload.costs.buy_fee_pct / 100; sell = payload.costs.sell_fee_pct / 100; }

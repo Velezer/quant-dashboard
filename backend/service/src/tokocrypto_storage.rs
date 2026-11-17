@@ -9,7 +9,7 @@ use super::master_data::tokenized_stock_symbols;
 use super::tokocrypto::{fetch_klines, MarketBar, VenueSymbol};
 use rusqlite::{params, Connection};
 
-const SOURCE: &str = "tokocrypto_native";
+pub(crate) const SOURCE: &str = "tokocrypto_native";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncResult {
@@ -569,3 +569,7 @@ fn record_backfill_state(connection: &Connection, symbol: &str, status: &str, ro
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tokocrypto_backfill_tests.rs"]
+mod history_tests;
