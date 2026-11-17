@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/web/styles/dashboard_components.css">
     <link rel="stylesheet" href="/web/styles/dashboard_mobile.css">
     <link rel="stylesheet" href="/web/styles/dashboard_desktop.css">
+    <link rel="stylesheet" href="/web/styles/dashboard_readable.css">
 </head>
 <body class="tv-terminal bg-gray-950 text-gray-200 min-h-screen flex flex-col font-sans selection:bg-blue-500 selection:text-white p-4 md:p-6">
 
@@ -128,6 +129,9 @@
                     <button id="openSelectedSignalMarkov" type="button" data-dashboard-action="openSelectedSignalMarkov" disabled aria-label="Open Markov regime analysis for the selected signal" class="rounded border border-violet-800 bg-violet-950/50 px-2.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-900 disabled:cursor-not-allowed disabled:opacity-40">Regime model</button>
                 </div>
                 <div id="selectedSignalSetup" class="selected-signal-setup" aria-live="polite" hidden>
+                    <details class="chart-setup-disclosure">
+                        <summary>Setup &amp; evidence <span>Score, win rate and price zones</span></summary>
+                        <div class="chart-setup-content">
                     <div class="selected-signal-setup-cell selected-signal-setup-main">
                         <span>SETUP</span>
                         <strong id="selectedSignalSetupName">—</strong>
@@ -153,6 +157,8 @@
                     </div>
                     <p id="selectedSignalSetupZoneStatus" class="selected-signal-setup-note">NWE zones use causal signal-timeframe bands and appear shaded on the chart. They are reference areas, not executable prices; the opposite zone is context, not an opposite signal.</p>
                     <button id="retrySelectedSignalSetupZones" type="button" hidden aria-label="Request chart history for the selected signal's long and short zones" title="Queues a repair for missing signal-timeframe candles. The zones refresh when the sync finishes." class="selected-signal-setup-retry">Request chart history</button>
+                        </div>
+                    </details>
                 </div>
             </div>
 
@@ -525,7 +531,7 @@
                 <div id="chart-pane-resizer" role="separator" aria-orientation="horizontal" aria-label="Resize momentum pane and price chart" aria-valuemin="130" aria-valuemax="360" aria-valuenow="180" aria-valuetext="Momentum plot height 180 pixels" aria-controls="momentum-pane" tabindex="0" title="Drag to resize the momentum pane; the price chart uses the remaining height"><span class="tv-resizer-grip" aria-hidden="true"></span></div>
 
                 <!-- Keep momentum context available without competing with the price chart. -->
-                <details id="momentum-pane" open class="tv-indicator-pane dss-indicator-disclosure flex flex-col rounded-lg bg-gray-950/50 border border-gray-800/80 overflow-hidden">
+                <details id="momentum-pane" class="tv-indicator-pane dss-indicator-disclosure flex flex-col rounded-lg bg-gray-950/50 border border-gray-800/80 overflow-hidden">
                     <summary class="dss-indicator-summary">
                         <span class="dss-summary-title">Momentum</span>
                         <span id="dssLiveReadout" class="dss-summary-value font-mono text-[10px] font-semibold text-gray-300" aria-label="Momentum value unavailable">--</span>

@@ -1,0 +1,93 @@
+/* Final workspace layer: readable controls and a chart-led visual hierarchy. */
+.tv-terminal {
+    --desk-bg: #0b1119;
+    --desk-panel: #111b27;
+    --desk-line: #263445;
+    --desk-muted: #a3b2c4;
+    --desk-accent: #56dac3;
+    background: var(--desk-bg) !important;
+    color: #e6edf5;
+    font-family: Inter, system-ui, -apple-system, sans-serif !important;
+}
+.tv-terminal #top-app-bar { background: #101925 !important; border-color: var(--desk-line) !important; }
+.tv-terminal .desktop-brand-copy strong { font-size: 14px !important; letter-spacing: .08em; }
+.tv-terminal .desktop-brand-copy small { font-size: 10px !important; color: var(--desk-muted); }
+.tv-terminal .desktop-primary-nav a { font-size: 12px !important; padding: 10px 14px !important; }
+.tv-terminal #signal-selection-summary { color: #f2f6fb !important; font: 600 16px/1.5 system-ui !important; }
+.tv-terminal #signal-banner { background: #111c29 !important; border-color: var(--desk-line) !important; }
+.tv-terminal #signal-selection-updated { font-size: 11px !important; color: var(--desk-muted) !important; }
+.tv-terminal #selectedSignalSetup { display: block !important; width: 100%; grid-column: 1 / -1; flex-basis: 100%; padding: 0 !important; max-height: none !important; }
+.tv-terminal #selectedSignalSetup[hidden] { display: none !important; }
+.tv-terminal .chart-setup-disclosure { width: 100%; }
+.tv-terminal .chart-setup-disclosure > summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 40px; padding: 8px 12px; cursor: pointer; border: 1px solid #304252;
+    border-radius: 8px; color: #b9f3e7; font: 600 12px/1.4 system-ui;
+}
+.tv-terminal .chart-setup-disclosure > summary span { color: var(--desk-muted); font-weight: 400; font-size: 11px; }
+.tv-terminal .chart-setup-disclosure > summary:focus-visible { outline: 2px solid var(--desk-accent); outline-offset: 2px; }
+.tv-terminal .chart-setup-content { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 12px 0 0; max-height: 32vh; overflow-y: auto; }
+.tv-terminal .selected-signal-setup-main { grid-column: auto; }
+.tv-terminal .selected-signal-setup-cell { padding: 12px !important; background: #0c1520 !important; border-color: #304252 !important; }
+.tv-terminal .selected-signal-setup-cell > span { font-size: 10px !important; letter-spacing: .06em; }
+.tv-terminal .selected-signal-setup-cell strong { font: 600 13px/1.5 system-ui !important; }
+.tv-terminal .selected-signal-setup-cell small,
+.tv-terminal .selected-signal-setup-note { font: 400 12px/1.6 system-ui !important; color: var(--desk-muted) !important; }
+.tv-terminal #chart-score-summary { font-size: 11px !important; color: var(--desk-muted); }
+.tv-terminal #chart-evidence-badge { font-size: 10px !important; }
+.tv-terminal #chart-symbol-badge { font: 700 17px/1.4 system-ui !important; }
+.tv-terminal #chart-style-badge { font-size: 11px !important; }
+.tv-terminal #chartShell { background: #0e1722 !important; border-color: var(--desk-line) !important; }
+.tv-terminal #chartContainer { background: #0e1722 !important; }
+.tv-terminal .tv-symbol-toolbar, .tv-terminal #tv-chart-toolbar { background: #131e2c !important; }
+.tv-terminal #tv-chart-toolbar button { font-size: 12px !important; min-height: 34px !important; }
+.tv-terminal #tv-ohlc-strip { font-size: 11px !important; line-height: 1.6; }
+.tv-terminal #scan-progress-banner { background: #102a32 !important; border-color: #255361 !important; padding: 10px 16px !important; border-radius: 10px !important; }
+.tv-terminal #scan-progress-title { font: 600 12px/1.5 system-ui !important; }
+.tv-terminal #scan-progress-subtitle { font: 400 11px/1.5 system-ui !important; color: #a8d4dd !important; max-height: 48px; overflow-y: auto; }
+.tv-terminal #watchlistPanel { background: var(--desk-panel) !important; border-color: var(--desk-line) !important; }
+.tv-terminal #watchlistPanel h2 { font: 650 17px/1.4 system-ui !important; }
+.tv-terminal #watchlist-exchange-filter > button,
+.tv-terminal #mobile-product-filters > button,
+.tv-terminal .screener-timeframe-btn { min-height: 34px !important; font: 550 12px/1.3 system-ui !important; padding: 7px 10px !important; }
+.tv-terminal #signalSearch input { font: 400 14px/1.5 system-ui !important; min-height: 40px !important; background: #0a1420 !important; color: #edf3fa !important; border: 1px solid #3a4b60; border-radius: 7px; }
+.tv-terminal .signal-row { padding: 14px !important; gap: 10px !important; border-radius: 12px !important; background: #142131 !important; }
+.tv-terminal .signal-row-symbol { font: 650 16px/1.3 system-ui !important; }
+.tv-terminal .signal-row-meta, .tv-terminal .signal-row-footer { font: 400 11px/1.5 system-ui !important; color: #a8b9cd !important; }
+.tv-terminal .signal-row-timeframe, .tv-terminal .signal-row-direction-score { font-size: 12px !important; }
+.tv-terminal .signal-row-price { font-size: 15px !important; }
+.tv-terminal .signal-direction-long, .tv-terminal .signal-direction-short { font-size: 11px !important; padding: 4px 8px !important; }
+.tv-terminal .signal-card-details > summary { min-height: 36px; font: 500 12px/1.5 system-ui; }
+.tv-terminal #momentum-pane:not([open]) { flex: 0 0 auto !important; height: auto !important; min-height: 42px !important; }
+.tv-terminal #momentum-pane > summary { min-height: 42px; font-size: 12px !important; }
+.tv-terminal #momentum-pane:not([open]) ~ * { min-height: 0; }
+@media (min-width: 1024px) {
+    .tv-terminal.signals-workspace-active #viewScreener > #workspaceGrid {
+        grid-template-columns: minmax(0, 1fr) 12px minmax(350px, var(--watchlist-width, 400px)) !important;
+    }
+    .tv-terminal.signals-workspace-active #signal-banner { padding: 16px !important; gap: 12px !important; max-height: none !important; flex: 0 0 auto !important; }
+    .tv-terminal.signals-workspace-active .tv-chart-column { border-radius: 14px !important; background: #111b27 !important; }
+    .tv-terminal.signals-workspace-active #chartShell { margin: 0 12px 12px !important; }
+    .tv-terminal.signals-workspace-active #chartContainer { flex: 1 1 0% !important; min-height: 220px !important; }
+    .tv-terminal.signals-workspace-active #momentum-pane[open] { flex: 0 0 170px !important; min-height: 170px !important; }
+    .tv-terminal.signals-workspace-active #momentum-pane[open] #dssChartContainer { height: 120px !important; min-height: 120px !important; }
+    .tv-terminal.signals-workspace-active .tv-symbol-toolbar { min-height: 88px !important; height: auto !important; max-height: none !important; grid-template-rows: auto auto !important; }
+    .tv-terminal.signals-workspace-active .tv-symbol-line { min-height: 38px !important; height: auto !important; }
+    .tv-terminal.signals-workspace-active #tv-chart-toolbar { min-height: 44px !important; height: auto !important; flex-wrap: wrap !important; }
+}
+@media (max-width: 1023px) {
+    .tv-terminal #signal-banner { padding: 14px !important; gap: 12px !important; }
+    .tv-terminal #signal-selection-summary { font-size: 15px !important; }
+    .tv-terminal #signal-banner > div:nth-child(2) { flex-wrap: wrap !important; justify-content: flex-start !important; width: 100%; min-width: 0; }
+    .tv-terminal #signal-selection-updated { width: 100%; text-align: left; white-space: normal !important; }
+    .tv-terminal .chart-setup-content { grid-template-columns: minmax(0, 1fr); max-height: 45vh; }
+    .tv-terminal .chart-setup-disclosure > summary { min-height: 44px; }
+    .tv-terminal .chart-setup-disclosure > summary span { display: none; }
+    .tv-terminal #chartContainer { height: 48vh !important; min-height: 300px !important; }
+    .tv-terminal #watchlist-exchange-filter > button,
+    .tv-terminal #mobile-product-filters > button,
+    .tv-terminal .screener-timeframe-btn { min-height: 42px !important; }
+    .tv-terminal #tv-chart-toolbar { gap: 6px !important; }
+    .tv-terminal #scan-progress-banner { flex-wrap: wrap; }
+    .tv-terminal .signal-card-details > summary { min-height: 44px; }
+}
