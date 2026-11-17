@@ -22,6 +22,25 @@ export function createSignalScreenerChartContext({
 }) {
     let chartTimeframeLoadGeneration = 0;
 
+    function waitForUiPaint() {
+        return new Promise(resolve => {
+            let resolved = false;
+            let fallbackTimer = 0;
+            const finish = () => {
+                if (resolved) return;
+                resolved = true;
+                window.clearTimeout(fallbackTimer);
+                resolve();
+            };
+            fallbackTimer = window.setTimeout(finish, 250);
+            if (typeof window.requestAnimationFrame === 'function' && document.visibilityState !== 'hidden') {
+                window.requestAnimationFrame(() => window.setTimeout(finish, 0));
+            } else {
+                window.setTimeout(finish, 0);
+            }
+        });
+    }
+
     function candlesForTimeframe(signal, timeframe) {
         const frame = String(timeframe || '').toLowerCase();
         const mappedCandles = signal?.candles_by_tf?.[frame];
@@ -78,6 +97,8 @@ export function createSignalScreenerChartContext({
                 ?? globalThis.selectedSignal?.signal_id === signal.signal_id);
 
         try {
+            await waitForUiPaint();
+            if (!isCurrentLoad()) return;
             const ensureChartData = getDashboardBinding('ensureChartData');
             const loaded = ensureChartData ? await ensureChartData(signal) : hasCachedCandles;
             if (!isCurrentLoad()) return;
@@ -95,6 +116,8 @@ export function createSignalScreenerChartContext({
             window.dispatchEvent(new Event('quant:pine-chart-data-changed'));
             if (currentSignal.candles.length) {
                 setChartTimeframeLoadStatus('studies', frame);
+                await waitForUiPaint();
+                if (!isCurrentLoad()) return;
                 await getDashboardBinding('hydrateRustIndicators')?.(currentSignal);
             }
         } catch (error) {

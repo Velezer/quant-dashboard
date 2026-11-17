@@ -56,6 +56,34 @@
             color: #ffffff !important;
         }
 
+        .signal-query-progress {
+            display: flex;
+            min-height: 34px;
+            align-items: center;
+            gap: .55rem;
+            margin-bottom: .5rem;
+            border: 1px solid #31505d;
+            border-radius: .55rem;
+            background: #10242e;
+            padding: .45rem .65rem;
+            color: #b1e8df;
+            font-size: 10px;
+            font-weight: 650;
+        }
+        .signal-query-empty { align-items: center; text-align: center; }
+        .signal-query-spinner {
+            width: 13px;
+            height: 13px;
+            flex: 0 0 13px;
+            border: 2px solid rgba(112, 231, 207, .28);
+            border-top-color: #70e7cf;
+            border-radius: 50%;
+            animation: signal-query-spin .75s linear infinite;
+        }
+        @keyframes signal-query-spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) {
+            .signal-query-spinner { animation: none; }
+        }
         /* TradingView-style terminal shell: the price pane owns the screen,
            the indicator is a thin linked pane, and signal rows behave like a
            watchlist. Data diagnostics stay progressively disclosed. */

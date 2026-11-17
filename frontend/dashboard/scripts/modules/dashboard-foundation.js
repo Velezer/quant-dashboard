@@ -35,7 +35,6 @@ export function installDashboardFoundation() {
                 if (productButton) {
                     activeProductFilter = productButton.dataset.product || 'all';
                     updateProductFilters();
-                    renderSignalsList();
                     return productButton;
                 }
                 return null;

@@ -337,3 +337,11 @@ lesson only when it will improve future tasks.
   both hydrate, the second request can abort and restart the first. An empty
   timeframe array is not proof that a lazy chart bundle was fetched; request the
   bundle until it is marked loaded, then keep the chart's normal empty state.
+- On app or screener-timeframe changes, rendering synchronously in a click
+  handler does not guarantee a visible paint before fetch begins. Render the
+  selected scope's loading state, yield through a frame and task, and abort the
+  superseded request. Audit render hooks too: a panel's `show()` callback can
+  start its own API call during that render. Push app/timeframe predicates into
+  SQLite before per-row freshness work, while leaving product/search filtering
+  after direction-score aggregation when those summaries must cover the whole
+  ticker/timeframe.
