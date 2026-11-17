@@ -122,6 +122,7 @@ fn snapshot_reservation_serializes_signal_writers_and_rolls_back_on_failure() {
     existing_writer.execute_batch("COMMIT").unwrap();
     publish_empty_app(&publisher).unwrap();
     assert!(publisher.is_autocommit());
+    // Partial scans retain the count from the last completed snapshot.
     assert_eq!(
         publisher
             .query_row(
@@ -130,6 +131,6 @@ fn snapshot_reservation_serializes_signal_writers_and_rolls_back_on_failure() {
                 |row| row.get::<_, i64>(0),
             )
             .unwrap(),
-        0
+        7
     );
 }

@@ -181,34 +181,26 @@ fn publish_signal_screener_app_batch_attempt(
                 .filter(|update| update.exchange_id == exchange_id),
             now,
         )?;
-        let stored_signal_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM signals.signal_screener_rows",
-            [],
-            |row| row.get(0),
-        )?;
+        // Keep the last completed counts while publishing partial scan batches.
+        // The final app/full snapshot computes fresh counts once the scan ends.
         connection.execute(
             "INSERT INTO signals.signal_screener_status(
                  id,last_attempt_at,last_success_at,last_attempt_status,last_error,
                  signal_count,price_data_status,price_data_unavailable_count
-             ) VALUES(1,?1,NULL,'scanning','',?2,'unknown',0)
+             ) VALUES(1,?1,NULL,'scanning','',0,'unknown',0)
              ON CONFLICT(id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,
-                last_attempt_status='scanning',last_error='',signal_count=excluded.signal_count",
-            params![now, stored_signal_count],
-        )?;
-        let app_stored_signal_count: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM signals.signal_screener_rows WHERE exchange_id=?1",
-            [exchange_id],
-            |row| row.get(0),
+                last_attempt_status='scanning',last_error=''",
+            [now],
         )?;
         connection.execute(
             "INSERT INTO signals.signal_screener_app_status(
                  exchange_id,last_attempt_at,last_success_at,last_attempt_status,last_error,
                  signal_count,price_data_status,price_data_unavailable_count,registered_count,readiness_json
-             ) VALUES(?1,?2,NULL,'scanning','',?3,'unknown',0,0,'null')
+             ) VALUES(?1,?2,NULL,'scanning','',0,'unknown',0,0,'null')
              ON CONFLICT(exchange_id) DO UPDATE SET
                  last_attempt_at=excluded.last_attempt_at,
                  last_attempt_status='scanning',last_error=''",
-            params![exchange_id, now, app_stored_signal_count],
+            params![exchange_id, now],
         )?;
         Ok::<(), rusqlite::Error>(())
     })();
