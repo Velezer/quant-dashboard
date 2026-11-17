@@ -41,7 +41,7 @@ fn four_hour_risk_reward_blocks_validation(
         && (protocol_id != Some(quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID) || !qualified)
 }
 
-fn preferred_risk_reward_rule(backtest: &Value, timeframe: &str) -> Option<&Value> {
+fn preferred_risk_reward_rule<'a>(backtest: &'a Value, timeframe: &str) -> Option<&'a Value> {
     risk_reward_rule(backtest).filter(|rule| {
         rule.get("protocol_id").and_then(Value::as_str)
             == Some(quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID)
