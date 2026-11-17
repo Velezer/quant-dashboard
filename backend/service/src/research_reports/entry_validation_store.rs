@@ -255,6 +255,79 @@ pub(super) fn queue_no_history_rechecks(
     Ok(exact_queued.saturating_add(shared_queued))
 }
 
+/// Requeue current reports when newly stored history has reached the same
+/// evidence-span minimum used by the backtest. A report that already had some
+/// candles can otherwise remain `VALIDATION_PENDING` until the next daily
+/// full-universe cycle even after progressive provider pagination completes.
+pub(super) fn queue_mature_history_rechecks(
+    conn: &Connection,
+    exchange_id: &str,
+    product_id: &str,
+    storage_symbol: &str,
+    underlying_symbol: &str,
+    asset_category_id: &str,
+    mature_timeframes: &[String],
+    queued_at: i64,
+) -> Result<usize, rusqlite::Error> {
+    if mature_timeframes.is_empty() {
+        return Ok(0);
+    }
+    let timeframes = serde_json::to_string(mature_timeframes)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    let exact_queued = conn.execute(
+        "INSERT OR IGNORE INTO app.entry_model_validation_recheck_queue
+            (instrument_id,timeframe,queued_at,next_attempt_at)
+         SELECT i.instrument_id,r.timeframe,?1,?1
+           FROM app.instruments AS i
+           JOIN app.entry_model_validation_reports AS r ON r.instrument_id=i.instrument_id
+          WHERE r.protocol_id=?2
+            AND json_extract(r.report_json,'$.status') IN ('BACKTEST_COMPLETE','VALIDATION_PENDING')
+            AND EXISTS (SELECT 1 FROM json_each(?3) AS mature WHERE mature.value=r.timeframe)
+            AND COALESCE(json_extract(r.report_json,'$.history.coverage_days'),0) < ?4
+            AND i.is_active=1 AND i.venue_verified=1
+            AND i.listing_status IN ('venue_active','public_listed_snapshot')
+            AND i.exchange_id=?5 AND i.product_id=?6 AND i.storage_symbol=?7",
+        params![
+            queued_at,
+            super::PROTOCOL_ID,
+            timeframes,
+            quant_core::ENTRY_SCORE_MIN_HISTORY_DAYS,
+            exchange_id,
+            product_id,
+            storage_symbol,
+        ],
+    )?;
+    if !matches!(asset_category_id, "crypto_spot" | "crypto_perpetual" | "crypto_futures")
+        || underlying_symbol.trim().is_empty()
+    {
+        return Ok(exact_queued);
+    }
+    let shared_queued = conn.execute(
+        "INSERT OR IGNORE INTO app.entry_model_validation_recheck_queue
+            (instrument_id,timeframe,queued_at,next_attempt_at)
+         SELECT i.instrument_id,r.timeframe,?1,?1
+           FROM app.instruments AS i
+           JOIN app.entry_model_validation_reports AS r ON r.instrument_id=i.instrument_id
+          WHERE r.protocol_id=?2
+            AND json_extract(r.report_json,'$.status') IN ('BACKTEST_COMPLETE','VALIDATION_PENDING')
+            AND EXISTS (SELECT 1 FROM json_each(?3) AS mature WHERE mature.value=r.timeframe)
+            AND COALESCE(json_extract(r.report_json,'$.history.coverage_days'),0) < ?4
+            AND i.is_active=1 AND i.venue_verified=1
+            AND i.listing_status IN ('venue_active','public_listed_snapshot')
+            AND i.asset_category_id=?5
+            AND upper(trim(i.underlying_symbol))=upper(trim(?6))",
+        params![
+            queued_at,
+            super::PROTOCOL_ID,
+            timeframes,
+            quant_core::ENTRY_SCORE_MIN_HISTORY_DAYS,
+            asset_category_id,
+            underlying_symbol,
+        ],
+    )?;
+    Ok(exact_queued.saturating_add(shared_queued))
+}
+
 pub(super) fn next_pending_history_recheck(
     conn: &Connection,
 ) -> Result<Option<PendingHistoryRecheck>, rusqlite::Error> {

@@ -388,6 +388,7 @@ fn sync_daily_chart_targets(
         });
         let mut any_provider_succeeded = false;
         let mut rows_received = 0usize;
+        let mut received_intervals = std::collections::HashSet::new();
         let mut errors = Vec::new();
         for adapter in &CANDLE_SYNC_ADAPTERS {
             if !adapter.supports(&request) {
@@ -422,6 +423,9 @@ fn sync_daily_chart_targets(
                 Ok(rows) => {
                     any_provider_succeeded = true;
                     rows_received += rows;
+                    if rows > 0 {
+                        received_intervals.insert(interval.to_string());
+                    }
                     let source_kind = if adapter.source_class() == CandleSourceClass::VenueNative {
                         "native"
                     } else {
@@ -496,20 +500,28 @@ fn sync_daily_chart_targets(
             &attempt_error,
         );
         if rows_received > 0 {
-            match crate::research_reports::queue_no_history_rechecks_after_market_sync(
+            let mature_timeframes = targets::mature_entry_validation_timeframes(
+                market_connection,
+                &exchange_id,
+                &product_id,
+                &storage_symbol,
+                &received_intervals,
+            );
+            match crate::research_reports::queue_history_rechecks_after_market_sync(
                 connection,
                 &exchange_id,
                 &product_id,
                 &storage_symbol,
                 &underlying_symbol,
                 &asset_category_id,
+                &mature_timeframes,
             ) {
                 Ok(queued) if queued > 0 => eprintln!(
-                    "[EntryValidation] Queued {queued} stale no-history report(s) after daily candle ingestion for {exchange_id}/{product_id} {storage_symbol}."
+                    "[EntryValidation] Queued {queued} stale entry-validation report(s) after daily candle ingestion for {exchange_id}/{product_id} {storage_symbol}."
                 ),
                 Ok(_) => {}
                 Err(error) => eprintln!(
-                    "[EntryValidation] Could not queue no-history report refresh for {exchange_id}/{product_id} {storage_symbol}: {error}"
+                    "[EntryValidation] Could not queue entry-validation report refresh for {exchange_id}/{product_id} {storage_symbol}: {error}"
                 ),
             }
         }

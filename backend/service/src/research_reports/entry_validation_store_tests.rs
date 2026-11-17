@@ -44,7 +44,7 @@ fn report(conn: &Connection, id: &str, timeframe: &str) -> Value {
         "schema_version":1,"protocol_id":super::super::PROTOCOL_ID,
         "instrument":instrument(conn,id).unwrap().unwrap(),"timeframe":timeframe,"computed_at":1234,
         "status":"BACKTEST_COMPLETE","source":{"id":"pintu_native","is_proxy":false},
-        "history":{"bars":1500,"data_fingerprint":"fixture-fingerprint"},
+        "history":{"bars":1500,"coverage_days":900,"data_fingerprint":"fixture-fingerprint"},
         "models":[{
             "kind":"nwe","label":"NWE","score_model_id":"nwe-model-version",
             "entry_validation_status":"VALIDATION_PENDING","sizing_eligible":false,
@@ -204,6 +204,7 @@ fn market_ingestion_queues_only_empty_reports_for_the_matching_shared_crypto_cat
         let mut saved = report(&conn, id, "4h");
         saved["status"] = json!("NO_HISTORY");
         saved["history"]["bars"] = json!(0);
+        saved["history"]["coverage_days"] = json!(0);
         saved["history"]["data_fingerprint"] = Value::Null;
         save_report(&conn, &saved).unwrap();
     }
@@ -236,6 +237,98 @@ fn market_ingestion_queues_only_empty_reports_for_the_matching_shared_crypto_cat
     assert_eq!(deferred.next_attempt_at, 4_000);
     complete_history_recheck(&conn, &deferred.instrument_id, &deferred.timeframe).unwrap();
     assert_eq!(pending_history_recheck_count(&conn).unwrap(), 0);
+}
+
+#[test]
+fn mature_history_requeues_only_under_minimum_reports_for_ingested_timeframes_and_category() {
+    let conn = connection();
+    insert(
+        &conn,
+        "pintu.futures.btc",
+        "pintu",
+        "pintu_pro_futures",
+        "BTC",
+        true,
+    );
+    insert(
+        &conn,
+        "pluang.perpetual.btc",
+        "pluang",
+        "pluang_perpetual",
+        "BTC",
+        true,
+    );
+    insert(
+        &conn,
+        "pintu.spot.btc",
+        "pintu",
+        "pintu_pro_spot",
+        "BTC",
+        true,
+    );
+    insert(
+        &conn,
+        "pintu.futures.btc.mature",
+        "pintu",
+        "pintu_pro_futures",
+        "BTCM",
+        true,
+    );
+    conn.execute(
+        "UPDATE app.instruments SET asset_category_id='crypto_perpetual',underlying_symbol='BTC'
+          WHERE instrument_id IN (
+            'pintu.futures.btc','pluang.perpetual.btc','pintu.futures.btc.mature'
+          )",
+        [],
+    )
+    .unwrap();
+
+    for (id, timeframe, coverage_days) in [
+        ("pintu.futures.btc", "4h", 999),
+        ("pluang.perpetual.btc", "4h", 999),
+        ("pintu.spot.btc", "4h", 999),
+        ("pintu.futures.btc", "1h", 999),
+        ("pintu.futures.btc.mature", "4h", 1_000),
+    ] {
+        let mut saved = report(&conn, id, timeframe);
+        saved["history"]["coverage_days"] = json!(coverage_days);
+        save_report(&conn, &saved).unwrap();
+    }
+
+    let queued = queue_mature_history_rechecks(
+        &conn,
+        "pintu",
+        "pintu_pro_futures",
+        "BTC-USD",
+        "BTC",
+        "crypto_perpetual",
+        &["4h".to_string()],
+        2_000,
+    )
+    .unwrap();
+    assert_eq!(queued, 2);
+    assert_eq!(pending_history_recheck_count(&conn).unwrap(), 2);
+
+    let queued_again = queue_mature_history_rechecks(
+        &conn,
+        "pintu",
+        "pintu_pro_futures",
+        "BTC-USD",
+        "BTC",
+        "crypto_perpetual",
+        &["4h".to_string()],
+        3_000,
+    )
+    .unwrap();
+    assert_eq!(queued_again, 0);
+    assert_eq!(pending_history_recheck_count(&conn).unwrap(), 2);
+    let mut pending_ids = Vec::new();
+    while let Some(pending) = next_pending_history_recheck(&conn).unwrap() {
+        complete_history_recheck(&conn, &pending.instrument_id, &pending.timeframe).unwrap();
+        pending_ids.push((pending.instrument_id, pending.timeframe));
+    }
+    assert!(pending_ids.contains(&("pintu.futures.btc".to_string(), "4h".to_string())));
+    assert!(pending_ids.contains(&("pluang.perpetual.btc".to_string(), "4h".to_string())));
 }
 
 #[test]
