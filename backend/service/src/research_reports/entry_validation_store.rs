@@ -214,30 +214,45 @@ pub(super) fn queue_no_history_rechecks(
     asset_category_id: &str,
     queued_at: i64,
 ) -> Result<usize, rusqlite::Error> {
-    conn.execute(
+    let exact_queued = conn.execute(
         "INSERT OR IGNORE INTO app.entry_model_validation_recheck_queue
             (instrument_id,timeframe,queued_at,next_attempt_at)
          SELECT i.instrument_id,r.timeframe,?1,?1
-           FROM app.entry_model_validation_reports AS r
-           JOIN app.instruments AS i ON i.instrument_id=r.instrument_id
+           FROM app.instruments AS i
+           JOIN app.entry_model_validation_reports AS r ON r.instrument_id=i.instrument_id
           WHERE r.protocol_id=?2
             AND json_extract(r.report_json,'$.status')='NO_HISTORY'
             AND i.is_active=1 AND i.venue_verified=1
             AND i.listing_status IN ('venue_active','public_listed_snapshot')
-            AND ((i.exchange_id=?3 AND i.product_id=?4 AND i.storage_symbol=?5)
-                 OR (?6 IN ('crypto_spot','crypto_perpetual','crypto_futures')
-                     AND i.asset_category_id=?6
-                     AND upper(trim(i.underlying_symbol))=upper(trim(?7))))",
+            AND i.exchange_id=?3 AND i.product_id=?4 AND i.storage_symbol=?5",
         params![
             queued_at,
             super::PROTOCOL_ID,
             exchange_id,
             product_id,
             storage_symbol,
-            asset_category_id,
-            underlying_symbol,
         ],
-    )
+    )?;
+    if !matches!(asset_category_id, "crypto_spot" | "crypto_perpetual" | "crypto_futures")
+        || underlying_symbol.trim().is_empty()
+    {
+        return Ok(exact_queued);
+    }
+    let shared_queued = conn.execute(
+        "INSERT OR IGNORE INTO app.entry_model_validation_recheck_queue
+            (instrument_id,timeframe,queued_at,next_attempt_at)
+         SELECT i.instrument_id,r.timeframe,?1,?1
+           FROM app.instruments AS i
+           JOIN app.entry_model_validation_reports AS r ON r.instrument_id=i.instrument_id
+          WHERE r.protocol_id=?2
+            AND json_extract(r.report_json,'$.status')='NO_HISTORY'
+            AND i.is_active=1 AND i.venue_verified=1
+            AND i.listing_status IN ('venue_active','public_listed_snapshot')
+            AND i.asset_category_id=?3
+            AND upper(trim(i.underlying_symbol))=upper(trim(?4))",
+        params![queued_at, super::PROTOCOL_ID, asset_category_id, underlying_symbol],
+    )?;
+    Ok(exact_queued.saturating_add(shared_queued))
 }
 
 pub(super) fn next_pending_history_recheck(
