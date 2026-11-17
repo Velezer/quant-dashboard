@@ -12,7 +12,8 @@ use std::collections::HashSet;
 
 #[path = "market_sync_targets/history_rechecks.rs"]
 mod history_rechecks;
-use history_rechecks::{mature_entry_validation_timeframes, record_received_intervals};
+use history_rechecks::record_received_intervals;
+pub(super) use history_rechecks::mature_entry_validation_timeframes;
 
 #[cfg(test)]
 #[path = "market_sync_peer_reference_tests.rs"]
@@ -378,7 +379,7 @@ pub(super) fn sync_prepared_candle_target(
     let market_connection =
         match open_market_history_for_symbol(market_database, &target.storage_symbol, true) {
             Ok(Some(connection)) => connection,
-            Ok(None) => return Ok((0, false, false)),
+            Ok(None) => return Ok((0, false, false, Vec::new())),
             Err(error) => return Err(error.to_string()),
         };
     let _ = market_connection.pragma_update(
