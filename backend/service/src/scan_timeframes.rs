@@ -239,7 +239,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         }
         let duration_ns = timeframe_duration_ns(timeframe).unwrap_or_default();
         let use_stockbit_timeframe_history = is_stockbit_signal_scope && !stale;
-        if (stale && !stockbit_intraday_is_fresh && !has_stockbit_reference_price)
+        if (stale && !is_stockbit_signal_scope && !stockbit_intraday_is_fresh && !has_stockbit_reference_price)
             || duration_ns <= 0
         {
             let missing = timeframe_state
@@ -282,7 +282,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                     Some((intraday.source.clone(), intraday.data_provider.clone()))
                 }
                 (Some(timeframe_source), _, _)
-                    if use_stockbit_timeframe_history && !has_stockbit_reference_price =>
+                    if !has_stockbit_reference_price || use_stockbit_timeframe_history =>
                 {
                     Some((
                         timeframe_source.source.clone(),
@@ -308,7 +308,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         let candles = if let Some((source, _)) = source_metadata.as_ref() {
             if use_15m_rollup {
                 if let Some(price) = signal_reference_price
-                    .filter(|price| is_stockbit_signal_scope || price.source == *source)
+                    .filter(|price| price.source == *source)
                 {
                     load_15m_rolled_signal_candles(
                         &input,

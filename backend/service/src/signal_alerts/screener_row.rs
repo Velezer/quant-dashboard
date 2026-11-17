@@ -108,6 +108,7 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
     // The screener reports it as a setup, not as a current market entry.
     if !forming_bar_is_valid
         && !is_crypto_nwe_dss_signal_score
+        && !(is_stockbit_signal_score && price_reference_only)
         && !crate::completed_bar_is_fresh_at(
             &storage_symbol,
             &price_timeframe,

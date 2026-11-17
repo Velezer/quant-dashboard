@@ -476,3 +476,8 @@ export function signalScoreBalance(signal, model) {
     return { bullish, bearish, net: bullish - bearish,
         cancellationPct: gross > 0 ? (1 - Math.abs(bullish - bearish) / gross) * 100 : 0 };
 }
+
+export function retainStockbitScoreReference(signal) {
+    return signal?.persistent_score === true && signal?.exchange_id === 'stockbit'
+        && signal?.score_basis?.score_model_status !== 'legacy';
+}

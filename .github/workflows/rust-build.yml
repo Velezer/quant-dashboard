@@ -54,6 +54,10 @@ jobs:
         run: |
           cargo test --locked --release -p quant_core signed_score_tests
           cargo test --locked --release -p quant_core directional_holdout_partitions
+      - name: Verify Stockbit score references
+        run: |
+          cargo test --locked --release -p rust_chart_api stockbit_4h_scores_without_a_15m_price -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api list_signal_screener_withholds_stale_stockbit_score_rows -- --test-threads=1
       - name: Verify Pintu product exclusions
         run: |
           cargo test --locked --release -p rust_chart_api pintu_listing::tests -- --test-threads=1

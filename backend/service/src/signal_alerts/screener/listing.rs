@@ -48,6 +48,7 @@ fn mark_legacy_score(signal: &mut Value, models: &std::collections::HashMap<&str
     let stored_model_id = signal["score_basis"]["model_id"].as_str().unwrap_or_default();
     if models.get(strategy_id).is_some_and(|model_id| *model_id != stored_model_id) {
         signal["score_status"] = json!("stale");
+        signal["market_entry_status"] = json!("NO_MARKET_ENTRY");
         if let Some(basis) = signal["score_basis"].as_object_mut() {
             basis.insert("score_model_status".into(), json!("legacy"));
             basis.insert("status".into(), json!("stale"));
@@ -217,6 +218,7 @@ fn update_signal_market_entry_freshness(
     }
     if is_stockbit_persistent && !is_current_price_fresh && !is_verified_closed_reference {
         signal["score_status"] = json!("stale");
+        signal["market_entry_status"] = json!("NO_MARKET_ENTRY");
         if let Some(score_basis) = signal["score_basis"].as_object_mut() {
             score_basis.insert("status".into(), json!("stale"));
         }
@@ -233,6 +235,9 @@ fn update_signal_market_entry_freshness(
         }
     }
     let score_is_current = signal["score_status"].as_str() != Some("stale");
+    if is_stockbit_persistent && !score_is_current {
+        signal["market_entry_status"] = json!("NO_MARKET_ENTRY");
+    }
     (
         (is_current_price_fresh || is_verified_closed_reference) && score_is_current,
         is_verified_closed_reference
@@ -682,7 +687,9 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
                 signal["signal_strategy_id"].as_str().unwrap_or_default(),
                 signal["timeframe"].as_str().unwrap_or_default(),
             );
-        if !is_current && !retain_stale_crypto_setup {
+        let retain_stockbit_setup = signal["persistent_score"] == true
+            && signal["score_basis"]["score_model_status"].as_str() != Some("legacy");
+        if !is_current && !retain_stale_crypto_setup && !retain_stockbit_setup {
             continue;
         }
         if minimum_total_score.is_some_and(|minimum| {

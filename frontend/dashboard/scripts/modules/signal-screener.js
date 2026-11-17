@@ -1,3 +1,4 @@
+import { retainStockbitScoreReference } from './signal-screener-model.js';
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
 import { readApiResponse } from './api.js';
 import { createSignalScoreBasisMarkup } from './signal-score-basis.js';
@@ -386,8 +387,9 @@ export function installSignalScreener() {
             const state = signalScoreState(signal);
             const retainStaleCryptoSetup = String(signal.asset_category_id || '').startsWith('crypto_')
                 && cryptoStrategyIds.has(String(signal.signal_strategy_id || ''));
-            if ((state?.tone === 'stale' && !retainStaleCryptoSetup)
-                || signal.score_status === 'stale') return false;
+            if (!retainStockbitScoreReference(signal)
+                && ((state?.tone === 'stale' && !retainStaleCryptoSetup)
+                    || signal.score_status === 'stale')) return false;
             if (!signalMeetsRenderMinimum(signal, scoreModelFor(signal))) return false;
             if (signal.exchange_id !== exchange) return false;
             if (product !== 'all' && signal.product_id !== product) return false;
