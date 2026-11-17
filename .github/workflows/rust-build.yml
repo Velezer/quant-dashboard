@@ -54,6 +54,10 @@ jobs:
         run: |
           cargo test --locked --release -p quant_core signed_score_tests
           cargo test --locked --release -p quant_core directional_holdout_partitions
+      - name: Verify Pintu product exclusions
+        run: |
+          cargo test --locked --release -p rust_chart_api pintu_listing::tests -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api pintu_announced_delistings_apply_even_during_feed_failure -- --test-threads=1
       - name: Run SQLite journal regressions
         run: |
           set -o pipefail
