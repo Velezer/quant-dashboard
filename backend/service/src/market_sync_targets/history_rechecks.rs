@@ -19,7 +19,7 @@ pub(super) fn record_received_intervals(
 /// because this candle batch stored rows. Read only indexed source bounds;
 /// materializing chart candles here would cap derived history at the 1,000-bar
 /// display limit and miss the 1,000-day evidence threshold.
-pub(super) fn mature_entry_validation_timeframes(
+pub(in crate::market_sync) fn mature_entry_validation_timeframes(
     connection: &Connection,
     exchange_id: &str,
     product_id: &str,
