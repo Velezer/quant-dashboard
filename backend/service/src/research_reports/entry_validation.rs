@@ -28,6 +28,27 @@ pub(crate) fn entry_validation_timeframe(timeframe: &str) -> Result<&str, String
         .ok_or_else(|| "Choose a registered entry-model timeframe.".to_string())
 }
 
+fn risk_reward_rule(backtest: &Value) -> Option<&Value> {
+    backtest.pointer("/weight_learning/risk_reward_rule")
+}
+
+fn four_hour_risk_reward_blocks_validation(
+    timeframe: &str,
+    protocol_id: Option<&str>,
+    qualified: bool,
+) -> bool {
+    timeframe == "4h"
+        && (protocol_id != Some(quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID) || !qualified)
+}
+
+fn preferred_risk_reward_rule(backtest: &Value, timeframe: &str) -> Option<&Value> {
+    risk_reward_rule(backtest).filter(|rule| {
+        rule.get("protocol_id").and_then(Value::as_str)
+            == Some(quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID)
+            && rule.get("preferred_timeframe").and_then(Value::as_str) == Some(timeframe)
+    })
+}
+
 pub(crate) fn entry_validation_list(
     connection: &Connection,
     exchange: &str,
@@ -449,14 +470,9 @@ fn build_report(
                 ("fees_known","The exact app/product fee policy is unknown."),
                 ("execution_costs_complete","Slippage, depth, impact and applicable funding/borrow costs are not fully modeled."),
             ];
-            if backtest
-                .pointer("/risk_reward_rule/preferred_timeframe")
-                .and_then(Value::as_str)
-                == Some(timeframe)
-            {
+            if let Some(rule) = preferred_risk_reward_rule(&backtest, timeframe) {
                 checks["asymmetric_risk_reward_rule"] = json!(
-                    backtest
-                        .pointer("/risk_reward_rule/candidate/qualified")
+                    rule.pointer("/candidate/qualified")
                         .and_then(Value::as_bool)
                         == Some(true)
                 );

@@ -1,6 +1,23 @@
 use super::*;
 use crate::main_test_support::*;
 
+#[test]
+fn preferred_risk_reward_rule_uses_the_current_weight_learning_path() {
+    let current = json!({"weight_learning":{"risk_reward_rule":{
+        "protocol_id":quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID,
+        "preferred_timeframe":"4h","candidate":{"qualified":false}
+    }}});
+    let rule = preferred_risk_reward_rule(&current,"4h").unwrap();
+    assert_eq!(rule.pointer("/candidate/qualified").and_then(Value::as_bool),Some(false));
+    assert!(preferred_risk_reward_rule(&current,"1h").is_none());
+
+    let old_path = json!({"risk_reward_rule":{
+        "protocol_id":quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID,
+        "preferred_timeframe":"4h","candidate":{"qualified":true}
+    }});
+    assert!(preferred_risk_reward_rule(&old_path,"4h").is_none());
+}
+
 fn register_fixture(conn: &Connection, id: &str, product: &str, verified: bool, category: &str) {
     conn.execute(
         "INSERT INTO app.instruments(instrument_id,exchange_id,product_id,asset_category_id,

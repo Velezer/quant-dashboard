@@ -217,6 +217,12 @@ lesson only when it will improve future tasks.
   as unavailable; overlay these fields from saved report JSON so older compact
   summaries cannot keep showing a gross holdout rate under an after-fee target
   label.
+- The asymmetric after-fee rule is stored at
+  `backtest.weight_learning.risk_reward_rule`. Keep report qualification,
+  compact list summaries, and UI rendering on that canonical path. Existing
+  compact summaries can outlive a serializer fix, so project only the needed
+  rule fields from saved JSON on list reads and gate 4h validated counts on the
+  current qualified rule.
 - A composite score is setup strength, not an individual win probability.
   Retain the model's base score floor for signals. Calibrated after-fee
   thresholds are historical metrics used to evaluate profile promotion, not
