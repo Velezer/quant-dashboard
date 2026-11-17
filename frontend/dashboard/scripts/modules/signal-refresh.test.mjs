@@ -18,9 +18,9 @@ test('completed scan events deliver new all-app alerts and refresh readiness; ma
     globalThis.window = { dispatchEvent: event => events.push(event) };
     globalThis.EventSource = MockEventSource;
     globalThis.CustomEvent = class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } };
-    globalThis.fetch = async url => ({ ok: true, text: async () => JSON.stringify(url.startsWith('/api/signals/count')
-        ? { signal_count: 0, stale: false }
-        : { signals: [], summary: { stale_price_signal_count: 3 }, available_timeframes: ['15m'] }) });
+    globalThis.fetch = async () => ({ ok: true, text: async () => JSON.stringify({
+        signals: [], summary: { stale_price_signal_count: 3 }, available_timeframes: ['15m'],
+    }) });
     publishDashboardBindings('refresh-test', {
         getSignalScreenerQuery: { get: () => () => ({ exchange: 'pintu' }) },
         refreshAppSignalReadiness: { get: () => (app, summary, scope) => { readiness = { app, summary, scope }; } },

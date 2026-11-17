@@ -28,8 +28,7 @@ test('automatic refresh waits for a slow request and backs off after a failure',
                 requests.push({ resolve, reject });
             });
         }
-        const data = url.startsWith('/api/signals/count') ? { signal_count: 0 } : {};
-        return Promise.resolve({ ok: true, text: async () => JSON.stringify(data) });
+        return Promise.resolve({ ok: true, text: async () => JSON.stringify({}) });
     };
     publishDashboardBindings('countdown-test', {
         applySignalSnapshot: { get: () => payload => snapshots.push(payload) },

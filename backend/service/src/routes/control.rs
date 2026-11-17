@@ -15,8 +15,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         path,
         route,
     } = request;
-    let signal_count_request = route == "/api/signals/count" && method == "GET";
-    if (route == "/api/signals" && method == "GET") || signal_count_request {
+    if route == "/api/signals" && method == "GET" {
         let values = query_values(path);
         let optional_filter = |key: &str| {
             values
@@ -57,7 +56,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             .get("limit")
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(100);
-        let mut connection = match open_db_minimal(db) {
+        let connection = match open_db_minimal(db) {
             Ok(connection) => connection,
             Err(error) => {
                 api_error(stream, "500 Internal Server Error", error);
@@ -66,20 +65,6 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         };
         let scan_interval_seconds =
             i64::try_from(state.scan_interval_sec.load(Ordering::Relaxed)).unwrap_or(i64::MAX);
-        if signal_count_request {
-            match crate::signal_alerts::count_current_signal_screener_rows(
-                &mut connection,
-                scan_interval_seconds,
-            ) {
-                Ok(response) => respond(
-                    stream,
-                    crate::wire::encode(&response).unwrap_or_default(),
-                    "200 OK",
-                ),
-                Err(error) => api_error(stream, "500 Internal Server Error", error),
-            }
-            return Ok(());
-        }
         match crate::signal_alerts::list_signal_screener_page_with_minimum_total_score(
             &connection,
             scan_interval_seconds,

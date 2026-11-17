@@ -2,7 +2,6 @@ import { getDashboardBinding, publishDashboardBindings } from './runtime-context
 import { readApiResponse } from './api.js';
 import { isPersistentNoEntryScore } from './signal-screener-model.js';
 
-const SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS = 30_000;
 const SIGNAL_REQUEST_TIMEOUT_MS = 60_000;
 
 /** Coordinates the 15-minute scan view, refresh action, and reconnect recovery. */
@@ -14,9 +13,6 @@ export function installSignalRefresh() {
     let nextScanEpoch = 0;
     let countdownPoll = null;
     let eventSource = null;
-    let signalCountRequestInFlight = false;
-    let signalCountRefreshPending = false;
-    let lastSignalCountRequestAt = 0;
     let pendingScanScope = '';
     let pendingScanAt = 0;
     let scanBannerDismissed = false;
@@ -25,37 +21,6 @@ export function installSignalRefresh() {
         requestSerial += 1;
         activeSignalRequestController?.abort();
         activeSignalRequestController = null;
-    }
-
-    async function fetchCurrentSignalCount(force = false) {
-        if (!force && Date.now() - lastSignalCountRequestAt < SIGNAL_COUNT_REFRESH_MIN_INTERVAL_MS) return;
-        if (signalCountRequestInFlight) {
-            if (force) signalCountRefreshPending = true;
-            return;
-        }
-        signalCountRequestInFlight = true;
-        lastSignalCountRequestAt = Date.now();
-        try {
-            const response = await fetch('/api/signals/count', { cache: 'no-store' });
-            const payload = await readApiResponse(response);
-            const count = payload?.signal_count;
-            if (!response.ok || !Number.isSafeInteger(count) || count < 0) {
-                throw new Error(payload?.error || `HTTP ${response.status}`);
-            }
-            window.dispatchEvent(new CustomEvent('dashboard:current-signal-count', {
-                detail: { count, stale: payload.stale === true, generated_at: payload.generated_at },
-            }));
-        } catch (error) {
-            window.dispatchEvent(new CustomEvent('dashboard:current-signal-count', {
-                detail: { count: null, stale: true, error: String(error?.message || 'count unavailable').slice(0, 160) },
-            }));
-        } finally {
-            signalCountRequestInFlight = false;
-            if (signalCountRefreshPending) {
-                signalCountRefreshPending = false;
-                void fetchCurrentSignalCount(true);
-            }
-        }
     }
 
     async function fetchFreshSignals({ quiet = false, append = false, offset = 0 } = {}) {
@@ -112,7 +77,6 @@ export function installSignalRefresh() {
                 : payload.signals.filter(signal => !isPersistentNoEntryScore(signal)).length;
             void getDashboardBinding('refreshAppSignalReadiness')?.(String(query.exchange || 'stockbit'), payload.summary,
                 { ...query, visibleCount: visibleEntryCount });
-            if (!append) void fetchCurrentSignalCount();
             lastRequestAt = Date.now();
         } catch (error) {
             if (currentRequest === requestSerial) {
@@ -334,7 +298,6 @@ export function installSignalRefresh() {
         eventSource = new EventSource('/api/events');
         eventSource.addEventListener('open', () => {
             updateSseBadge(true);
-            void fetchCurrentSignalCount(true);
         });
         eventSource.addEventListener('connected', event => {
             updateSseBadge(true);
@@ -379,7 +342,6 @@ export function installSignalRefresh() {
             pendingScanScope = '';
             hideScanBanner();
             window.dispatchEvent(new CustomEvent('dashboard:signal-inbox-refresh'));
-            void fetchCurrentSignalCount(true);
             try {
                 const data = JSON.parse(event.data);
                 window.dispatchEvent(new CustomEvent('dashboard:scan-completed', { detail: data }));
@@ -403,7 +365,6 @@ export function installSignalRefresh() {
             } catch (_) {
                 window.dispatchEvent(new CustomEvent('dashboard:scan-failed', { detail: {} }));
             }
-            void fetchCurrentSignalCount(true);
             lastRequestAt = 0;
             void fetchFreshSignals({ quiet: true });
         });
@@ -430,5 +391,4 @@ export function installSignalRefresh() {
         showToast: { get: () => showToast },
     });
     document.getElementById('hideScanProgressBtn')?.addEventListener('click', dismissScanBanner);
-    void fetchCurrentSignalCount();
 }
