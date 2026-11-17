@@ -4,6 +4,18 @@ use super::{
 };
 use crate::*;
 
+pub(super) fn is_supported_signal_indicator(value: &str) -> bool {
+    matches!(
+        value,
+        "nwe"
+            | "dss_bressert"
+            | "relative_volume"
+            | "delta_proxy"
+            | "markov_regime"
+            | "lag_one_return_autocorrelation"
+    )
+}
+
 pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestContext<'a>> {
     let RequestContext {
         stream,
@@ -31,12 +43,8 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
             .map(|value| value.chars().take(80).collect::<String>());
-        let indicator_filter = optional_filter("indicator").filter(|value| {
-            matches!(
-                *value,
-                "nwe" | "dss_bressert" | "relative_volume" | "delta_proxy"
-            )
-        });
+        let indicator_filter =
+            optional_filter("indicator").filter(|value| is_supported_signal_indicator(value));
         let indicator_min_score = values
             .get("indicator_min_score")
             .and_then(|value| value.parse::<f64>().ok())

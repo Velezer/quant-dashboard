@@ -365,3 +365,8 @@ lesson only when it will improve future tasks.
   holdout win rates with one set-based report query, not one JSON query per
   signal row. Keep price freshness and `NO_MARKET_ENTRY` semantics intact while
   optimizing this path.
+- Keep server-recognized screener factor IDs in sync with every visible filter,
+  and match persisted components by stable ID or normalized display label
+  before pagination. Missing freshness, price coverage, or pagination evidence
+  stays unavailable; validate a response before replacing the last good
+  snapshot, and preserve explicit no-entry states through client-side expiry.

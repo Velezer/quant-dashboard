@@ -94,7 +94,10 @@ test('screener reports partial price coverage across the full scan universe', ()
         'No fresh 15m price data was available for any of 573 registered instruments in the full scan universe.',
     );
     assert.equal(signalPriceCoverageMessage('ready', 0), '');
-    assert.equal(signalPriceCoverageMessage('partial_stale', NaN), '');
+    assert.equal(
+        signalPriceCoverageMessage('partial_stale', NaN),
+        'Fresh 15m price coverage is incomplete; the number of affected instruments was not reported.',
+    );
 });
 
 test('screener initially renders a bounded top-ranked page without mutating the full snapshot', () => {
