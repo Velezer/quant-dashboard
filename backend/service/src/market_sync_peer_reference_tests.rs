@@ -116,7 +116,6 @@ fn shared_fresh_interval_is_not_refetched_and_other_interval_remains_needed() {
     };
     let shared_symbols = shared_reference_storage_symbols(
         &connection,
-        tokocrypto.exchange_id,
         tokocrypto.storage_symbol,
         tokocrypto.underlying_symbol,
         tokocrypto.asset_category_id,
@@ -128,6 +127,7 @@ fn shared_fresh_interval_is_not_refetched_and_other_interval_remains_needed() {
         tokocrypto,
         &shared_symbols,
         &["15m", "1h", "1d"],
+        false,
     );
     assert_eq!(reused, HashSet::from(["15m", "1d"]));
 
@@ -150,14 +150,114 @@ fn shared_fresh_interval_is_not_refetched_and_other_interval_remains_needed() {
     };
     let futures_symbols = shared_reference_storage_symbols(
         &connection,
-        futures.exchange_id,
         futures.storage_symbol,
         futures.underlying_symbol,
         futures.asset_category_id,
     )
     .unwrap();
-    let reused_futures = fresh_shared_reference_intervals(&path, futures, &futures_symbols, &["15m"]);
+    let reused_futures =
+        fresh_shared_reference_intervals(&path, futures, &futures_symbols, &["15m"], false);
     assert!(reused_futures.is_empty(), "spot candles must not cross categories");
+
+    drop(connection);
+    remove_temporary_database(&path);
+}
+
+#[test]
+fn only_the_selected_shared_history_owner_advances_incomplete_fresh_history() {
+    let path = temporary_database_path("sync-peer-incomplete-history");
+    let connection = crate::open_db_minimal(&path).unwrap();
+    add_registration(
+        &connection,
+        "tokocrypto",
+        "tokocrypto_spot",
+        "crypto_spot",
+        "TOKOCRYPTO:SPOT:0G_USDT",
+    );
+    add_registration(
+        &connection,
+        "pintu",
+        "pintu_retail_spot",
+        "crypto_spot",
+        "0G-USD",
+    );
+    add_fresh_shared_spot_candles(&connection, "0G-USD");
+    connection
+        .execute(
+            "INSERT INTO ingestion_runs(symbol,interval,source,exchange_id,product_id,
+                data_provider,attempted_at,status,rows_received)
+             VALUES('0G-USD','15m_history_backfill',?1,'research_reference','',
+                'binance',datetime('now'),'running',1500)",
+            [SHARED_SPOT_SOURCE],
+        )
+        .unwrap();
+
+    let owner = shared_history_backfill_owner(&connection, "0G", "crypto_spot")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        owner,
+        (
+            "pintu".into(),
+            "pintu_retail_spot".into(),
+            "0G-USD".into()
+        )
+    );
+    let owner_instrument = RegisteredCandleInstrument {
+        exchange_id: "pintu",
+        storage_symbol: "0G-USD",
+        product_id: "pintu_retail_spot",
+        underlying_symbol: "0G",
+        asset_category_id: "crypto_spot",
+        tokocrypto_market: None,
+    };
+    let owner_symbols = shared_reference_storage_symbols(
+        &connection,
+        owner_instrument.storage_symbol,
+        owner_instrument.underlying_symbol,
+        owner_instrument.asset_category_id,
+    )
+    .unwrap();
+    assert_eq!(owner_symbols, vec!["TOKOCRYPTO:SPOT:0G_USDT"]);
+    let owner_reusable = fresh_shared_reference_intervals(
+        &path,
+        owner_instrument,
+        &owner_symbols,
+        &["15m"],
+        true,
+    );
+    assert!(
+        !owner_reusable.contains("15m"),
+        "fresh recent data must not suppress the owner's next history page"
+    );
+
+    let alias_instrument = RegisteredCandleInstrument {
+        exchange_id: "tokocrypto",
+        storage_symbol: "TOKOCRYPTO:SPOT:0G_USDT",
+        product_id: "tokocrypto_spot",
+        underlying_symbol: "0G",
+        asset_category_id: "crypto_spot",
+        tokocrypto_market: None,
+    };
+    let alias_symbols = shared_reference_storage_symbols(
+        &connection,
+        alias_instrument.storage_symbol,
+        alias_instrument.underlying_symbol,
+        alias_instrument.asset_category_id,
+    )
+    .unwrap();
+    let alias_reusable = fresh_shared_reference_intervals(
+        &path,
+        alias_instrument,
+        &alias_symbols,
+        &["15m"],
+        false,
+    );
+    assert_eq!(
+        alias_reusable,
+        HashSet::from(["15m"]),
+        "non-owner apps should continue reusing the fresh shared series"
+    );
 
     drop(connection);
     remove_temporary_database(&path);

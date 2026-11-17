@@ -181,6 +181,9 @@ lesson only when it will improve future tasks.
   saved timestamp and run the small latest-candle refresh independently. A
   recent-success shortcut must still allow historical pages while coverage is
   below target; recent candles alone never mean historical coverage is complete.
+  When several app products share a crypto source, assign one registered owner
+  to advance each interval's history and let aliases reuse its fresh bars; a
+  fresh peer price must not suppress the owner's next page.
 - Before raising the per-report candle cap, remove repeated prefix replay and
   per-bar heap-heavy signal objects. Reuse causal indicator arrays and visit
   directional candidates so the longer sample stays within the process memory
