@@ -138,9 +138,15 @@ export function installChartData() {
                 }
                 const requestedTimeframe = String(timeframe || activeTimeframe || '1d').trim().toLowerCase();
                 const map = signal.candles_by_tf || {};
-                const sourceCandles = Array.isArray(map[requestedTimeframe])
-                    ? map[requestedTimeframe]
-                    : (requestedTimeframe === String(signal.timeframe || '1d').toLowerCase() ? (signal.candles || []) : []);
+                const mappedCandles = map[requestedTimeframe];
+                const signalTimeframeCandles = requestedTimeframe === String(signal.timeframe || '1d').toLowerCase()
+                    ? signal.candles || []
+                    : [];
+                const sourceCandles = Array.isArray(mappedCandles) && mappedCandles.length
+                    ? mappedCandles
+                    : (Array.isArray(signalTimeframeCandles) && signalTimeframeCandles.length
+                        ? signalTimeframeCandles
+                        : (Array.isArray(mappedCandles) ? mappedCandles : signalTimeframeCandles));
                 if (!Array.isArray(sourceCandles)) {
                     return { candles: [], sourceCandles: [], startIndex: 0, omittedBars: 0, gapMilliseconds: 0, gapFrom: null, gapTo: null, hasGap: false };
                 }
@@ -406,7 +412,10 @@ export function installChartData() {
                 }
                 const existing = signal.candles_by_tf || {};
                 if (!force && getChartCandles(signal).length > 0) return true;
-                if (!force && Object.prototype.hasOwnProperty.call(existing, activeTimeframe)) return true;
+                const existingTimeframeCandles = existing[activeTimeframe];
+                if (!force && Array.isArray(existingTimeframeCandles) && existingTimeframeCandles.length > 0) return true;
+                if (!force && signal.chart_data_loaded === true
+                    && Object.prototype.hasOwnProperty.call(existing, activeTimeframe)) return true;
                 if (!signal.chart_data_lazy) return false;
                 if (signal._chartBundlePromise) {
                     const pendingTimeframe = signal._chartBundleTimeframe;
@@ -505,11 +514,6 @@ export function installChartData() {
                             selectedChartSignal.chart_indicator_config = signal.chart_indicator_config;
                             selectedChartSignal.candles = loaded[requestTimeframe] || signal.candles;
                             selectedChartSignal.chart_data_loaded = true;
-                            if (activeTimeframe === requestTimeframe) {
-                                void hydrateRustIndicators(selectedChartSignal);
-                                drawCandleChart(selectedChartSignal);
-                                window.dispatchEvent(new Event('quant:pine-chart-data-changed'));
-                            }
                         }
                         return true;
                     } catch (error) {

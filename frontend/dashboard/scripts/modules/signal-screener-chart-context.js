@@ -20,6 +20,101 @@ export function createSignalScreenerChartContext({
     formatPrice,
     renderSignalsList,
 }) {
+    let chartTimeframeLoadGeneration = 0;
+
+    function candlesForTimeframe(signal, timeframe) {
+        const frame = String(timeframe || '').toLowerCase();
+        const mappedCandles = signal?.candles_by_tf?.[frame];
+        if (Array.isArray(mappedCandles) && mappedCandles.length) return mappedCandles;
+        if (String(signal?.timeframe || '').toLowerCase() === frame && Array.isArray(signal?.candles)) {
+            return signal.candles;
+        }
+        return Array.isArray(mappedCandles) ? mappedCandles : [];
+    }
+
+    function setChartTimeframeLoadStatus(state = '', timeframe = '') {
+        const status = document.getElementById('chart-timeframe-load-status');
+        const label = document.getElementById('chart-timeframe-load-text');
+        if (!status || !label) return;
+        if (!state) {
+            status.hidden = true;
+            delete status.dataset.state;
+            label.textContent = '';
+            return;
+        }
+        const frame = String(timeframe || '--').toUpperCase();
+        status.dataset.state = state;
+        status.hidden = false;
+        label.textContent = state === 'history' ? `Loading ${frame} candles…` : `Updating ${frame} indicators…`;
+    }
+
+    async function loadSignalChartTimeframe(signal, timeframe) {
+        const generation = ++chartTimeframeLoadGeneration;
+        if (!signal) {
+            setChartTimeframeLoadStatus();
+            return;
+        }
+
+        const frame = String(timeframe || '').toLowerCase();
+        const cachedCandles = candlesForTimeframe(signal, frame);
+        const hasCachedCandles = cachedCandles.length > 0;
+        signal.candles = cachedCandles;
+        setChartTimeframeLoadStatus(hasCachedCandles ? 'studies' : 'history', frame);
+
+        const drawChart = getDashboardBinding('drawCandleChart');
+        if (hasCachedCandles) {
+            drawChart?.(signal);
+        } else {
+            getDashboardBinding('setChartStatus')?.(
+                'loading',
+                `Loading ${marketSymbolForSignal(signal)} · ${frame.toUpperCase()} chart history.`,
+                { signal },
+            );
+        }
+
+        const isCurrentLoad = () => generation === chartTimeframeLoadGeneration
+            && getDashboardBinding('activeTimeframe') === frame
+            && (getDashboardBinding('isSelectedSignal')?.(signal)
+                ?? globalThis.selectedSignal?.signal_id === signal.signal_id);
+
+        try {
+            const ensureChartData = getDashboardBinding('ensureChartData');
+            const loaded = ensureChartData ? await ensureChartData(signal) : hasCachedCandles;
+            if (!isCurrentLoad()) return;
+
+            const currentSignal = globalThis.selectedSignal || signal;
+            if (!loaded) {
+                if (document.getElementById('chart-status-overlay')?.dataset.state !== 'error') {
+                    drawChart?.(currentSignal);
+                }
+                return;
+            }
+
+            currentSignal.candles = candlesForTimeframe(currentSignal, frame);
+            drawChart?.(currentSignal);
+            window.dispatchEvent(new Event('quant:pine-chart-data-changed'));
+            if (currentSignal.candles.length) {
+                setChartTimeframeLoadStatus('studies', frame);
+                await getDashboardBinding('hydrateRustIndicators')?.(currentSignal);
+            }
+        } catch (error) {
+            if (isCurrentLoad()) {
+                const detail = String(error?.message || error).slice(0, 120);
+                if (signal.candles?.length) {
+                    getDashboardBinding('setIndicatorComputeStatus')?.('error', detail);
+                } else {
+                    getDashboardBinding('setChartStatus')?.(
+                        'error',
+                        `Unable to load ${marketSymbolForSignal(signal)} · ${frame.toUpperCase()}. ${detail}`,
+                        { signal },
+                    );
+                }
+            }
+        } finally {
+            if (generation === chartTimeframeLoadGeneration) setChartTimeframeLoadStatus();
+        }
+    }
+
     function executionVenueMeta(signal) {
         const key = String(signal?.exchange_id || signal?.exchange || signal?.venue || '').toLowerCase();
         return {
@@ -275,13 +370,7 @@ export function createSignalScreenerChartContext({
         updateAppContextChip(signal);
         renderSelectedSignalSummary(signal);
         void getDashboardBinding('fetchChartStorageStats')?.(signal);
-        const ensureChartData = getDashboardBinding('ensureChartData');
-        if (ensureChartData) void Promise.resolve(ensureChartData(signal)).then(() => {
-            if (globalThis.selectedSignal?.signal_id !== signal.signal_id) return;
-            getDashboardBinding('hydrateRustIndicators')?.(signal);
-            getDashboardBinding('drawCandleChart')?.(globalThis.selectedSignal);
-            window.dispatchEvent(new Event('quant:pine-chart-data-changed'));
-        });
+        void loadSignalChartTimeframe(signal, nextTimeframe);
     }
 
     function selectSignal(signalOrId) {
@@ -306,6 +395,8 @@ export function createSignalScreenerChartContext({
     }
 
     function clearSelectedSignalChart(message = 'No matching signal is selected.') {
+        chartTimeframeLoadGeneration += 1;
+        setChartTimeframeLoadStatus();
         const previousSignal = globalThis.selectedSignal;
         if (previousSignal) {
             window.dispatchEvent(new CustomEvent('quant:signal-selection-changing', {
@@ -348,20 +439,10 @@ export function createSignalScreenerChartContext({
         getDashboardBinding('updateChartTimeframeButtons')?.();
         const signal = globalThis.selectedSignal;
         if (!signal) return;
-        signal.candles = signal.candles_by_tf?.[next] || [];
+        signal.candles = candlesForTimeframe(signal, next);
         updateChartTimeframeContext(signal);
         getDashboardBinding('resetOHLCBarForSignal')?.(signal);
-        const ensureChartData = getDashboardBinding('ensureChartData');
-        if (ensureChartData) void Promise.resolve(ensureChartData(signal)).then(async loaded => {
-            if (!loaded
-                || globalThis.selectedSignal?.signal_id !== signal.signal_id
-                || getDashboardBinding('activeTimeframe') !== next) return;
-            await getDashboardBinding('hydrateRustIndicators')?.(signal);
-            if (globalThis.selectedSignal?.signal_id !== signal.signal_id
-                || getDashboardBinding('activeTimeframe') !== next) return;
-            getDashboardBinding('drawCandleChart')?.(globalThis.selectedSignal);
-            window.dispatchEvent(new Event('quant:pine-chart-data-changed'));
-        });
+        void loadSignalChartTimeframe(signal, next);
     }
 
     function initChartTimeframeControls() {
