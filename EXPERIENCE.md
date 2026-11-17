@@ -331,3 +331,9 @@ lesson only when it will improve future tasks.
   Check the final computed CSS: older ID-qualified grid rules can squeeze a
   new disclosure into one cell despite a later class rule. Verify selected
   mobile state explicitly (`signal-chart-selected`) at 320px and 390px.
+- On chart timeframe switches, draw any cached candles before awaiting indicator
+  hydration and show separate inline progress for candle history and studies.
+  Keep one owner for hydration: if the chart bundle loader and click handler
+  both hydrate, the second request can abort and restart the first. An empty
+  timeframe array is not proof that a lazy chart bundle was fetched; request the
+  bundle until it is marked loaded, then keep the chart's normal empty state.

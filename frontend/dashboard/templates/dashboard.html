@@ -181,7 +181,11 @@
                         <!-- Chart candles can be matched to any enabled screener timeframe. -->
                         <div class="tv-timeframe-group flex items-center gap-1 bg-gray-800/90 p-1 rounded-xl border border-gray-700 shadow-inner" role="group" aria-label="Chart timeframe">
                             <span class="text-[10px] text-gray-400 font-bold px-1.5 uppercase tracking-wider">CHART</span>
-                            <div id="chartTimeframeButtons" class="flex items-center gap-1" aria-live="polite"></div>
+                            <div id="chartTimeframeButtons" class="flex items-center gap-1"></div>
+                            <span id="chart-timeframe-load-status" class="chart-timeframe-load-status" role="status" aria-live="polite" hidden>
+                                <span class="chart-timeframe-spinner" aria-hidden="true"></span>
+                                <span id="chart-timeframe-load-text"></span>
+                            </span>
                         </div>
                         <button id="openPineIndicators" type="button" class="tv-tool-group rounded-lg border border-cyan-800 bg-cyan-950/60 px-2.5 py-1.5 text-[10px] font-bold text-cyan-200 hover:bg-cyan-900 focus:outline focus:outline-2 focus:outline-cyan-400" aria-haspopup="dialog" aria-controls="pineIndicatorDialog">Pine indicators</button>
                         <button id="toggleMarkovRegimeBtn" type="button" data-dashboard-action="toggleMarkovRegimeIndicator" aria-label="Toggle the Markov regime indicator ribbon" aria-pressed="true" title="Causal historical regime states for the selected chart timeframe. These states are descriptive, not forecasts." class="tv-tool-group rounded-lg border border-fuchsia-500 bg-fuchsia-700 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-fuchsia-600 focus:outline focus:outline-2 focus:outline-fuchsia-400">REGIME ON</button>
