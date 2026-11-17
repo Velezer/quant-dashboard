@@ -131,7 +131,7 @@ fn snapshots_upsert_only_the_exact_instrument_and_timeframe_and_preserve_aggrega
     let summary = page["rows"].as_array().unwrap().iter().find(|row|row["instrument_id"]=="pintu.spot.btc").unwrap()["evidence"].clone();
     assert_eq!(summary["history_bars"],1500);
     assert_eq!(summary["models"][0]["holdout_trades"],20);
-    assert_eq!(summary["models"][0]["holdout_win_rate_pct"],60);
+    assert_eq!(summary["models"][0]["holdout_win_rate_pct"].as_f64(),Some(60.0));
     assert_eq!(summary["models"][0]["holdout_payoff_ratio"],1.1);
     assert_eq!(summary["models"][0]["holdout_mean_return_pct"],0.75);
     assert_eq!(summary["models"][0]["selected_exit_bars"],8);
