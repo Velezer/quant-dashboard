@@ -25,8 +25,9 @@ export function createSignalScreenerSummary({
         const generatedAt = summary.generated_at || summaryStatus.last_success_at;
         const stale = !!summary.stale || summaryStatus.last_attempt_status === 'error';
         const stalePriceSignalCount = Number(summary.stale_price_signal_count || 0);
-        const priceDataStatus = String(summaryStatus.price_data_status || 'ready');
-        const priceDataUnavailableCount = Number(summaryStatus.price_data_unavailable_count || 0);
+        const priceDataStatus = typeof summaryStatus.price_data_status === 'string'
+            ? summaryStatus.price_data_status : 'unknown';
+        const priceDataUnavailableCount = summaryStatus.price_data_unavailable_count;
         const priceCoverageMessage = signalPriceCoverageMessage(priceDataStatus, priceDataUnavailableCount);
         const attemptError = String(summaryStatus.last_error || getRequestError() || '').trim();
         const stockbitSignalSelected = stockbitSignalModelsForView().length > 0;

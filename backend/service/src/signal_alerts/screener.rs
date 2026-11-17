@@ -568,6 +568,10 @@ mod screener_tests;
 #[path = "../signal_alerts_screener_freshness_tests.rs"]
 mod freshness_tests;
 
+#[cfg(test)]
+#[path = "../signal_alerts_screener_filter_tests.rs"]
+mod filter_tests;
+
 #[path = "screener/snapshot.rs"]
 mod snapshot;
 pub(crate) use snapshot::{

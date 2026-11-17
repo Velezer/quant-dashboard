@@ -4,6 +4,48 @@ import { isPersistentNoEntryScore } from './signal-screener-model.js';
 
 const SIGNAL_REQUEST_TIMEOUT_MS = 60_000;
 
+const isNonNegativeSafeInteger = value => Number.isSafeInteger(value) && value >= 0;
+
+function signalHasRequiredIdentity(signal) {
+    return signal && typeof signal === 'object'
+        && ['exchange_id', 'product_id', 'asset_category_id', 'symbol',
+            'signal_strategy_id', 'timeframe', 'direction']
+            .every(key => typeof signal[key] === 'string' && signal[key].trim() !== '');
+}
+
+export function validateSignalScreenerPayload(payload) {
+    if (!payload || typeof payload !== 'object' || !Array.isArray(payload.signals)) {
+        throw new Error('The signal service returned an incomplete screener snapshot.');
+    }
+    const summary = payload?.summary;
+    const status = summary?.status;
+    const timeframes = payload?.available_timeframes;
+    const pageFieldsAreValid = summary && typeof summary === 'object'
+        && isNonNegativeSafeInteger(summary.matching_rows)
+        && isNonNegativeSafeInteger(summary.offset)
+        && isNonNegativeSafeInteger(summary.next_offset)
+        && isNonNegativeSafeInteger(summary.limit)
+        && typeof summary.has_more === 'boolean'
+        && typeof summary.stale === 'boolean'
+        && isNonNegativeSafeInteger(summary.stale_price_signal_count)
+        && isNonNegativeSafeInteger(summary.stale_score_signal_count)
+        && summary.next_offset >= summary.offset
+        && summary.next_offset - summary.offset === payload.signals.length
+        && summary.next_offset <= summary.matching_rows
+        && summary.has_more === (summary.next_offset < summary.matching_rows);
+    const statusFieldsAreValid = status && typeof status === 'object'
+        && typeof status.last_attempt_status === 'string'
+        && typeof status.price_data_status === 'string'
+        && isNonNegativeSafeInteger(status.price_data_unavailable_count);
+    if (payload.signals.some(signal => !signalHasRequiredIdentity(signal))
+        || !pageFieldsAreValid || !statusFieldsAreValid
+        || !Array.isArray(timeframes) || timeframes.length === 0
+        || timeframes.some(frame => typeof frame !== 'string' || !frame.trim())) {
+        throw new Error('The signal service returned an incomplete screener snapshot.');
+    }
+    return payload;
+}
+
 /** Coordinates the 15-minute scan view, refresh action, and reconnect recovery. */
 export function installSignalRefresh() {
     let lastRequestAt = 0;
@@ -48,12 +90,7 @@ export function installSignalRefresh() {
             const response = await fetch(`/api/signals?${params}`, { cache: 'no-store', signal: controller.signal });
             const payload = await readApiResponse(response);
             if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
-            if (!payload || !Array.isArray(payload.signals)
-                || !payload.summary || typeof payload.summary !== 'object' || Array.isArray(payload.summary)
-                || !Array.isArray(payload.available_timeframes) || payload.available_timeframes.length === 0
-                || payload.available_timeframes.some(frame => typeof frame !== 'string' || !frame.trim())) {
-                throw new Error('The signal service returned an incomplete screener snapshot.');
-            }
+            validateSignalScreenerPayload(payload);
             if (currentRequest !== requestSerial) return;
             if (append && globalThis.DATA && Array.isArray(globalThis.DATA.signals)) {
                 const merged = new Map(globalThis.DATA.signals.map(signal => [

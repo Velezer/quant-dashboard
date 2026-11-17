@@ -454,8 +454,12 @@ export function installSignalScreener() {
     }
 
     function formatPrice(value) {
+        if (value === null || value === undefined
+            || (typeof value === 'string' && value.trim() === '')) return '--';
+        const price = Number(value);
+        if (!Number.isFinite(price) || price <= 0) return '--';
         const formatter = getDashboardBinding('formatPrice');
-        return formatter ? formatter(value) : Number(value).toLocaleString('en-US', { maximumFractionDigits: 8 });
+        return formatter ? formatter(price) : price.toLocaleString('en-US', { maximumFractionDigits: 8 });
     }
 
     function formatTime(epochSeconds) {
@@ -572,8 +576,9 @@ export function installSignalScreener() {
         const selectedId = globalThis.selectedSignal?.signal_id || '';
         const stalePriceSignalCount = Number(summary.stale_price_signal_count || 0);
         const staleScoreSignalCount = Number(summary.stale_score_signal_count || 0);
-        const priceDataStatus = String(summary.status?.price_data_status || 'ready');
-        const priceDataUnavailableCount = Number(summary.status?.price_data_unavailable_count || 0);
+        const priceDataStatus = typeof summary.status?.price_data_status === 'string'
+            ? summary.status.price_data_status : 'unknown';
+        const priceDataUnavailableCount = summary.status?.price_data_unavailable_count;
         const stockbitSignalModels = stockbitSignalModelsForView();
         const stockbitSignalSelected = stockbitSignalModels.length > 0;
         const stockbitSignalView = stockbitSignalSelected
@@ -647,7 +652,7 @@ export function installSignalScreener() {
                 : rows.length > 0
                     ? 'No signals match the selected app, product, timeframe, and search. Clear a filter to see more.'
                 : 'No current signal rows were returned. Detailed scan checks are not available yet; see Signal availability for the known listing and data status.';
-            const priceCoverageMessage = appReadiness.hasScanDetails ? ''
+            const priceCoverageMessage = appReadiness.hasScanDetails || requestState !== 'ready' ? ''
                 : signalPriceCoverageMessage(priceDataStatus, priceDataUnavailableCount);
             const emptyStateText = [emptyText, priceCoverageMessage]
                 .filter(Boolean)

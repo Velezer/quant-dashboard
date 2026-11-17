@@ -58,3 +58,18 @@ fn chart_market_bars_contain_only_ohlcv_data() {
         );
     }
 }
+
+#[test]
+fn signal_screener_route_accepts_all_six_visible_indicator_filters() {
+    for indicator in [
+        "nwe",
+        "dss_bressert",
+        "relative_volume",
+        "delta_proxy",
+        "markov_regime",
+        "lag_one_return_autocorrelation",
+    ] {
+        assert!(super::control::is_supported_signal_indicator(indicator));
+    }
+    assert!(!super::control::is_supported_signal_indicator("unknown"));
+}

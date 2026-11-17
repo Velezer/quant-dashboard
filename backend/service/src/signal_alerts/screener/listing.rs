@@ -246,14 +246,24 @@ fn update_signal_market_entry_freshness(
     )
 }
 
-fn score_indicator_name(filter: &str) -> Option<&'static str> {
+pub(super) fn score_indicator_name(filter: &str) -> Option<&'static str> {
     match filter {
         "nwe" => Some("Nadaraya-Watson Envelope"),
         "dss_bressert" => Some("DSS Bressert"),
         "relative_volume" => Some("Relative Volume"),
         "delta_proxy" => Some("Estimated Volume Delta (OHLCV proxy)"),
+        "markov_regime" => Some("Markov Regime"),
+        "lag_one_return_autocorrelation" => Some("Lag-one Return Autocorrelation"),
         _ => None,
     }
+}
+
+fn normalized_indicator_identity(value: &str) -> String {
+    value
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn direction_score_key(signal: &Value) -> (String, String, String, String) {
@@ -433,7 +443,7 @@ fn load_ticker_holdout_win_rates(
     Ok(win_rates)
 }
 
-fn score_basis_matches_indicator_filter(
+pub(super) fn score_basis_matches_indicator_filter(
     score_basis: &Value,
     indicator_filter: Option<&str>,
     minimum_score: Option<f64>,
@@ -444,9 +454,25 @@ fn score_basis_matches_indicator_filter(
     if score_basis["score_model_status"].as_str() == Some("legacy") {
         return false;
     }
+    let accepted = [
+        normalized_indicator_identity(indicator),
+        normalized_indicator_identity(indicator_filter.unwrap_or_default()),
+    ];
     let Some(component) = score_basis["components"]
         .as_array()
-        .and_then(|components| components.iter().find(|item| item["indicator"].as_str() == Some(indicator)))
+        .and_then(|components| {
+            components.iter().find(|item| {
+                ["indicator", "indicator_id", "id", "key"]
+                    .into_iter()
+                    .filter_map(|key| item.get(key).and_then(Value::as_str))
+                    .any(|identity| {
+                        let normalized = normalized_indicator_identity(identity);
+                        accepted
+                            .iter()
+                            .any(|candidate| candidate.as_str() == normalized)
+                    })
+            })
+        })
     else {
         return false;
     };

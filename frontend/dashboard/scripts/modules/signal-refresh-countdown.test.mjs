@@ -34,7 +34,23 @@ test('automatic refresh waits for a slow request and backs off after a failure',
         applySignalSnapshot: { get: () => payload => snapshots.push(payload) },
     });
     const response = () => ({ ok: true, text: async () => JSON.stringify({
-        signals: [], summary: {}, available_timeframes: ['15m'],
+        signals: [],
+        summary: {
+            matching_rows: 0,
+            offset: 0,
+            next_offset: 0,
+            limit: 100,
+            has_more: false,
+            stale: false,
+            stale_price_signal_count: 0,
+            stale_score_signal_count: 0,
+            status: {
+                last_attempt_status: 'ready',
+                price_data_status: 'ready',
+                price_data_unavailable_count: 0,
+            },
+        },
+        available_timeframes: ['15m'],
     }) });
     const flush = () => new Promise(resolve => setImmediate(resolve));
     try {

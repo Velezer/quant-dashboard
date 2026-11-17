@@ -31,6 +31,9 @@ export function signalScoreState(signal, nowEpochMs = Date.now()) {
         if (signal.market_entry_status === 'NO_MARKET_ENTRY') {
             return { label: `LATEST CLOSED ${timeframe} · NO MARKET ENTRY`, tone: 'inactive', current: false };
         }
+        if (!signalPriceIsFresh(signal, nowEpochMs)) {
+            return { label: 'STALE · NO MARKET ENTRY · HELD', tone: 'stale', current: false };
+        }
         return signal.score_bar_is_forming
             ? { label: `MARKET ENTRY NOW · PROVISIONAL ${timeframe}`, tone: 'provisional', current: true }
             : { label: `MARKET ENTRY NOW · LATEST CLOSED ${timeframe}`, tone: 'current', current: true };
@@ -45,6 +48,10 @@ export function signalScoreState(signal, nowEpochMs = Date.now()) {
             };
         }
         return { label: 'SETUP RETAINED · STALE PRICE · NOT A MARKET ENTRY', tone: 'stale', current: false };
+    }
+    if (signal?.market_entry_status === 'NO_MARKET_ENTRY') {
+        const timeframe = String(signal.timeframe || '').toUpperCase();
+        return { label: `LATEST ${timeframe} · NO MARKET ENTRY`, tone: 'inactive', current: false };
     }
     return { label: 'MARKET ENTRY NOW · FRESH PRICE', tone: 'current', current: true };
 }
@@ -102,7 +109,7 @@ export function normalizeSignalRecord(raw, strategies) {
         strategy: String(raw.signal_strategy_id || ''),
         signal_strategy_name: String(raw.signal_strategy_name || raw.signal_strategy_id || 'Signal model'),
         timeframe,
-        current_price: Number(raw.current_price),
+        current_price: positiveFinitePrice(raw.current_price),
         chart_data_lazy: true,
     };
     signal.signal_strategy_name = signalStrategyLabel(signal, strategies);
@@ -130,11 +137,16 @@ export function signalPriceBarAgeLabel(priceBarTimeNs, nowEpochMs = Date.now()) 
 }
 
 export function signalPriceIsFresh(signal, nowEpochMs = Date.now()) {
-    if (signal?.persistent_score === true) return true;
     if (signal?.price_is_fresh === false) return false;
     const freshUntilMs = Number(signal?.price_fresh_until_ms);
-    if (!Number.isFinite(freshUntilMs) || freshUntilMs <= 0) return true;
-    return Number.isFinite(nowEpochMs) && nowEpochMs <= freshUntilMs;
+    if (!Number.isFinite(freshUntilMs) || freshUntilMs <= 0) return false;
+    return Number.isFinite(nowEpochMs) && nowEpochMs > 0 && nowEpochMs <= freshUntilMs;
+}
+
+function positiveFinitePrice(value) {
+    if (typeof value !== 'number' && (typeof value !== 'string' || value.trim() === '')) return null;
+    const price = Number(value);
+    return Number.isFinite(price) && price > 0 ? price : null;
 }
 
 export const SIGNAL_LIST_PAGE_SIZE = 50;
@@ -145,11 +157,21 @@ export function signalRowsForDisplay(signals, limit = SIGNAL_LIST_PAGE_SIZE) {
 }
 
 export function signalPriceCoverageMessage(status, unavailableCount) {
-    if (!['unavailable', 'partial_stale'].includes(String(status || ''))) return '';
-    const count = Number(unavailableCount);
-    if (!Number.isFinite(count) || count < 0) return '';
+    const normalizedStatus = String(status || '').toLowerCase();
+    if (normalizedStatus === 'ready') return '';
+    if (!['unavailable', 'partial_stale'].includes(normalizedStatus)) {
+        return 'Fresh 15m price coverage is not reported; current-entry readiness cannot be confirmed.';
+    }
+    const count = typeof unavailableCount === 'number'
+        ? unavailableCount
+        : typeof unavailableCount === 'string' && unavailableCount.trim() !== ''
+            ? Number(unavailableCount)
+            : Number.NaN;
+    if (!Number.isSafeInteger(count) || count < 0) {
+        return 'Fresh 15m price coverage is incomplete; the number of affected instruments was not reported.';
+    }
     const instrumentCount = Math.floor(count);
-    return status === 'unavailable'
+    return normalizedStatus === 'unavailable'
         ? `No fresh 15m price data was available for any of ${instrumentCount} registered instruments in the full scan universe.`
         : `Fresh 15m price data was unavailable for ${instrumentCount} registered instruments in the full scan universe.`;
 }
