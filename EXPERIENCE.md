@@ -204,6 +204,31 @@ lesson only when it will improve future tasks.
   scans, persist immutable profile versions and pin one profile snapshot per
   scan. Stamp signal output with that version so a promotion cannot mix scores
   within a scan and prior results remain reproducible.
+- A daily entry-validation cursor can pass a ticker before gradual candle
+  ingestion reaches it. When sync adds rows, enqueue a deduplicated recheck for
+  saved `NO_HISTORY` reports in that exact instrument and shared crypto
+  category; let the single backtest worker drain it between scan pairs and
+  expose the pending count. Any successful manual or scheduled rerun clears its
+  queue row.
+- Progressive ingestion must also recheck saved `BACKTEST_COMPLETE` or
+  `VALIDATION_PENDING` reports when the indexed source span reaches the full
+  history minimum. Do not use chart metadata for this threshold: its 1,000-bar
+  display cap can make a derived 4h series look shorter than 1,000 days. Check
+  the report reader's selected source and storage interval with indexed
+  `MIN(ts)`/`MAX(ts)` bounds, allow for incomplete aggregation buckets, and
+  enqueue only matching timeframes whose saved report is still below the
+  evidence minimum.
+- Keep entry-validation list summaries on explicit after-configured-fee fields.
+  Unknown fee models must render after-fee win rate, net payoff, and net return
+  as unavailable; overlay these fields from saved report JSON so older compact
+  summaries cannot keep showing a gross holdout rate under an after-fee target
+  label.
+- The asymmetric after-fee rule is stored at
+  `backtest.weight_learning.risk_reward_rule`. Keep report qualification,
+  compact list summaries, and UI rendering on that canonical path. Existing
+  compact summaries can outlive a serializer fix, so project only the needed
+  rule fields from saved JSON on list reads and gate 4h validated counts on the
+  current qualified rule.
 - A composite score is setup strength, not an individual win probability.
   Retain the model's base score floor for signals. Calibrated after-fee
   thresholds are historical metrics used to evaluate profile promotion, not

@@ -18,9 +18,13 @@ export function metric(value, suffix = '', digits = 2) {
     return number === null ? '—' : `${number.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}${suffix}`;
 }
 
+export function riskRewardRuleForBacktest(backtest) {
+    return backtest?.weight_learning?.risk_reward_rule || null;
+}
+
 export function reportModelState(model, currentProtocol, reportProtocol, timeframe = null) {
     if (reportProtocol && currentProtocol && reportProtocol !== currentProtocol) return { label: 'Outdated protocol', tone: 'pending' };
-    const riskRewardProtocol = model?.risk_reward_protocol_id || model?.backtest?.risk_reward_rule?.protocol_id;
+    const riskRewardProtocol = model?.risk_reward_protocol_id || riskRewardRuleForBacktest(model?.backtest)?.protocol_id;
     if (timeframe === '4h' && riskRewardProtocol !== RISK_REWARD_PROTOCOL_ID) {
         return { label: 'R:R must be rerun', tone: 'pending' };
     }
@@ -311,6 +315,7 @@ export function initializeEntryValidation(doc = document) {
             text('daily-refresh-last', dateText(daily.cycle_completed_at, true));
             text('daily-refresh-next', dateText(daily.next_due_at, true));
             const current = daily.current?.label;
+            const pendingHistoryRechecks = Math.max(0, numeric(daily.pending_history_rechecks) ?? 0);
             let message = daily.status === 'running'
                 ? `Backtest cycle running${current ? ` · ${current}` : ''}. This count includes completed attempts; ${metric(daily.failed_pairs, '', 0)} failed pairs are shown separately. Progress refreshes every 15 seconds.`
                 : daily.status === 'pausing'
@@ -326,6 +331,9 @@ export function initializeEntryValidation(doc = document) {
                             : daily.status === 'complete'
                                 ? 'All eligible registered ticker/timeframe pairs were refreshed. Shared profiles use the 50% after-fee win-rate target plus sample, history, coverage, and source checks.'
                                 : 'The first daily backtest cycle is waiting to start.';
+            if (pendingHistoryRechecks > 0) {
+                message += ` ${metric(pendingHistoryRechecks, '', 0)} saved no-history reports are queued to refresh after candles arrive.`;
+            }
             if (daily.last_failure_label && daily.last_error) message += ` Last failure: ${daily.last_failure_label} · ${daily.last_error}`;
             status('daily-refresh-message', message, daily.status === 'error' || daily.status === 'complete_with_errors' ? 'error' : '');
         } catch (error) {
@@ -400,10 +408,10 @@ export function initializeEntryValidation(doc = document) {
             button.addEventListener('click', () => { void selectTicker(item); }); action.append(button);
             row.append(identity, stateCell, miniCell(models, model => {
                 const usesBracket = numeric(model.risk_reward_holdout_trades) !== null;
-                return `${usesBracket ? '4h rule' : 'Baseline exit'} · ${metric(usesBracket ? model.risk_reward_holdout_trades : model.holdout_trades, '', 0)} trades · ${metric(usesBracket ? model.risk_reward_holdout_win_rate_pct : model.holdout_win_rate_pct, '%', 1)} · ${usesBracket ? 'payoff after fees' : 'payoff'} ${metric(usesBracket ? model.risk_reward_holdout_payoff_ratio_after_fees : model.holdout_payoff_ratio, '×', 2)}`;
+                return `${usesBracket ? '4h R:R candidate' : 'Baseline exit'} · ${metric(usesBracket ? model.risk_reward_holdout_trades : model.holdout_trades, '', 0)} trades · ${metric(usesBracket ? model.risk_reward_holdout_win_rate_pct : model.holdout_win_rate_pct, '%', 1)} after configured fees · net payoff ${metric(usesBracket ? model.risk_reward_holdout_payoff_ratio_after_fees : model.holdout_payoff_ratio, '×', 2)}`;
             }), miniCell(models, model => {
                 const usesBracket = numeric(model.risk_reward_holdout_trades) !== null;
-                return `${usesBracket ? '4h rule' : 'Baseline exit'} · ${metric(usesBracket ? model.risk_reward_holdout_mean_return_pct : model.holdout_mean_return_pct, '%')}`;
+                return `${usesBracket ? '4h R:R candidate' : 'Baseline exit'} · net return ${metric(usesBracket ? model.risk_reward_holdout_mean_return_pct : model.holdout_mean_return_pct, '%')}`;
             }), snapshot, action);
             body.append(row);
         }
@@ -469,9 +477,11 @@ export function initializeEntryValidation(doc = document) {
     }
     function renderChecks(model) {
         const checks = { ...(model.checks || model.backtest?.checks || {}) };
+        const riskRewardRule = riskRewardRuleForBacktest(model.backtest);
         const oldFeeBasis = report?.timeframe === '4h'
-            && model.backtest?.risk_reward_rule?.protocol_id !== RISK_REWARD_PROTOCOL_ID;
+            && riskRewardRule?.protocol_id !== RISK_REWARD_PROTOCOL_ID;
         if (oldFeeBasis) checks.asymmetric_risk_reward_rule = false;
+        else if (report?.timeframe === '4h') checks.asymmetric_risk_reward_rule = riskRewardRule?.candidate?.qualified === true;
         const labels = {
             registered_identity: 'Registered ticker and model identity match',
             holdout_sample_sufficient: 'Enough completed holdout trades', history_span_sufficient: 'Enough total calendar history',
@@ -600,7 +610,7 @@ export function initializeEntryValidation(doc = document) {
         renderHourRule(learning?.hour_rule);
     }
     function renderRiskRewardRule(backtest) {
-        const rule = backtest.risk_reward_rule;
+        const rule = riskRewardRuleForBacktest(backtest);
         const metrics = $('risk-reward-metrics');
         const state = $('risk-reward-state');
         if (!metrics || !state) return;
@@ -768,13 +778,17 @@ export function initializeEntryValidation(doc = document) {
         text('model-title', model.label || (modelKind === 'dss' ? 'DSS-led entry' : 'NWE-led entry'));
         text('model-version', `${model.score_model_id || 'Score model identity unavailable'} · ${model.signal_strategy_id || 'Entry strategy unavailable'}`);
         text('model-state', modelState.label); $('model-state').className = `state-badge ${modelState.tone}`;
-        const interval = Array.isArray(holdout.win_rate_wilson_95_pct) ? holdout.win_rate_wilson_95_pct : [];
+        const afterFeeWinRate = holdout.win_rate_after_fees_pct;
+        const afterFeeMetricsAvailable = afterFeeWinRate != null;
+        const feeModelKnown = report.costs?.fees_known === true;
+        const afterFeeUnavailableReason = feeModelKnown ? 'No fee-adjusted holdout trades are available' : 'Unavailable because this app’s fee model is not configured';
+        const interval = Array.isArray(holdout.win_rate_after_fees_wilson_95_pct) ? holdout.win_rate_after_fees_wilson_95_pct : [];
         $('evidence-metrics').replaceChildren(
             metricCard('Holdout trades', metric(holdout.trades, '', 0), `${metric(backtest.holdout_window_days, ' calendar days', 0)} in held-out window`),
-            metricCard('Win rate', metric(holdout.win_rate_pct, '%'), interval.length === 2 ? `95% interval ${metric(interval[0], '%', 1)}–${metric(interval[1], '%', 1)}` : 'Uncertainty interval unavailable'),
-            metricCard('Mean return', metric(holdout.mean_return_pct, '%'), holdout.return_basis || 'Return basis unavailable'),
-            metricCard('Profit factor', holdout.profit_factor_unbounded === true ? '∞' : metric(holdout.profit_factor), holdout.profit_factor_unbounded === true ? 'No observed holdout losses' : 'Observed wins / observed losses'),
-            metricCard('Observed payoff', metric(holdout.payoff_ratio, '×'), `Avg win ${metric(holdout.average_win_pct, '%')} · avg loss ${metric(holdout.average_loss_pct, '%')}`),
+            metricCard('Win rate after configured fees', metric(afterFeeWinRate, '%'), afterFeeWinRate == null ? afterFeeUnavailableReason : interval.length === 2 ? `95% interval ${metric(interval[0], '%', 1)}–${metric(interval[1], '%', 1)}` : 'Uncertainty interval unavailable'),
+            metricCard('Mean net return', metric(holdout.mean_net_return_pct, '%'), holdout.return_basis || 'Net return basis unavailable'),
+            metricCard(feeModelKnown ? 'Profit factor after configured fees' : 'Gross profit factor · fees unknown', holdout.profit_factor_unbounded === true ? '∞' : metric(holdout.profit_factor), holdout.profit_factor_unbounded === true ? 'No observed holdout losses' : 'Observed wins / observed losses'),
+            metricCard('Observed net payoff', afterFeeMetricsAvailable ? metric(holdout.payoff_ratio_after_fees, '×') : 'Unavailable', afterFeeMetricsAvailable ? `Avg win ${metric(holdout.average_win_pct, '%')} · avg loss ${metric(holdout.average_loss_pct, '%')}` : afterFeeUnavailableReason),
         );
         for (const side of ['long', 'short']) {
             const outcomes = backtest.directional_holdout?.[side];

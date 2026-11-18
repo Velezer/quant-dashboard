@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS app.entry_model_validation_reports (
 );
 CREATE INDEX IF NOT EXISTS app.idx_entry_validation_reports_timeframe
     ON entry_model_validation_reports(timeframe,protocol_id,computed_at);
+CREATE TABLE IF NOT EXISTS app.entry_model_validation_recheck_queue (
+    instrument_id TEXT NOT NULL, timeframe TEXT NOT NULL, queued_at INTEGER NOT NULL,
+    next_attempt_at INTEGER NOT NULL DEFAULT 0, attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '', PRIMARY KEY(instrument_id,timeframe),
+    FOREIGN KEY(instrument_id) REFERENCES instruments(instrument_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS app.idx_entry_validation_rechecks_due
+    ON entry_model_validation_recheck_queue(next_attempt_at,queued_at);
 CREATE TABLE IF NOT EXISTS app.entry_model_validation_daily_refresh (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     status TEXT NOT NULL DEFAULT 'idle'

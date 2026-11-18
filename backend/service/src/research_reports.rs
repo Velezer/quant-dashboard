@@ -4,6 +4,7 @@ mod entry_validation;
 pub(super) use entry_validation::{
     background_daily_refresh_loop, entry_validation_daily_status, entry_validation_list,
     entry_validation_saved, entry_validation_timeframe, entry_validation_update_control,
+    queue_history_rechecks_after_market_sync,
     run_entry_validation, gainer_observations, gainer_saved,
     entry_validation_active_profile_snapshot, ActiveScoringProfile, ActiveScoringProfiles,
 };

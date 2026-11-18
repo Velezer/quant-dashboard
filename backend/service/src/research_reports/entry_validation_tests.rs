@@ -1,6 +1,23 @@
 use super::*;
 use crate::main_test_support::*;
 
+#[test]
+fn preferred_risk_reward_rule_uses_the_current_weight_learning_path() {
+    let current = json!({"weight_learning":{"risk_reward_rule":{
+        "protocol_id":quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID,
+        "preferred_timeframe":"4h","candidate":{"qualified":false}
+    }}});
+    let rule = preferred_risk_reward_rule(&current,"4h").unwrap();
+    assert_eq!(rule.pointer("/candidate/qualified").and_then(Value::as_bool),Some(false));
+    assert!(preferred_risk_reward_rule(&current,"1h").is_none());
+
+    let old_path = json!({"risk_reward_rule":{
+        "protocol_id":quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID,
+        "preferred_timeframe":"4h","candidate":{"qualified":true}
+    }});
+    assert!(preferred_risk_reward_rule(&old_path,"4h").is_none());
+}
+
 fn register_fixture(conn: &Connection, id: &str, product: &str, verified: bool, category: &str) {
     conn.execute(
         "INSERT INTO app.instruments(instrument_id,exchange_id,product_id,asset_category_id,
@@ -201,6 +218,54 @@ fn missing_history_pending_identity_and_unsupported_model_are_distinct_saved_sta
         .is_none());
     assert!(run_entry_validation(&conn, &path, "unknown", "15m").is_err());
     assert!(run_entry_validation(&conn, &path, "entry.none", "5m").is_err());
+    drop(conn);
+    remove_temporary_database(&path);
+    remove_temporary_database(&database::app_database_path(&path));
+}
+
+#[test]
+fn first_ingested_candles_refresh_a_saved_no_history_report_and_clear_its_queue_item() {
+    let path = temporary_database_path("entry-history-arrival-recheck");
+    let conn = open_db_minimal(&path).unwrap();
+    register_fixture(&conn, "entry.arrived", "pluang_spot", true, "crypto_spot");
+    let empty = run_entry_validation(&conn, &path, "entry.arrived", "15m").unwrap();
+    assert_eq!(empty["status"], "NO_HISTORY");
+
+    seed_history(&conn, "pluang_spot_binance_spot_proxy", "pluang_spot", 100.0);
+    let queued = queue_history_rechecks_after_market_sync(
+        &conn,
+        "pluang",
+        "pluang_spot",
+        "ENTRYTEST-USD",
+        "ENTRYTEST",
+        "crypto_spot",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(queued, 1);
+    let pending: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM app.entry_model_validation_recheck_queue
+              WHERE instrument_id='entry.arrived' AND timeframe='15m'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(pending, 1);
+
+    let refreshed = run_entry_validation(&conn, &path, "entry.arrived", "15m").unwrap();
+    assert_eq!(refreshed["history"]["bars"], 32);
+    assert_ne!(refreshed["status"], "NO_HISTORY");
+    let pending: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM app.entry_model_validation_recheck_queue
+              WHERE instrument_id='entry.arrived' AND timeframe='15m'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(pending, 0);
+
     drop(conn);
     remove_temporary_database(&path);
     remove_temporary_database(&database::app_database_path(&path));

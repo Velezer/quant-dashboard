@@ -73,6 +73,30 @@ jobs:
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
             only_the_selected_shared_history_owner_advances_incomplete_fresh_history -- \
             --test-threads=1
+      - name: Verify after-fee summaries and history-arrival rechecks
+        run: |
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            first_ingested_candles_refresh_a_saved_no_history_report_and_clear_its_queue_item -- \
+            --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            market_ingestion_queues_only_empty_reports_for_the_matching_shared_crypto_category -- \
+            --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            mature_history_requeues_only_under_minimum_reports_for_ingested_timeframes_and_category -- \
+            --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            snapshots_upsert_only_the_exact_instrument_and_timeframe_and_preserve_aggregate_evidence -- \
+            --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            four_hour_after_fee_rule_summary_repairs_old_compact_rows_from_saved_report -- \
+            --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            four_hour_counts_require_a_qualified_current_after_fee_rule -- \
+            --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            preferred_risk_reward_rule_uses_the_current_weight_learning_path -- \
+            --test-threads=1
+          node --test frontend/dashboard/scripts/modules/entry-validation.test.mjs
       - name: Verify chart identity and timeframe regressions
         run: |
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api \

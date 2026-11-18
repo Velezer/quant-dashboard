@@ -28,6 +28,27 @@ pub(crate) fn entry_validation_timeframe(timeframe: &str) -> Result<&str, String
         .ok_or_else(|| "Choose a registered entry-model timeframe.".to_string())
 }
 
+fn risk_reward_rule(backtest: &Value) -> Option<&Value> {
+    backtest.pointer("/weight_learning/risk_reward_rule")
+}
+
+fn four_hour_risk_reward_blocks_validation(
+    timeframe: &str,
+    protocol_id: Option<&str>,
+    qualified: bool,
+) -> bool {
+    timeframe == "4h"
+        && (protocol_id != Some(quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID) || !qualified)
+}
+
+fn preferred_risk_reward_rule<'a>(backtest: &'a Value, timeframe: &str) -> Option<&'a Value> {
+    risk_reward_rule(backtest).filter(|rule| {
+        rule.get("protocol_id").and_then(Value::as_str)
+            == Some(quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID)
+            && rule.get("preferred_timeframe").and_then(Value::as_str) == Some(timeframe)
+    })
+}
+
 pub(crate) fn entry_validation_list(
     connection: &Connection,
     exchange: &str,
@@ -91,6 +112,44 @@ pub(crate) fn entry_validation_update_control(
     entry_validation_daily_status(connection)
 }
 
+pub(crate) fn queue_history_rechecks_after_market_sync(
+    connection: &Connection,
+    exchange_id: &str,
+    product_id: &str,
+    storage_symbol: &str,
+    underlying_symbol: &str,
+    asset_category_id: &str,
+    mature_timeframes: &[String],
+) -> Result<usize, rusqlite::Error> {
+    let queued_at = now_secs().min(i64::MAX as u64) as i64;
+    let queued = crate::database::retry_sqlite_busy(|| {
+        let no_history = store::queue_no_history_rechecks(
+            connection,
+            exchange_id,
+            product_id,
+            storage_symbol,
+            underlying_symbol,
+            asset_category_id,
+            queued_at,
+        )?;
+        let mature = store::queue_mature_history_rechecks(
+            connection,
+            exchange_id,
+            product_id,
+            storage_symbol,
+            underlying_symbol,
+            asset_category_id,
+            mature_timeframes,
+            queued_at,
+        )?;
+        Ok(no_history.saturating_add(mature))
+    })?;
+    if queued > 0 {
+        scheduler::notify_daily_refresh_worker();
+    }
+    Ok(queued)
+}
+
 pub(crate) fn run_entry_validation(
     connection: &Connection,
     market_directory: &str,
@@ -132,6 +191,8 @@ fn run_entry_validation_once(
         .ok_or_else(|| "The exact active registered instrument was not found.".to_string())?;
     let report = build_report(connection, market_directory, instrument, timeframe)?;
     store::save_report(connection, &report).map_err(|error| error.to_string())?;
+    store::complete_history_recheck(connection, instrument_id, timeframe)
+        .map_err(|error| error.to_string())?;
     Ok(report)
 }
 
@@ -409,14 +470,9 @@ fn build_report(
                 ("fees_known","The exact app/product fee policy is unknown."),
                 ("execution_costs_complete","Slippage, depth, impact and applicable funding/borrow costs are not fully modeled."),
             ];
-            if backtest
-                .pointer("/risk_reward_rule/preferred_timeframe")
-                .and_then(Value::as_str)
-                == Some(timeframe)
-            {
+            if let Some(rule) = preferred_risk_reward_rule(&backtest, timeframe) {
                 checks["asymmetric_risk_reward_rule"] = json!(
-                    backtest
-                        .pointer("/risk_reward_rule/candidate/qualified")
+                    rule.pointer("/candidate/qualified")
                         .and_then(Value::as_bool)
                         == Some(true)
                 );
