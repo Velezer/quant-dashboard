@@ -572,6 +572,10 @@ mod freshness_tests;
 #[path = "../signal_alerts_screener_filter_tests.rs"]
 mod filter_tests;
 
+#[cfg(test)]
+#[path = "screener/timeframe_signals_tests.rs"]
+mod timeframe_signals_tests;
+
 #[path = "screener/snapshot.rs"]
 mod snapshot;
 pub(crate) use snapshot::{
@@ -585,6 +589,9 @@ pub(crate) use snapshot::{
     replace_signal_screener_snapshot, replace_signal_screener_snapshot_with_score_updates,
     replace_signal_screener_snapshot_with_status,
 };
+
+#[path = "screener/timeframe_signals.rs"]
+mod timeframe_signals;
 
 #[path = "screener/listing.rs"]
 mod listing;

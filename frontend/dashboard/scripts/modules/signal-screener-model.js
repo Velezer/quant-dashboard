@@ -15,8 +15,9 @@ export const PRODUCTS_BY_APP = {
 const SIGNAL_BAR_TIME_NANOSECONDS_PER_SECOND = 1_000_000_000;
 
 export function signalIdentity(signal) {
+    const strategy = Array.isArray(signal.timeframe_strategy_ids) ? '' : signal.signal_strategy_id;
     return [signal.exchange_id, signal.product_id, signal.asset_category_id,
-        signal.symbol, signal.signal_strategy_id, signal.timeframe].join('|');
+        signal.symbol, strategy, signal.timeframe].join('|');
 }
 
 export function signalScoreState(signal, nowEpochMs = Date.now()) {
