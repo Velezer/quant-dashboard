@@ -380,7 +380,7 @@ fn stored_screener_row(symbol: &str, price_bar_time: i64) -> serde_json::Value {
     })
 }
 
-fn screener_connection() -> Connection {
+pub(super) fn screener_connection() -> Connection {
     let connection = Connection::open_in_memory().expect("in-memory app database should open");
     connection
         .execute_batch("ATTACH DATABASE ':memory:' AS app; ATTACH DATABASE ':memory:' AS signals;")

@@ -420,6 +420,10 @@ export function initializeGainerForecast(doc = document) {
         requestController?.abort();
     });
     setControls();
+
+    if (new URLSearchParams(win.location?.search || '').get('runForecast') === '1') {
+        void runForecast();
+    }
 }
 
 if (typeof document !== 'undefined') initializeGainerForecast(document);

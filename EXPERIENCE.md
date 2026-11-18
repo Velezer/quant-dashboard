@@ -5,6 +5,11 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- NWE-led and DSS-led rows can carry the same signed signal for a ticker and
+  timeframe. Select one before paginating the screener and use a stable
+  instrument/timeframe selection key while retaining the selected model's
+  evidence and its alert links.
+
 - A 4h chart bucket can exist even when one of its hourly candles is missing.
   For a cross-sectional forecast, require four consecutive native hourly bars
   per bucket and the same completed cutoff across pairs. Reset history at

@@ -580,6 +580,9 @@ pub(crate) use snapshot::{
     replace_signal_screener_snapshot_with_status,
 };
 
+#[path = "screener/timeframe_signals.rs"]
+mod timeframe_signals;
+
 #[path = "screener/listing.rs"]
 mod listing;
 #[cfg(test)]
