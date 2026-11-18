@@ -141,27 +141,15 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
     let market_connection = &market_connection;
     if !skip_sync_priority {
         let chart_timeframe = requested_timeframe.as_deref().unwrap_or("1h");
-        let chart_source = if research_proxy::shared::category_for_product(&exchange, product_id)
-            .is_some()
-        {
-            selected_candle_source_for_product(
-                market_connection,
-                &storage_symbol,
-                research_proxy::shared::CHART_REFERENCE_EXCHANGE_ID,
-                research_proxy::shared::CHART_REFERENCE_PRODUCT_ID,
-                chart_timeframe,
-            )
-            .ok()
-            .flatten()
-            .filter(|source| {
-                research_proxy::shared::is_shared_source_for_category(
-                    source,
-                    research_proxy::shared::CHART_REFERENCE_CATEGORY_ID,
-                )
-            })
-        } else {
-            None
-        };
+        let chart_source = selected_shared_chart_reference_source(
+            market_connection,
+            &storage_symbol,
+            &exchange,
+            product_id,
+            chart_timeframe,
+        )
+        .ok()
+        .flatten();
         let source_timeframe = if let Some(source) = chart_source {
             preferred_storage_timeframe_from_source(
                 market_connection,
@@ -206,27 +194,15 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             .min(MAX_CANDLES);
         // The chart uses the common Spot reference when available. Signal
         // scoring retains its own source and freshness checks.
-        let crypto_product =
-            research_proxy::shared::category_for_product(&exchange, product_id).is_some();
-        let shared_chart_source = if crypto_product {
-            selected_candle_source_for_product(
-                market_connection,
-                &storage_symbol,
-                research_proxy::shared::CHART_REFERENCE_EXCHANGE_ID,
-                research_proxy::shared::CHART_REFERENCE_PRODUCT_ID,
-                timeframe,
-            )
-            .ok()
-            .flatten()
-            .filter(|source| {
-                research_proxy::shared::is_shared_source_for_category(
-                    source,
-                    research_proxy::shared::CHART_REFERENCE_CATEGORY_ID,
-                )
-            })
-        } else {
-            None
-        };
+        let shared_chart_source = selected_shared_chart_reference_source(
+            market_connection,
+            &storage_symbol,
+            &exchange,
+            product_id,
+            timeframe,
+        )
+        .ok()
+        .flatten();
         let mut metadata = if let Some(source) = shared_chart_source.as_deref() {
             load_series_metadata_from_source(
                 market_connection,

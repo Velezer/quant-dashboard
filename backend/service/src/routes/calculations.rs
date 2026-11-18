@@ -1,6 +1,92 @@
 use super::{api_error, parse_query, respond, RequestContext};
 use crate::*;
 
+pub(super) fn load_calculation_chart_history(
+    connection: &rusqlite::Connection,
+    storage_symbol: &str,
+    timeframe: &str,
+    limit: i64,
+    exchange: &str,
+    product_id: &str,
+    use_chart_reference_source: bool,
+) -> Result<(Vec<Candle>, Value), rusqlite::Error> {
+    let shared_chart_source = if use_chart_reference_source && !product_id.trim().is_empty() {
+        selected_shared_chart_reference_source(
+            connection,
+            storage_symbol,
+            exchange,
+            product_id,
+            timeframe,
+        )
+        .ok()
+        .flatten()
+    } else {
+        None
+    };
+    let (candles, metadata) = if let Some(source) = shared_chart_source.as_deref() {
+        (
+            load_series_candles_from_source(connection, storage_symbol, timeframe, limit, source)?,
+            load_series_metadata_from_source(
+                connection,
+                storage_symbol,
+                timeframe,
+                false,
+                source,
+            ),
+        )
+    } else if product_id.trim().is_empty() {
+        (
+            load_series_candles_for_exchange(
+                connection,
+                storage_symbol,
+                timeframe,
+                limit,
+                exchange,
+            )?,
+            load_series_metadata_for_exchange(
+                connection,
+                storage_symbol,
+                timeframe,
+                false,
+                exchange,
+            ),
+        )
+    } else {
+        (
+            load_series_candles_for_product(
+                connection,
+                storage_symbol,
+                timeframe,
+                limit,
+                exchange,
+                product_id,
+            )?,
+            load_product_candle_metadata(
+                connection,
+                storage_symbol,
+                exchange,
+                product_id,
+                timeframe,
+            ),
+        )
+    };
+    let mut freshness = metadata.unwrap_or_else(|error| {
+        serde_json::json!({
+            "exists": false,
+            "requested_timeframe": timeframe,
+            "storage_timeframe": timeframe,
+            "is_stale": true,
+            "warning": format!("Unable to read local history metadata: {error}"),
+        })
+    });
+    if shared_chart_source.is_some() {
+        freshness["chart_reference_notice"] = serde_json::json!(
+            "Chart uses shared Spot reference candles for Spot and Futures; signal scores may use a different source."
+        );
+    }
+    Ok((candles, freshness))
+}
+
 pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestContext<'a>> {
     let RequestContext {
         stream,
@@ -138,48 +224,34 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
     // scan/refresh flow so a chart cannot block on a network retry or mutate
     // its own history while the user is changing timeframes. The returned
     // series metadata exposes the precise last bar, age, and sync failure.
-    let mut candles = if let Some(market_connection) = market_connection {
-        match load_series_candles_for_exchange(
+    let (mut candles, freshness) = if let Some(market_connection) = market_connection {
+        match load_calculation_chart_history(
             market_connection,
             &storage_symbol,
             &query.timeframe,
             load_limit,
             &query.venue,
+            &query.product_id,
+            route == "/api/chart/candles" || route == "/api/compute/indicators",
         ) {
-            Ok(candles) => candles,
+            Ok(history) => history,
             Err(error) => {
                 api_error(stream, "503 Service Unavailable", error);
                 return Ok(());
             }
         }
     } else {
-        Vec::new()
-    };
-    let freshness = match market_connection {
-        Some(market_connection) => load_series_metadata_for_exchange(
-            market_connection,
-            &storage_symbol,
-            &query.timeframe,
-            false,
-            &query.venue,
-        )
-        .unwrap_or_else(|error| {
+        (
+            Vec::new(),
             serde_json::json!({
                 "exists": false,
                 "requested_timeframe": query.timeframe,
                 "storage_timeframe": query.timeframe,
                 "is_stale": true,
-                "warning": format!("Unable to read local history metadata: {error}"),
-            })
-        }),
-        None => serde_json::json!({
-            "exists": false,
-            "requested_timeframe": query.timeframe,
-            "storage_timeframe": query.timeframe,
-            "is_stale": true,
-            "warning": "Ticker history database is missing",
-            "recovery": "Use the retry action after market history is restored",
-        }),
+                "warning": "Ticker history database is missing",
+                "recovery": "Use the retry action after market history is restored",
+            }),
+        )
     };
 
     if route == "/api/compute/signals" {

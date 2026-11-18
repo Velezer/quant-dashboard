@@ -226,7 +226,11 @@ pub(crate) fn required_chart_source_candles_from_base(
     }
 }
 
-fn intraday_aggregation_bucket_start(local_time_ns: i64, duration_ns: i64, symbol: &str) -> i64 {
+pub(super) fn intraday_aggregation_bucket_start(
+    local_time_ns: i64,
+    duration_ns: i64,
+    symbol: &str,
+) -> i64 {
     let day_ns = NANOS_PER_DAY;
     let day_start = local_time_ns.div_euclid(day_ns) * day_ns;
     let session_anchored = symbol.ends_with(".JK")

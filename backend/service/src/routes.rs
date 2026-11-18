@@ -394,6 +394,12 @@ pub(super) fn reject_service_unavailable(mut stream: TcpStream) {
 }
 
 mod calculations;
+#[cfg(test)]
+#[path = "routes/calculations_product_scope_tests.rs"]
+mod calculations_product_scope_tests;
+#[cfg(test)]
+#[path = "routes/calculations_shared_source_tests.rs"]
+mod calculations_shared_source_tests;
 mod charts;
 mod control;
 mod market;

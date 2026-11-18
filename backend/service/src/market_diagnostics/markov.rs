@@ -11,12 +11,12 @@ pub fn load_markov_payload(
 ) -> Result<Value, rusqlite::Error> {
     const MAX_MARKOV_SYMBOLS: i64 = 128;
     let mut statement = connection.prepare(
-        "SELECT DISTINCT storage_symbol, exchange_id, asset_category_id FROM app.instruments
+        "SELECT DISTINCT storage_symbol, exchange_id, product_id, asset_category_id FROM app.instruments
           WHERE is_active=1 AND listing_status <> 'venue_delisted'
             AND (?1 IS NULL OR storage_symbol = ?1)
             AND (?2 IS NULL OR exchange_id = ?2)
             AND (?3 IS NULL OR asset_category_id = ?3)
-         ORDER BY upper(storage_symbol), exchange_id, asset_category_id LIMIT ?4",
+         ORDER BY upper(storage_symbol), exchange_id, product_id, asset_category_id LIMIT ?4",
     )?;
     let symbols = statement
         .query_map(
@@ -31,18 +31,26 @@ pub fn load_markov_payload(
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
                 ))
             },
         )?
         .collect::<Result<Vec<_>, _>>()?;
     let mut assets = Vec::with_capacity(symbols.len());
-    for (symbol, exchange_id, asset_category_id) in symbols {
+    for (symbol, exchange_id, product_id, asset_category_id) in symbols {
         let Ok(Some(market_connection)) =
             open_market_history_for_symbol(market_database, &symbol, false)
         else {
             continue;
         };
-        let Ok(candles) = load_candles(&market_connection, &symbol, timeframe, limit) else {
+        let Ok(candles) = load_series_candles_for_product(
+            &market_connection,
+            &symbol,
+            timeframe,
+            limit,
+            &exchange_id,
+            &product_id,
+        ) else {
             continue;
         };
         let bars = candles

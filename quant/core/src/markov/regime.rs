@@ -419,7 +419,7 @@ fn regime_definitions() -> Value {
 fn classify_universe(exchange_id: &str, asset_category_id: &str) -> Option<&'static str> {
     match (exchange_id, asset_category_id) {
         ("stockbit", "idx_stock") => Some("idx"),
-        ("pintu_futures", "crypto_perpetual") => Some("crypto_futures"),
+        ("pintu" | "pintu_futures", "crypto_perpetual") => Some("crypto_futures"),
         ("tokocrypto", "crypto_spot") => Some("crypto_spot"),
         ("tokocrypto", "tokenized_stock") => Some("tokenized_stock"),
         _ => None,
@@ -624,3 +624,6 @@ pub fn build_payload_for_timeframe(
 #[cfg(test)]
 #[path = "regime_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "regime_pintu_app_alias_tests.rs"]
+mod pintu_app_alias_tests;

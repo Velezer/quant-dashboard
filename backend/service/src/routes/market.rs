@@ -66,13 +66,14 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             api_error(stream, "400 Bad Request", "exchange_id is required");
             return Ok(());
         };
-        let Some(exchange_id) = master_data::exchange_by_alias(&exchange)
+        let Some(canonical_exchange_id) = master_data::exchange_by_alias(&exchange)
             .and_then(|record| master_data::catalog_string(record, "id"))
             .map(str::to_string)
         else {
             api_error(stream, "400 Bad Request", "exchange_id must identify an app");
             return Ok(());
         };
+        let exchange_id = instrument_registry_exchange_id(&canonical_exchange_id).to_string();
         let Some(product_id) = required_string("product_id") else {
             api_error(stream, "400 Bad Request", "product_id is required");
             return Ok(());
@@ -98,22 +99,13 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
                 return Ok(());
             }
         };
-        let registered = match connection.query_row(
-            "SELECT EXISTS(
-                 SELECT 1 FROM app.instruments
-                  WHERE exchange_id=?1 AND product_id=?2 AND asset_category_id=?3
-                    AND symbol=?4 AND storage_symbol=?5
-                    AND is_active=1 AND venue_verified=1
-                    AND listing_status IN ('venue_active','public_listed_snapshot')
-             )",
-            rusqlite::params![
-                exchange_id,
-                product_id,
-                asset_category_id,
-                symbol,
-                storage_symbol
-            ],
-            |row| row.get::<_, bool>(0),
+        let registered = match selected_signal_is_registered(
+            &connection,
+            &exchange_id,
+            &product_id,
+            &asset_category_id,
+            &symbol,
+            &storage_symbol,
         ) {
             Ok(registered) => registered,
             Err(error) => {
@@ -187,7 +179,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             Some(exchange) => match master_data::exchange_by_alias(&exchange)
                 .and_then(|record| master_data::catalog_string(record, "id"))
             {
-                Some(exchange_id) => Some(exchange_id.to_string()),
+                Some(exchange_id) => Some(instrument_registry_exchange_id(exchange_id).to_string()),
                 None => {
                     api_error(stream, "400 Bad Request", "exchange must identify an app in the canonical catalog");
                     return Ok(());
@@ -267,7 +259,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             Some(exchange) => match master_data::exchange_by_alias(&exchange)
                 .and_then(|record| master_data::catalog_string(record, "id"))
             {
-                Some(exchange_id) => Some(exchange_id.to_string()),
+                Some(exchange_id) => Some(instrument_registry_exchange_id(exchange_id).to_string()),
                 None => {
                     api_error(
                         stream,
@@ -669,3 +661,41 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         route,
     })
 }
+
+fn instrument_registry_exchange_id(canonical_exchange_id: &str) -> &str {
+    match canonical_exchange_id {
+        "pintu_futures" => "pintu",
+        other => other,
+    }
+}
+
+fn selected_signal_is_registered(
+    connection: &Connection,
+    exchange_id: &str,
+    product_id: &str,
+    asset_category_id: &str,
+    symbol: &str,
+    storage_symbol: &str,
+) -> Result<bool, rusqlite::Error> {
+    connection.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM app.instruments
+              WHERE exchange_id=?1 AND product_id=?2 AND asset_category_id=?3
+                AND symbol=?4 AND storage_symbol=?5
+                AND is_active=1 AND venue_verified=1
+                AND listing_status IN ('venue_active','public_listed_snapshot')
+         )",
+        rusqlite::params![
+            instrument_registry_exchange_id(exchange_id),
+            product_id,
+            asset_category_id,
+            symbol,
+            storage_symbol
+        ],
+        |row| row.get::<_, bool>(0),
+    )
+}
+
+#[cfg(test)]
+#[path = "market_refresh_tests.rs"]
+mod market_refresh_tests;

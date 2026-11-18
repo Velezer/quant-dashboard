@@ -504,6 +504,12 @@ fn migration_market_database_path() -> String {
 #[path = "chart_indicators_tests.rs"]
 mod chart_indicators_tests;
 #[cfg(test)]
+#[path = "candle_history_4h_tests.rs"]
+mod candle_history_4h_tests;
+#[cfg(test)]
+#[path = "markov_product_source_tests.rs"]
+mod markov_product_source_tests;
+#[cfg(test)]
 #[path = "main_candle_scope_tests.rs"]
 mod main_candle_scope_tests;
 #[cfg(test)]

@@ -7,6 +7,8 @@ import { marketSymbolForSignal, marketVenueForSignal } from './chart-market-iden
 import { CHART_INDICATOR_IDS, chartIndicatorPointsByTime, chartIndicatorSeriesKey, finiteChartIndicatorValue, normalizeChartIndicators } from './chart-indicator-data.js';
 import { formatChartCandleTimestamp, latestContinuousCandleSegment } from './chart-candle-time.js';
 import { describeMarkovRegimeStatus, describeNweEnvelopeStatus } from './chart-indicator-status.js';
+import { chartCandlesForTimeframe, chartTimeframeWasLoaded } from './chart-timeframe-candles.js';
+import { clearRustIndicatorCache, rustIndicatorCacheForSeries } from './chart-indicator-cache.js';
 
 export const CHART_BUNDLE_HISTORY_BARS = 500;
 export { CHART_INDICATOR_IDS } from './chart-indicator-data.js';
@@ -137,16 +139,7 @@ export function installChartData() {
                     return { candles: [], sourceCandles: [], startIndex: 0, omittedBars: 0, gapMilliseconds: 0, gapFrom: null, gapTo: null, hasGap: false };
                 }
                 const requestedTimeframe = String(timeframe || activeTimeframe || '1d').trim().toLowerCase();
-                const map = signal.candles_by_tf || {};
-                const mappedCandles = map[requestedTimeframe];
-                const signalTimeframeCandles = requestedTimeframe === String(signal.timeframe || '1d').toLowerCase()
-                    ? signal.candles || []
-                    : [];
-                const sourceCandles = Array.isArray(mappedCandles) && mappedCandles.length
-                    ? mappedCandles
-                    : (Array.isArray(signalTimeframeCandles) && signalTimeframeCandles.length
-                        ? signalTimeframeCandles
-                        : (Array.isArray(mappedCandles) ? mappedCandles : signalTimeframeCandles));
+                const sourceCandles = chartCandlesForTimeframe(signal, requestedTimeframe);
                 if (!Array.isArray(sourceCandles)) {
                     return { candles: [], sourceCandles: [], startIndex: 0, omittedBars: 0, gapMilliseconds: 0, gapFrom: null, gapTo: null, hasGap: false };
                 }
@@ -397,32 +390,35 @@ export function installChartData() {
             // hundreds of candles for every card. Existing signal fixtures that
             // already contain candles continue to work without a request.
             let chartBundleRequestSerial = 0;
-            async function ensureChartData(signal = selectedSignal, force = false, suppressSyncPriority = false) {
+            async function ensureChartData(signal = selectedSignal, force = false, suppressSyncPriority = false, timeframe = activeTimeframe) {
                 if (!signal) return false;
+                const requestTimeframe = String(timeframe || signal.timeframe || '1d').trim().toLowerCase();
                 if (force) {
                     signal._chartBundleAbortController?.abort();
+                    signal._rustIndicatorAbortController?.abort();
+                    signal._rustIndicatorAbortController = null;
+                    indicatorRequestSerial += 1;
                     signal.candles_by_tf = {};
+                    signal.chart_data_loaded_by_tf = {};
                     signal.candles = [];
+                    signal._chartCandlesTimeframe = requestTimeframe;
                     signal.chart_freshness = {};
                     signal.chart_data_loaded = false;
                     signal.chart_data_lazy = true;
+                    clearRustIndicatorCache(signal);
                     // A forced retry must be able to replace a stalled request;
                     // otherwise one hung local fetch poisons every later Retry.
                     if (signal._chartBundlePromise) signal._chartBundlePromise = null;
                 }
-                const existing = signal.candles_by_tf || {};
-                if (!force && getChartCandles(signal).length > 0) return true;
-                const existingTimeframeCandles = existing[activeTimeframe];
-                if (!force && Array.isArray(existingTimeframeCandles) && existingTimeframeCandles.length > 0) return true;
-                if (!force && signal.chart_data_loaded === true
-                    && Object.prototype.hasOwnProperty.call(existing, activeTimeframe)) return true;
+                if (!force && chartCandlesForTimeframe(signal, requestTimeframe).length > 0) return true;
+                if (!force && chartTimeframeWasLoaded(signal, requestTimeframe)) return true;
                 if (!signal.chart_data_lazy) return false;
                 if (signal._chartBundlePromise) {
                     const pendingTimeframe = signal._chartBundleTimeframe;
                     const pendingPromise = signal._chartBundlePromise;
                     const loaded = await pendingPromise;
-                    if (pendingTimeframe === activeTimeframe || !isSelectedSignal(signal)) return loaded;
-                    return await ensureChartData(signal);
+                    if (pendingTimeframe === requestTimeframe || !isSelectedSignal(signal)) return loaded;
+                    return await ensureChartData(signal, false, suppressSyncPriority, requestTimeframe);
                 }
 
                 const requestId = ++chartBundleRequestSerial;
@@ -433,15 +429,13 @@ export function installChartData() {
                 const symbol = marketSymbolForSignal(signal);
                 const exchange = String(signal.exchange || signal.Exchange || signal.venue || signal.Venue || '').trim().toLowerCase();
                 const assetClass = String(signal.class || signal.asset_class || signal.Class || '').trim().toLowerCase();
-                const requestTimeframe = String(activeTimeframe || signal.timeframe || '1d').trim().toLowerCase();
                 signal._chartBundleTimeframe = requestTimeframe;
-                const currentChartMatches = () => !!selectedSignal
-                    && (isSelectedSignal(signal) || (marketSymbolForSignal(selectedSignal) === symbol
-                        && String(selectedSignal.exchange || selectedSignal.Exchange || selectedSignal.venue || selectedSignal.Venue || '').trim().toLowerCase() === exchange));
-                if (currentChartMatches()) {
-                    setChartStatus('loading', `Loading ${symbol} · ${String(activeTimeframe || '--').toUpperCase()} from durable local history.`, { signal });
+                const currentChartMatches = () => isSelectedSignal(signal);
+                const isVisibleTimeframe = () => requestTimeframe === String(activeTimeframe || '').toLowerCase();
+                if (currentChartMatches() && isVisibleTimeframe()) {
+                    setChartStatus('loading', `Loading ${symbol} · ${requestTimeframe.toUpperCase()} from durable local history.`, { signal });
                     const markovStatus = document.getElementById('markov-regime-status');
-                    if (markovStatus) markovStatus.textContent = `Markov ${String(activeTimeframe || '--').toUpperCase()}: loading chart history`;
+                    if (markovStatus) markovStatus.textContent = `Markov ${requestTimeframe.toUpperCase()}: loading chart history`;
                 }
                 signal._chartBundlePromise = (async () => {
                     const timeoutId = setTimeout(() => controller.abort(), 15_000);
@@ -492,6 +486,9 @@ export function installChartData() {
                             loaded[timeframe] = Array.isArray(rows) ? rows.map(row => formatCandle(row, timeframe)).filter(row => [row.open, row.high, row.low, row.close].every(Number.isFinite)) : [];
                         });
                         signal.candles_by_tf = loaded;
+                        const loadedTimeframes = { ...(signal.chart_data_loaded_by_tf || {}) };
+                        Object.keys(payload.timeframes).forEach(key => { loadedTimeframes[String(key).toLowerCase()] = true; });
+                        signal.chart_data_loaded_by_tf = loadedTimeframes;
                         signal.chart_freshness = {
                             ...(signal.chart_freshness || {}),
                             ...(payload.series && typeof payload.series === 'object' ? payload.series : {}),
@@ -501,7 +498,10 @@ export function installChartData() {
                             ...(payload.markov_regimes && typeof payload.markov_regimes === 'object' ? payload.markov_regimes : {}),
                         };
                         signal.chart_indicator_config = payload.indicator_config && typeof payload.indicator_config === 'object' ? payload.indicator_config : {};
-                        signal.candles = loaded[requestTimeframe] || [];
+                        if (isVisibleTimeframe()) {
+                            signal.candles = loaded[requestTimeframe] || [];
+                            signal._chartCandlesTimeframe = requestTimeframe;
+                        }
                         signal.chart_data_loaded = true;
                         const selectedChartSignal = currentChartMatches() ? selectedSignal : null;
                         if (selectedChartSignal) {
@@ -509,25 +509,29 @@ export function installChartData() {
                             // this request is in flight. Transfer the loaded bundle
                             // to that current object before repainting.
                             selectedChartSignal.candles_by_tf = loaded;
+                            selectedChartSignal.chart_data_loaded_by_tf = loadedTimeframes;
                             selectedChartSignal.chart_freshness = signal.chart_freshness;
                             selectedChartSignal.markov_regimes_by_tf = signal.markov_regimes_by_tf;
                             selectedChartSignal.chart_indicator_config = signal.chart_indicator_config;
-                            selectedChartSignal.candles = loaded[requestTimeframe] || signal.candles;
+                            if (isVisibleTimeframe()) {
+                                selectedChartSignal.candles = loaded[requestTimeframe] || signal.candles;
+                                selectedChartSignal._chartCandlesTimeframe = requestTimeframe;
+                            }
                             selectedChartSignal.chart_data_loaded = true;
                         }
                         return true;
                     } catch (error) {
                         if (requestId !== chartBundleRequestSerial) return false;
                         signal.chart_data_loaded = false;
-                        if (currentChartMatches()) {
+                        if (currentChartMatches() && isVisibleTimeframe()) {
                             const reason = error?.name === 'AbortError' ? 'local chart request timed out after 15s' : String(error?.message || error || 'Chart service unavailable');
                             setIndicatorComputeStatus('error', `chart data: ${reason.slice(0, 100)}`);
                             const markovStatus = document.getElementById('markov-regime-status');
                             if (markovStatus) {
-                                markovStatus.textContent = `Markov ${String(activeTimeframe || '--').toUpperCase()}: unavailable · retry chart data`;
+                                markovStatus.textContent = `Markov ${requestTimeframe.toUpperCase()}: unavailable · retry chart data`;
                                 markovStatus.setAttribute('aria-label', `Markov regime history unavailable because chart data failed to load. Retry chart data to recover. ${reason.slice(0, 140)}`);
                             }
-                            setChartStatus('error', `Unable to load ${symbol} · ${String(activeTimeframe || '--').toUpperCase()}. ${reason.slice(0, 140)}`, { signal });
+                            setChartStatus('error', `Unable to load ${symbol} · ${requestTimeframe.toUpperCase()}. ${reason.slice(0, 140)}`, { signal });
                         }
                         return false;
                     } finally {
@@ -554,7 +558,9 @@ export function installChartData() {
                 signal._chartBundlePromise = null;
                 signal._chartBundleTimeframe = null;
                 signal.candles = [];
+                signal._chartCandlesTimeframe = '';
                 signal.candles_by_tf = null;
+                signal.chart_data_loaded_by_tf = null;
                 signal.chart_freshness = null;
                 signal.chart_data_loaded = false;
                 signal.chart_indicator_config = null;
@@ -649,8 +655,8 @@ export function installChartData() {
                 }
                 signal._rustIndicatorCache = signal._rustIndicatorCache || {};
                 const seriesKey = chartIndicatorSeriesKey(candles);
-                const cached = signal._rustIndicatorCache[activeTimeframe];
-                if (cached && cached.seriesKey === seriesKey) {
+                const cached = rustIndicatorCacheForSeries(signal._rustIndicatorCache, activeTimeframe, seriesKey);
+                if (cached) {
                     setIndicatorComputeStatus('ready', `${activeTimeframe} · ${cached.version || 'verified'}`);
                     return true;
                 }
@@ -891,6 +897,7 @@ export function installChartData() {
         chartRetryButton: { get: () => chartRetryButton },
         chartBundleRequestSerial: { get: () => chartBundleRequestSerial, set: value => { chartBundleRequestSerial = value; } },
         ensureChartData: { get: () => ensureChartData },
+        ensureChartDataForTimeframe: { get: () => (signal, timeframe) => ensureChartData(signal, false, false, timeframe) },
         releaseChartDataForSignal: { get: () => releaseChartDataForSignal },
         refreshChartData: { get: () => refreshChartData },
         refreshSelectedChartAfterAssetUpdate: { get: () => refreshSelectedChartAfterAssetUpdate },
