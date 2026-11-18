@@ -1,7 +1,5 @@
 use super::*;
-use crate::{
-    generate_stockbit_nwe_4h_signals, score_entry_signal, SignalConfluenceScore, StrategySignal,
-};
+use crate::{combined_entry_score, stockbit_nwe_4h_minimum_history_bars};
 
 fn bar(index: usize, open: f64, close: f64) -> StrategyBar {
     StrategyBar {
@@ -29,26 +27,6 @@ fn wave_bars(count: usize) -> Vec<StrategyBar> {
         .collect()
 }
 
-fn signal() -> StrategySignal {
-    StrategySignal {
-        direction: "LONG".into(),
-        strategy_strength: 8.0,
-        regime: "LEAD_STATE".into(),
-        confluence: Some(SignalConfluenceScore {
-            score: 3.0,
-            nadaraya_state: "NWE_SUPPORT".into(),
-            dss_state: "DSS_SUPPORT".into(),
-            dss_extreme_zone: false,
-            dss_points: 0.0,
-            dss_extreme_points: 0.0,
-            nadaraya_touch_points: 0.0,
-            nadaraya_near_line_points: 0.0,
-            nadaraya_reclaim_points: 0.0,
-        }),
-        ..StrategySignal::default()
-    }
-}
-
 fn policy(horizon: usize, fees_known: bool) -> EvaluationPolicy {
     EvaluationPolicy {
         horizon,
@@ -63,86 +41,73 @@ fn policy(horizon: usize, fees_known: bool) -> EvaluationPolicy {
 }
 
 #[test]
-fn mapping_keeps_primary_and_support_on_the_correct_indicator() {
-    let bars = alternating_bars(21);
-    let nwe = score_entry_signal(&bars, &signal(), EntryModelKind::Nwe).unwrap();
-    assert_eq!(
-        (nwe.components[0].points, nwe.components[1].points),
-        (8.0, 3.0)
-    );
-    assert_eq!(nwe.components[0].state, "LEAD_STATE");
-    assert_eq!(nwe.components[1].state, "DSS_SUPPORT");
-    let dss = score_entry_signal(&bars, &signal(), EntryModelKind::Dss).unwrap();
-    assert_eq!(
-        (dss.components[0].points, dss.components[1].points),
-        (3.0, 8.0)
-    );
-    assert_eq!(dss.components[0].state, "NWE_SUPPORT");
-    assert_eq!(dss.components[1].state, "LEAD_STATE");
-    let mut without_support = signal();
-    without_support.confluence = None;
-    let score = score_entry_signal(&bars, &without_support, EntryModelKind::Dss).unwrap();
-    assert_eq!(score.components[0].points, 0.0);
-    assert_eq!(score.components[0].state, "UNAVAILABLE");
-    assert_eq!(score.components[1].points, 8.0);
+fn combined_score_starts_at_shared_warmup_and_keeps_unavailable_factor_weight() {
+    let bars = wave_bars(stockbit_nwe_4h_minimum_history_bars() + 1);
+    assert!(combined_entry_score(
+        &bars[..ENTRY_SCORE_MINIMUM_HISTORY_BARS - 1],
+        BASELINE_WEIGHTS
+    )
+    .is_none());
+    let early =
+        combined_entry_score(&bars[..ENTRY_SCORE_MINIMUM_HISTORY_BARS], BASELINE_WEIGHTS).unwrap();
+    assert_eq!(early.components[0].state, "UNAVAILABLE");
+    assert_eq!(early.components[0].points, 0.0);
+    assert_eq!(early.components[0].weight_points, 10);
+    assert_eq!(early.components[1].state, "SIGNED_DSS_SPREAD");
+    let mature = combined_entry_score(&bars, BASELINE_WEIGHTS).unwrap();
+    assert_eq!(mature.components[0].state, "SIGNED_BAND_POSITION");
 }
 
 #[test]
-fn replay_matches_live_latest_outputs_and_is_invariant_to_future_bars() {
+fn replay_matches_live_combined_score_and_is_invariant_to_future_bars() {
     let prefix = wave_bars(560);
     let full = wave_bars(600);
-    for kind in [EntryModelKind::Nwe, EntryModelKind::Dss] {
-        let mut from_prefix = Vec::new();
-        visit_entry_signals(&prefix, kind, |index, signal| {
-            from_prefix.push((
-                index,
-                signal.clone(),
-                score_entry_signal(&prefix[..=index], signal, kind),
-            ));
-        });
-        let mut from_full = Vec::new();
-        visit_entry_signals(&full, kind, |index, signal| {
-            if index < prefix.len() {
-                from_full.push((
-                    index,
-                    signal.clone(),
-                    score_entry_signal(&full[..=index], signal, kind),
-                ));
-            }
-        });
-        assert_eq!(from_prefix, from_full);
-        for (index, replay, score) in from_prefix.iter().rev().take(3) {
-            let live = match kind {
-                EntryModelKind::Nwe => generate_stockbit_nwe_4h_signals(&prefix[..=*index]),
-                EntryModelKind::Dss => {
-                    crate::generate_stockbit_dss_bressert_4h_signals(&prefix[..=*index])
-                }
-            };
-            assert_eq!(Some(replay), live.last());
-            assert_eq!(
-                *score,
-                score_entry_signal(&prefix[..=*index], live.last().unwrap(), kind)
-            );
-        }
+    let sample = |index| [49, 499, 500, 559].contains(&index);
+    let mut from_prefix = Vec::new();
+    visit_combined_entry_scores(&prefix, sample, |index, score| {
+        from_prefix.push((index, score))
+    });
+    let mut from_full = Vec::new();
+    visit_combined_entry_scores(&full, sample, |index, score| from_full.push((index, score)));
+    assert_eq!(from_prefix, from_full);
+    assert_eq!(from_prefix.len(), 4);
+    for (index, score) in from_prefix {
+        assert_eq!(
+            score,
+            combined_entry_score(&prefix[..=index], BASELINE_WEIGHTS).unwrap()
+        );
+        let weights = [5, 15, 10, 10];
+        let live = combined_entry_score(&prefix[..=index], weights).unwrap();
+        let observation = Observation {
+            factors: std::array::from_fn(|factor| score.components[factor].points),
+            available: std::array::from_fn(|factor| {
+                score.components[factor].state != "UNAVAILABLE"
+            }),
+            markov_score: score.markov_regime_score,
+            markov_available: true,
+            autocorrelation_score: score.autocorrelation_score,
+            autocorrelation_available: true,
+        };
+        assert_eq!(score_with_weights(observation, weights), live.total_score);
     }
 }
 
 #[test]
-fn actual_dss_lead_is_evaluated_without_the_old_composite_nwe_gate() {
+fn entry_direction_uses_combined_score_and_venue_policy() {
+    let floor = crate::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60;
+    assert_eq!(entry_score_direction(floor, floor, true), Some("LONG"));
+    assert_eq!(entry_score_direction(-floor, floor, true), Some("SHORT"));
+    assert_eq!(entry_score_direction(-floor, floor, false), None);
+    assert_eq!(entry_score_direction(floor / 2.0, floor, true), None);
+    assert_eq!(entry_score_direction(0.0, 0.0, true), None);
+    assert_eq!(entry_score_direction(f64::NAN, floor, true), None);
+}
+
+#[test]
+fn combined_score_is_evaluated_before_nwe_warmup() {
     let bars = alternating_bars(400);
-    let value = evaluate_entry_score_backtest(
-        &bars,
-        EntryModelKind::Dss,
-        crate::NANOS_PER_DAY,
-        0.1,
-        0.2,
-        true,
-        true,
-    );
-    assert_eq!(
-        value["score_model_id"],
-        EntryModelKind::Dss.score_model_id()
-    );
+    let value = evaluate_entry_score_backtest(&bars, crate::NANOS_PER_DAY, 0.1, 0.2, true, true);
+    assert_eq!(value["score_model_id"], ENTRY_SCORE_MODEL_ID);
     assert_eq!(value["protocol_id"], ENTRY_SCORE_VALIDATION_PROTOCOL_ID);
     assert_eq!(value["status"], "HOLDOUT_RESEARCH_COMPLETE");
     assert!(
@@ -161,37 +126,27 @@ fn actual_dss_lead_is_evaluated_without_the_old_composite_nwe_gate() {
 #[test]
 fn calendar_minimum_applies_to_full_history_not_the_twenty_percent_holdout() {
     let bars = alternating_bars(crate::ENTRY_SCORE_MIN_HISTORY_DAYS as usize + 1);
-    let value = evaluate_entry_score_backtest(
-        &bars,
-        EntryModelKind::Dss,
-        crate::NANOS_PER_DAY,
-        0.1,
-        0.2,
-        true,
-        true,
-    );
+    let value = evaluate_entry_score_backtest(&bars, crate::NANOS_PER_DAY, 0.1, 0.2, true, true);
 
     assert_eq!(value["history_days"], crate::ENTRY_SCORE_MIN_HISTORY_DAYS);
     assert!(value["holdout_window_days"].as_i64().unwrap() < crate::ENTRY_SCORE_MIN_HISTORY_DAYS);
     assert_eq!(value["checks"]["history_span_sufficient"], true);
-    assert_eq!(value["minimum_history_days"], crate::ENTRY_SCORE_MIN_HISTORY_DAYS);
+    assert_eq!(
+        value["minimum_history_days"],
+        crate::ENTRY_SCORE_MIN_HISTORY_DAYS
+    );
     assert!(value.get("minimum_holdout_days").is_none());
 }
 
 #[test]
 fn history_one_day_short_of_entry_validation_minimum_does_not_pass() {
     let bars = alternating_bars(crate::ENTRY_SCORE_MIN_HISTORY_DAYS as usize);
-    let value = evaluate_entry_score_backtest(
-        &bars,
-        EntryModelKind::Dss,
-        crate::NANOS_PER_DAY,
-        0.1,
-        0.2,
-        true,
-        true,
-    );
+    let value = evaluate_entry_score_backtest(&bars, crate::NANOS_PER_DAY, 0.1, 0.2, true, true);
 
-    assert_eq!(value["history_days"], crate::ENTRY_SCORE_MIN_HISTORY_DAYS - 1);
+    assert_eq!(
+        value["history_days"],
+        crate::ENTRY_SCORE_MIN_HISTORY_DAYS - 1
+    );
     assert_eq!(value["checks"]["history_span_sufficient"], false);
 }
 
@@ -199,7 +154,6 @@ fn history_one_day_short_of_entry_validation_minimum_does_not_pass() {
 fn partitions_isolate_entries_exits_and_future_prices() {
     let mut bars: Vec<_> = (0..12).map(|index| bar(index, 100.0, 110.0)).collect();
     let observation = Observation {
-        long: true,
         markov_score: 0.0,
         markov_available: false,
         autocorrelation_score: 0.0,
@@ -235,7 +189,6 @@ fn partitions_isolate_entries_exits_and_future_prices() {
 fn unknown_fees_are_explicitly_gross_and_never_invent_net_returns() {
     let bars: Vec<_> = (0..6).map(|index| bar(index, 100.0, 110.0)).collect();
     let observation = Observation {
-        long: true,
         markov_score: 0.0,
         markov_available: false,
         autocorrelation_score: 0.0,
@@ -256,7 +209,7 @@ fn unknown_fees_are_explicitly_gross_and_never_invent_net_returns() {
     assert_eq!(value["fees_applied"], false);
     assert_eq!(value["profit_factor"], Value::Null);
     assert_eq!(value["profit_factor_unbounded"], true);
-    assert_eq!(result.total_bands[3].trades, 1);
+    assert_eq!(result.total_bands[4].trades, 1);
     assert_eq!(result.factor_bands[0][3].trades, 1);
 }
 
@@ -272,7 +225,6 @@ fn weight_grid_is_bounded_and_preserves_the_forty_point_budget() {
     assert_eq!(
         score_with_weights(
             Observation {
-                long: true,
                 markov_score: 0.0,
                 markov_available: false,
                 autocorrelation_score: 0.0,
@@ -289,7 +241,6 @@ fn weight_grid_is_bounded_and_preserves_the_forty_point_budget() {
 #[test]
 fn weight_replay_uses_the_existing_score_floor_and_does_not_redistribute_missing_factors() {
     let observation = Observation {
-        long: true,
         markov_score: 0.0,
         markov_available: false,
         autocorrelation_score: 0.0,
@@ -314,7 +265,6 @@ fn weight_replay_uses_the_existing_score_floor_and_does_not_redistribute_missing
 fn reverse_exit_requires_the_opposite_signal_to_qualify_under_the_tested_weights() {
     let bars: Vec<_> = (0..8).map(|index| bar(index, 100.0, 101.0)).collect();
     let long = Observation {
-        long: true,
         markov_score: 0.0,
         markov_available: false,
         autocorrelation_score: 0.0,
@@ -323,12 +273,11 @@ fn reverse_exit_requires_the_opposite_signal_to_qualify_under_the_tested_weights
         available: [true; 4],
     };
     let weak_short = Observation {
-        long: false,
         markov_score: 0.0,
         markov_available: false,
         autocorrelation_score: 0.0,
         autocorrelation_available: false,
-        factors: [0.0, 10.0, 0.0, 0.0],
+        factors: [0.0, -10.0, 0.0, 0.0],
         available: [true; 4],
     };
     let mut observations = vec![None; bars.len()];
@@ -352,15 +301,8 @@ fn reverse_exit_requires_the_opposite_signal_to_qualify_under_the_tested_weights
 #[test]
 fn learned_weights_need_known_fees_and_minimum_training_evidence() {
     let bars = alternating_bars(560);
-    let fees_unknown = evaluate_entry_score_backtest(
-        &bars,
-        EntryModelKind::Dss,
-        crate::NANOS_PER_DAY,
-        0.0,
-        0.0,
-        false,
-        true,
-    );
+    let fees_unknown =
+        evaluate_entry_score_backtest(&bars, crate::NANOS_PER_DAY, 0.0, 0.0, false, true);
     assert_eq!(fees_unknown["weight_learning"]["status"], "FEES_UNKNOWN");
     assert_eq!(
         fees_unknown["weight_learning"]["live_weights_changed"],
@@ -375,7 +317,6 @@ fn training_selects_a_weight_vector_without_reading_validation_or_holdout_prices
     let observations: Vec<_> = (0..bars.len())
         .map(|index| {
             (index % 9 == 0).then_some(Observation {
-                long: true,
                 markov_score: 0.0,
                 markov_available: false,
                 autocorrelation_score: 0.0,
@@ -425,7 +366,6 @@ fn hour_pair_uses_next_bar_open_and_target_bar_close_in_wib() {
         })
         .collect();
     let observation = Observation {
-        long: true,
         markov_score: 0.0,
         markov_available: false,
         autocorrelation_score: 0.0,
@@ -460,7 +400,6 @@ fn weighted_score_autocorrelation_uses_training_signal_events() {
     let observations: Vec<_> = (0..12)
         .map(|index| {
             Some(Observation {
-                long: true,
                 markov_score: 0.0,
                 markov_available: false,
                 autocorrelation_score: 0.0,
@@ -490,7 +429,6 @@ fn hour_search_selects_the_validation_pair_with_the_highest_fee_aware_return() {
         })
         .collect();
     let observation = Observation {
-        long: true,
         markov_score: 0.0,
         markov_available: false,
         autocorrelation_score: 0.0,
@@ -522,7 +460,6 @@ fn hour_search_selects_the_validation_pair_with_the_highest_fee_aware_return() {
 fn low_training_sample_does_not_create_a_weight_candidate() {
     let bars: Vec<_> = (0..120).map(|index| bar(index, 100.0, 110.0)).collect();
     let observation = Observation {
-        long: true,
         markov_score: 0.0,
         markov_available: false,
         autocorrelation_score: 0.0,
@@ -568,13 +505,15 @@ fn band_boundaries_include_exact_ten_and_forty_without_reclassifying_unavailable
         (10.0, 1),
         (20.0, 2),
         (30.0, 3),
-        (40.0, 3),
+        (40.0, 4),
     ] {
-        assert_eq!(band_index(score, TOTAL_SCORE_BAND_WIDTH, TOTAL_SCORE_BAND_COUNT), expected);
+        assert_eq!(
+            band_index(score, TOTAL_SCORE_BAND_WIDTH, TOTAL_SCORE_BAND_COUNT),
+            expected
+        );
     }
     let bars: Vec<_> = (0..6).map(|index| bar(index, 100.0, 110.0)).collect();
     let observation = Observation {
-        long: true,
         markov_score: 0.0,
         markov_available: false,
         autocorrelation_score: 0.0,
@@ -612,15 +551,7 @@ fn discrimination_requires_two_sufficient_separated_bands_with_higher_mean_retur
 
 #[test]
 fn malformed_nonmonotonic_and_short_history_are_explicit() {
-    let empty = evaluate_entry_score_backtest(
-        &[],
-        EntryModelKind::Nwe,
-        crate::NANOS_PER_DAY,
-        0.0,
-        0.0,
-        false,
-        false,
-    );
+    let empty = evaluate_entry_score_backtest(&[], crate::NANOS_PER_DAY, 0.0, 0.0, false, false);
     assert_eq!(empty["status"], "INSUFFICIENT_HISTORY");
     assert_eq!(empty["holdout"]["trades"], 0);
     assert_eq!(empty["checks"]["holdout_sample_sufficient"], false);
@@ -628,41 +559,20 @@ fn malformed_nonmonotonic_and_short_history_are_explicit() {
     let mut malformed = alternating_bars(2);
     malformed[1].time = malformed[0].time;
     assert_eq!(
-        evaluate_entry_score_backtest(
-            &malformed,
-            EntryModelKind::Dss,
-            crate::NANOS_PER_DAY,
-            0.0,
-            0.0,
-            false,
-            true
-        )["status"],
+        evaluate_entry_score_backtest(&malformed, crate::NANOS_PER_DAY, 0.0, 0.0, false, true)
+            ["status"],
         "INVALID_HISTORY"
     );
     malformed = alternating_bars(2);
     malformed[0].volume = f64::NAN;
     assert_eq!(
-        evaluate_entry_score_backtest(
-            &malformed,
-            EntryModelKind::Dss,
-            crate::NANOS_PER_DAY,
-            0.0,
-            0.0,
-            false,
-            true
-        )["status"],
+        evaluate_entry_score_backtest(&malformed, crate::NANOS_PER_DAY, 0.0, 0.0, false, true)
+            ["status"],
         "INVALID_HISTORY"
     );
     assert_eq!(
-        evaluate_entry_score_backtest(
-            &[],
-            EntryModelKind::Nwe,
-            crate::NANOS_PER_DAY,
-            f64::NAN,
-            0.0,
-            false,
-            false
-        )["status"],
+        evaluate_entry_score_backtest(&[], crate::NANOS_PER_DAY, f64::NAN, 0.0, false, false)
+            ["status"],
         "INVALID_HISTORY"
     );
 }
@@ -672,17 +582,9 @@ fn malformed_nonmonotonic_and_short_history_are_explicit() {
 fn entry_score_ten_thousand_bar_runtime_inspection() {
     let bars = wave_bars(10_000);
     let started = std::time::Instant::now();
-    let value = evaluate_entry_score_backtest(
-        &bars,
-        EntryModelKind::Nwe,
-        crate::NANOS_PER_DAY,
-        0.1,
-        0.2,
-        true,
-        true,
-    );
+    let value = evaluate_entry_score_backtest(&bars, crate::NANOS_PER_DAY, 0.1, 0.2, true, true);
     println!(
-        "10k NWE elapsed: {:?}; status={}; holdout_trades={}",
+        "10k combined score elapsed: {:?}; status={}; holdout_trades={}",
         started.elapsed(),
         value["status"],
         value["holdout"]["trades"]
@@ -700,9 +602,14 @@ fn entry_score_ten_thousand_bar_runtime_inspection() {
 #[test]
 fn directional_holdout_partitions_the_same_trade_sequence() {
     let bars = alternating_bars(8);
-    let observation = |points| Observation { long: true, factors: [points, 0.0, 0.0, 0.0],
-        available: [true;4], markov_score: 0.0, markov_available: false,
-        autocorrelation_score: 0.0, autocorrelation_available: false };
+    let observation = |points| Observation {
+        factors: [points, 0.0, 0.0, 0.0],
+        available: [true; 4],
+        markov_score: 0.0,
+        markov_available: false,
+        autocorrelation_score: 0.0,
+        autocorrelation_available: false,
+    };
     let mut observations = vec![None; bars.len()];
     observations[0] = Some(observation(8.0));
     observations[3] = Some(observation(-8.0));

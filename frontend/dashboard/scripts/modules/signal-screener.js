@@ -391,7 +391,7 @@ export function installSignalScreener() {
 
     function stockbitSignalEmptyText(models) {
         if (!models.length) {
-            return `No Stockbit NWE/DSS model is configured for ${timeframeFilter}.`;
+            return `No Stockbit combined score is configured for ${timeframeFilter}.`;
         }
         if (summary.stale) {
             return timeframeFilter === 'all'

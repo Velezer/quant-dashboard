@@ -51,9 +51,7 @@ pub struct SixIndicatorScore {
 impl SixIndicatorScore {
     /// Direction follows the signed weighted total; an exact zero is neutral.
     pub fn direction(&self) -> Option<&'static str> {
-        if self.total_score > 0.0 { Some("LONG") }
-        else if self.total_score < 0.0 { Some("SHORT") }
-        else { None }
+        super::entry_score_direction(self.total_score, 0.0, true)
     }
 }
 
@@ -62,15 +60,16 @@ impl SixIndicatorScore {
 /// 10-point weight; neither is a win-probability estimate.
 pub(super) fn add_entry_model_indicators(
     score: FourIndicatorScore,
-    direction: &str,
     regime: Option<crate::RegimeId>,
     bars: &[StrategyBar],
 ) -> SixIndicatorScore {
-    let markov_component = markov_regime_component(direction, regime);
+    let markov_component = markov_regime_component(regime);
     let markov_regime_score = markov_component.weighted_points;
     let autocorrelation_component =
-        strategy_return_autocorrelation_component(bars, direction);
+        strategy_return_autocorrelation_component(bars);
     let autocorrelation_score = autocorrelation_component.weighted_points;
+    let weighted_points = score.components.each_ref().map(|component| component.weighted_points);
+    let total_score = entry_score_total(weighted_points, markov_regime_score, autocorrelation_score);
     let components = score.components;
     let components = [
         components[0].clone(),
@@ -85,16 +84,13 @@ pub(super) fn add_entry_model_indicators(
         volume_score: score.volume_score,
         markov_regime_score,
         autocorrelation_score,
-        total_score: score.total_score + markov_regime_score + autocorrelation_score,
+        total_score,
         weights: score.weights,
         components,
     }
 }
 
-fn strategy_return_autocorrelation_component(
-    bars: &[StrategyBar],
-    direction: &str,
-) -> ScoreComponent {
+fn strategy_return_autocorrelation_component(bars: &[StrategyBar]) -> ScoreComponent {
     let unavailable = || ScoreComponent {
         indicator: "Lag-one Return Autocorrelation",
         state: "UNAVAILABLE".to_string(),
@@ -103,9 +99,6 @@ fn strategy_return_autocorrelation_component(
         weighted_points: 0.0,
         value: None,
     };
-    if !matches!(direction, "LONG" | "SHORT") {
-        return unavailable();
-    }
     let return_count = bars
         .len()
         .saturating_sub(1)
@@ -189,7 +182,7 @@ fn strategy_return_autocorrelation_component(
     }
 }
 
-fn markov_regime_component(_direction: &str, regime: Option<crate::RegimeId>) -> ScoreComponent {
+fn markov_regime_component(regime: Option<crate::RegimeId>) -> ScoreComponent {
     let state = regime.map(|regime| regime.name()).unwrap_or("UNAVAILABLE");
     let aligned_direction = match regime {
         Some(crate::RegimeId::BullTrend | crate::RegimeId::Accumulation) => Some("LONG"),
@@ -252,15 +245,30 @@ pub fn score_four_indicators_with_weights(
     dss_points_out_of_ten: f64,
     weights: [u8; 4],
 ) -> Option<FourIndicatorScore> {
-    let bar = bars.last()?;
-    if !matches!(direction, "LONG" | "SHORT") || !valid_four_indicator_weights(weights) {
+    if !matches!(direction, "LONG" | "SHORT") {
         return None;
     }
-    let direction_sign = if direction == "LONG" { 1.0 } else { -1.0 };
+    score_signed_four_indicators(
+        bars, nwe_state, nwe_points_out_of_ten, dss_state, dss_points_out_of_ten, weights,
+    )
+}
+
+pub(super) fn score_signed_four_indicators(
+    bars: &[StrategyBar],
+    nwe_state: &str,
+    nwe_points_out_of_ten: f64,
+    dss_state: &str,
+    dss_points_out_of_ten: f64,
+    weights: [u8; 4],
+) -> Option<FourIndicatorScore> {
+    let bar = bars.last()?;
+    if !valid_four_indicator_weights(weights) {
+        return None;
+    }
     let nwe_points = bounded_price_component(nwe_points_out_of_ten);
     let dss_points = bounded_price_component(dss_points_out_of_ten);
-    let volume = relative_volume_component(bars, bar, direction_sign);
-    let delta = estimated_delta_component(bar, direction_sign);
+    let volume = relative_volume_component(bars, bar);
+    let delta = estimated_delta_component(bar);
     let mut components = [
         ScoreComponent {
             indicator: "Nadaraya-Watson Envelope",
@@ -283,7 +291,7 @@ pub fn score_four_indicators_with_weights(
     ];
     for (component, weight) in components.iter_mut().zip(weights) {
         component.weight_points = weight;
-        component.weighted_points = component.points * f64::from(weight) / 10.0;
+        component.weighted_points = weighted_factor_points(component.points, weight);
     }
     let price_score = components[0].weighted_points + components[1].weighted_points;
     let volume_score = components[2].weighted_points + components[3].weighted_points;
@@ -295,6 +303,18 @@ pub fn score_four_indicators_with_weights(
         weights,
         components,
     })
+}
+
+pub(crate) fn weighted_factor_points(points: f64, weight: u8) -> f64 {
+    points * f64::from(weight) / FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX
+}
+
+pub(crate) fn entry_score_total(
+    [nwe, dss, relative_volume, estimated_delta]: [f64; 4],
+    markov: f64,
+    autocorrelation: f64,
+) -> f64 {
+    (nwe + dss) + (relative_volume + estimated_delta) + markov + autocorrelation
 }
 
 fn valid_four_indicator_weights(weights: [u8; 4]) -> bool {
@@ -313,7 +333,6 @@ fn bounded_price_component(value: f64) -> f64 {
 fn relative_volume_component(
     bars: &[StrategyBar],
     current: &StrategyBar,
-    _direction_sign: f64,
 ) -> ScoreComponent {
     let unavailable = || ScoreComponent {
         indicator: "Relative Volume",
@@ -374,7 +393,7 @@ fn relative_volume_component(
     }
 }
 
-fn estimated_delta_component(current: &StrategyBar, _direction_sign: f64) -> ScoreComponent {
+fn estimated_delta_component(current: &StrategyBar) -> ScoreComponent {
     let unavailable = || ScoreComponent {
         indicator: "Estimated Volume Delta (OHLCV proxy)",
         state: "UNAVAILABLE".to_string(),

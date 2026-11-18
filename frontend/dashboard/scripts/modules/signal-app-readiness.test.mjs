@@ -39,7 +39,7 @@ const product = (exchange_id, product_id, extra = {}) => ({ exchange_id, product
     instrument_count: 10, fresh_price_count: 0, missing_price_count: 0, stale_price_count: 0,
     data_error_count: 0, examples: [], timeframes: [frame('15m')], ...extra });
 const snapshot = products => ({ stale: false, status: { last_attempt_status: 'ready' },
-    readiness: { version: 1, checked_at: 1792737300, products } });
+    readiness: { version: 1, checked_at: 1792737300, nwe_required_bars: 501, products } });
 
 test('each app receives its observed blocker rather than scan-wide coverage from another app', () => {
     const summary = snapshot([
@@ -84,10 +84,12 @@ test('stale, failed, missing diagnostics and retained stale-price setups remain 
     assert.doesNotMatch(absent.title, /No qualifying setup/);
 });
 
-test('NWE warm-up gaps prevent a healthy all-models claim and search does not change scan counts', () => {
+test('NWE warm-up is informational and search does not change scan counts', () => {
     const summary = snapshot([product('pluang', 'pluang_perpetual', { fresh_price_count: 10,
         timeframes: [frame('15m', { evaluated_count: 10, nwe_insufficient_history_count: 8 })] })]);
-    assert.equal(appSignalReadiness('pluang', null, summary).title, 'Some tickers still need usable data');
+    const result = appSignalReadiness('pluang', null, summary);
+    assert.equal(result.title, 'No qualifying setup in the last scan');
+    assert.match(result.checkedAt, /NWE contributed zero/);
     const search = appSignalReadiness('pluang', null, summary, { search: 'BTC', visibleCount: 0 });
     assert.equal(search.title, 'No current signals match your search');
     assert.match(search.message, /search filters the returned signal rows only/);

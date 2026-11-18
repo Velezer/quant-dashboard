@@ -1,4 +1,4 @@
-use super::timeframe_signals::{timeframe_strategy_ids, ScreenerMatch, ScreenerMatches};
+use super::timeframe_signals::{ScreenerMatch, ScreenerMatches};
 use super::*;
 use rusqlite::OptionalExtension;
 
@@ -690,6 +690,9 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     while let Some(row) = query_rows.next()? {
         if is_unavailable_pintu_signal(row)? { continue; }
         let strategy = row.get::<_, String>(5)?;
+        if crate::master_data::is_retired_entry_strategy(&strategy) {
+            continue;
+        }
         let score = row.get::<_, f64>(9)?;
         let timeframe = row.get::<_, String>(7)?;
         let score_basis_json = row.get::<_, String>(12)?;
@@ -721,7 +724,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             scan_interval_seconds,
             &score_model_by_strategy,
         );
-        let is_crypto_timeframe_signal = is_crypto_nwe_dss_signal_score_row(
+        let is_crypto_timeframe_signal = is_crypto_combined_entry_score_row(
             signal["asset_category_id"].as_str().unwrap_or_default(),
             &strategy,
             &timeframe,
@@ -816,9 +819,6 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
                 scan_interval_seconds,
                 &score_model_by_strategy,
             );
-            if let Some(strategies) = timeframe_strategy_ids(&signal) {
-                signal["timeframe_strategy_ids"] = json!(strategies);
-            }
             signals.push(signal);
         }
         matching_rows = matching_rows.saturating_add(1);
@@ -854,7 +854,13 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         let Some(signal_vote) = signal["score"].as_f64() else {
             continue;
         };
-        let (long_count, short_count, net_score) = if signal["timeframe_strategy_ids"].is_array() {
+        let is_single_combined_score = signal["persistent_score"] == true
+            || is_crypto_combined_entry_score_row(
+                signal["asset_category_id"].as_str().unwrap_or_default(),
+                signal["signal_strategy_id"].as_str().unwrap_or_default(),
+                signal["timeframe"].as_str().unwrap_or_default(),
+            );
+        let (long_count, short_count, net_score) = if is_single_combined_score {
             (
                 usize::from(signal_vote > 0.0),
                 usize::from(signal_vote < 0.0),

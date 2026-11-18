@@ -46,14 +46,9 @@ fn report(conn: &Connection, id: &str, timeframe: &str) -> Value {
         "status":"BACKTEST_COMPLETE","source":{"id":"pintu_native","is_proxy":false},
         "history":{"bars":1500,"coverage_days":900,"data_fingerprint":"fixture-fingerprint"},
         "models":[{
-            "kind":"nwe","label":"NWE","score_model_id":"nwe-model-version",
+            "kind":"combined","label":"Combined score","score_model_id":quant_core::ENTRY_SCORE_MODEL_ID,
             "entry_validation_status":"VALIDATION_PENDING","sizing_eligible":false,
             "backtest":{"selected_exit_bars":8,"holdout":{"trades":20,"win_rate_pct":75,"win_rate_after_fees_pct":60,"payoff_ratio":1.7,"payoff_ratio_after_fees":1.1,"mean_return_pct":1.5,"mean_net_return_pct":0.75}},
-            "blocking_reasons":["Execution costs are incomplete"]
-        },{
-            "kind":"dss","label":"DSS Bressert","score_model_id":"dss-model-version",
-            "entry_validation_status":"VALIDATION_PENDING","sizing_eligible":false,
-            "backtest":{"selected_exit_bars":4,"holdout":{"trades":15,"win_rate_pct":60,"win_rate_after_fees_pct":40,"payoff_ratio":1.4,"payoff_ratio_after_fees":0.8,"mean_return_pct":0.5,"mean_net_return_pct":-0.1}},
             "blocking_reasons":["Execution costs are incomplete"]
         }],
         "sizing":{"status":"BLOCKED"},"sizing_eligible":true
@@ -130,6 +125,8 @@ fn snapshots_upsert_only_the_exact_instrument_and_timeframe_and_preserve_aggrega
     let page = list(&conn,"pintu",None,"15m",None,0,100).unwrap();
     let summary = page["rows"].as_array().unwrap().iter().find(|row|row["instrument_id"]=="pintu.spot.btc").unwrap()["evidence"].clone();
     assert_eq!(summary["history_bars"],1500);
+    assert_eq!(summary["models"].as_array().unwrap().len(),1);
+    assert_eq!(summary["models"][0]["score_model_id"],quant_core::ENTRY_SCORE_MODEL_ID);
     assert_eq!(summary["models"][0]["holdout_trades"],20);
     assert_eq!(summary["models"][0]["holdout_win_rate_pct"].as_f64(),Some(60.0));
     assert_eq!(summary["models"][0]["holdout_payoff_ratio"],1.1);
@@ -165,6 +162,28 @@ fn four_hour_counts_require_a_qualified_current_after_fee_rule() {
     let old = list(&conn,"pintu",None,"4h",None,0,100).unwrap();
     assert_eq!(old["summary"]["validated"],0);
     assert_eq!(old["summary"]["backtested"],1);
+    let old_row = old["rows"].as_array().unwrap().iter()
+        .find(|row| row["instrument_id"] == "two").unwrap();
+    assert_eq!(old_row["evidence"]["protocol_current"], false);
+}
+
+#[test]
+fn recent_scoring_decisions_only_include_the_combined_model() {
+    let conn = connection();
+    let current = quant_core::ENTRY_SCORE_MODEL_ID;
+    for (model, evaluated_at) in [(current, 1), ("retired-nwe-model", 2)] {
+        let evaluation = json!({"scope":{"score_model_id":model},"evaluated_at":evaluated_at});
+        conn.execute(
+            "INSERT INTO app.entry_model_scoring_evaluations
+             (score_model_id,asset_category_id,timeframe,source_family,evaluated_at,evaluation_json)
+             VALUES(?1,'crypto_spot','4h','fixture',?2,?3)",
+            params![model, evaluated_at, evaluation.to_string()],
+        ).unwrap();
+    }
+    let status = super::super::scoring_profiles::scoring_profile_status(&conn).unwrap();
+    let decisions = status["latest_evaluations"].as_array().unwrap();
+    assert_eq!(decisions.len(), 1);
+    assert_eq!(decisions[0]["scope"]["score_model_id"], current);
 }
 
 #[test]
@@ -184,12 +203,11 @@ fn four_hour_after_fee_rule_summary_repairs_old_compact_rows_from_saved_report()
     save_report(&conn,&saved).unwrap();
     let old_summary = json!({"protocol_id":super::super::PROTOCOL_ID,
         "models":[
-            {"kind":"nwe","entry_validation_status":"VALIDATION_PENDING",
+            {"kind":"combined","entry_validation_status":"VALIDATION_PENDING",
              "risk_reward_protocol_id":null,"risk_reward_status":null,
              "risk_reward_holdout_trades":null,"risk_reward_validation_win_rate_pct":null,
              "risk_reward_holdout_win_rate_pct":null,"risk_reward_holdout_payoff_ratio_after_fees":null,
-             "risk_reward_holdout_mean_return_pct":null},
-            {"kind":"dss","entry_validation_status":"VALIDATION_PENDING"}
+             "risk_reward_holdout_mean_return_pct":null}
         ]});
     conn.execute(
         "UPDATE app.entry_model_validation_reports SET summary_json=?1 WHERE instrument_id=?2",

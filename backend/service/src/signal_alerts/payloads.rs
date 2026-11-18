@@ -70,6 +70,9 @@ pub(super) fn signal_alert_from_candidate(candidate: &Value) -> Option<Value> {
 
     let signal_strategy_id =
         first_candidate_string(candidate, &["Signal_Strategy_ID", "signal_strategy_id"])?;
+    if crate::master_data::is_retired_entry_strategy(&signal_strategy_id) {
+        return None;
+    }
     let strategy = crate::master_data::master_data_records("signal_strategies")
         .iter()
         .find(|model| {

@@ -154,8 +154,8 @@ pub(super) fn augment_app_products(catalog: &mut Value, is_embedded_seed: bool) 
         changed |= upgrade_tokocrypto_confluence_profiles(catalog);
     }
     changed |= ensure_required_signal_confirmation_models(catalog);
-    changed |= ensure_stockbit_signal_catalog(catalog);
-    changed |= ensure_crypto_signal_catalog(catalog);
+    changed |= ensure_combined_entry_catalog(catalog);
+    changed |= retire_stockbit_nwe_4h_legacy_strategies(catalog);
     changed
 }
 
@@ -185,7 +185,7 @@ pub(super) fn retire_stockbit_nwe_4h_legacy_strategies(catalog: &mut Value) -> b
             ("implemented", Value::from(false)),
             (
                 "replaced_by",
-                Value::from(quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID),
+                Value::from(super::combined_entry_strategy_id("4h", true).expect("4h is a screener timeframe")),
             ),
             (
                 "description",

@@ -160,24 +160,9 @@ pub(crate) fn register_manual(conn: &Connection, body: &Value) -> Result<Value, 
         return Err("ticker is required".to_string());
     }
 
-    let allowed_category = match exchange_id.as_str() {
-        "stockbit" => product_id == "stockbit_regular" && category_id == "idx_stock",
-        "pintu" => matches!(
-            (product_id.as_str(), category_id.as_str()),
-            ("pintu_retail_spot" | "pintu_pro_spot", "crypto_spot")
-                | ("pintu_pro_futures", "crypto_perpetual")
-        ),
-        "tokocrypto" => matches!(
-            (product_id.as_str(), category_id.as_str()),
-            ("tokocrypto_spot", "crypto_spot")
-                | ("tokocrypto_tokenized_stock", "tokenized_stock")
-        ),
-        "pluang" => matches!(
-            (product_id.as_str(), category_id.as_str()),
-            ("pluang_spot", "crypto_spot") | ("pluang_perpetual", "crypto_perpetual")
-        ),
-        _ => false,
-    };
+    let allowed_category = super::REGISTERED_APP_PRODUCT_CATEGORIES.contains(&(
+        exchange_id.as_str(), product_id.as_str(), category_id.as_str(),
+    ));
     if !allowed_category {
         return Err("choose a supported venue and asset category".to_string());
     }

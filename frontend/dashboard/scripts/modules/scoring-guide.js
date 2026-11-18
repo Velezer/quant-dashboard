@@ -16,6 +16,7 @@ function numericValue(value) {
 export function guideModels(catalog, exchange = '', timeframe = 'all') {
     return (Array.isArray(catalog?.signal_strategies) ? catalog.signal_strategies : [])
         .filter(model => model && typeof model === 'object'
+            && model.status !== 'retired'
             && typeof model.score_model_id === 'string' && model.score_model_id.trim()
             && numericValue(model.score_scale_max) > 0
             && (!exchange || (Array.isArray(model.exchange_ids) && model.exchange_ids.includes(exchange)))
@@ -55,6 +56,9 @@ function setupExample(doc) {
             doc.getElementById(`example-summary-${factors[index]}`).value = points[index].toFixed(1);
         });
         doc.getElementById('example-total-value').value = `${totals.total > 0 ? '+' : ''}${totals.total.toFixed(1)}`;
+        const signedPoints = value => `${value > 0 ? '+' : ''}${value.toFixed(1)}`;
+        doc.getElementById('example-group-totals').textContent =
+            `Price ${signedPoints(totals.price)} · volume ${signedPoints(totals.volume)} · Markov ${signedPoints(totals.markov)} · autocorrelation ${signedPoints(totals.autocorrelation)}`;
         const direction = doc.getElementById('example-direction');
         if (direction) direction.textContent = totals.total > 0 ? 'LONG' : totals.total < 0 ? 'SHORT' : 'NEUTRAL';
         doc.getElementById('example-mode').textContent = inputs.every(input => input.value === input.defaultValue)

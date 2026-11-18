@@ -437,7 +437,7 @@ fn evaluate_rule_with_observer(
         else {
             continue;
         };
-        let observation = Observation { long: super::score_with_weights(observation, policy.weights) > 0.0, ..observation };
+        let long = super::score_with_weights(observation, policy.weights) > 0.0;
         let entry_index = signal_index.saturating_add(1);
         let last_index = entry_index
             .saturating_add(rule.maximum_hold_bars.saturating_sub(1));
@@ -452,7 +452,7 @@ fn evaluate_rule_with_observer(
         if !entry_price.is_finite() || entry_price <= 0.0 || !risk_distance.is_finite() {
             continue;
         }
-        let stop_price = if observation.long {
+        let stop_price = if long {
             entry_price - risk_distance
         } else {
             entry_price + risk_distance
@@ -463,7 +463,7 @@ fn evaluate_rule_with_observer(
         let Some(target_price) = after_fee_target_price(
             entry_price,
             stop_price,
-            observation.long,
+            long,
             rule.target_after_fee_r_multiple,
             policy,
         ) else {
@@ -473,7 +473,7 @@ fn evaluate_rule_with_observer(
             bars,
             entry_index,
             last_index,
-            observation.long,
+            long,
             stop_price,
             target_price,
         );
@@ -482,7 +482,7 @@ fn evaluate_rule_with_observer(
             bars[exit_index].time,
             entry_price,
             exit_price,
-            if observation.long { "LONG" } else { "SHORT" },
+            if long { "LONG" } else { "SHORT" },
             policy.buy_fee_pct,
             policy.sell_fee_pct,
             policy.fees_known,
@@ -492,7 +492,7 @@ fn evaluate_rule_with_observer(
             entry_price,
             stop_price,
             exit_price,
-            long: observation.long,
+            long,
         });
         cursor = signal_indices.partition_point(|index| *index <= exit_index);
     }
@@ -570,7 +570,7 @@ fn candidate_json(
     let validation_passed = validation_passes(validation, fees_known);
     let holdout_passed = validation_passes(holdout, fees_known);
     json!({
-        "entry_rule": "Completed NWE/DSS directional signal with the selected /60 score floor including Markov and lag-one return autocorrelation; enter at the next 4h bar open.",
+        "entry_rule": "Use the signed six-factor total and the selected /60 score floor on a completed bar. Enter at the next 4h bar open.",
         "weights": weights,
         "minimum_score_out_of_60": candidate.rule.minimum_score,
         "atr_lookback_bars": ATR_LOOKBACK_BARS,

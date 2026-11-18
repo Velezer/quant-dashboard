@@ -1,27 +1,5 @@
-use super::{is_crypto_nwe_dss_signal_score_row, is_stockbit_signal_score_row};
 use serde_json::Value;
 use std::collections::HashMap;
-
-pub(super) fn timeframe_strategy_ids(signal: &Value) -> Option<[String; 2]> {
-    let exchange = signal["exchange_id"].as_str()?;
-    let product = signal["product_id"].as_str()?;
-    let category = signal["asset_category_id"].as_str()?;
-    let strategy = signal["signal_strategy_id"].as_str()?;
-    let timeframe = signal["timeframe"].as_str()?;
-    if is_stockbit_signal_score_row(exchange, product, category, strategy, timeframe) {
-        return Some([
-            quant_core::stockbit_nwe_signal_strategy_id(timeframe)?,
-            quant_core::stockbit_dss_bressert_signal_strategy_id(timeframe)?,
-        ]);
-    }
-    if is_crypto_nwe_dss_signal_score_row(category, strategy, timeframe) {
-        return Some([
-            quant_core::crypto_nwe_signal_strategy_id(timeframe)?,
-            quant_core::crypto_dss_bressert_signal_strategy_id(timeframe)?,
-        ]);
-    }
-    None
-}
 
 #[derive(Clone, Copy)]
 pub(super) struct ScreenerMatch {

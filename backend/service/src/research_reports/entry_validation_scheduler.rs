@@ -105,7 +105,7 @@ fn refresh_targets(connection: &Connection) -> Result<Vec<RefreshTarget>, String
             continue;
         }
         for timeframe in SIGNAL_SCREENER_TIMEFRAMES {
-            if matching_models_in_catalog(&model_catalog, &instrument, timeframe).is_empty() {
+            if matching_model_in_catalog(&model_catalog, &instrument, timeframe).is_none() {
                 continue;
             }
             let label = format!(

@@ -51,11 +51,11 @@ pub use dss_bressert_4h::{
     STOCKBIT_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID,
 };
 pub use entry_score::{
-    generate_signed_entry_signal, visit_sampled_entry_scores,
-    score_entry_signal, score_entry_signal_with_markov, score_entry_signal_with_weights,
-    EntryModelKind,
+    combined_entry_score, entry_score_direction, visit_sampled_entry_scores, ENTRY_SCORE_MODEL_ID,
+    ENTRY_SCORE_MINIMUM_HISTORY_BARS,
 };
-pub(crate) use entry_score::visit_entry_signals;
+pub(crate) use entry_score::visit_combined_entry_scores;
+pub(crate) use four_indicator_score::{entry_score_total, weighted_factor_points};
 pub use four_indicator_score::{
     score_four_indicators, score_four_indicators_with_weights,
     FourIndicatorScore, ScoreComponent, SixIndicatorScore,

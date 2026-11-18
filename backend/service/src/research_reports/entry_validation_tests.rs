@@ -111,8 +111,11 @@ fn reports_keep_exact_product_source_completed_bars_and_durable_aggregate_identi
         spot["history"]["data_fingerprint"],
         perp["history"]["data_fingerprint"]
     );
-    assert_eq!(spot["models"].as_array().unwrap().len(), 2);
-    assert_eq!(spot["sizing"]["status"], "BLOCKED");
+    assert_eq!(spot["models"].as_array().unwrap().len(), 1);
+    assert_eq!(spot["models"][0]["kind"], "combined");
+    assert_eq!(spot["models"][0]["score_model_id"], quant_core::ENTRY_SCORE_MODEL_ID);
+    assert_eq!(spot["models"][0]["backtest"]["score_model_id"], quant_core::ENTRY_SCORE_MODEL_ID);
+    assert_eq!(spot["sizing"]["status"], "4H_ONLY");
     assert_eq!(spot["costs"]["execution_costs_complete"], false);
     for model in spot["models"].as_array().unwrap() {
         assert_eq!(model["entry_validation_status"], "VALIDATION_PENDING");
@@ -193,7 +196,7 @@ fn matching_app_categories_backtest_shared_reference_without_merging_perpetual_h
         assert_eq!(report["source"]["shared_reference"], true);
         assert_eq!(report["source"]["is_proxy"], true);
         assert_eq!(report["source"]["venue_native"], false);
-        assert_eq!(report["sizing"]["status"], "BLOCKED");
+        assert_eq!(report["sizing"]["status"], "4H_ONLY");
     }
     drop(conn);
     remove_temporary_database(&path);

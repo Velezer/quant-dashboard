@@ -114,22 +114,13 @@ pub(crate) fn signal_screener_master_data_from_catalog(catalog: &Value) -> Value
                         })
                     });
                 let timeframe = catalog_string(model, "timeframe");
-                let is_supported_crypto_timeframe = is_crypto_scope
+                let supported_scope = (is_stockbit_scope || is_crypto_scope)
                     && timeframe.is_some_and(|timeframe| {
-                        quant_core::SIGNAL_SCREENER_TIMEFRAMES
-                            .contains(&timeframe)
+                        model["id"].as_str()
+                            == super::combined_entry_strategy_id(timeframe, is_stockbit_scope).as_deref()
                     });
-                let is_supported_stockbit_timeframe = is_stockbit_scope
-                    && timeframe.is_some_and(|timeframe| {
-                        model.get("id").and_then(Value::as_str)
-                            == quant_core::stockbit_nwe_signal_strategy_id(timeframe).as_deref()
-                            || model.get("id").and_then(Value::as_str)
-                                == quant_core::stockbit_dss_bressert_signal_strategy_id(timeframe)
-                                    .as_deref()
-                    });
-                is_current_model
-                    && (is_supported_stockbit_timeframe || is_supported_crypto_timeframe)
-                    && catalog_string(model, "score_model_id").is_some()
+                is_current_model && supported_scope
+                    && catalog_string(model, "score_model_id") == Some(quant_core::ENTRY_SCORE_MODEL_ID)
             })
             .map(|model| {
                 serde_json::json!({

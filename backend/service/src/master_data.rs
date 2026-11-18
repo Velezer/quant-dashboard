@@ -10,17 +10,16 @@ use quant_core::{
 use rusqlite::Connection;
 use serde_json::Value;
 use std::sync::OnceLock;
-mod crypto_signal_catalog;
+mod combined_entry_catalog;
 mod crypto_signal_products;
-mod stockbit_signal_catalog;
 mod tokocrypto_catalog;
-use crypto_signal_catalog::ensure_crypto_signal_catalog;
+use combined_entry_catalog::ensure_combined_entry_catalog;
+pub(crate) use combined_entry_catalog::{combined_entry_strategy_id, is_retired_entry_strategy};
 pub(super) use crypto_signal_products::signal_screener_master_data_for_connection;
 #[cfg(test)]
 pub(super) use crypto_signal_products::{
     signal_screener_master_data_from_catalog, signal_screener_master_data_with_registered_products,
 };
-use stockbit_signal_catalog::ensure_stockbit_signal_catalog;
 pub(super) use tokocrypto_catalog::migrate_tokocrypto_confluence_catalog;
 use tokocrypto_catalog::upgrade_tokocrypto_confluence_profiles;
 #[cfg(test)]
@@ -84,10 +83,10 @@ pub(super) fn initialize(conn: &Connection) -> Result<(), rusqlite::Error> {
 
 mod upgrades;
 #[cfg(test)]
-use upgrades::upgrade_pintu_golden_cross_profile;
+use upgrades::{retire_stockbit_nwe_4h_legacy_strategies, upgrade_pintu_golden_cross_profile};
 use upgrades::{
     augment_app_products, ensure_required_signal_confirmation_models,
-    retire_stockbit_nwe_4h_legacy_strategies, upsert_catalog_record,
+    upsert_catalog_record,
 };
 
 pub(super) fn master_data_catalog() -> &'static Value {

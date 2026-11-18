@@ -142,20 +142,7 @@ fn listing_status_for_exchange_inner(
             object.insert("with_daily_candles".into(), json!(with_daily));
         }
     }
-    for (exchange, product, category) in [
-        ("stockbit", "stockbit_regular", "idx_stock"),
-        ("tokocrypto", "tokocrypto_spot", "crypto_spot"),
-        (
-            "tokocrypto",
-            "tokocrypto_tokenized_stock",
-            "tokenized_stock",
-        ),
-        ("pintu", "pintu_retail_spot", "crypto_spot"),
-        ("pintu", "pintu_pro_spot", "crypto_spot"),
-        ("pintu", "pintu_pro_futures", "crypto_perpetual"),
-        ("pluang", "pluang_spot", "crypto_spot"),
-        ("pluang", "pluang_perpetual", "crypto_perpetual"),
-    ] {
+    for (exchange, product, category) in super::REGISTERED_APP_PRODUCT_CATEGORIES {
         if exchange_filter.is_some_and(|filter| filter != exchange) {
             continue;
         }

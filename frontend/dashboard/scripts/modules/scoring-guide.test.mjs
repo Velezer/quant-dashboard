@@ -28,7 +28,8 @@ test('catalog filters preserve separate models, apps, timeframes, products, and 
         exchange_ids: ['stockbit'], product_ids: ['stockbit_regular'], timeframe: '4h' };
     const pintu = { ...stockbit, id: 'crypto_nwe', exchange_ids: ['pintu'], product_ids: ['pintu_pro_spot'] };
     const legacy = { ...stockbit, id: 'blend', score_model_id: 'blend_v1', score_scale_max: 10, timeframe: '1h' };
-    const catalog = { signal_strategies: [stockbit, pintu, legacy, null, {}, { ...stockbit, score_scale_max: null }] };
+    const retired = { ...stockbit, id: 'retired_nwe', status: 'retired' };
+    const catalog = { signal_strategies: [stockbit, pintu, legacy, retired, null, {}, { ...stockbit, score_scale_max: null }] };
     assert.deepEqual(guideModels(catalog, 'stockbit', '4h'), [stockbit]);
     assert.deepEqual(guideModels(catalog, 'stockbit'), [stockbit, legacy]);
     assert.deepEqual(guideModels(catalog, 'pintu', '4h'), [pintu]);
