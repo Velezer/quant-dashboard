@@ -201,7 +201,7 @@ reference catalogs, registered instruments, plans, evidence, listing status,
 scheduler cursors, signal-alert history and settings, migration records, and app
 metadata. `QUANT_SIGNAL_DB` (default `data/signals/signals.sqlite3`) is the
 dedicated database for signal-screener rows and scan status. Successful scans
-replace rows transactionally except Stockbit regular IDX NWE/DSS model rows
+replace rows transactionally except Stockbit regular IDX combined entry score rows
 for configured screener timeframes. Each retained row has its own
 timeframe/strategy identity and is rescored from its timeframe's fresh
 same-source candle each sync. When a fresh score cannot be computed, keep the

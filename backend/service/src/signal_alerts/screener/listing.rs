@@ -1,3 +1,4 @@
+use super::timeframe_signals::{ScreenerMatch, ScreenerMatches};
 use super::*;
 use rusqlite::OptionalExtension;
 
@@ -584,6 +585,9 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     offset: usize,
     limit: usize,
 ) -> Result<Value, rusqlite::Error> {
+    // Keep selection and page hydration on the same scan snapshot.
+    let transaction = connection.unchecked_transaction()?;
+    let connection = &transaction;
     let now = now_secs() as i64;
     let mut query_values = Vec::new();
     let mut where_clause = String::new();
@@ -600,17 +604,18 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let score_model_by_strategy = score_model_by_strategy();
     let master_data = crate::master_data::signal_screener_master_data_for_connection(connection)?;
     let signal_score_models = signal_score_model_index(&master_data["signal_score_models"]);
-    let query = format!(
-        "SELECT exchange_id,product_id,asset_category_id,symbol,storage_symbol,signal_strategy_id,
+    let columns = "exchange_id,product_id,asset_category_id,symbol,storage_symbol,signal_strategy_id,
                 signal_strategy_name,timeframe,direction,score,strategy_strength,confluence_score,
                 score_basis_json,current_price,price_timeframe,price_bar_time,signal_bar_time,
-                data_source,data_provider,data_quality,evidence_status,evidence_source,last_updated_at
+                data_source,data_provider,data_quality,evidence_status,evidence_source,last_updated_at";
+    let query = format!(
+        "SELECT {columns},rowid
            FROM signals.signal_screener_rows WHERE 1=1{where_clause}
             AND {PINTU_FUTURES_REGISTRY_GUARD}
           ORDER BY {display_order}"
     );
     let mut statement = connection.prepare(&query)?;
-    let row_mapper = |row: &rusqlite::Row<'_>| -> Result<Value, rusqlite::Error> {
+    let row_mapper = |row: &rusqlite::Row<'_>, score_basis: Value| -> Result<Value, rusqlite::Error> {
         let storage_symbol = row.get::<_, String>(4)?;
         let price_timeframe = row.get::<_, String>(14)?;
         let price_bar_time = row.get::<_, i64>(15)?;
@@ -621,8 +626,6 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
                     .max(0)
                     .saturating_mul(quant_core::MILLISECONDS_PER_SECOND),
             );
-        let score_basis_json = row.get::<_, String>(12)?;
-        let score_basis = serde_json::from_str::<Value>(&score_basis_json).unwrap_or(Value::Null);
         let score_status = score_basis["status"].as_str().unwrap_or("stale");
         let score_bar_time = score_basis["score_bar_time"]
             .as_i64()
@@ -681,13 +684,15 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
     let mut stale_price_signal_count = 0usize;
     let mut stale_score_signal_count = 0usize;
-    let mut matching_rows = 0usize;
-    let mut signals = Vec::with_capacity(page_size);
+    let mut matches = ScreenerMatches::default();
     let mut direction_score_counts =
         std::collections::HashMap::<(String, String, String, String), (usize, usize, f64)>::new();
     while let Some(row) = query_rows.next()? {
         if is_unavailable_pintu_signal(row)? { continue; }
         let strategy = row.get::<_, String>(5)?;
+        if crate::master_data::is_retired_entry_strategy(&strategy) {
+            continue;
+        }
         let score = row.get::<_, f64>(9)?;
         let timeframe = row.get::<_, String>(7)?;
         let score_basis_json = row.get::<_, String>(12)?;
@@ -710,7 +715,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         {
             continue;
         }
-        let mut signal = row_mapper(row)?;
+        let mut signal = row_mapper(row, score_basis)?;
         let (is_current, is_stale_price, is_stale_score) = update_signal_market_entry_freshness(
             connection,
             &mut signal,
@@ -719,10 +724,16 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             scan_interval_seconds,
             &score_model_by_strategy,
         );
+        let is_crypto_timeframe_signal = is_crypto_combined_entry_score_row(
+            signal["asset_category_id"].as_str().unwrap_or_default(),
+            &strategy,
+            &timeframe,
+        );
+        let group_by_timeframe = signal["persistent_score"] == true || is_crypto_timeframe_signal;
         let is_current_market_entry = is_current
             && signal["market_entry_status"].as_str() != Some("NO_MARKET_ENTRY")
             && signal["score_basis"]["status"].as_str() != Some("not_qualifying");
-        if is_current_market_entry {
+        if is_current_market_entry && !group_by_timeframe {
             let direction = signal["direction"].as_str().unwrap_or_default();
             let counts = direction_score_counts
                 .entry(direction_score_key(&signal))
@@ -734,8 +745,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             }
             counts.2 += signal["score"].as_f64().unwrap_or_default();
         }
-        // Direction scores summarize all current entries for this app and
-        // ticker/timeframe, independent of the screener's visible filters.
+        // Independent model votes are counted above, regardless of visible filters.
         if product_filter.is_some_and(|product| {
             !signal["product_id"]
                 .as_str()
@@ -759,19 +769,13 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         ) {
             continue;
         }
-        if is_stale_price {
+        if is_stale_price && !group_by_timeframe {
             stale_price_signal_count = stale_price_signal_count.saturating_add(1);
         }
-        if is_stale_score {
+        if is_stale_score && !group_by_timeframe {
             stale_score_signal_count = stale_score_signal_count.saturating_add(1);
         }
-        let retain_stale_crypto_setup = is_stale_price
-            && !is_stale_score
-            && is_crypto_nwe_dss_signal_score_row(
-                signal["asset_category_id"].as_str().unwrap_or_default(),
-                signal["signal_strategy_id"].as_str().unwrap_or_default(),
-                signal["timeframe"].as_str().unwrap_or_default(),
-            );
+        let retain_stale_crypto_setup = is_stale_price && !is_stale_score && is_crypto_timeframe_signal;
         let retain_stockbit_setup = signal["persistent_score"] == true
             && signal["score_basis"]["score_model_status"].as_str() != Some("legacy");
         if !is_current && !retain_stale_crypto_setup && !retain_stockbit_setup {
@@ -783,7 +787,38 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         }) {
             continue;
         }
+        matches.push(
+            ScreenerMatch {
+                rowid: row.get(23)?,
+                market_entry: is_current_market_entry,
+                stale_score: group_by_timeframe && is_stale_score,
+                stale_price: group_by_timeframe && is_stale_price,
+            },
+            &signal,
+            group_by_timeframe,
+        );
+    }
+    let mut matching_rows = 0usize;
+    let mut signals = Vec::with_capacity(page_size);
+    let mut page_statement = connection.prepare(&format!(
+        "SELECT {columns} FROM signals.signal_screener_rows WHERE rowid=?1"
+    ))?;
+    for candidate in matches.into_ordered() {
+        stale_price_signal_count += usize::from(candidate.stale_price);
+        stale_score_signal_count += usize::from(candidate.stale_score);
         if matching_rows >= offset && signals.len() < page_size {
+            let mut signal = page_statement.query_row([candidate.rowid], |row| {
+                let basis: String = row.get(12)?;
+                row_mapper(row, serde_json::from_str(&basis).unwrap_or(Value::Null))
+            })?;
+            update_signal_market_entry_freshness(
+                connection,
+                &mut signal,
+                now,
+                now_ns,
+                scan_interval_seconds,
+                &score_model_by_strategy,
+            );
             signals.push(signal);
         }
         matching_rows = matching_rows.saturating_add(1);
@@ -816,13 +851,27 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         {
             continue;
         }
-        let Some((long_count, short_count, net_score)) = direction_score_counts
-            .get(&direction_score_key(signal))
-            .copied()
-        else {
+        let Some(signal_vote) = signal["score"].as_f64() else {
             continue;
         };
-        let Some(signal_vote) = signal["score"].as_f64() else { continue; };
+        let is_single_combined_score = signal["persistent_score"] == true
+            || is_crypto_combined_entry_score_row(
+                signal["asset_category_id"].as_str().unwrap_or_default(),
+                signal["signal_strategy_id"].as_str().unwrap_or_default(),
+                signal["timeframe"].as_str().unwrap_or_default(),
+            );
+        let (long_count, short_count, net_score) = if is_single_combined_score {
+            (
+                usize::from(signal_vote > 0.0),
+                usize::from(signal_vote < 0.0),
+                signal_vote,
+            )
+        } else {
+            let Some(counts) = direction_score_counts.get(&direction_score_key(signal)) else {
+                continue;
+            };
+            *counts
+        };
         signal["direction_score"] = json!({
             "score": signal_vote,
             "net_score": net_score,

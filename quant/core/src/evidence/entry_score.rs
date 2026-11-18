@@ -1,6 +1,7 @@
 use super::nwe_dss::{wilson_interval, LagOneCorrelation, TradeSummary};
 use crate::strategies::{
-    score_entry_signal_with_markov, visit_entry_signals, EntryModelKind, StrategyBar,
+    entry_score_direction, entry_score_total, visit_combined_entry_scores, weighted_factor_points,
+    StrategyBar, ENTRY_SCORE_MINIMUM_HISTORY_BARS, ENTRY_SCORE_MODEL_ID, FOUR_INDICATOR_EQUAL_WEIGHTS,
 };
 use serde_json::{json, Value};
 
@@ -20,13 +21,12 @@ const TOTAL_SCORE_BAND_COUNT: usize = 6;
 const FACTOR_SCORE_BAND_COUNT: usize = 4;
 const SCORE_WEIGHT_BUDGET: u8 = 40;
 const SCORE_WEIGHT_STEP: u8 = 5;
-const SCORE_WEIGHT_SCALE: f64 = 10.0;
 const MIN_WEIGHT_FIT_TRADES: usize = 30;
 pub const ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT: f64 = 50.0;
 pub const ENTRY_SCORE_MIN_HISTORY_DAYS: i64 = 1_000;
 const MIN_HOUR_SELECTION_TRADES: usize = crate::MIN_EVIDENCE_SAMPLE_TRADES;
 const WEIGHT_FIT_EXIT_BARS: usize = 8;
-const BASELINE_WEIGHTS: [u8; 4] = [10; 4];
+const BASELINE_WEIGHTS: [u8; 4] = FOUR_INDICATOR_EQUAL_WEIGHTS;
 const HOURS_PER_DAY: i64 = 24;
 const TOP_HOUR_PAIRS_TO_REPORT: usize = 5;
 pub const ENTRY_SCORE_CALIBRATION_BAND_WIDTH: f64 = TOTAL_SCORE_BAND_WIDTH;
@@ -38,12 +38,11 @@ const FACTOR_NAMES: [&str; 4] = [
     "Estimated Volume Delta (OHLCV proxy)",
 ];
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
-    "entry_signed_six_indicator_directional_evidence_v14";
+    "entry_signed_six_indicator_combined_evidence_v15";
 pub const ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID: &str = risk_reward::PROTOCOL_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {
-    long: bool,
     factors: [f64; 4],
     available: [bool; 4],
     markov_score: f64,
@@ -102,13 +101,14 @@ fn band_index(points: f64, width: f64, count: usize) -> usize {
 }
 
 fn score_with_weights(observation: Observation, weights: [u8; 4]) -> f64 {
-    let weighted_factors = observation
-        .factors
-        .iter()
-        .zip(weights)
-        .map(|(points, weight)| points * f64::from(weight) / SCORE_WEIGHT_SCALE)
-        .sum::<f64>();
-    weighted_factors + markov_points(observation) + observation.autocorrelation_score
+    let factors = std::array::from_fn(|index| {
+        weighted_factor_points(observation.factors[index], weights[index])
+    });
+    entry_score_total(
+        factors,
+        observation.markov_score,
+        observation.autocorrelation_score,
+    )
 }
 
 fn markov_points(observation: Observation) -> f64 {
@@ -116,9 +116,12 @@ fn markov_points(observation: Observation) -> f64 {
 }
 
 fn qualifies(observation: Observation, policy: EvaluationPolicy) -> bool {
-    (score_with_weights(observation, policy.weights) > 0.0 || policy.allow_short)
-        && score_with_weights(observation, policy.weights).abs() > 0.0
-        && score_with_weights(observation, policy.weights).abs() >= policy.minimum_score
+    entry_score_direction(
+        score_with_weights(observation, policy.weights),
+        policy.minimum_score,
+        policy.allow_short,
+    )
+    .is_some()
 }
 
 fn evaluate_window(
@@ -131,8 +134,13 @@ fn evaluate_window(
     let mut result = WindowSummary::default();
     let mut index = start;
     while index < end {
-        let Some(observation) =
-            observations[index].filter(|observation| qualifies(*observation, policy))
+        let Some(observation) = observations[index] else {
+            index += 1;
+            continue;
+        };
+        let weighted_score = score_with_weights(observation, policy.weights);
+        let Some(direction) =
+            entry_score_direction(weighted_score, policy.minimum_score, policy.allow_short)
         else {
             index += 1;
             continue;
@@ -149,7 +157,14 @@ fn evaluate_window(
             let scan_end = timeout_exit.min(end - 1);
             let reverse_exit = (entry..=scan_end).find(|candidate| {
                 observations[*candidate]
-                    .is_some_and(|next| (score_with_weights(next, policy.weights) > 0.0) != (score_with_weights(observation, policy.weights) > 0.0) && qualifies(next, policy))
+                    .and_then(|next| {
+                        entry_score_direction(
+                            score_with_weights(next, policy.weights),
+                            policy.minimum_score,
+                            policy.allow_short,
+                        )
+                    })
+                    .is_some_and(|next_direction| next_direction != direction)
             });
             match reverse_exit {
                 Some(candidate) => candidate,
@@ -166,7 +181,6 @@ fn evaluate_window(
             }
             timeout_exit
         };
-        let direction = if score_with_weights(observation, policy.weights) > 0.0 { "LONG" } else { "SHORT" };
         let add = |summary: &mut TradeSummary| {
             summary.add(
                 bars,
@@ -180,7 +194,6 @@ fn evaluate_window(
         };
         add(&mut result.overall);
         if direction == "LONG" { add(&mut result.long); } else { add(&mut result.short); }
-        let weighted_score = score_with_weights(observation, policy.weights);
         add(&mut result.total_bands[band_index(
             weighted_score,
             TOTAL_SCORE_BAND_WIDTH,
@@ -522,7 +535,7 @@ fn weighted_score_autocorrelation(
     {
         correlation.add(score_with_weights(*observation, weights));
     }
-    correlation.to_json("Consecutive causal lead-model score events in chronological training, including events below the entry score floor.")
+    correlation.to_json("Consecutive causal combined-score observations in chronological training, including events below the entry score floor.")
 }
 
 fn hour_rule_report(
@@ -696,14 +709,13 @@ fn split_json(bars: &[StrategyBar], start: usize, end: usize) -> Value {
 /// research evidence and never grants sizing readiness.
 pub fn evaluate_entry_score_backtest(
     bars: &[StrategyBar],
-    kind: EntryModelKind,
     bar_interval_ns: i64,
     buy_fee_pct: f64,
     sell_fee_pct: f64,
     fees_known: bool,
     allow_short: bool,
 ) -> Value {
-    let minimum_history = kind.minimum_history_bars();
+    let minimum_history = ENTRY_SCORE_MINIMUM_HISTORY_BARS;
     let warmup_end = minimum_history.saturating_sub(1).min(bars.len());
     let scored_bars = bars.len().saturating_sub(warmup_end);
     let train_end = warmup_end + scored_bars * TRAINING_SHARE / 100;
@@ -724,33 +736,18 @@ pub fn evaluate_entry_score_backtest(
         || buy_fee_pct < 0.0
         || sell_fee_pct < 0.0;
     let mut observations = vec![None; bars.len()];
-    let markov_regimes = if !invalid && bars.len() >= minimum_history {
-        crate::classify_regimes(bars, &crate::MarkovRegimeConfig::default())
-    } else {
-        Vec::new()
-    };
-    if !invalid && bars.len() >= minimum_history {
-        visit_entry_signals(bars, kind, |index, signal| {
-            let markov_regime = markov_regimes.get(index).copied().flatten();
-            if let Some(score) = score_entry_signal_with_markov(
-                &bars[..=index],
-                signal,
-                kind,
-                BASELINE_WEIGHTS,
-                markov_regime,
-            ) {
-                observations[index] = Some(Observation {
-                    long: signal.direction == "LONG",
-                    factors: std::array::from_fn(|factor| score.components[factor].points),
-                    available: std::array::from_fn(|factor| {
-                        !score.components[factor].state.ends_with("UNAVAILABLE")
-                    }),
-                    markov_score: score.markov_regime_score,
-                    markov_available: !score.components[4].state.ends_with("UNAVAILABLE"),
-                    autocorrelation_score: score.autocorrelation_score,
-                    autocorrelation_available: !score.components[5].state.ends_with("UNAVAILABLE"),
-                });
-            }
+    if !invalid {
+        visit_combined_entry_scores(bars, |_| true, |index, score| {
+            observations[index] = Some(Observation {
+                factors: std::array::from_fn(|factor| score.components[factor].points),
+                available: std::array::from_fn(|factor| {
+                    !score.components[factor].state.ends_with("UNAVAILABLE")
+                }),
+                markov_score: score.markov_regime_score,
+                markov_available: !score.components[4].state.ends_with("UNAVAILABLE"),
+                autocorrelation_score: score.autocorrelation_score,
+                autocorrelation_available: !score.components[5].state.ends_with("UNAVAILABLE"),
+            });
         });
     }
     let baseline_policy = EvaluationPolicy {
@@ -975,8 +972,8 @@ pub fn evaluate_entry_score_backtest(
         "status": if invalid { "INVALID_HISTORY" } else if bars.len() < minimum_history { "INSUFFICIENT_HISTORY" }
             else if baseline_selection.selected_policy.is_none() { "NO_VALIDATION_TRADES" } else { "HOLDOUT_RESEARCH_COMPLETE" },
         "protocol_id": ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
-        "entry_model_kind": match kind { EntryModelKind::Nwe => "nwe", EntryModelKind::Dss => "dss" },
-        "score_model_id": kind.score_model_id(),
+        "entry_model_kind": "combined",
+        "score_model_id": ENTRY_SCORE_MODEL_ID,
         "history_bars": bars.len(), "minimum_history_bars": minimum_history,
         "history_days": history_days, "holdout_window_days": holdout_window_days,
         "selected_exit_bars": baseline_selection.selected_policy.map(|selected| selected.horizon),
@@ -1006,7 +1003,7 @@ pub fn evaluate_entry_score_backtest(
         "fees_known": fees_known,
         "weight_promotion_target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
         "selection_metric": "Exit rules are ranked by validation win rate after configured transaction fees, then Wilson 95% lower bound and sample size. Fee-unknown results are gross only and are not fee-qualified.",
-        "entry_rule": "Completed-bar live lead model; enter next bar open; no overlapping trades or trades crossing split boundaries.",
+        "entry_rule": "Direction and eligibility come from the signed combined score on the completed bar; enter next bar open; no overlapping trades or trades crossing split boundaries.",
         "exit_rule": "Validation compares fixed bar-close timeouts with a close on the first opposite-direction entry signal that qualifies under the tested weights and existing score floor, capped by the same maximum hold. Each selected policy is evaluated once on the untouched holdout.",
         "discrimination_note": "Exploratory conservative screen: at least two ordered score bands each meet the minimum trade count; the highest eligible band's lower Wilson 95% win bound exceeds the lowest eligible band's upper bound and its mean return is higher. This is not independent statistical proof.",
         "validation_note": "Historical research only. The bounded weight grid is fitted on training data using a fixed 8-bar timeout; validation selects the exit rule and maximum hold for the equal-weight baseline and fitted candidate independently, and selects the WIB entry/exit-hour pair for the fitted candidate. The final chronological tail evaluates each selected policy once and never selects weights, exits, or hours. Reusing the tail for model or threshold tuning contaminates it. No slippage, spread, depth, market impact, funding, or borrow is modeled."

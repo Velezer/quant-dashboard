@@ -5,6 +5,7 @@ import { renderAutocorrelationRiskSizing } from './entry-validation-risk-sizing.
 
 const PAGE_SIZE = 50;
 const APP_LABELS = { stockbit: 'Stockbit', pintu: 'Pintu', pluang: 'Pluang', tokocrypto: 'Tokocrypto' };
+const HISTORICAL_MODEL_LABELS = { nwe: 'Historical NWE-led entry', dss: 'Historical DSS-led entry' };
 const RISK_REWARD_PROTOCOL_ID = 'entry_score_signed_risk_reward_after_fee_v5';
 const FEE_SOURCE_HOSTS = new Set([
     'help.stockbit.com', 'pintu.co.id', 'www.pintu.co.id', 'pluang.com', 'www.pluang.com',
@@ -25,6 +26,8 @@ export function metric(value, suffix = '', digits = 2) {
 export function riskRewardRuleForBacktest(backtest) {
     return backtest?.weight_learning?.risk_reward_rule || null;
 }
+
+const entryScoreLabel = model => HISTORICAL_MODEL_LABELS[model.kind] || model.label || 'Entry score';
 
 export function reportModelState(model, currentProtocol, reportProtocol, timeframe = null) {
     if (reportProtocol && currentProtocol && reportProtocol !== currentProtocol) return { label: 'Outdated protocol', tone: 'pending' };
@@ -122,7 +125,7 @@ export function initializeEntryValidation(doc = document) {
     let offset = 0;
     let selected = null;
     let report = null;
-    let modelKind = 'nwe';
+    let modelKind = 'combined';
     let listSerial = 0;
     let reportSerial = 0;
     let busy = false;
@@ -377,7 +380,7 @@ export function initializeEntryValidation(doc = document) {
     function miniCell(models, formatter) {
         const cell = element('td');
         if (!models.length) cell.append(element('span', '—', 'muted'));
-        models.forEach(model => cell.append(element('span', `${model.kind === 'dss' ? 'DSS' : 'NWE'} · ${formatter(model)}`, 'mini-model')));
+        models.forEach(model => cell.append(element('span', `${entryScoreLabel(model)} · ${formatter(model)}`, 'mini-model')));
         return cell;
     }
     function renderTickerRows() {
@@ -404,7 +407,7 @@ export function initializeEntryValidation(doc = document) {
             else for (const model of models) {
                 const modelState = reportModelState(model, protocol, evidence.protocol_id, scope.timeframe);
                 const line = element('span', '', 'mini-model');
-                line.append(element('b', `${model.kind === 'dss' ? 'DSS' : 'NWE'} `), element('span', modelState.label, `state-badge ${modelState.tone}`));
+                line.append(element('b', `${entryScoreLabel(model)} `), element('span', modelState.label, `state-badge ${modelState.tone}`));
                 stateCell.append(line);
             }
             const snapshot = element('td');
@@ -454,7 +457,7 @@ export function initializeEntryValidation(doc = document) {
             const first = payload.total ? offset + 1 : 0;
             const last = Math.min(offset + payload.rows.length, payload.total);
             text('page-label', `${first}–${last} of ${metric(payload.total, '', 0)} registered tickers`);
-            status('list-status', payload.total ? `${payload.total.toLocaleString()} registered tickers in scope. Review a snapshot or backtest both current entry models. Saved results may need a rerun after history or protocol changes.` : 'No tickers match this scope. Clear the ticker search, change product, or inspect the selected app’s listing readiness on the screener.');
+            status('list-status', payload.total ? `${payload.total.toLocaleString()} registered tickers in scope. Review a snapshot or backtest the combined score. Rerun saved results after history or protocol changes.` : 'No tickers match this scope. Clear the ticker search, change product, or inspect the selected app’s listing readiness on the screener.');
             renderTickerRows();
         } catch (error) {
             if (serial === listSerial) {
@@ -675,7 +678,7 @@ export function initializeEntryValidation(doc = document) {
             : `target ${metric(afterFeeTarget, '× net risk after fees', 2)}`;
         const verdict = candidate.qualified === true ? 'Passed history, validation, and holdout checks.' : `Validation ${candidate.validation_passed === true ? 'passed' : 'failed'} · holdout ${candidate.holdout_passed === true ? 'passed' : 'failed'} · 1,000-day minimum ${candidate.history_span_passed === true ? 'passed' : 'not met'}.`;
         const wilsonLower = summary => Array.isArray(summary.win_rate_after_fees_wilson_95_pct) ? summary.win_rate_after_fees_wilson_95_pct[0] : null;
-        text('risk-reward-description', `${candidate.entry_rule || '4h NWE/DSS entry'} Setup-strength floor ${metric(candidate.minimum_score_out_of_60, '/60', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; ${targetDescription}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
+        text('risk-reward-description', `${candidate.entry_rule || '4h score-based entry.'} Setup-strength floor ${metric(candidate.minimum_score_out_of_60, '/60', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; ${targetDescription}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
         metrics.replaceChildren(
             metricCard('Validation win rate', metric(validation.win_rate_after_fees_pct, '%', 1), `${metric(validation.trades, ' trades', 0)} · target ${targetRate}`),
             metricCard('Validation 95% lower bound', metric(wilsonLower(validation), '%', 1), `Must also reach ${targetRate}`),
@@ -774,7 +777,11 @@ export function initializeEntryValidation(doc = document) {
         if (!report) return;
         const models = Array.isArray(report.models) ? report.models : [];
         const model = models.find(item => item.kind === modelKind) || models[0];
-        const tabs = doc.querySelector('.model-tabs'); tabs.hidden = !model; $('model-evidence').hidden = !model;
+        const tabs = doc.querySelector('.model-tabs');
+        const evidence = $('model-evidence');
+        const hasHistoricalTabs = models.length > 1 && models.every(item => item.kind === 'nwe' || item.kind === 'dss');
+        tabs.hidden = !hasHistoricalTabs;
+        evidence.hidden = !model;
         if (!model) return;
         modelKind = model.kind;
         for (const button of tabs.querySelectorAll('[data-model]')) {
@@ -782,11 +789,12 @@ export function initializeEntryValidation(doc = document) {
             button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1;
             button.disabled = !models.some(item => item.kind === button.dataset.model);
         }
-        $('model-evidence').setAttribute('aria-labelledby', `model-tab-${modelKind}`);
+        evidence.setAttribute('role', hasHistoricalTabs ? 'tabpanel' : 'region');
+        evidence.setAttribute('aria-labelledby', hasHistoricalTabs ? `model-tab-${modelKind}` : 'model-title');
         const backtest = model.backtest || {};
         const holdout = backtest.holdout || {};
         const modelState = reportModelState(model, protocol, report.protocol_id, report.timeframe);
-        text('model-title', model.label || (modelKind === 'dss' ? 'DSS-led entry' : 'NWE-led entry'));
+        text('model-title', model.label || entryScoreLabel(model));
         text('model-version', `${model.score_model_id || 'Score model identity unavailable'} · ${model.signal_strategy_id || 'Entry strategy unavailable'}`);
         text('model-state', modelState.label); $('model-state').className = `state-badge ${modelState.tone}`;
         const afterFeeWinRate = holdout.win_rate_after_fees_pct;
@@ -848,7 +856,7 @@ export function initializeEntryValidation(doc = document) {
         text('report-identity', `${APP_LABELS[instrument.exchange_id] || instrument.exchange_id || 'App unavailable'} · ${human(instrument.product_id)} · ${human(instrument.asset_category_id)} · ${instrument.storage_symbol || 'Storage identity unavailable'}`);
         status('report-status', `Saved ${dateText(report.computed_at, true)}. This is a reproducible history snapshot; rerun after new data or protocol changes.`, '');
         const notices = $('report-notices'); notices.replaceChildren();
-        if (report.protocol_id !== protocol) notices.append(element('p', 'This snapshot uses a different protocol version. Rerun it before comparing it with current entry-model evidence.', 'notice'));
+        if (report.protocol_id !== protocol) notices.append(element('p', 'This is a historical snapshot. Use Backtest selected ticker to evaluate the current combined score.', 'notice'));
         if (report.source?.is_proxy === true) notices.append(element('p', `Research-proxy history · ${sourceName(report.source)}. It cannot establish venue-native execution evidence.`, 'notice proxy'));
         else if (report.source?.venue_native !== true) notices.append(element('p', 'Venue-native history has not been confirmed for this snapshot.', 'notice'));
         if (report.eligibility?.reason) notices.append(element('p', report.eligibility.reason, 'notice'));

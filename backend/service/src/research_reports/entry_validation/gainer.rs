@@ -43,7 +43,7 @@ pub(crate) fn gainer_observations(connection: &Connection, directory: &str, id: 
     for end in 1..=bars.len() {
         if end < bars.len() && bars[end].time - bars[end - 1].time == duration { continue; }
         let segment = &bars[segment_start..end];
-        quant_core::strategies::visit_sampled_entry_scores(segment, EntryModelKind::Dss,
+        quant_core::strategies::visit_sampled_entry_scores(segment,
             |index| index >= 1 && index + 2 < segment.len()
                 && (segment[index].time + duration).rem_euclid(SAMPLE_CADENCE_DAYS * quant_core::NANOS_PER_DAY) == 0,
             |index, score| {

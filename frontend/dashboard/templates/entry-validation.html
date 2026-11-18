@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Backtest each ticker's current entry scoring models and inspect autocorrelation risk sizing.">
+    <meta name="description" content="Backtest each ticker's combined entry score and inspect autocorrelation risk sizing.">
     <meta name="color-scheme" content="dark">
     <title>Entry validation · Signal Screener</title>
     <link rel="stylesheet" href="/web/styles/entry-validation.css">
@@ -30,12 +30,12 @@
                 <button id="daily-resume" class="secondary-button" type="button" hidden disabled>Resume backtest</button>
                 <span id="daily-control-status" class="small-text" role="status" aria-live="polite">Loading backtest controls…</span>
             </div>
-            <p class="small-text daily-control-note">These controls run every active, verified, eligible ticker/timeframe supported by the scoring models, independent of the filtered ticker scope below. Pausing takes effect after the current ticker and keeps the saved cursor. The 1,000-day span is a minimum, not a maximum lookback; the report shows when its separate read cap is reached.</p>
+            <p class="small-text daily-control-note">These controls backtest the combined score for every active, verified, eligible ticker and timeframe. Pausing takes effect after the current ticker and keeps the saved cursor. Each report shows its sampled history and whether it reached the 1,000-day minimum or the separate candle read cap.</p>
             <p id="daily-refresh-message" class="small-text" role="status" aria-live="polite">Loading automatic backtest status…</p>
         </section>
         <section class="scope-panel gainer-research" aria-labelledby="gainer-title">
             <h2 id="gainer-title">Tokocrypto · next 4h gainer research</h2>
-            <p>Compare a fixed DSS-led signed-score ranking with the equal-weight universe and prior-4h momentum. Uses completed bars and one observation per instrument. Results remain unvalidated research. Inspect paired holdout performance, coverage and uncertainty before interpreting the ranking.</p>
+            <p>Compare the combined six-indicator ranking with the equal-weight universe and prior-4h momentum. The study uses completed bars and one observation per instrument. Inspect paired holdout performance, coverage and uncertainty.</p>
             <p>Enter assumed costs in percent. Verify actual fees for your account and product. Blank means unknown; zero must be entered explicitly. Half the spread and the full slippage assumption apply at each fill.</p>
             <div id="gainer-fee-reference" class="small-text" aria-live="polite">Loading published fee provenance…</div>
             <div class="scope-form">
@@ -60,7 +60,7 @@
             </details>
         </section>
         <section class="hero" aria-labelledby="page-title">
-            <div><p class="eyebrow accent">4H ENTRY RESEARCH · AFTER FEES</p><h1 id="page-title">Find rules that reach a 50% win rate.</h1><p class="lede">Start with 4h NWE and DSS entries. Search causal setup-strength floors and ATR brackets, then evaluate the frozen rule on untouched data. The qualification target is win rate after configured transaction fees; payoff and return are reported for context, not used as targets.</p></div>
+            <div><p class="eyebrow accent">4H ENTRY RESEARCH · AFTER FEES</p><h1 id="page-title">Backtest the combined entry score</h1><p class="lede">The weighted sum of six signed indicator scores sets entry direction and setup strength. Select a 4h score threshold and ATR bracket on validation data, then evaluate the frozen rule on untouched data against the 50% win-rate target after configured transaction fees.</p></div>
             <aside class="sequence" aria-label="Research sequence"><span class="sequence-current"><b>01</b> Validate entries</span><span><b>02</b> Review held-out evidence</span><span><b>03</b> Build sizing later <small>Blocked</small></span></aside>
         </section>
         <div class="meaning-note"><span aria-hidden="true">i</span><p><strong>The target is a 50% win rate after configured transaction fees.</strong> Each indicator contributes signed points from −10 to +10. Weighted contributions sum to a positive LONG, negative SHORT, or neutral zero. Backtests tune weights using the same signed calculation and evaluate the resulting direction after fees. Validation chooses the rule; untouched holdout data checks it once, including its 95% Wilson lower bound. Asymmetric R:R is calculated after fees and shown as a diagnostic, with no minimum payoff target. Win rate alone does not imply positive returns. These historical results never filter live signals or place orders and are not an individual win-rate forecast.</p></div>
@@ -102,8 +102,8 @@
             <button id="retry-report" class="secondary-button" type="button" hidden>Retry saved report</button>
             <div id="report-content" hidden>
                 <div id="report-notices" class="report-notices"></div>
-                <div class="model-tabs" role="tablist" aria-label="Entry model"><button id="model-tab-nwe" type="button" role="tab" aria-controls="model-evidence" aria-selected="true" tabindex="0" data-model="nwe">NWE-led entry</button><button id="model-tab-dss" type="button" role="tab" aria-controls="model-evidence" aria-selected="false" tabindex="-1" data-model="dss">DSS-led entry</button></div>
-                <div id="model-evidence" role="tabpanel" aria-labelledby="model-tab-nwe" tabindex="0">
+                <div class="model-tabs" role="tablist" aria-label="Historical entry models" hidden><button id="model-tab-nwe" type="button" role="tab" aria-controls="model-evidence" aria-selected="true" tabindex="0" data-model="nwe">Historical NWE-led entry</button><button id="model-tab-dss" type="button" role="tab" aria-controls="model-evidence" aria-selected="false" tabindex="-1" data-model="dss">Historical DSS-led entry</button></div>
+                <div id="model-evidence" role="region" aria-labelledby="model-title" tabindex="0">
                     <div class="model-heading"><div><h3 id="model-title">Entry model</h3><p id="model-version" class="model-id"></p></div><span id="model-state" class="state-badge">Not validated</span></div>
                     <div id="evidence-metrics" class="evidence-metrics"></div>
                     <div class="evidence-grid"><section class="check-panel" aria-labelledby="checks-title"><h3 id="checks-title">Validation checklist</h3><ul id="model-checks" class="check-list"></ul><div id="model-blockers" class="blockers"></div></section><section class="method-panel" aria-labelledby="sample-title"><h3 id="sample-title">Chronological sample</h3><div class="split-strip" aria-hidden="true"><span>Training</span><span>Selection</span><span>Holdout</span></div><dl id="sample-dates" class="metadata-list"></dl><p id="exit-protocol" class="small-text"></p><p class="small-text">The nominal split is 60% / 20% / 20% of bars after the strategy warm-up. Warm-up bars are excluded from trading; short histories may still leave too few validation or holdout trades. Dates above show the actual sample.</p><h4 class="exit-candidates-title">Equal-weight baseline · exit choices on validation data</h4><div class="table-scroll"><table class="exit-rule-table"><caption class="sr-only">Validation results for fixed timeouts and opposite-entry exits under current equal weights.</caption><thead><tr><th scope="col">Exit rule</th><th scope="col">Max bars</th><th scope="col">Trades</th><th scope="col">Mean return</th></tr></thead><tbody id="exit-candidate-rows"><tr><td colspan="4" class="empty-cell">Waiting for saved model evidence.</td></tr></tbody></table></div><p class="small-text">The reverse-signal rule closes at the opposite signal bar’s close only when that signal qualifies under the tested setup-strength weights and existing setup-strength floor. It never opens a position in reverse. Both exit types use the 4, 8, and 12 bar limits. Mean return is after configured transaction fees when known; otherwise it is gross.</p></section></div>

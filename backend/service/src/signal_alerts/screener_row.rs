@@ -1,6 +1,6 @@
 use super::super::{canonical_exchange_id, first_candidate_string};
 use super::{
-    is_crypto_nwe_dss_signal_score_row, is_stockbit_signal_score_row, score_components_match,
+    is_crypto_combined_entry_score_row, is_stockbit_signal_score_row, score_components_match,
 };
 use crate::now_secs;
 use serde_json::{json, Value};
@@ -49,6 +49,9 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
             "strategy_id",
         ],
     )?;
+    if crate::master_data::is_retired_entry_strategy(&signal_strategy_id) {
+        return None;
+    }
     let timeframe = first_candidate_string(candidate, &["timeframe", "Zone_Timeframe"])?;
     let current_price = candidate
         .get("Current_Price")
@@ -81,8 +84,8 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         &signal_strategy_id,
         &timeframe,
     );
-    let is_crypto_nwe_dss_signal_score =
-        is_crypto_nwe_dss_signal_score_row(&asset_category_id, &signal_strategy_id, &timeframe);
+    let is_crypto_combined_entry_score =
+        is_crypto_combined_entry_score_row(&asset_category_id, &signal_strategy_id, &timeframe);
     let score_bar_time = candidate
         .get("Signal_Score_Bar_Time")
         .and_then(Value::as_i64)
@@ -104,10 +107,10 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         && score_bar_time
             .saturating_add(crate::timeframe_duration_ns(&timeframe).unwrap_or_default())
             > now_ns;
-    // A qualifying crypto NWE/DSS setup can survive a stale reference price.
+    // A qualifying crypto combined-score setup can survive a stale reference price.
     // The screener reports it as a setup, not as a current market entry.
     if !forming_bar_is_valid
-        && !is_crypto_nwe_dss_signal_score
+        && !is_crypto_combined_entry_score
         && !(is_stockbit_signal_score && price_reference_only)
         && !crate::completed_bar_is_fresh_at(
             &storage_symbol,
@@ -125,10 +128,15 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         });
     let score_model_id = first_candidate_string(candidate, &["Signal_Scoring_Model_ID"])
         .unwrap_or_else(|| quant_core::SIGNAL_CONFLUENCE_SCORING_MODEL_ID.to_string());
+    if (score_model_id == quant_core::ENTRY_SCORE_MODEL_ID)
+        != (is_stockbit_signal_score || is_crypto_combined_entry_score)
+    {
+        return None;
+    }
     let six_indicator_score_model = super::super::is_six_indicator_score_model(&score_model_id);
     let score_scale_max = if six_indicator_score_model {
         quant_core::SIX_INDICATOR_SCORE_SCALE_MAX
-    } else if is_crypto_nwe_dss_signal_score {
+    } else if is_crypto_combined_entry_score {
         quant_core::NWE_DSS_SIGNAL_SCORE_SCALE_MAX
     } else {
         strategy
@@ -153,7 +161,7 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
     };
     let minimum_score = if six_indicator_score_model {
         Some(quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60)
-    } else if is_crypto_nwe_dss_signal_score {
+    } else if is_crypto_combined_entry_score {
         Some(quant_core::NWE_DSS_SIGNAL_MINIMUM_SCORE_OUT_OF_20)
     } else {
         strategy
@@ -332,6 +340,11 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
         ) {
             return None;
         }
+    }
+    if score_model_id == quant_core::ENTRY_SCORE_MODEL_ID
+        && !super::super::combined_entry_components_match_direction(&score_components, &direction)
+    {
+        return None;
     }
     let evidence_status = candidate
         .get("Backtest_Proof")

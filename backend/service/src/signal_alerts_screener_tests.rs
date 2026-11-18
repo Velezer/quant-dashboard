@@ -53,7 +53,18 @@ fn stockbit_candidate(price_bar_time: i64) -> serde_json::Value {
     })
 }
 
-fn stockbit_nwe_candidate(price_bar_time: i64, score: f64) -> serde_json::Value {
+pub(in crate::signal_alerts) fn combined_components(points: [f64; 6]) -> Vec<serde_json::Value> {
+    [
+        "Nadaraya-Watson Envelope", "DSS Bressert", "Relative Volume",
+        "Estimated Volume Delta (OHLCV proxy)", "Markov Regime",
+        "Lag-one Return Autocorrelation",
+    ].into_iter().zip(points).map(|(indicator, points)| {
+        json!({"indicator": indicator, "state": "TEST", "points": points,
+            "weight_points": 10, "weighted_points": points})
+    }).collect()
+}
+
+fn stockbit_combined_candidate(price_bar_time: i64, score: f64) -> serde_json::Value {
     let after_fee_gate = qualified_after_fee_gate(1.0);
     let nwe_points = score.clamp(0.0, 10.0);
     let dss_points = (score - 10.0).clamp(0.0, 10.0);
@@ -62,12 +73,12 @@ fn stockbit_nwe_candidate(price_bar_time: i64, score: f64) -> serde_json::Value 
     let price_score = nwe_points + dss_points;
     let volume_score = volume_points + delta_points;
     json!({
-        "Signal_Direction": "SHORT",
+        "Signal_Direction": "LONG",
         "Exchange_ID": "stockbit",
         "Product_ID": "stockbit_regular",
         "Asset_Category_ID": "idx_stock",
         "Symbol": "AADI.JK",
-        "Signal_Strategy_ID": quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID,
+        "Signal_Strategy_ID": crate::master_data::combined_entry_strategy_id("4h", true).unwrap(),
         "timeframe": "4h",
         "Current_Price": 6200.0,
         "Current_Price_Timeframe": "4h",
@@ -76,19 +87,14 @@ fn stockbit_nwe_candidate(price_bar_time: i64, score: f64) -> serde_json::Value 
         "Signal_Strength": score,
         "Strategy_Strength": price_score,
         "Signal_Confluence_Score": volume_score,
-        "Signal_Scoring_Model_ID": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
+        "Signal_Scoring_Model_ID": quant_core::ENTRY_SCORE_MODEL_ID,
         "Signal_Scoring_Profile_Version": 1,
         "Signal_After_Fee_Gate": after_fee_gate,
-        "Signal_Score_Components": [
-            { "indicator": "Nadaraya-Watson Envelope", "state": "NWE_SCORE", "points": nwe_points },
-            { "indicator": "DSS Bressert", "state": "DSS_SCORE", "points": dss_points },
-            { "indicator": "Relative Volume", "state": "ALIGNED", "points": volume_points },
-            { "indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "ALIGNED_PROXY", "points": delta_points }
-        ]
+        "Signal_Score_Components": combined_components([nwe_points, dss_points, volume_points, delta_points, 0.0, 0.0])
     })
 }
 
-fn crypto_nwe_candidate(
+fn crypto_combined_candidate(
     timeframe: &str,
     price_bar_time: i64,
     nwe_points: f64,
@@ -105,7 +111,7 @@ fn crypto_nwe_candidate(
         "Asset_Category_ID": "crypto_perpetual",
         "Symbol": "APT",
         "Data_Symbol": "APT-USD",
-        "Signal_Strategy_ID": quant_core::crypto_nwe_signal_strategy_id(timeframe).unwrap(),
+        "Signal_Strategy_ID": crate::master_data::combined_entry_strategy_id(timeframe, false).unwrap(),
         "timeframe": timeframe,
         "Current_Price": 10.0,
         "Current_Price_Timeframe": timeframe,
@@ -114,15 +120,10 @@ fn crypto_nwe_candidate(
         "Signal_Strength": price_score,
         "Strategy_Strength": price_score,
         "Signal_Confluence_Score": 0.0,
-        "Signal_Scoring_Model_ID": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
+        "Signal_Scoring_Model_ID": quant_core::ENTRY_SCORE_MODEL_ID,
         "Signal_Scoring_Profile_Version": 1,
         "Signal_After_Fee_Gate": after_fee_gate,
-        "Signal_Score_Components": [
-            { "indicator": "Nadaraya-Watson Envelope", "state": "NWE_SCORE", "points": nwe_component },
-            { "indicator": "DSS Bressert", "state": "DSS_SCORE", "points": dss_component },
-            { "indicator": "Relative Volume", "state": "UNAVAILABLE", "points": 0.0 },
-            { "indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "UNAVAILABLE", "points": 0.0 }
-        ],
+        "Signal_Score_Components": combined_components([nwe_component, dss_component, 0.0, 0.0, 0.0, 0.0]),
         "Current_Price_Data_Source": "pintu_futures_bybit_linear_proxy",
         "Current_Price_Data_Provider": "bybit",
         "Data_Quality": "RESEARCH_PROXY"
@@ -147,7 +148,7 @@ fn screener_hides_price_bars_that_went_stale_during_a_slow_scan() {
 }
 
 #[test]
-fn stockbit_nwe_rows_require_the_catalogued_one_point_floor() {
+fn stockbit_combined_rows_require_the_catalogued_one_point_floor() {
     let connection = Connection::open_in_memory().unwrap();
     connection
         .execute_batch("ATTACH DATABASE ':memory:' AS app;")
@@ -158,12 +159,12 @@ fn stockbit_nwe_rows_require_the_catalogued_one_point_floor() {
         .saturating_mul(1_000_000_000);
     let fresh_bar = now_ns.saturating_sub(5 * 60 * 60 * 1_000_000_000);
 
-    assert!(signal_screener_row(&stockbit_nwe_candidate(fresh_bar, 0.99)).is_none());
-    let row = signal_screener_row(&stockbit_nwe_candidate(fresh_bar, 1.0))
+    assert!(signal_screener_row(&stockbit_combined_candidate(fresh_bar, 0.99)).is_none());
+    let row = signal_screener_row(&stockbit_combined_candidate(fresh_bar, 1.0))
         .expect("the published score floor is inclusive");
     assert_eq!(
         row["signal_strategy_id"],
-        quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID
+        crate::master_data::combined_entry_strategy_id("4h", true).unwrap()
     );
     assert_eq!(row["score"], 1.0);
 }
@@ -176,12 +177,12 @@ fn stockbit_score_updates_renew_the_persisted_row_on_each_scan() {
         .unwrap_or(i64::MAX)
         .saturating_mul(1_000_000_000);
     let initial_bar = now_ns.saturating_sub(5 * 60 * 60 * 1_000_000_000);
-    let initial_row = signal_screener_row(&stockbit_nwe_candidate(initial_bar, 4.0))
+    let initial_row = signal_screener_row(&stockbit_combined_candidate(initial_bar, 4.0))
         .expect("initial qualifying signal should be persistable");
     replace_signal_screener_snapshot(&connection, &[initial_row])
         .expect("initial signal should persist");
 
-    let mut next_scan = stockbit_nwe_candidate(initial_bar, 8.0);
+    let mut next_scan = stockbit_combined_candidate(initial_bar, 8.0);
     let timeframe_ns = 4 * 60 * 60 * 1_000_000_000;
     let forming_bar = now_ns.div_euclid(timeframe_ns) * timeframe_ns;
     next_scan["Score_Update_Only"] = json!(true);
@@ -189,12 +190,7 @@ fn stockbit_score_updates_renew_the_persisted_row_on_each_scan() {
     next_scan["Signal_Strength"] = json!(8.0);
     next_scan["Strategy_Strength"] = json!(6.0);
     next_scan["Signal_Confluence_Score"] = json!(2.0);
-    next_scan["Signal_Score_Components"] = json!([
-        {"indicator": "Nadaraya-Watson Envelope", "state": "NWE_SCORE", "points": 4.0},
-        {"indicator": "DSS Bressert", "state": "DSS_SCORE", "points": 2.0},
-        {"indicator": "Relative Volume", "state": "ALIGNED", "points": 1.0},
-        {"indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "ALIGNED_PROXY", "points": 1.0}
-    ]);
+    next_scan["Signal_Score_Components"] = json!(combined_components([4.0, 2.0, 1.0, 1.0, 0.0, 0.0]));
     next_scan["Score_Update_Status"] = json!("qualifying");
     next_scan["Signal_Score_Bar_Time"] = json!(forming_bar);
     next_scan["Signal_Score_Bar_Is_Forming"] = json!(true);
@@ -228,87 +224,51 @@ fn stockbit_score_updates_renew_the_persisted_row_on_each_scan() {
 }
 
 #[test]
-fn four_indicator_components_each_cap_at_ten_and_add_to_forty() {
-    let connection = Connection::open_in_memory().unwrap();
-    connection
-        .execute_batch("ATTACH DATABASE ':memory:' AS app;")
-        .unwrap();
+fn combined_screener_checks_the_six_signed_components_and_sixty_point_scale() {
+    let connection = screener_connection();
     crate::master_data::initialize(&connection).unwrap();
-    let now_ns = i64::try_from(crate::now_secs())
-        .unwrap_or(i64::MAX)
-        .saturating_mul(1_000_000_000);
-    let fresh_bar = now_ns.saturating_sub(5 * 60 * 60 * 1_000_000_000);
-    let mut candidate = stockbit_nwe_candidate(fresh_bar, 40.0);
-    candidate["Strategy_Strength"] = json!(20.0);
-    candidate["Signal_Confluence_Score"] = json!(20.0);
-    for index in 0..4 {
-        candidate["Signal_Score_Components"][index]["points"] = json!(10.0);
-    }
+    let now_ns = crate::now_secs() as i64 * crate::NANOS_PER_SECOND;
+    let fresh_bar = now_ns - 5 * quant_core::SECONDS_PER_HOUR * crate::NANOS_PER_SECOND;
+    let mut candidate = stockbit_combined_candidate(fresh_bar, 60.0);
+    candidate["Signal_Score_Components"] = json!(combined_components([10.0; 6]));
+    let row = signal_screener_row(&candidate).expect("six ten-point factors sum to 60");
+    assert_eq!(row["score"], 60.0);
+    assert_eq!(row["score_scale_max"], quant_core::SIX_INDICATOR_SCORE_SCALE_MAX);
+    assert_eq!(row["minimum_score_out_of_60"], quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60);
 
-    let row = signal_screener_row(&candidate).expect("four ten-point factors should sum to 40");
-    assert_eq!(row["score"], 40.0);
-    assert_eq!(row["score_scale_max"], 40.0);
-    assert_eq!(
-        row["minimum_score_out_of_40"],
-        quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
-    );
-
-    candidate["Strategy_Strength"] = json!(20.1);
+    candidate["Signal_Direction"] = json!("SHORT");
     assert!(signal_screener_row(&candidate).is_none());
+    candidate["Signal_Score_Components"] = json!(combined_components([-10.0; 6]));
+    candidate["Strategy_Strength"] = json!(-20.0);
+    candidate["Signal_Confluence_Score"] = json!(-20.0);
+    assert!(signal_screener_row(&candidate).is_some());
 
-    candidate["Strategy_Strength"] = json!(20.0);
-    candidate["Signal_Confluence_Score"] = json!(19.0);
+    candidate["Signal_Score_Components"][0]["points"] = json!(-10.1);
     assert!(signal_screener_row(&candidate).is_none());
 }
 
 #[test]
-fn catalog_free_crypto_timeframe_models_use_the_forty_point_scale() {
-    let connection = Connection::open_in_memory().unwrap();
-    connection
-        .execute_batch("ATTACH DATABASE ':memory:' AS app;")
-        .unwrap();
+fn crypto_rejects_retired_lead_candidates_and_unmatched_combined_model_identity() {
+    let connection = screener_connection();
     crate::master_data::initialize(&connection).unwrap();
-    let now_ns = i64::try_from(crate::now_secs())
-        .unwrap_or(i64::MAX)
-        .saturating_mul(1_000_000_000);
-    let fresh_15m_bar = now_ns.saturating_sub(16 * 60 * 1_000_000_000);
-
-    let candidate = crypto_nwe_candidate("15m", fresh_15m_bar, 6.0, 5.0);
-    let row = signal_screener_row(&candidate)
-        .expect("catalog-free crypto NWE/DSS scores should render on the 40-point scale");
+    let now_ns = crate::now_secs() as i64 * crate::NANOS_PER_SECOND;
+    let fresh_bar = now_ns - 16 * quant_core::SECONDS_PER_MINUTE * crate::NANOS_PER_SECOND;
+    let candidate = crypto_combined_candidate("15m", fresh_bar, 6.0, 5.0);
+    let row = signal_screener_row(&candidate).expect("matching combined score model");
     assert_eq!(row["score"], 11.0);
-    assert_eq!(row["score_scale_max"], 40.0);
-    assert_eq!(
-        row["minimum_score_out_of_40"],
-        quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
-    );
-    assert_eq!(row["component_score_scale_max"], 40.0);
+    assert_eq!(row["score_scale_max"], 60.0);
     assert_eq!(row["timeframe"], "15m");
-
-    let mut dss_candidate = candidate.clone();
-    dss_candidate["Signal_Strategy_ID"] =
-        json!(quant_core::crypto_dss_bressert_signal_strategy_id("15m").unwrap());
-    dss_candidate["Signal_Scoring_Model_ID"] =
-        json!(quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID);
-    dss_candidate["Signal_Score_Components"] = json!([
-        { "indicator": "Nadaraya-Watson Envelope", "state": "NWE_SCORE", "points": 5.0 },
-        { "indicator": "DSS Bressert", "state": "DSS_SCORE", "points": 6.0 },
-        { "indicator": "Relative Volume", "state": "UNAVAILABLE", "points": 0.0 },
-        { "indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "UNAVAILABLE", "points": 0.0 }
-    ]);
-    dss_candidate["Signal_Strength"] = json!(11.0);
-    dss_candidate["Strategy_Strength"] = json!(11.0);
-    dss_candidate["Signal_Confluence_Score"] = json!(0.0);
-    let dss_row = signal_screener_row(&dss_candidate)
-        .expect("catalog-free crypto DSS scores must share the same 40-point scale");
-    assert_eq!(dss_row["score"], 11.0);
-    assert_eq!(dss_row["score_scale_max"], 40.0);
-    assert_eq!(
-        dss_row["minimum_score_out_of_40"],
-        quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
-    );
-
-    assert!(signal_screener_row(&crypto_nwe_candidate("15m", fresh_15m_bar, 10.1, 1.0)).is_none());
+    for legacy_id in [
+        quant_core::crypto_nwe_signal_strategy_id("15m").unwrap(),
+        quant_core::crypto_dss_bressert_signal_strategy_id("15m").unwrap(),
+    ] {
+        let mut legacy = candidate.clone();
+        legacy["Signal_Strategy_ID"] = json!(legacy_id);
+        assert!(signal_screener_row(&legacy).is_none());
+    }
+    let mut mismatched = candidate;
+    mismatched["Signal_Scoring_Model_ID"] = json!(quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID);
+    assert!(signal_screener_row(&mismatched).is_none());
 }
 
 #[test]
@@ -323,7 +283,7 @@ fn crypto_signal_candidate_has_no_signal_age_expiry() {
         .saturating_mul(crate::NANOS_PER_SECOND);
     let current_price_bar = now_ns.saturating_sub(16 * 60 * crate::NANOS_PER_SECOND);
     let old_signal_bar = now_ns.saturating_sub(6 * 60 * 60 * crate::NANOS_PER_SECOND);
-    let mut candidate = crypto_nwe_candidate("15m", current_price_bar, 1.0, 0.0);
+    let mut candidate = crypto_combined_candidate("15m", current_price_bar, 1.0, 0.0);
     candidate["Signal_Bar_Time"] = json!(old_signal_bar);
 
     let row = signal_screener_row(&candidate)
@@ -333,99 +293,35 @@ fn crypto_signal_candidate_has_no_signal_age_expiry() {
 }
 
 #[test]
-fn crypto_indicator_signals_render_from_one_point_and_keep_indicator_timeframes_independent() {
+fn crypto_combined_signals_retain_distinct_timeframes_and_exclude_old_rows() {
     let connection = screener_connection();
     crate::master_data::initialize(&connection).unwrap();
-    let now_ns = i64::try_from(crate::now_secs())
-        .unwrap_or(i64::MAX)
-        .saturating_mul(1_000_000_000);
-    let fresh_bar = now_ns.saturating_sub(16 * 60 * 1_000_000_000);
-    let fresh_hour_bar = now_ns.saturating_sub(2 * 60 * 60 * 1_000_000_000);
-    let candidate = crypto_nwe_candidate("15m", fresh_bar, 1.0, 0.0);
-
-    let row = signal_screener_row(&candidate)
-        .expect("a one-point NWE signal should meet the inclusive 1/40 floor");
-    assert_eq!(row["score"], 1.0);
-    assert_eq!(row["score_scale_max"], 40.0);
-    assert_eq!(
-        row["minimum_score_out_of_40"],
-        quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
-    );
-
-    let mut unavailable_dss = candidate.clone();
-    unavailable_dss["Signal_Confluence_Score"] = serde_json::Value::Null;
-    unavailable_dss["Signal_Confluence"] = serde_json::Value::Null;
-    unavailable_dss["Signal_Score_Components"] = json!([
-        { "indicator": "Nadaraya-Watson Envelope", "state": "NWE_SCORE", "points": 1.0 },
-        { "indicator": "DSS Bressert", "state": "UNAVAILABLE", "points": 0.0 },
-        { "indicator": "Relative Volume", "state": "UNAVAILABLE", "points": 0.0 },
-        { "indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "UNAVAILABLE", "points": 0.0 }
-    ]);
-    let row = signal_screener_row(&unavailable_dss)
-        .expect("a missing second indicator should contribute zero, not suppress NWE");
-    assert_eq!(row["score"], 1.0);
-    assert_eq!(row["confluence_score"], 0.0);
-    assert_eq!(row["score_components"][1]["state"], "UNAVAILABLE");
-
-    let other_timeframe = crypto_nwe_candidate("1h", fresh_hour_bar, 2.0, 0.0);
-    let mut other_indicator = crypto_nwe_candidate("15m", fresh_bar, 2.0, 0.0);
-    other_indicator["Signal_Strategy_ID"] =
-        json!(quant_core::crypto_dss_bressert_signal_strategy_id("15m").unwrap());
-    other_indicator["Signal_Scoring_Model_ID"] =
-        json!(quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID);
-    other_indicator["Signal_Score_Components"] = json!([
-        { "indicator": "Nadaraya-Watson Envelope", "state": "NWE_UNAVAILABLE", "points": 0.0 },
-        { "indicator": "DSS Bressert", "state": "DSS_SCORE", "points": 1.0 },
-        { "indicator": "Relative Volume", "state": "UNAVAILABLE", "points": 0.0 },
-        { "indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "UNAVAILABLE", "points": 0.0 }
-    ]);
-    other_indicator["Signal_Strength"] = json!(1.0);
-    other_indicator["Strategy_Strength"] = json!(1.0);
-    other_indicator["Signal_Confluence_Score"] = json!(0.0);
-
-    let rows = [candidate, other_timeframe, other_indicator]
-        .iter()
-        .map(|candidate| {
-            signal_screener_row(candidate)
-                .unwrap_or_else(|| panic!("signal candidate did not qualify: {candidate}"))
-        })
-        .collect::<Vec<_>>();
-    let identities = rows
-        .iter()
-        .map(|row| {
-            (
-                row["signal_strategy_id"].as_str().unwrap(),
-                row["timeframe"].as_str().unwrap(),
-            )
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(identities.len(), 3);
-    assert!(identities.contains(&("crypto_nwe_band_proximity_15m_v1", "15m")));
-    assert!(identities.contains(&("crypto_nwe_band_proximity_1h_v1", "1h")));
-    assert!(identities.contains(&("crypto_dss_bressert_near_cross_15m_v1", "15m")));
+    let now_ns = crate::now_secs() as i64 * crate::NANOS_PER_SECOND;
+    let fresh_15m_bar = now_ns - 16 * quant_core::SECONDS_PER_MINUTE * crate::NANOS_PER_SECOND;
+    let fresh_1h_bar = now_ns - 61 * quant_core::SECONDS_PER_MINUTE * crate::NANOS_PER_SECOND;
+    let rows = [
+        crypto_combined_candidate("15m", fresh_15m_bar, 1.0, 0.0),
+        crypto_combined_candidate("1h", fresh_1h_bar, 0.0, 1.0),
+    ].iter().map(|candidate| signal_screener_row(candidate).unwrap()).collect::<Vec<_>>();
 
     insert_pintu_registry_fixture(&connection, "APT", "pintu_pro_futures", "crypto_perpetual", "venue_active", 1, 1);
-    replace_signal_screener_snapshot(&connection, &rows)
-        .expect("distinct indicator/timeframe rows for one ticker should persist");
-    let payload = list_signal_screener(&connection, 900, None, None)
-        .expect("persisted timeframe rows should load independently");
-    let stored_rows = payload["signals"]
-        .as_array()
-        .expect("the screener response should contain signal rows");
-    assert_eq!(stored_rows.len(), 3);
-    assert!(stored_rows
-        .iter()
-        .all(|row| { row["symbol"] == "APT" && row["score_basis"]["score_scale_max"] == 40.0 }));
-    let stored_identities = stored_rows
-        .iter()
-        .map(|row| {
-            (
-                row["signal_strategy_id"].as_str().unwrap(),
-                row["timeframe"].as_str().unwrap(),
-            )
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(stored_identities, identities);
+    replace_signal_screener_snapshot(&connection, &rows).unwrap();
+    let mut merged_rows = rows;
+    let mut historical = merged_rows[0].clone();
+    historical["signal_strategy_id"] = json!(quant_core::crypto_nwe_signal_strategy_id("15m").unwrap());
+    historical["score_model_id"] = json!(quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID);
+    merged_rows.push(historical);
+    replace_signal_screener_snapshot(&connection, &merged_rows).unwrap();
+
+    let payload = list_signal_screener(&connection, 900, None, None).unwrap();
+    let stored_rows = payload["signals"].as_array().unwrap();
+    assert_eq!(stored_rows.len(), 2);
+    assert_eq!(payload["summary"]["matching_rows"], 2);
+    assert!(stored_rows.iter().all(|row| {
+        row["symbol"] == "APT" && row["score_basis"]["score_scale_max"] == 60.0
+    }));
+    assert!(stored_rows.iter().any(|row| row["timeframe"] == "1h"));
+    assert_eq!(stored_rows[0]["direction_score"]["long_count"], 1);
 }
 
 #[test]
@@ -484,7 +380,7 @@ fn stored_screener_row(symbol: &str, price_bar_time: i64) -> serde_json::Value {
     })
 }
 
-fn screener_connection() -> Connection {
+pub(super) fn screener_connection() -> Connection {
     let connection = Connection::open_in_memory().expect("in-memory app database should open");
     connection
         .execute_batch("ATTACH DATABASE ':memory:' AS app; ATTACH DATABASE ':memory:' AS signals;")
@@ -495,6 +391,7 @@ fn screener_connection() -> Connection {
     super::super::initialize_screener_schema(&connection)
         .expect("signal snapshot schema should initialize");
     crate::master_data::initialize(&connection).expect("master-data catalog should initialize");
+    crate::database::initialize_app_runtime_storage_schema(&connection).unwrap();
     connection
 }
 
@@ -580,7 +477,10 @@ fn snapshot_stores_all_scan_rows_even_beyond_a_single_page() {
     let connection = screener_connection();
     let now_ns = i64::try_from(crate::now_secs()).unwrap() * crate::NANOS_PER_SECOND;
     let rows = (0..2_001)
-        .map(|index| stored_screener_row(&format!("SIG-{index:04}.JK"), now_ns))
+        .map(|index| {
+            let completed_15m = now_ns - 16 * quant_core::SECONDS_PER_MINUTE * crate::NANOS_PER_SECOND;
+            stored_screener_row(&format!("SIG-{index:04}.JK"), completed_15m)
+        })
         .collect::<Vec<_>>();
 
     replace_signal_screener_snapshot(&connection, &rows).expect("all scan rows should persist");
@@ -772,16 +672,15 @@ fn screener_read_prioritizes_15m_rows_when_response_is_capped() {
     let stockbit_bar = now_ns.saturating_sub(25 * 60 * 60 * 1_000_000_000);
     let mut stockbit_rows = Vec::with_capacity(2_001);
     for index in 0..2_001 {
-        let mut row = stockbit_nwe_candidate(stockbit_bar, 10.0);
-        row["Signal_Direction"] = json!("SHORT");
+        let mut row = stockbit_combined_candidate(stockbit_bar, 10.0);
         row["Symbol"] = json!(format!("CAP{index:04}.JK"));
         row["Signal_Strategy_ID"] =
-            json!(quant_core::stockbit_nwe_signal_strategy_id("1d").unwrap());
+            json!(crate::master_data::combined_entry_strategy_id("1d", true).unwrap());
         row["timeframe"] = json!("1d");
         row["Current_Price_Timeframe"] = json!("1d");
         stockbit_rows.push(signal_screener_row(&row).expect("Stockbit row should qualify"));
     }
-    let mut pluang_15m = crypto_nwe_candidate(
+    let mut pluang_15m = crypto_combined_candidate(
         "15m",
         now_ns.saturating_sub(16 * 60 * 1_000_000_000),
         3.0,

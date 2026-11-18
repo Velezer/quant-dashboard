@@ -37,10 +37,12 @@ fn win_probability_for_score(
     };
     let product_slice = profile.after_fee_gate["product_slices"]
         .as_array()
-        .and_then(|slices| slices.iter().find(|slice| {
-            slice["exchange_id"].as_str() == Some(exchange_id)
-                && slice["product_id"].as_str() == Some(product_id)
-        }));
+        .and_then(|slices| {
+            slices.iter().find(|slice| {
+                slice["exchange_id"].as_str() == Some(exchange_id)
+                    && slice["product_id"].as_str() == Some(product_id)
+            })
+        });
     let Some(product_slice) = product_slice else {
         return serde_json::json!({
             "status": "UNAVAILABLE",
@@ -53,8 +55,12 @@ fn win_probability_for_score(
     let bands = product_slice["holdout_score_bands"].as_array();
     let band = bands.and_then(|bands| {
         bands.iter().find(|band| {
-            let minimum = band["minimum_score_out_of_60"].as_f64().unwrap_or(f64::INFINITY);
-            let maximum = band["maximum_score_out_of_60"].as_f64().unwrap_or(f64::NEG_INFINITY);
+            let minimum = band["minimum_score_out_of_60"]
+                .as_f64()
+                .unwrap_or(f64::INFINITY);
+            let maximum = band["maximum_score_out_of_60"]
+                .as_f64()
+                .unwrap_or(f64::NEG_INFINITY);
             score >= minimum
                 && (score < maximum || (band["maximum_inclusive"] == true && score <= maximum))
         })
@@ -139,10 +145,12 @@ fn after_fee_gate_for_product(
 ) -> Value {
     let product_slice = profile.after_fee_gate["product_slices"]
         .as_array()
-        .and_then(|slices| slices.iter().find(|slice| {
-            slice["exchange_id"].as_str() == Some(exchange_id)
-                && slice["product_id"].as_str() == Some(product_id)
-        }));
+        .and_then(|slices| {
+            slices.iter().find(|slice| {
+                slice["exchange_id"].as_str() == Some(exchange_id)
+                    && slice["product_id"].as_str() == Some(product_id)
+            })
+        });
     let Some(product_slice) = product_slice else {
         return Value::Null;
     };
@@ -159,132 +167,60 @@ fn after_fee_gate_for_product(
     })
 }
 
-pub(super) fn append_timeframe_signal_candidate(
-    signals: &mut Vec<Value>,
+pub(super) fn append_combined_entry(
     input: &TimeframeScanInput<'_>,
-    signal: &quant_core::StrategySignal,
-    strategy_id: &str,
-    score_model_id: &str,
+    is_stockbit: bool,
     timeframe: &str,
-    signal_bar: &quant_core::StrategyBar,
-    score_bar: &quant_core::StrategyBar,
-    current_price: &CurrentPrice,
-    price_timeframe: &str,
-    price_reference_only: bool,
-    source: &str,
-    provider: &str,
-    score_components: Vec<Value>,
-    score_groups: Option<(f64, f64, f64, f64, f64)>,
-    profile: Option<&crate::research_reports::ActiveScoringProfile>,
-) {
-    if score_groups.is_some_and(|groups| groups.4.abs() < quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60) {
-        return;
-    }
-    let data_quality = if is_research_proxy_source(source) {
-        "RESEARCH_PROXY"
-    } else {
-        "APP_NATIVE"
-    };
-    let score_weights = score_components
-        .iter()
-        .map(|component| component.get("weight_points").cloned().unwrap_or(Value::Null))
-        .collect::<Vec<_>>();
-    let profile_version = score_components
-        .first()
-        .and_then(|component| component.get("scoring_profile_version"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let win_probability = win_probability_for_score(
-        score_groups.map(|groups| groups.4.abs()),
-        profile,
-        input.exchange_id,
-        input.product_id,
-    );
-    signals.push(serde_json::json!({
-        "Exchange_ID": input.exchange_id,
-        "Product_ID": input.product_id,
-        "Asset_Category_ID": input.category_id,
-        "Symbol": input.asset,
-        "Data_Symbol": input.symbol,
-        "Signal_Strategy_ID": strategy_id,
-        "Signal_Direction": score_groups.map(|groups| if groups.4 > 0.0 { "LONG" } else { "SHORT" }).unwrap_or(signal.direction.as_str()),
-        "Signal_Strength": score_groups.map(|(_, _, _, _, total)| total.abs()).unwrap_or(signal.strength),
-        "Strategy_Strength": score_groups.map(|(price, _, _, _, _)| price).unwrap_or(signal.strategy_strength),
-        "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _, _)| volume)
-            .or_else(|| signal.confluence.as_ref().map(|score| score.score)),
-        "Signal_Markov_Regime_Score": score_groups.map(|(_, _, markov, _, _)| markov),
-        "Signal_Autocorrelation_Score": score_groups.map(|(_, _, _, autocorrelation, _)| autocorrelation),
-        "Signal_Markov_Regime": score_components.iter()
-            .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Markov Regime"))
-            .and_then(|component| component.get("state"))
-            .cloned()
-            .unwrap_or(Value::Null),
-        "Signal_Autocorrelation_State": score_components.iter()
-            .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Lag-one Return Autocorrelation"))
-            .and_then(|component| component.get("state"))
-            .cloned()
-            .unwrap_or(Value::Null),
-        "Signal_Confluence": if score_groups.is_some() { Value::Null } else {
-            serde_json::to_value(signal.confluence.as_ref()).unwrap_or(Value::Null)
-        },
-        "Signal_Scoring_Model_ID": score_model_id,
-        "Signal_Scoring_Weights": score_weights,
-        "Signal_Scoring_Profile_Version": profile_version,
-        "Signal_After_Fee_Gate": profile
-            .map(|profile| after_fee_gate_for_product(profile, input.exchange_id, input.product_id))
-            .unwrap_or(Value::Null),
-        "Signal_Win_Probability": win_probability,
-        "Signal_Score_Components": score_components,
-        "timeframe": timeframe,
-        "Current_Price": current_price.value,
-        "Current_Price_Timeframe": price_timeframe,
-        "Current_Price_Bar_Time": current_price.signal_bar_time,
-        "Current_Price_Reference_Only": price_reference_only,
-        "Signal_Bar_Time": signal_bar.time,
-        "Signal_Score_Bar_Time": score_bar.time,
-        "Signal_Score_Bar_Is_Forming": score_bar.time.saturating_add(
-            timeframe_duration_ns(timeframe).unwrap_or_default(),
-        ) > current_time_ns(),
-        "Current_Price_Data_Source": current_price.source,
-        "Current_Price_Data_Provider": current_price.provider,
-        "Data_Source": source,
-        "Data_Provider": provider,
-        "Data_Quality": data_quality,
-    }));
-}
-
-pub(super) fn six_indicator_score_outputs(
+    source_metadata: Option<&(String, String)>,
     bars: &[StrategyBar],
-    signal: &quant_core::StrategySignal,
-    lead_indicator: &str,
-    profile: Option<&crate::research_reports::ActiveScoringProfile>,
-    markov_regime: Option<quant_core::RegimeId>,
-) -> (Vec<Value>, Option<(f64, f64, f64, f64, f64)>) {
-    let kind = if lead_indicator == "DSS Bressert" {
-        quant_core::EntryModelKind::Dss
-    } else {
-        quant_core::EntryModelKind::Nwe
-    };
+    current_price: Option<&CurrentPrice>,
+    candidates: &mut Vec<Value>,
+    score_updates: &mut Vec<Value>,
+) -> Option<ReadinessIssue> {
+    let (source, provider) = source_metadata?;
+    let strategy_id = crate::master_data::combined_entry_strategy_id(timeframe, is_stockbit)?;
+    let bar = bars
+        .last()
+        .filter(|bar| bar.close.is_finite() && bar.close > 0.0)?;
+    let profile = active_scoring_profile(input, timeframe, source);
     let weights = profile
         .map(|profile| profile.weights)
         .unwrap_or(quant_core::FOUR_INDICATOR_EQUAL_WEIGHTS);
-    let Some(score) = quant_core::score_entry_signal_with_markov(
-        bars,
-        signal,
-        kind,
-        weights,
-        markov_regime,
-    ) else {
-        return (Vec::new(), None);
-    };
-    let groups = Some((
-        score.price_score,
-        score.volume_score,
-        score.markov_regime_score,
-        score.autocorrelation_score,
+    let score = quant_core::combined_entry_score(bars, weights)?;
+    let strength = score.total_score.abs();
+    let direction = quant_core::entry_score_direction(
         score.total_score,
-    ));
-    let components = score
+        quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60,
+        true, // A negative score is also visible as research on long-only products.
+    );
+    let retained = is_stockbit
+        && input
+            .retained_stockbit_signal_rows
+            .contains(&(strategy_id.clone(), timeframe.to_string()));
+    if direction.is_none() && !retained {
+        return None;
+    }
+    let fallback_price = CurrentPrice {
+        value: bar.close,
+        signal_bar_time: bar.time,
+        source: source.clone(),
+        provider: provider.clone(),
+    };
+    let (price, price_timeframe, reference_only) = current_price
+        .filter(|price| price.source == *source)
+        .map(|price| {
+            let reference_only = is_stockbit
+                && !crate::completed_bar_is_fresh_at(
+                    input.symbol,
+                    "15m",
+                    price.signal_bar_time,
+                    current_time_ns(),
+                );
+            (price, "15m", reference_only)
+        })
+        .unwrap_or((&fallback_price, timeframe, true));
+    let profile_version = profile.map(|profile| profile.version);
+    let score_components = score
         .components
         .iter()
         .map(|component| {
@@ -295,22 +231,89 @@ pub(super) fn six_indicator_score_outputs(
                 "weight_points": component.weight_points,
                 "weighted_points": component.weighted_points,
                 "value": component.value,
-                "scoring_profile_version": profile.map(|profile| profile.version),
+                "scoring_profile_version": profile_version,
             })
         })
-        .collect();
-    (components, groups)
+        .collect::<Vec<_>>();
+    let score_weights = score
+        .components
+        .each_ref()
+        .map(|component| component.weight_points);
+    let [_, _, _, _, markov, autocorrelation] = &score.components;
+    let candidate = serde_json::json!({
+        "Exchange_ID": input.exchange_id,
+        "Product_ID": input.product_id,
+        "Asset_Category_ID": input.category_id,
+        "Symbol": input.asset,
+        "Data_Symbol": input.symbol,
+        "Signal_Strategy_ID": strategy_id,
+        "Signal_Scoring_Model_ID": quant_core::ENTRY_SCORE_MODEL_ID,
+        "Signal_Direction": direction,
+        "Signal_Strength": strength,
+        "Strategy_Strength": score.price_score,
+        "Signal_Confluence_Score": score.volume_score,
+        "Signal_Markov_Regime_Score": score.markov_regime_score,
+        "Signal_Autocorrelation_Score": score.autocorrelation_score,
+        "Signal_Markov_Regime": markov.state,
+        "Signal_Autocorrelation_State": autocorrelation.state,
+        "Signal_Scoring_Weights": score_weights,
+        "Signal_Scoring_Profile_Version": profile_version,
+        "Signal_After_Fee_Gate": profile.map(|profile| {
+            after_fee_gate_for_product(profile, input.exchange_id, input.product_id)
+        }),
+        "Signal_Win_Probability": win_probability_for_score(
+            direction.map(|_| strength), profile, input.exchange_id, input.product_id,
+        ),
+        "Signal_Score_Components": score_components,
+        "timeframe": timeframe,
+        "Current_Price": price.value,
+        "Current_Price_Timeframe": price_timeframe,
+        "Current_Price_Bar_Time": price.signal_bar_time,
+        "Current_Price_Reference_Only": reference_only,
+        "Signal_Bar_Time": direction.map(|_| bar.time),
+        "Signal_Score_Bar_Time": bar.time,
+        "Signal_Score_Bar_Is_Forming": bar.time.saturating_add(
+            timeframe_duration_ns(timeframe).unwrap_or_default(),
+        ) > current_time_ns(),
+        "Current_Price_Data_Source": price.source,
+        "Current_Price_Data_Provider": price.provider,
+        "Data_Source": source,
+        "Data_Provider": provider,
+        "Data_Quality": if is_research_proxy_source(source) { "RESEARCH_PROXY" } else { "APP_NATIVE" },
+    });
+    if retained {
+        let mut update = candidate.clone();
+        update["Score_Update_Only"] = serde_json::Value::Bool(true);
+        update["Score_Update_Status"] = serde_json::json!(if direction.is_some() {
+            "qualifying"
+        } else {
+            "not_qualifying"
+        });
+        // A retained score can stay visible below the floor without presenting
+        // its prior direction or magnitude as a current entry.
+        if direction.is_none() {
+            update["Signal_Strength"] = serde_json::json!(0.0);
+        }
+        score_updates.push(update);
+    }
+    if direction.is_some() {
+        candidates.push(candidate);
+        after_fee_issue(
+            input, timeframe, source, provider, bar.time, profile, strength,
+        )
+    } else {
+        None
+    }
 }
 
-pub(super) fn active_scoring_profile<'a>(
+fn active_scoring_profile<'a>(
     input: &'a TimeframeScanInput<'_>,
-    score_model_id: &str,
     timeframe: &str,
     source: &str,
 ) -> Option<&'a crate::research_reports::ActiveScoringProfile> {
     let profiles = input.active_scoring_profiles?;
     let key = (
-        score_model_id.to_string(),
+        quant_core::ENTRY_SCORE_MODEL_ID.to_string(),
         input.category_id.to_string(),
         timeframe.to_string(),
         source.to_string(),
@@ -318,191 +321,38 @@ pub(super) fn active_scoring_profile<'a>(
     profiles.get(&key)
 }
 
-pub(super) fn append_stockbit_model_result(
-    candidates: &mut Vec<Value>,
-    score_updates: &mut Vec<Value>,
+fn after_fee_issue(
     input: &TimeframeScanInput<'_>,
-    model_signals: &[quant_core::StrategySignal],
-    bars: &[StrategyBar],
-    strategy_id: &str,
-    score_model_id: &str,
     timeframe: &str,
     source: &str,
     provider: &str,
-    indicator: &str,
-    current_price: Option<&CurrentPrice>,
-    markov_regime: Option<quant_core::RegimeId>,
+    bar_time: i64,
+    profile: Option<&crate::research_reports::ActiveScoringProfile>,
+    strength: f64,
 ) -> Option<ReadinessIssue> {
-    let Some(score_bar) = bars
-        .last()
-        .filter(|bar| bar.close.is_finite() && bar.close > 0.0)
-    else {
-        return None;
+    let (reason, explanation) = match profile {
+        None => (
+            "after_fee_profile_missing",
+            "No active after-fee profile is available. This setup uses equal weights.",
+        ),
+        Some(profile) if strength < profile.minimum_score => (
+            "below_after_fee_score_cutoff",
+            "The setup is below the historical after-fee score cutoff. The cutoff is informational.",
+        ),
+        _ => return None,
     };
-    let reference_price = CurrentPrice {
-        value: score_bar.close, signal_bar_time: score_bar.time,
-        source: source.to_string(), provider: provider.to_string(),
-    };
-    let matching_price = current_price.filter(|price| price.source == source);
-    let price_timeframe = if matching_price.is_some() { "15m" } else { timeframe };
-    let reference_only = matching_price.is_none_or(|price| {
-        !crate::completed_bar_is_fresh_at(input.symbol, "15m", price.signal_bar_time, current_time_ns())
-    });
-    let current_price = matching_price.unwrap_or(&reference_price);
-    let latest_signal = model_signals.last();
-    let profile = active_scoring_profile(input, score_model_id, timeframe, source);
-    let (score_components, score_groups) = latest_signal
-        .map(|signal| six_indicator_score_outputs(bars, signal, indicator, profile, markov_regime))
-        .unwrap_or_else(|| {
-            let weights = profile.map(|profile| profile.weights)
-                .unwrap_or(quant_core::FOUR_INDICATOR_EQUAL_WEIGHTS);
-            let version = profile.map(|profile| profile.version);
-            (
-                vec![
-                    serde_json::json!({"indicator": "Nadaraya-Watson Envelope", "state": "NO_QUALIFYING_SETUP", "points": 0.0,"weight_points":weights[0],"weighted_points":0.0,"scoring_profile_version":version}),
-                    serde_json::json!({"indicator": "DSS Bressert", "state": "NO_QUALIFYING_SETUP", "points": 0.0,"weight_points":weights[1],"weighted_points":0.0,"scoring_profile_version":version}),
-                    serde_json::json!({"indicator": "Relative Volume", "state": "UNAVAILABLE", "points": 0.0,"weight_points":weights[2],"weighted_points":0.0,"scoring_profile_version":version}),
-                    serde_json::json!({"indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "UNAVAILABLE", "points": 0.0,"weight_points":weights[3],"weighted_points":0.0,"scoring_profile_version":version}),
-                    serde_json::json!({"indicator": "Markov Regime", "state": "UNAVAILABLE", "points": 0.0,"weight_points":quant_core::MARKOV_REGIME_COMPONENT_WEIGHT,"weighted_points":0.0,"scoring_profile_version":version}),
-                    serde_json::json!({"indicator": "Lag-one Return Autocorrelation", "state": "UNAVAILABLE", "points": 0.0,"weight_points":quant_core::STRATEGY_RETURN_AUTOCORRELATION_COMPONENT_WEIGHT,"weighted_points":0.0,"scoring_profile_version":version}),
-                ],
-                Some((0.0, 0.0, 0.0, 0.0, 0.0)),
-            )
-        });
-    let has_after_fee_setup = latest_signal.is_some()
-        && score_groups.is_some_and(|groups| groups.4.abs() >= quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60);
-    let after_fee_issue = if has_after_fee_setup
-        && profile.is_none_or(|profile| {
-            score_groups.is_none_or(|(_, _, _, _, total)| total.abs() < profile.minimum_score)
-        })
-    {
-        let (reason, explanation) = match (profile, score_groups) {
-            (None, _) => (
-                "after_fee_profile_missing",
-                "No active after-fee profile is available; equal-weight scoring is used and this setup is still shown.",
-            ),
-            (Some(profile), Some((_, _, _, _, score))) if score.abs() < profile.minimum_score => (
-                "below_after_fee_score_cutoff",
-                "The setup is below the historical after-fee score cutoff; the metric is informational and does not hide this signal.",
-            ),
-            _ => (
-                "after_fee_score_unavailable",
-                "The after-fee backtest metric is unavailable; this setup is still shown.",
-            ),
-        };
-        Some(ReadinessIssue {
-            symbol: input.asset.into(),
-            reason: reason.into(),
-            timeframe: timeframe.into(),
-            source: Some(source.into()),
-            data_provider: Some(provider.into()),
-            last_bar_time: Some(score_bar.time),
-            error: Some(explanation.into()),
-            ..ReadinessIssue::default()
-        })
-    } else {
-        None
-    };
-    if has_after_fee_setup {
-        if let Some(signal) = latest_signal {
-            append_timeframe_signal_candidate(
-                candidates,
-                input,
-                signal,
-                strategy_id,
-                score_model_id,
-                timeframe,
-                score_bar,
-                score_bar,
-                current_price,
-                price_timeframe,
-                reference_only,
-                source,
-                provider,
-                score_components.clone(),
-                score_groups,
-                profile,
-            );
-        }
-    }
-    let score_weights = score_components
-        .iter()
-        .map(|component| component.get("weight_points").cloned().unwrap_or(Value::Null))
-        .collect::<Vec<_>>();
-    let profile_version = score_components
-        .first()
-        .and_then(|component| component.get("scoring_profile_version"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let win_probability = win_probability_for_score(
-        score_groups.map(|groups| groups.4.abs()),
-        profile,
-        input.exchange_id,
-        input.product_id,
-    );
-    let retained_score_row_exists = input.retained_stockbit_signal_rows.iter().any(
-        |(retained_strategy_id, retained_timeframe)| {
-            retained_strategy_id == strategy_id && retained_timeframe == timeframe
-        },
-    );
-    if retained_score_row_exists {
-        score_updates.push(serde_json::json!({
-            "Score_Update_Only": true,
-            "Exchange_ID": input.exchange_id,
-            "Product_ID": input.product_id,
-            "Asset_Category_ID": input.category_id,
-            "Symbol": input.asset,
-            "Data_Symbol": input.symbol,
-            "Signal_Strategy_ID": strategy_id,
-            "Signal_Strategy_Name": strategy_id,
-            "Signal_Scoring_Model_ID": score_model_id,
-            "Signal_Scoring_Weights": score_weights,
-            "Signal_Scoring_Profile_Version": profile_version,
-            "Signal_After_Fee_Gate": profile.map(|profile| {
-                after_fee_gate_for_product(profile, input.exchange_id, input.product_id)
-            }),
-            "Signal_Win_Probability": win_probability,
-            "timeframe": timeframe,
-            "Signal_Direction": score_groups.and_then(|groups| if groups.4 > 0.0 { Some("LONG") } else if groups.4 < 0.0 { Some("SHORT") } else { None }),
-            "Signal_Bar_Time": latest_signal.map(|_| score_bar.time),
-            "Signal_Strength": score_groups.map(|(_, _, _, _, total)| total.abs()).unwrap_or(0.0),
-            "Strategy_Strength": score_groups.map(|(price, _, _, _, _)| price).unwrap_or(0.0),
-            "Signal_Confluence_Score": score_groups.map(|(_, volume, _, _, _)| volume),
-            "Signal_Markov_Regime_Score": score_groups.map(|(_, _, markov, _, _)| markov),
-            "Signal_Autocorrelation_Score": score_groups.map(|(_, _, _, autocorrelation, _)| autocorrelation),
-            "Signal_Markov_Regime": score_components.iter()
-                .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Markov Regime"))
-                .and_then(|component| component.get("state"))
-                .cloned()
-                .unwrap_or(Value::Null),
-            "Signal_Autocorrelation_State": score_components.iter()
-                .find(|component| component.get("indicator").and_then(Value::as_str) == Some("Lag-one Return Autocorrelation"))
-                .and_then(|component| component.get("state"))
-                .cloned()
-                .unwrap_or(Value::Null),
-            "Signal_Score_Components": score_components,
-            "Score_Update_Status": if has_after_fee_setup {
-                "qualifying"
-            } else {
-                "not_qualifying"
-            },
-            "Current_Price": current_price.value,
-            "Current_Price_Timeframe": "15m",
-            "Current_Price_Bar_Time": current_price.signal_bar_time,
-            "Signal_Score_Bar_Time": score_bar.time,
-            "Signal_Score_Bar_Is_Forming": score_bar.time.saturating_add(
-                timeframe_duration_ns(timeframe).unwrap_or_default(),
-            ) > current_time_ns(),
-            "Current_Price_Data_Source": current_price.source,
-            "Current_Price_Data_Provider": current_price.provider,
-            "Data_Source": source,
-            "Data_Provider": provider,
-            "Data_Quality": if is_research_proxy_source(source) {
-                "RESEARCH_PROXY"
-            } else {
-                "APP_NATIVE"
-            },
-        }));
-    }
-    after_fee_issue
+    Some(ReadinessIssue {
+        symbol: input.asset.into(),
+        reason: reason.into(),
+        timeframe: timeframe.into(),
+        source: Some(source.into()),
+        data_provider: Some(provider.into()),
+        last_bar_time: Some(bar_time),
+        error: Some(explanation.into()),
+        ..ReadinessIssue::default()
+    })
 }
+
+#[cfg(test)]
+#[path = "combined_entry_tests.rs"]
+mod tests;

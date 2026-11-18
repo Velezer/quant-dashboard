@@ -280,15 +280,21 @@ export function installSignalScreener() {
         schedulePriceExpiry();
     }
 
-    function alertSignalIdentity(signal) {
+    function alertSignalIdentity(signal, strategy = signal.signal_strategy_id) {
         return signalIdentity({
             exchange_id: String(signal.exchange_id || '').toLowerCase(),
             product_id: String(signal.product_id || '').toLowerCase(),
             asset_category_id: String(signal.asset_category_id || '').toLowerCase(),
             symbol: String(signal.symbol || '').trim().toUpperCase(),
-            signal_strategy_id: String(signal.signal_strategy_id || ''),
+            signal_strategy_id: String(strategy || ''),
             timeframe: String(signal.timeframe || '').toLowerCase(),
         });
+    }
+
+    function matchesAlertSignal(signal, identity) {
+        if (alertSignalIdentity(signal) === identity) return true;
+        return Array.isArray(signal.timeframe_strategy_ids)
+            && signal.timeframe_strategy_ids.some(strategy => alertSignalIdentity(signal, strategy) === identity);
     }
 
     function finishAlertNavigation(result, signal = null) {
@@ -335,7 +341,7 @@ export function installSignalScreener() {
         if (search) search.value = symbol;
         setSearchQuery(symbol, { refresh: false });
 
-        const currentSignal = filteredSignals().find(row => alertSignalIdentity(row) === identity);
+        const currentSignal = filteredSignals().find(row => matchesAlertSignal(row, identity));
         if (currentSignal) {
             focusSignal(currentSignal);
             return Promise.resolve('opened');
@@ -385,7 +391,7 @@ export function installSignalScreener() {
 
     function stockbitSignalEmptyText(models) {
         if (!models.length) {
-            return `No Stockbit NWE/DSS model is configured for ${timeframeFilter}.`;
+            return `No Stockbit combined score is configured for ${timeframeFilter}.`;
         }
         if (summary.stale) {
             return timeframeFilter === 'all'
@@ -775,7 +781,7 @@ export function installSignalScreener() {
         renderSignalsList();
         if (globalThis.selectedSignal) renderSelectedSignalSummary(globalThis.selectedSignal);
         if (pendingAlertNavigation) {
-            const signal = filteredSignals().find(row => alertSignalIdentity(row) === pendingAlertNavigation.identity);
+            const signal = filteredSignals().find(row => matchesAlertSignal(row, pendingAlertNavigation.identity));
             if (signal) finishAlertNavigation('opened', signal);
             else if (hasMoreSignalRows) refreshSignalRows({ append: true });
             else finishAlertNavigation('not_current');

@@ -1,5 +1,5 @@
 use super::*;
-use quant_core::{EntryModelKind, VenueFeePolicy};
+use quant_core::{VenueFeePolicy, ENTRY_SCORE_MODEL_ID};
 use serde_json::json;
 use std::sync::Mutex;
 
@@ -210,27 +210,27 @@ fn text<'a>(value: &'a Value, field: &str) -> &'a str {
     value.get(field).and_then(Value::as_str).unwrap_or("")
 }
 
-fn matching_models(
+fn matching_model(
     connection: &Connection,
     instrument: &Value,
     timeframe: &str,
-) -> Result<Vec<Value>, String> {
+) -> Result<Option<Value>, String> {
     let catalog = signal_screener_master_data_for_connection(connection)
         .map_err(|error| error.to_string())?;
-    Ok(matching_models_in_catalog(&catalog, instrument, timeframe))
+    Ok(matching_model_in_catalog(&catalog, instrument, timeframe).cloned())
 }
 
-pub(super) fn matching_models_in_catalog(
-    catalog: &Value,
+pub(super) fn matching_model_in_catalog<'a>(
+    catalog: &'a Value,
     instrument: &Value,
     timeframe: &str,
-) -> Vec<Value> {
+) -> Option<&'a Value> {
     catalog
         .get("signal_score_models")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|model| {
+        .find(|model| {
             let matches = |key: &str, wanted: &str| {
                 model
                     .get(key)
@@ -241,12 +241,8 @@ pub(super) fn matching_models_in_catalog(
                 && matches("exchange_ids", text(instrument, "exchange_id"))
                 && matches("product_ids", text(instrument, "product_id"))
                 && matches("asset_category_ids", text(instrument, "asset_category_id"))
-                && [EntryModelKind::Nwe, EntryModelKind::Dss]
-                    .iter()
-                    .any(|kind| text(model, "score_model_id") == kind.score_model_id())
+                && text(model, "score_model_id") == ENTRY_SCORE_MODEL_ID
         })
-        .cloned()
-        .collect()
 }
 
 fn empty_history() -> Value {
@@ -447,10 +443,10 @@ fn build_report(
     instrument: Value,
     timeframe: &str,
 ) -> Result<Value, String> {
-    let model_catalog = matching_models(connection, &instrument, timeframe)?;
+    let model = matching_model(connection, &instrument, timeframe)?;
     let eligible = text(&instrument, "research_eligibility") == "eligible"
         && instrument.get("venue_verified").and_then(Value::as_bool) == Some(true);
-    let supported = !model_catalog.is_empty();
+    let supported = model.is_some();
     let (buy, sell, fees_known, costs) = fee_metadata(&instrument);
     let (bars, source, history) = if eligible && supported {
         read_history(market_directory, &instrument, timeframe)?
@@ -462,73 +458,64 @@ fn build_report(
         )
     };
     let mut models = Vec::new();
-    if eligible && supported {
-        for kind in [EntryModelKind::Nwe, EntryModelKind::Dss] {
-            let Some(model) = model_catalog
-                .iter()
-                .find(|model| text(model, "score_model_id") == kind.score_model_id())
-            else {
-                continue;
-            };
-            let backtest = quant_core::evaluate_entry_score_backtest(
-                &bars,
-                kind,
-                crate::timeframe_duration_ns(timeframe)
-                    .ok_or_else(|| "Invalid timeframe".to_string())?,
-                buy,
-                sell,
-                fees_known,
-                text(&instrument, "asset_category_id") == "crypto_perpetual"
-                    || text(&instrument, "asset_category_id") == "crypto_futures",
-            );
-            let mut checks = backtest.get("checks").cloned().unwrap_or_else(|| json!({}));
-            checks["registered_identity"] = json!(eligible);
-            checks["venue_native_history"] =
-                json!(source["venue_native"] == true && source["is_proxy"] != true);
-            checks["fees_known"] = json!(fees_known);
-            checks["execution_costs_complete"] = json!(false);
-            checks["after_fee_win_rate_target_met"] = json!(
-                backtest
-                    .pointer("/weight_learning/validation_after_fee_target_met")
+    if let Some(model) = model.filter(|_| eligible) {
+        let backtest = quant_core::evaluate_entry_score_backtest(
+            &bars,
+            crate::timeframe_duration_ns(timeframe)
+                .ok_or_else(|| "Invalid timeframe".to_string())?,
+            buy,
+            sell,
+            fees_known,
+            text(&instrument, "asset_category_id") == "crypto_perpetual"
+                || text(&instrument, "asset_category_id") == "crypto_futures",
+        );
+        let mut checks = backtest.get("checks").cloned().unwrap_or_else(|| json!({}));
+        checks["registered_identity"] = json!(eligible);
+        checks["venue_native_history"] =
+            json!(source["venue_native"] == true && source["is_proxy"] != true);
+        checks["fees_known"] = json!(fees_known);
+        checks["execution_costs_complete"] = json!(false);
+        checks["after_fee_win_rate_target_met"] = json!(
+            backtest
+                .pointer("/weight_learning/validation_after_fee_target_met")
+                .and_then(Value::as_bool)
+                == Some(true)
+                && backtest
+                    .pointer("/weight_learning/holdout_after_fee_target_met")
                     .and_then(Value::as_bool)
                     == Some(true)
-                    && backtest
-                        .pointer("/weight_learning/holdout_after_fee_target_met")
-                        .and_then(Value::as_bool)
-                        == Some(true)
+        );
+        let mut requirements = vec![
+            ("registered_identity","Exact verified app/product/ticker identity is required."),
+            ("after_fee_win_rate_target_met","The learned entry rule has not reached a 50% win rate after configured fees on both validation and untouched holdout data."),
+            ("holdout_sample_sufficient","The untouched holdout needs more completed entry outcomes."),
+            ("history_span_sufficient","The full completed history does not meet the 1,000-day minimum."),
+            ("venue_native_history","Venue-native history is required; research proxies cannot establish execution evidence."),
+            ("fees_known","The exact app/product fee policy is unknown."),
+            ("execution_costs_complete","Slippage, depth, impact and applicable funding/borrow costs are not fully modeled."),
+        ];
+        if let Some(rule) = preferred_risk_reward_rule(&backtest, timeframe) {
+            checks["asymmetric_risk_reward_rule"] = json!(
+                rule.pointer("/candidate/qualified")
+                    .and_then(Value::as_bool)
+                    == Some(true)
             );
-            let mut requirements = vec![
-                ("registered_identity","Exact verified app/product/ticker identity is required."),
-                ("after_fee_win_rate_target_met","The learned entry rule has not reached a 50% win rate after configured fees on both validation and untouched holdout data."),
-                ("holdout_sample_sufficient","The untouched holdout needs more completed entry outcomes."),
-                ("history_span_sufficient","The full completed history does not meet the 1,000-day minimum."),
-                ("venue_native_history","Venue-native history is required; research proxies cannot establish execution evidence."),
-                ("fees_known","The exact app/product fee policy is unknown."),
-                ("execution_costs_complete","Slippage, depth, impact and applicable funding/borrow costs are not fully modeled."),
-            ];
-            if let Some(rule) = preferred_risk_reward_rule(&backtest, timeframe) {
-                checks["asymmetric_risk_reward_rule"] = json!(
-                    rule.pointer("/candidate/qualified")
-                        .and_then(Value::as_bool)
-                        == Some(true)
-                );
-                requirements.push((
-                    "asymmetric_risk_reward_rule",
-                    "The 4h after-fee stop/target rule has not passed validation and untouched holdout checks.",
-                ));
-            }
-            let blocking_reasons: Vec<&str> = requirements
-                .iter()
-                .filter(|(key, _)| checks[*key] != true)
-                .map(|(_, reason)| *reason)
-                .collect();
-            let validated = blocking_reasons.is_empty()
-                && text(&backtest, "status") == "HOLDOUT_RESEARCH_COMPLETE";
-            models.push(json!({"kind":match kind {EntryModelKind::Nwe=>"nwe",EntryModelKind::Dss=>"dss"},
-                "label":model["short_label"],"signal_strategy_id":model["id"],"score_model_id":kind.score_model_id(),
-                "backtest":backtest,"checks":checks,"entry_validation_status":if validated {"VALIDATED_HOLDOUT"} else {"VALIDATION_PENDING"},
-                "blocking_reasons":blocking_reasons,"sizing_eligible":false}));
+            requirements.push((
+                "asymmetric_risk_reward_rule",
+                "The 4h after-fee stop/target rule has not passed validation and untouched holdout checks.",
+            ));
         }
+        let blocking_reasons: Vec<&str> = requirements
+            .iter()
+            .filter(|(key, _)| checks[*key] != true)
+            .map(|(_, reason)| *reason)
+            .collect();
+        let validated = blocking_reasons.is_empty()
+            && text(&backtest, "status") == "HOLDOUT_RESEARCH_COMPLETE";
+        models.push(json!({"kind":backtest["entry_model_kind"],
+            "label":model["short_label"],"signal_strategy_id":model["id"],"score_model_id":ENTRY_SCORE_MODEL_ID,
+            "backtest":backtest,"checks":checks,"entry_validation_status":if validated {"VALIDATED_HOLDOUT"} else {"VALIDATION_PENDING"},
+            "blocking_reasons":blocking_reasons,"sizing_eligible":false}));
     }
     let status = if !eligible {
         "PENDING_VERIFICATION"
@@ -573,7 +560,7 @@ fn build_report(
         "computed_at":now_secs(),"status":status,"source":source,"history":history,"costs":costs,"models":models,
         "eligibility":{"status":if eligible {"eligible"} else {"pending_verification"},
             "reason":if !eligible {"A verified eligible registration is required before backtesting."}
-                else if !supported {"The current six-indicator entry models are not registered for this exact product/category. No substitute model was backtested."}
+                else if !supported {"This exact product and category do not have a registered combined score model."}
                 else {"Exact registered identity selected. Historical research does not imply execution validation."}},
         "sizing":{"status":sizing_status,"risk_model":"causal_return_autocorrelation_horizon_variance_v1",
             "reason":sizing_reason,

@@ -5,6 +5,11 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- NWE-led and DSS-led rows can carry the same signed signal for a ticker and
+  timeframe. Select one before paginating the screener and use a stable
+  instrument/timeframe selection key while retaining the selected model's
+  evidence and its alert links.
+
 - A 4h chart bucket can exist even when one of its hourly candles is missing.
   For a cross-sectional forecast, require four consecutive native hourly bars
   per bucket and the same completed cutoff across pairs. Reset history at
@@ -34,8 +39,10 @@ lesson only when it will improve future tasks.
 - A directional imbalance is not evidence of predictive quality. Expose bullish
   and bearish contribution totals and cancellation, and partition the same
   chronological holdout trade sequence by LONG/SHORT after configured fees.
-  Matching NWE/DSS rows reuse factors and are not independent confirmation.
-  Keep model thresholds unchanged until validation supports a new rule.
+  The combined entry score supersedes duplicate NWE-led and DSS-led rows.
+  A warm-up difference does not establish an independent model. Version the
+  screener identity and saved evidence protocol together when replacing the
+  model, and compare replay with the live score on the same candle prefix.
 
 - Hydrate chart indicators by exact candle timestamp rather than array offsets.
   Missing or newly appended bars can shift independently fetched indicator arrays.
