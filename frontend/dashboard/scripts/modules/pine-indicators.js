@@ -5,6 +5,7 @@ import { CHART_INDICATOR_IDS } from './chart-data.js';
 import { installNweDssBacktestReport } from './nwe-dss-backtest.js';
 import { excursionSummary, installNweExcursionReport } from './pine-nwe-excursion-report.js';
 import { finiteNumber, pineWorkerInput } from './pine-indicator-input.js';
+import { runPineWithStoredTimeframes } from './pine-security-history.js';
 import { cleanCopiedPineSource, pineSourceMetadata } from './pine-source-text.js';
 import { createPineIndicatorStatus } from './pine-indicator-status.js';
 import {
@@ -360,12 +361,23 @@ export function installPineIndicators() {
         }
         setStatus('Calculating ' + records.map(record => record.name).join(' and ')
             + ' on ' + candles.length + ' stored ' + timeframe.toUpperCase() + ' candles in browser WASM…', 'loading');
+        const availableTimeframes = getDashboardBinding('availableChartTimeframes')?.() || [];
         const results = await Promise.all(records.map(async record => {
             try {
-                return {
-                    record,
-                    output: await callWorker({ type: 'run', ...workerInputForSignal(record.source, signal, candles, timeframe) }),
-                };
+                const run = () => callWorker({ type: 'run', ...workerInputForSignal(record.source, signal, candles, timeframe) });
+                const ensureTimeframe = getDashboardBinding('ensureChartDataForTimeframe');
+                const output = await runPineWithStoredTimeframes(
+                    run,
+                    missingTimeframe => {
+                        if (runId !== evaluationSerial || !ensureTimeframe) return false;
+                        const detail = `Loading stored ${missingTimeframe.toUpperCase()} history requested by Pine request.security().`;
+                        setRegisteredPaneState(signal, paneRecord, 'loading', timeframe, detail, missingTimeframe);
+                        setStatus(detail, 'loading');
+                        return ensureTimeframe(signal, missingTimeframe);
+                    },
+                    availableTimeframes,
+                );
+                return { record, output };
             } catch (error) {
                 return { record, error };
             }

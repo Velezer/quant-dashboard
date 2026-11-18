@@ -4,6 +4,7 @@ UI work is complete only when the user can understand the current state, choose
 the next safe action, and recover from missing or stale data. The interface is
 part of the market-data contract, so changes must preserve app identity, data
 provenance, the read-only execution boundary, and chart meaning.
+Chart changes follow the [chart data integrity UX contract](chart-data-integrity-ux-contract.md).
 
 ## UI is the product path
 

@@ -1,6 +1,7 @@
 import { getDashboardBinding } from './runtime-context.js';
 import { QuantChart } from './chart-math.js';
 import { marketSymbolForSignal } from './chart-market-identity.js';
+import { chartCandlesForTimeframe } from './chart-timeframe-candles.js';
 import {
     APP_LABELS,
     oppositeEntryExitCue,
@@ -41,16 +42,6 @@ export function createSignalScreenerChartContext({
         });
     }
 
-    function candlesForTimeframe(signal, timeframe) {
-        const frame = String(timeframe || '').toLowerCase();
-        const mappedCandles = signal?.candles_by_tf?.[frame];
-        if (Array.isArray(mappedCandles) && mappedCandles.length) return mappedCandles;
-        if (String(signal?.timeframe || '').toLowerCase() === frame && Array.isArray(signal?.candles)) {
-            return signal.candles;
-        }
-        return Array.isArray(mappedCandles) ? mappedCandles : [];
-    }
-
     function setChartTimeframeLoadStatus(state = '', timeframe = '') {
         const status = document.getElementById('chart-timeframe-load-status');
         const label = document.getElementById('chart-timeframe-load-text');
@@ -75,9 +66,10 @@ export function createSignalScreenerChartContext({
         }
 
         const frame = String(timeframe || '').toLowerCase();
-        const cachedCandles = candlesForTimeframe(signal, frame);
+        const cachedCandles = chartCandlesForTimeframe(signal, frame);
         const hasCachedCandles = cachedCandles.length > 0;
         signal.candles = cachedCandles;
+        signal._chartCandlesTimeframe = frame;
         setChartTimeframeLoadStatus(hasCachedCandles ? 'studies' : 'history', frame);
 
         const drawChart = getDashboardBinding('drawCandleChart');
@@ -111,7 +103,8 @@ export function createSignalScreenerChartContext({
                 return;
             }
 
-            currentSignal.candles = candlesForTimeframe(currentSignal, frame);
+            currentSignal.candles = chartCandlesForTimeframe(currentSignal, frame);
+            currentSignal._chartCandlesTimeframe = frame;
             drawChart?.(currentSignal);
             window.dispatchEvent(new Event('quant:pine-chart-data-changed'));
             if (currentSignal.candles.length) {
@@ -462,7 +455,8 @@ export function createSignalScreenerChartContext({
         getDashboardBinding('updateChartTimeframeButtons')?.();
         const signal = globalThis.selectedSignal;
         if (!signal) return;
-        signal.candles = candlesForTimeframe(signal, next);
+        signal.candles = chartCandlesForTimeframe(signal, next);
+        signal._chartCandlesTimeframe = next;
         updateChartTimeframeContext(signal);
         getDashboardBinding('resetOHLCBarForSignal')?.(signal);
         void loadSignalChartTimeframe(signal, next);

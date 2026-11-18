@@ -70,6 +70,7 @@ export function installSignalScreener() {
     let visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
     let nextSignalOffset = 0;
     let hasMoreSignalRows = false;
+    let locallyFreshPriceSignalIds = new Set();
     let signalRefreshScheduleVersion = 0;
     let pendingAlertNavigation = null;
     let searchRefreshTimer = null;
@@ -125,6 +126,8 @@ export function installSignalScreener() {
     });
 
     function refreshSignalRows({ append = false } = {}) {
+        if (searchRefreshTimer !== null) clearTimeout(searchRefreshTimer);
+        searchRefreshTimer = null;
         const fetch = getDashboardBinding('fetchFreshSignals');
         if (!fetch) return;
         const options = {
@@ -247,14 +250,15 @@ export function installSignalScreener() {
     function schedulePriceExpiry() {
         if (priceExpiryTimer !== null) clearTimeout(priceExpiryTimer);
         priceExpiryTimer = null;
+        const nowEpochMs = Date.now();
         const earliestExpiry = rows
-            .filter(signal => signal.persistent_score !== true)
+            .filter(signal => locallyFreshPriceSignalIds.has(signal.signal_id))
             .map(signal => Number(signal.price_fresh_until_ms))
-            .filter(expiry => Number.isFinite(expiry) && expiry > Date.now())
+            .filter(expiry => Number.isFinite(expiry) && expiry >= nowEpochMs)
             .reduce((earliest, expiry) => Math.min(earliest, expiry), Number.POSITIVE_INFINITY);
         if (!Number.isFinite(earliestExpiry)) return;
         const delay = Math.max(0, Math.min(
-            earliestExpiry - Date.now() + 1,
+            earliestExpiry - nowEpochMs + 1,
             MAX_BROWSER_TIMER_DELAY_MS,
         ));
         priceExpiryTimer = setTimeout(expireStalePrices, delay);
@@ -262,13 +266,16 @@ export function installSignalScreener() {
 
     function expireStalePrices() {
         const nowEpochMs = Date.now();
-        summary.stale_price_signal_count = rows.filter(signal =>
-            signal.persistent_score !== true && !signalPriceIsFresh(signal, nowEpochMs),
-        ).length;
+        for (const signal of rows) {
+            if (!locallyFreshPriceSignalIds.has(signal.signal_id)
+                || signalPriceIsFresh(signal, nowEpochMs)) continue;
+            locallyFreshPriceSignalIds.delete(signal.signal_id);
+            summary.stale_price_signal_count = (Number(summary.stale_price_signal_count) || 0) + 1;
+        }
         if (globalThis.DATA?.summary) {
             globalThis.DATA.summary.stale_price_signal_count = summary.stale_price_signal_count;
         }
-        // Once the reference price expires, omit the row until a fresh scan qualifies it.
+        // Rerender retained rows too, so their entry state changes at expiry.
         renderSignalsList();
         schedulePriceExpiry();
     }
@@ -348,7 +355,8 @@ export function installSignalScreener() {
         searchQuery = String(value || '');
         visibleSignalLimit = SIGNAL_LIST_PAGE_SIZE;
         renderSignalsList();
-        clearTimeout(searchRefreshTimer);
+        if (searchRefreshTimer !== null) clearTimeout(searchRefreshTimer);
+        searchRefreshTimer = null;
         if (refresh) searchRefreshTimer = setTimeout(() => refreshSignalRows(), 250);
     }
 
@@ -729,7 +737,9 @@ export function installSignalScreener() {
             const replacement = nextRows.find(row => row.signal_id === previousSelection.signal_id);
             if (replacement) {
                 replacement.candles = previousSelection.candles;
+                replacement._chartCandlesTimeframe = previousSelection._chartCandlesTimeframe;
                 replacement.candles_by_tf = previousSelection.candles_by_tf;
+                replacement.chart_data_loaded_by_tf = previousSelection.chart_data_loaded_by_tf;
                 replacement.chart_freshness = previousSelection.chart_freshness;
                 replacement.chart_data_loaded = previousSelection.chart_data_loaded;
                 replacement.chart_indicator_config = previousSelection.chart_indicator_config;
@@ -753,6 +763,10 @@ export function installSignalScreener() {
             rows = nextRows;
         }
         summary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : { stale: true, status: {} };
+        const nowEpochMs = Date.now();
+        locallyFreshPriceSignalIds = new Set(rows
+            .filter(signal => signalPriceIsFresh(signal, nowEpochMs))
+            .map(signal => signal.signal_id));
         nextSignalOffset = Number(summary.next_offset) || 0;
         hasMoreSignalRows = summary.has_more === true;
         requestState = 'ready';
@@ -874,6 +888,7 @@ export function installSignalScreener() {
 
     publishDashboardBindings('signal-screener', {
         applySignalSnapshot: { get: () => applySnapshot },
+        availableChartTimeframes: { get: () => availableTimeframes },
         getSignalScreenerQuery: { get: () => () => ({
             exchange: getDashboardBinding('activeExchangeFilter') || 'stockbit',
             product: getDashboardBinding('activeProductFilter') || 'all',

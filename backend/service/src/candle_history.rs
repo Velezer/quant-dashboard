@@ -114,9 +114,9 @@ pub(super) fn latest_stored_bar_time_from_source(
 }
 
 /// Pick the stored series that should supply a derived chart. The 4H chart
-/// prefers stored 1H candles whenever they exist so its OHLC values are built
-/// from hourly bars. Other native higher intervals remain authoritative. A
-/// fallback-backed higher interval may be replaced or extended when a finer
+/// prefers hourly candles when their latest rollup is at least as recent as
+/// the direct 4H series. Other native higher intervals remain authoritative.
+/// A fallback-backed higher interval may be replaced or extended when a finer
 /// stored series is materially newer, so a failed provider retry cannot pin
 /// the chart to an old direct series.
 #[cfg(test)]
@@ -137,10 +137,24 @@ pub(super) fn preferred_storage_timeframe_from_source(
     requested_timeframe: &str,
     source: &str,
 ) -> Result<String, rusqlite::Error> {
-    if requested_timeframe == "4h"
-        && latest_stored_bar_time_from_source(connection, symbol, "1h", source)?.is_some()
-    {
-        return Ok("1h".to_string());
+    if requested_timeframe == "4h" {
+        let hourly_last = latest_stored_bar_time_from_source(connection, symbol, "1h", source)?;
+        if let Some(hourly_last) = hourly_last {
+            let direct_last =
+                latest_stored_bar_time_from_source(connection, symbol, "4h", source)?;
+            let timezone_offset =
+                timezone_offset_ns_from_source(connection, symbol, "1h", source)?;
+            let four_hour_duration = timeframe_duration_ns("4h").unwrap_or(i64::MAX);
+            let latest_hourly_rollup = aggregation::intraday_aggregation_bucket_start(
+                hourly_last.saturating_add(timezone_offset),
+                four_hour_duration,
+                symbol,
+            )
+            .saturating_sub(timezone_offset);
+            if direct_last.is_none_or(|direct| latest_hourly_rollup >= direct) {
+                return Ok("1h".to_string());
+            }
+        }
     }
 
     let direct_last =
@@ -228,7 +242,6 @@ pub(super) fn load_series_candles_for_exchange(
     )
 }
 
-#[cfg(test)]
 pub(super) fn load_series_candles_for_product(
     connection: &Connection,
     symbol: &str,

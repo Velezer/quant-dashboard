@@ -97,6 +97,25 @@ jobs:
             preferred_risk_reward_rule_uses_the_current_weight_learning_path -- \
             --test-threads=1
           node --test frontend/dashboard/scripts/modules/entry-validation.test.mjs
+      - name: Verify chart identity and timeframe regressions
+        run: |
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            calculations_product_scope_tests -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            calculations_shared_source_tests -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            candle_history_4h_tests -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            markov_product_source_tests -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            market_refresh_tests -- --test-threads=1
+          cargo test --locked --release -p quant_core \
+            pintu_app_identity_is_classified_as_crypto_futures -- --test-threads=1
+          node --test \
+            frontend/dashboard/scripts/modules/chart-timeframe-candles.test.mjs \
+            frontend/dashboard/scripts/modules/chart-indicator-cache.test.mjs \
+            frontend/dashboard/scripts/modules/pine-security-history.test.mjs \
+            frontend/dashboard/scripts/modules/signal-screener-expiry-regressions.test.mjs
       - name: Verify screener filter and response contracts
         run: |
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api signal_screener_route_accepts_all_six_visible_indicator_filters -- --test-threads=1

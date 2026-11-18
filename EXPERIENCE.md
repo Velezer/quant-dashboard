@@ -113,6 +113,12 @@ lesson only when it will improve future tasks.
   Shared Spot reference charts for Futures must not receive index-aligned
   indicators calculated from Futures-specific candles; return overlays with
   the chart bundle and preserve them during later indicator hydration.
+- Carry registered app and product identity through chart and regime history
+  reads. Use the timeframe-aware series loader for both candles and freshness
+  metadata; generic ticker reads can cross product sources or omit valid
+  derived intervals. For 4h, compare the latest hourly rollup bucket with the
+  direct 4h tail before choosing hourly history; old hourly bars must not hide
+  newer direct bars.
 - A selected-signal setup view should reuse the row's after-fee holdout evidence
   and strategy metadata, while price zones come from that signal's own
   timeframe chart bundle. Label NWE proximity zones as contextual references,
@@ -395,3 +401,7 @@ lesson only when it will improve future tasks.
   before pagination. Missing freshness, price coverage, or pagination evidence
   stays unavailable; validate a response before replacing the last good
   snapshot, and preserve explicit no-entry states through client-side expiry.
+- Master-data app IDs and registry app keys can differ: Pintu's catalog resolves
+  to `pintu_futures`, while its registered instruments use `pintu`. Convert at
+  the registry boundary for selected-signal verification, app-scoped refresh,
+  and listing queries; test against the stored app key.

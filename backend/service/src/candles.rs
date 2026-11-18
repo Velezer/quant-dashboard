@@ -464,6 +464,40 @@ pub(super) fn selected_candle_source_for_product(
     .map(|(source, _)| source))
 }
 
+/// Select the same shared Spot reference that chart-bundle uses for registered
+/// crypto products. Chart candles and their indicators must be calculated from
+/// the same series that the chart displays.
+pub(super) fn selected_shared_chart_reference_source(
+    connection: &Connection,
+    symbol: &str,
+    exchange: &str,
+    product_id: &str,
+    timeframe: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    let exchange = exchange.trim().to_ascii_lowercase();
+    let exchange = match exchange.as_str() {
+        "pintu_futures" => "pintu",
+        other => other,
+    };
+    let product_id = product_id.trim();
+    if research_proxy::shared::category_for_product(exchange, product_id).is_none() {
+        return Ok(None);
+    }
+    Ok(selected_candle_source_for_product(
+        connection,
+        symbol,
+        research_proxy::shared::CHART_REFERENCE_EXCHANGE_ID,
+        research_proxy::shared::CHART_REFERENCE_PRODUCT_ID,
+        timeframe,
+    )?
+    .filter(|source| {
+        research_proxy::shared::is_shared_source_for_category(
+            source,
+            research_proxy::shared::CHART_REFERENCE_CATEGORY_ID,
+        )
+    }))
+}
+
 pub(super) fn selected_candle_source_metadata_for_product(
     connection: &Connection,
     symbol: &str,
