@@ -82,6 +82,30 @@ pub(super) fn instrument(conn: &Connection, instrument_id: &str) -> Result<Optio
     Ok(instrument)
 }
 
+pub(super) fn verified_gainer_universe(
+    conn: &Connection,
+    max_instruments: usize,
+) -> Result<Vec<Value>, rusqlite::Error> {
+    let mut statement = conn.prepare(&format!(
+        "SELECT {INSTRUMENT_COLUMNS} FROM app.instruments i
+         WHERE i.is_active=1 AND i.exchange_id='tokocrypto' AND i.product_id='tokocrypto_spot'
+           AND i.asset_category_id='crypto_spot' AND i.venue_verified=1
+         ORDER BY i.instrument_id"
+    ))?;
+    let mut instruments = Vec::new();
+    for row in statement.query_map([], read_instrument)? {
+        let mut instrument = row?;
+        annotate_eligibility(conn, &mut instrument)?;
+        if instrument["research_eligibility"] == "eligible" {
+            if instruments.len() == max_instruments {
+                return Err(invalid("The Tokocrypto Spot universe exceeds the bounded forecast limit."));
+            }
+            instruments.push(instrument);
+        }
+    }
+    Ok(instruments)
+}
+
 fn report_summary(report: &Value) -> Value {
     let models = report
         .get("models")

@@ -83,6 +83,23 @@
         font-size: 10px !important;
     }
 
+    .tv-terminal.signals-workspace-active #top-app-bar #gainerForecastPageLink {
+        width: auto !important;
+        min-width: 82px !important;
+        padding: 0 8px !important;
+        gap: 4px !important;
+        font-size: 10px !important;
+        white-space: nowrap;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar #gainerForecastPageLink > span:first-child {
+        font-size: 14px !important;
+    }
+
+    .tv-terminal.signals-workspace-active #top-app-bar #gainerForecastPageLink .gainer-forecast-link-label {
+        font-size: 10px !important;
+    }
+
     .tv-terminal.signals-workspace-active #top-app-bar #signalAlertsToggle {
         display: inline-flex;
         width: 52px;

@@ -108,3 +108,50 @@ td { padding:13px; vertical-align:top; border-top:1px solid #263447; color:#c7d3
 .gainer-research .scope-form input,.gainer-research .scope-form select { min-width:0; max-width:100%; }
 .gainer-research > button { margin:4px 4px 4px 0; }
 .gainer-research .table-scroll { max-width:100%; }
+
+.gainer-forecast {
+    scroll-margin-top:24px;
+    border-color:#356574;
+    background:linear-gradient(145deg,#102631,#111b28 62%);
+    box-shadow:0 8px 28px #0002;
+}
+.gainer-forecast-heading { align-items:flex-start; }
+.gainer-forecast-heading > div { min-width:0; }
+.gainer-forecast-heading h2 { margin-bottom:9px; }
+.gainer-forecast-heading .small-text { max-width:940px; margin:0; }
+.gainer-forecast-heading > .state-badge { flex:0 0 auto; margin-top:3px; white-space:nowrap; }
+.gainer-forecast-actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:17px; }
+.gainer-forecast-results { display:grid; gap:14px; margin-top:17px; min-width:0; }
+.gainer-forecast-results:empty { display:none; }
+.gainer-forecast-result-header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; }
+.gainer-forecast-result-header h3 { margin:0; color:#d9eeee; font-size:.88rem; }
+.gainer-forecast-result-header .state-badge { white-space:nowrap; }
+.gainer-forecast .status-message[data-tone="ready"] { border-color:#397d73; color:#b4e4d9; background:#102c2b; }
+.gainer-forecast .status-message[data-tone="pending"] { border-color:#785b37; color:#eccb99; background:#2a2118; }
+.gainer-forecast-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr)); gap:9px; margin:0; }
+.gainer-forecast-meta > div { min-width:0; border:1px solid #2a4654; border-radius:6px; background:#0b1822; padding:10px 12px; }
+.gainer-forecast-meta dt { color:#8daaba; font-size:.64rem; }
+.gainer-forecast-meta dd { margin:4px 0 0; color:#e1edf2; font:500 .74rem/1.55 ui-monospace,monospace; overflow-wrap:anywhere; }
+.gainer-forecast-exclusions { margin:0; color:#aabac7; font-size:.68rem; line-height:1.7; }
+.gainer-forecast-candidate-grid { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr); gap:12px; }
+.gainer-forecast-top,.gainer-forecast-shortlist { min-width:0; border:1px solid #2a4654; border-radius:8px; background:#0c1923; padding:15px 17px; }
+.gainer-forecast-top { border-color:#38757d; background:linear-gradient(135deg,#102b31,#0c1923 78%); }
+.gainer-forecast-top-label,.gainer-forecast-shortlist h4 { display:block; color:#81d8d5; font-size:.65rem; font-weight:650; letter-spacing:.08em; text-transform:uppercase; }
+.gainer-forecast-top-label { margin-bottom:7px; }
+.gainer-forecast-top h3 { margin:0 0 6px; color:#f0f8f8; font-size:1.12rem; overflow-wrap:anywhere; }
+.gainer-forecast-score { display:block; color:#b7eee2; font:600 1.15rem/1.45 ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+.gainer-forecast-candidate-meta { display:flex; flex-wrap:wrap; gap:4px 13px; margin:8px 0 0; color:#a9bec7; font-size:.68rem; overflow-wrap:anywhere; }
+.gainer-forecast-shortlist h4 { margin:0 0 7px; }
+.gainer-forecast-shortlist ol { display:grid; gap:5px; margin:0; padding-left:20px; color:#d9e5eb; }
+.gainer-forecast-shortlist li { padding:4px 0; font-size:.72rem; }
+.gainer-forecast-shortlist li > div { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.gainer-forecast-shortlist li strong { min-width:0; overflow-wrap:anywhere; }
+.gainer-forecast-shortlist li span { flex:0 0 auto; color:#b7eee2; font:550 .7rem ui-monospace,monospace; }
+.gainer-forecast-shortlist small { display:block; margin-top:2px; color:#8298aa; font-size:.62rem; overflow-wrap:anywhere; }
+.gainer-forecast-empty { margin:0; border:1px dashed #344b58; border-radius:6px; padding:14px; color:#aebdca; font-size:.75rem; line-height:1.75; }
+.gainer-forecast-limits { margin:15px 0 0; color:#8195a8; font-size:.65rem; line-height:1.75; }
+@media (max-width:760px) {
+    .gainer-forecast-heading { flex-direction:column; }
+    .gainer-forecast-candidate-grid { grid-template-columns:1fr; }
+    .gainer-forecast-top,.gainer-forecast-shortlist { padding:14px; }
+}

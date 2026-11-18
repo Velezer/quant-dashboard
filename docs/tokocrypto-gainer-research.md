@@ -126,3 +126,30 @@ UNVALIDATED_RESEARCH: browser-computed reports never promote live profiles.
    requires adequate untouched data, rather than a successful software build.
 10. Reject or revise the protocol if causal tests fail, universe coverage is
     inadequate or resource checks regress. No result changes live eligibility.
+
+## Current 4h forecast
+
+The forecast applies the fixed equal-weight DSS-led score to the latest
+completed 4h UTC window for verified Tokocrypto Spot pairs. It reads up to
+1,000 consecutive 4h candles from native hourly data. Every bucket requires
+four consecutive hours, and a gap resets the available history. The top five
+positive candidates are ordered by signed score. A pair whose latest completed
+bar is older than the shared cutoff is excluded.
+
+1. A user can request the top candidate and shortlist from Backtests.
+2. Each result expires at the end of the interval it forecasts.
+3. Users can recheck after history sync. A single request at a time bounds
+   competing research work.
+4. Forecasts reuse the causal score and keep the exact Spot pair and source.
+5. Results are computed on demand and remain transient.
+6. Candidates are withheld when fewer than 10 pairs or 80% of the eligible
+   universe can be scored. A covered universe can have no positive candidate.
+7. The page reports the cutoff, coverage, excluded inputs and retry path.
+8. The ranking carries an unvalidated research label. The historical study
+   and its fee scenarios provide separate evidence.
+9. Hypothesis: the ranking may help find short-term winners. Untouched
+   after-cost results are needed to establish that it improves on momentum.
+10. Check exact timestamps, incomplete buckets, deterministic ranking and
+    coverage in tests. Revisit the read limit if observations show the bounded
+    prefix changes ranks materially. Historical replay can use longer prefixes
+    and proxy data, so its results do not establish this forecast's accuracy.

@@ -5,6 +5,11 @@ lesson only when it will improve future tasks.
 
 ## Verified execution lessons
 
+- A 4h chart bucket can exist even when one of its hourly candles is missing.
+  For a cross-sectional forecast, require four consecutive native hourly bars
+  per bucket and the same completed cutoff across pairs. Reset history at
+  gaps and keep stale or proxy series out of forecast coverage.
+
 - A Pintu ticker-feed entry is not proof that its Futures product offers it.
   Keep explicit product exclusions separate from official delisting notices,
   enforce them during import, reconciliation, and saved-signal reads, and
