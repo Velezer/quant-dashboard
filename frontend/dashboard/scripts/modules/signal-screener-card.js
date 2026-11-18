@@ -131,7 +131,10 @@ export function createSignalScreenerCard({
         const displayScore = signalDisplayScore(signal);
         const scoreLabel = scoreState?.tone === 'stale' ? 'Last recorded setup strength' : 'Setup strength';
         const scoreValue = Number.isFinite(displayScore) ? displayScore.toFixed(1) : '—';
-        const scoreStateLabel = scoreState ? `, ${scoreState.label.toLowerCase()}` : '';
+        const scoreStateText = scoreState
+            ? String(scoreState.label || 'Signal status unavailable')
+            : '';
+        const scoreStateLabel = scoreState ? `, ${scoreStateText.toLowerCase()}` : '';
         const componentSummary = sixIndicators
             ? indicatorScores.map(item => `${item.indicator}: ${item.state}`).join('; ')
             : Array.isArray(signal.score_basis?.components) ? signal.score_basis.components.map(component =>
@@ -171,7 +174,7 @@ export function createSignalScreenerCard({
         const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Setup-strength weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${autocorrelationScore ? `${autocorrelationExplanation} ` : ''}${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup strength is separate from the signed direction score; win-rate evidence is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
         const productLabel = signal.product_id === 'stockbit_regular'
             ? ''
-            : signal.product_id.replaceAll('_', ' ');
+            : String(signal.product_id || '').replaceAll('_', ' ');
         const strategyLabel = scoreModel?.short_label || signal.signal_strategy_name;
         const rowContext = [appLabel(signal.exchange_id), productLabel, strategyLabel]
             .filter(Boolean)
@@ -180,11 +183,12 @@ export function createSignalScreenerCard({
             .filter(value => String(value || '').trim() && value !== 'unknown')
             .map(value => String(value).replaceAll('_', ' '));
         const compactState = scoreState?.current === false
-            ? scoreState.tone === 'stale' ? 'Stale · no market entry' : 'No market entry'
-            : scoreState?.tone === 'provisional' ? 'Provisional' : '';
+            ? scoreStateText
+            : scoreState?.tone === 'provisional' ? scoreStateText || 'Provisional' : '';
         const compactWinRate = hasWinProbability ? `After-fee win ${winProbabilityPct.toFixed(1)}%` : 'Unvalidated · win rate unavailable';
         const compactScore = directionScore ? signedDirectionScore(directionScore.score) : '—';
-        const compactLabel = `${signal.symbol}, ${signal.timeframe}, ${directionLabel}, score ${compactScore}, price ${formatPrice(signal.current_price)}, ${compactWinRate}${compactState ? `, ${compactState}` : ''}. Select chart.`;
+        const compactContext = rowContext ? `${rowContext}, ` : '';
+        const compactLabel = `${compactContext}${signal.symbol}, ${signal.timeframe}, ${directionLabel}, direction score ${compactScore}, price ${formatPrice(signal.current_price)}, ${compactWinRate}${compactState ? `, ${compactState}` : ''}. Select chart.`;
         return `<article class="signal-row-wrap" role="listitem">
             <button type="button" class="signal-row${totalStrength?.tone === 'low' ? ' is-low-total-strength' : ''}${selected ? ' is-selected' : ''}" data-signal-id="${escape(signal.signal_id)}" aria-pressed="${selected}" aria-label="${escape(compactLabel)}">
                 <span class="signal-row-top"><span class="signal-row-symbol">${escape(signal.symbol)}</span><span class="signal-row-timeframe">${escape(signal.timeframe.toUpperCase())}</span></span>
@@ -194,7 +198,7 @@ export function createSignalScreenerCard({
                 ${compactState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}">${escape(compactState)}</span>` : ''}
             </button>
             <details class="signal-card-details">
-                <summary aria-label="Details for ${escape(signal.symbol)} ${escape(signal.timeframe)}">Details</summary>
+                <summary aria-label="Details for ${escape(rowContext)} ${escape(signal.symbol)} ${escape(signal.timeframe)}">Details</summary>
                 <div class="signal-card-detail-body">
                     <p>${escape(scoreAccessibleLabel)}</p>
                     ${directionScoreMarkup}

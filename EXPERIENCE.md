@@ -405,3 +405,12 @@ lesson only when it will improve future tasks.
   to `pintu_futures`, while its registered instruments use `pintu`. Convert at
   the registry boundary for selected-signal verification, app-scoped refresh,
   and listing queries; test against the stored app key.
+- Readiness holdouts must come from the evaluation's exact `product_slices`
+  entry for the selected exchange and product, with explicit fee provenance.
+  The evaluation-wide holdout is pooled research evidence and cannot stand in
+  for an app/product result. Keep the evaluation decision visible so a blocked
+  rate is not presented as a promoted profile.
+- Fail closed when a signal's lifecycle, market-entry, or score contract is
+  unfamiliar. Indicator filters and contribution balances must use a numeric
+  point and its valid weight together; an unavailable point must not become a
+  zero or retain an orphaned weighted value.
