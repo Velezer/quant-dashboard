@@ -337,6 +337,12 @@ lesson only when it will improve future tasks.
   strength of that evidence. Do not invent a minimum payoff ratio, profit
   factor, or positive-return target. Report those as diagnostics. A 4h
   preference must not block otherwise valid research at other timeframes.
+- An absent after-fee win-rate can mean the product fee policy is unsupported,
+  not that the strategy had zero wins. Check the exact app/product fee gate and
+  its provenance before interpreting results. For market-entry research, use
+  the published taker rate per side and keep funding, spread, slippage, and
+  impact omissions explicit; equal rates across venues still need separate
+  fee identities and source links.
 - For asymmetric brackets, define target R as planned net reward divided by
   planned net stop loss after configured entry and exit fees. Solve the target
   price from the fee-adjusted stop. Show realized net win/loss ratio because

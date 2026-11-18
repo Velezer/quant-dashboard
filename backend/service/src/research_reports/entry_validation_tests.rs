@@ -2,6 +2,25 @@ use super::*;
 use crate::main_test_support::*;
 
 #[test]
+fn pluang_perpetual_backtest_uses_its_published_taker_fee_and_source() {
+    let instrument = json!({
+        "exchange_id":"pluang",
+        "product_id":"pluang_perpetual",
+        "quote_currency":"USDT"
+    });
+    let (buy, sell, known, costs) = fee_metadata(&instrument);
+    assert!(known);
+    assert_eq!(buy, 0.2865);
+    assert_eq!(sell, 0.2865);
+    assert_eq!(costs["fees_known"], true);
+    assert_eq!(
+        costs["official_fee_rules_url"],
+        "https://pluang.com/biaya/crypto-futures"
+    );
+    assert_eq!(costs["execution_costs_complete"], false);
+}
+
+#[test]
 fn preferred_risk_reward_rule_uses_the_current_weight_learning_path() {
     let current = json!({"weight_learning":{"risk_reward_rule":{
         "protocol_id":quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID,

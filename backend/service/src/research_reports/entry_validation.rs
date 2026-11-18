@@ -385,23 +385,37 @@ fn fee_metadata(instrument: &Value) -> (f64, f64, bool, Value) {
     } else {
         quant_core::venue_fee_policy(text(instrument, "exchange_id"), text(instrument, "product_id"))
     };
-    let (buy, sell, known, label) = match policy {
+    let (buy, sell, known, label, official_fee_rules_url) = match policy {
         VenueFeePolicy::Known {
             buy_fee_pct,
             sell_fee_pct,
             fee_model,
-            ..
-        } => (buy_fee_pct, sell_fee_pct, true, fee_model),
-        VenueFeePolicy::Unknown { fee_model, .. }
-        | VenueFeePolicy::Unsupported { fee_model, .. } => (0.0, 0.0, false, fee_model),
+            official_fee_rules_url,
+        } => (
+            buy_fee_pct,
+            sell_fee_pct,
+            true,
+            fee_model,
+            official_fee_rules_url,
+        ),
+        VenueFeePolicy::Unknown {
+            fee_model,
+            official_fee_rules_url,
+        }
+        | VenueFeePolicy::Unsupported {
+            fee_model,
+            official_fee_rules_url,
+        } => (0.0, 0.0, false, fee_model, official_fee_rules_url),
     };
     (
         buy,
         sell,
         known,
         json!({"buy_fee_pct":known.then_some(buy),"sell_fee_pct":known.then_some(sell),
-        "fees_known":known,"fee_model":label,"execution_costs_complete":false,
-        "omissions":["Slippage and order-book depth","Market impact","Funding and borrow costs where applicable"]}),
+        "fees_known":known,"fee_model":label,"official_fee_rules_url":official_fee_rules_url,
+        "execution_costs_complete":false,
+        "omissions":["Spread and order-book depth","Slippage and market impact",
+        "Funding and borrow costs where applicable","Applicable taxes not included in the selected fee rate"]}),
     )
 }
 

@@ -1,7 +1,9 @@
 use crate::venue_rules::{
     stockbit_candidate_price_eligible, venue_fee_policy, venue_fee_policy_for_category,
-    VenueFeePolicy, PINTU_FUTURES_FEE_RULES_URL, PINTU_SPOT_FEE_RULES_URL, PLUANG_FEE_RULES_URL,
-    STOCKBIT_FEE_RULES_URL, TOKOCRYPTO_FEE_RULES_URL,
+    VenueFeePolicy, PINTU_FUTURES_FEE_RULES_URL, PINTU_SPOT_FEE_RULES_URL,
+    PLUANG_CRYPTO_FUTURES_FEE_RULES_URL, PLUANG_CRYPTO_SPOT_FEE_RULES_URL,
+    PLUANG_FEE_RULES_URL, PLUANG_CRYPTO_FUTURES_TAKER_FEE_PCT,
+    PLUANG_CRYPTO_SPOT_TAKER_FEE_PCT, STOCKBIT_FEE_RULES_URL, TOKOCRYPTO_FEE_RULES_URL,
 };
 
 fn official_fee_rules_url(policy: VenueFeePolicy) -> Option<&'static str> {
@@ -92,4 +94,34 @@ fn tokocrypto_published_quote_policy_preserves_unknown_scopes() {
     assert!(matches!(tokocrypto_spot_published_fee_policy("USDT"), VenueFeePolicy::Known {buy_fee_pct:0.4044,sell_fee_pct:0.4044,..}));
     assert!(matches!(tokocrypto_spot_published_fee_policy("OTHER"), VenueFeePolicy::Unknown {..}));
     assert!(matches!(venue_fee_policy("tokocrypto", "tokocrypto_tokenized_stock"), VenueFeePolicy::Unknown {..}));
+}
+
+#[test]
+fn pluang_crypto_products_use_published_conservative_taker_rates() {
+    assert!(matches!(
+        venue_fee_policy("pluang", "pluang_perpetual"),
+        VenueFeePolicy::Known {
+            buy_fee_pct: PLUANG_CRYPTO_FUTURES_TAKER_FEE_PCT,
+            sell_fee_pct: PLUANG_CRYPTO_FUTURES_TAKER_FEE_PCT,
+            official_fee_rules_url: Some(PLUANG_CRYPTO_FUTURES_FEE_RULES_URL),
+            ..
+        }
+    ));
+    assert!(matches!(
+        venue_fee_policy("pluang", "pluang_spot"),
+        VenueFeePolicy::Known {
+            buy_fee_pct: PLUANG_CRYPTO_SPOT_TAKER_FEE_PCT,
+            sell_fee_pct: PLUANG_CRYPTO_SPOT_TAKER_FEE_PCT,
+            official_fee_rules_url: Some(PLUANG_CRYPTO_SPOT_FEE_RULES_URL),
+            ..
+        }
+    ));
+    assert_eq!(
+        venue_fee_policy_for_category("pluang", "crypto_perpetual"),
+        venue_fee_policy("pluang", "pluang_perpetual")
+    );
+    assert_eq!(
+        venue_fee_policy_for_category("pluang", "crypto_spot"),
+        venue_fee_policy("pluang", "pluang_spot")
+    );
 }
