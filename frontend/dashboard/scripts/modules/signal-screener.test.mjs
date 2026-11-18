@@ -67,6 +67,18 @@ test('screener signal identity keeps each timeframe independent', () => {
     assert.equal(fifteenMinute, signalIdentity({ ...base, timeframe: '15m' }));
 });
 
+test('a grouped timeframe keeps its selection when the representative model changes', () => {
+    const base = {
+        exchange_id: 'stockbit', product_id: 'stockbit_regular', asset_category_id: 'idx_stock',
+        symbol: 'AGRS', timeframe: '15m', timeframe_strategy_ids: ['nwe', 'dss'],
+    };
+    const nwe = normalizeSignalRecord({ ...base, signal_strategy_id: 'nwe' }, []);
+    const dss = normalizeSignalRecord({ ...base, signal_strategy_id: 'dss' }, []);
+    assert.equal(nwe.signal_id, dss.signal_id);
+    assert.equal(dss.signal_strategy_id, 'dss');
+    assert.notEqual(nwe.signal_id, signalIdentity({ ...base, timeframe: '1h' }));
+});
+
 test('screener uses canonical short strategy labels while keeping indicator identities separate', () => {
     const strategies = [
         { id: 'nwe_15m', label: 'Stockbit 15m Nadaraya-Watson Band Proximity · Research', short_label: '15m NWE Band Proximity' },
