@@ -182,7 +182,7 @@ test('persistent Stockbit score rerenders with a stale no-entry badge at local p
         harness.fire(expiryTimer);
 
         assert.match(list.innerHTML, /signal-score-state-stale/);
-        assert.match(list.innerHTML, /Stale · no market entry/);
+        assert.match(list.innerHTML, /STALE · NO MARKET ENTRY · HELD/);
         assert.equal(payload.summary.stale_price_signal_count, 1);
     } finally {
         harness.restore();

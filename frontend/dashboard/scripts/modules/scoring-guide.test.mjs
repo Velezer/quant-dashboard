@@ -15,7 +15,10 @@ test('the worked example adds six factors without changing their values', () => 
     assert.deepEqual(exampleTotals([1.5, 0, 3.5, 0, 10, 5]), {
         price: 1.5, volume: 3.5, markov: 10, autocorrelation: 5, total: 20,
     });
-    for (const values of [[11, 0, 0, 0, 0, 0], [-1, 0, 0, 0, 0, 0], [NaN, 1, 2, 3, 4, 5], [null, 1, 2, 3, 4, 5], [1, 2, 3]]) {
+    assert.deepEqual(exampleTotals([-1, 0, 0, 0, 0, 0]), {
+        price: -1, volume: 0, markov: 0, autocorrelation: 0, total: -1,
+    });
+    for (const values of [[11, 0, 0, 0, 0, 0], [-11, 0, 0, 0, 0, 0], [NaN, 1, 2, 3, 4, 5], [null, 1, 2, 3, 4, 5], [1, 2, 3]]) {
         assert.equal(exampleTotals(values), null);
     }
 });

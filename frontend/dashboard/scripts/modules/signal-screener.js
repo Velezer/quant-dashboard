@@ -242,9 +242,9 @@ export function installSignalScreener() {
         }
     }
 
-    window.addEventListener('dashboard:scan-completed', event =>
+    globalThis.window?.addEventListener?.('dashboard:scan-completed', event =>
         finishSelectedSignalRefresh('dashboard:scan-completed', event));
-    window.addEventListener('dashboard:scan-failed', event =>
+    globalThis.window?.addEventListener?.('dashboard:scan-failed', event =>
         finishSelectedSignalRefresh('dashboard:scan-failed', event));
 
     function schedulePriceExpiry() {

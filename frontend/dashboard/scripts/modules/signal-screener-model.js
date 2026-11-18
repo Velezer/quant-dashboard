@@ -31,6 +31,12 @@ export function signalScoreState(signal, nowEpochMs = Date.now()) {
         if (signal.market_entry_status === 'NO_MARKET_ENTRY') {
             return { label: `LATEST CLOSED ${timeframe} · NO MARKET ENTRY`, tone: 'inactive', current: false };
         }
+        if (!['current', 'qualifying'].includes(signal.score_status)) {
+            return { label: 'SCORE STATUS UNKNOWN · NO MARKET ENTRY', tone: 'unknown', current: false };
+        }
+        if (hasUnknownMarketEntryStatus(signal)) {
+            return { label: 'ENTRY STATUS UNKNOWN · NO MARKET ENTRY', tone: 'unknown', current: false };
+        }
         if (!signalPriceIsFresh(signal, nowEpochMs)) {
             return { label: 'STALE · NO MARKET ENTRY · HELD', tone: 'stale', current: false };
         }
@@ -53,7 +59,15 @@ export function signalScoreState(signal, nowEpochMs = Date.now()) {
         const timeframe = String(signal.timeframe || '').toUpperCase();
         return { label: `LATEST ${timeframe} · NO MARKET ENTRY`, tone: 'inactive', current: false };
     }
+    if (hasUnknownMarketEntryStatus(signal)) {
+        return { label: 'ENTRY STATUS UNKNOWN · NO MARKET ENTRY', tone: 'unknown', current: false };
+    }
     return { label: 'MARKET ENTRY NOW · FRESH PRICE', tone: 'current', current: true };
+}
+
+function hasUnknownMarketEntryStatus(signal) {
+    const status = signal?.market_entry_status;
+    return status != null && status !== '' && status !== 'MARKET_ENTRY';
 }
 
 // An opposite entry is an exit cue only for a matching open position.
@@ -282,8 +296,9 @@ export function signalIndicatorScores(signal, model) {
         const points = typeof value === 'number' && Number.isFinite(value) && value >= -10 && value <= 10 ? value : null;
         const weightPoints = typeof component?.weight_points === 'number' && Number.isFinite(component.weight_points)
             ? component.weight_points : 10;
-        const weightedPoints = typeof component?.weighted_points === 'number' && Number.isFinite(component.weighted_points)
-            ? component.weighted_points : points === null ? null : points * weightPoints / 10;
+        const weightedPoints = points === null ? null
+            : typeof component?.weighted_points === 'number' && Number.isFinite(component.weighted_points)
+                ? component.weighted_points : points * weightPoints / 10;
         return { id, indicator, label, points, weightedPoints, scale: 10, weight: weightPoints / 60,
             profileVersion: component?.scoring_profile_version ?? null,
             state: String(component?.state || 'UNAVAILABLE'), value: component?.value };
@@ -294,7 +309,8 @@ export function signalIndicatorScoreForFilter(signal, model, indicatorId) {
     const indicator = SIGNAL_SCORE_INDICATORS.find(item => item.id === indicatorId);
     if (!indicator) return null;
     const score = signalIndicatorScores(signal, model).find(item => item.id === indicator.id);
-    return score && score.state.toUpperCase() !== 'UNAVAILABLE' ? Math.abs(score.points) : null;
+    return score && score.points !== null && score.state.toUpperCase() !== 'UNAVAILABLE'
+        ? Math.abs(score.points) : null;
 }
 
 // A presentation threshold only; registered model eligibility owns its own floor.
@@ -348,11 +364,11 @@ export function signalDisplayScore(signal) {
     // `score` is a signed vote on the current API. The positive weighted
     // metric is setup strength. Fall back to `score` only for older payloads.
     const hasSetupStrength = Object.prototype.hasOwnProperty.call(signal || {}, 'setup_strength');
+    const contract = String(signal?.score_contract || '').trim()
+        || String(signal?.score_basis?.score_contract || '').trim();
     const value = hasSetupStrength
         ? signal.setup_strength
-        : signal?.score_contract === SIGNED_DIRECTION_SCORE_CONTRACT
-            ? null
-            : signal?.score;
+        : contract ? null : signal?.score;
     const isNumericInput = typeof value === 'number'
         || (typeof value === 'string' && value.trim() !== '');
     if (!isNumericInput) return null;
@@ -366,6 +382,10 @@ export function signalDirectionalScore(signal) {
     const score = typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
     const contract = signal?.score_contract || signal?.score_basis?.score_contract;
     if (contract !== SIGNED_DIRECTION_SCORE_CONTRACT || score === null) return null;
+    const direction = String(signal?.direction || '').toUpperCase();
+    if ((direction !== 'LONG' && direction !== 'SHORT')
+        || (direction === 'LONG' && score <= 0)
+        || (direction === 'SHORT' && score >= 0)) return null;
     const state = signalScoreState(signal);
     const lastKnown = !state.current || signal.market_entry_status === 'NO_MARKET_ENTRY';
     const net = signal?.direction_score;

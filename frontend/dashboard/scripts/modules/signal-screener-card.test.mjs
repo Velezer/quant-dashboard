@@ -13,15 +13,15 @@ test('signal card presenter preserves stale labels, score basis, provenance, and
     const renderSignalCard = createSignalScreenerCard({
         escape: escapeHtml,
         appLabel: () => 'Stockbit',
-        scoreModelFor: () => ({ short_label: 'Daily DSS', score_scale_max: 40 }),
+        scoreModelFor: () => ({ short_label: 'Daily DSS', score_scale_max: 60 }),
         signalScoreState,
-        signalScorePresentation: () => ({ scoreScaleMax: 40 }),
+        signalScorePresentation: () => ({ scoreScaleMax: 60 }),
         signalDisplayScore,
         signalScoreWeightSummary: () => 'Strategy 50%; confluence 50%',
         signalPriceBarAgeLabel: value => value ? 'fresh' : 'age unavailable',
         formatPrice: () => '9500',
         ageLabel: () => '1 minute ago',
-        renderScoreBasis: createSignalScoreBasisMarkup({ escape: escapeHtml, scoreModelFor: () => ({ score_scale_max: 40 }) }),
+        renderScoreBasis: createSignalScoreBasisMarkup({ escape: escapeHtml, scoreModelFor: () => ({ score_scale_max: 60 }) }),
     });
 
     const markup = renderSignalCard({
@@ -34,6 +34,8 @@ test('signal card presenter preserves stale labels, score basis, provenance, and
         exchange_id: 'stockbit',
         signal_strategy_name: 'DSS',
         score: 12,
+        setup_strength: 12,
+        score_contract: 'signed_indicator_sum_v1',
         persistent_score: true,
         score_status: 'stale',
         score_bar_time: 1,
@@ -43,7 +45,18 @@ test('signal card presenter preserves stale labels, score basis, provenance, and
         data_provider: 'authorized_provider',
         data_source: 'venue_native',
         data_quality: 'validated',
-        score_basis: { components: [{ indicator: 'DSS Bressert', state: 'near_cross', points: 6 }] },
+        score_basis: {
+            score_scale_max: 60,
+            score_model_status: 'current',
+            components: [
+                { indicator: 'Nadaraya-Watson Envelope', state: 'UNAVAILABLE', points: null, weighted_points: 0, weight_points: 10 },
+                { indicator: 'DSS Bressert', state: 'near_cross', points: 6, weighted_points: 6, weight_points: 10 },
+                { indicator: 'Relative Volume', state: 'AVAILABLE', points: 0, weighted_points: 0, weight_points: 10 },
+                { indicator: 'Estimated Volume Delta (OHLCV proxy)', state: 'ALIGNED', points: 5, weighted_points: 5, weight_points: 10 },
+                { indicator: 'Markov Regime', state: 'BULLISH', points: 4, weighted_points: 4, weight_points: 10 },
+                { indicator: 'Lag-one Return Autocorrelation', state: 'MEAN_REVERSION', points: -2, weighted_points: -2, weight_points: 10 },
+            ],
+        },
     }, 1, true);
 
     assert.match(markup, /data-signal-id="signal-&quot;quoted&quot;"/);
@@ -52,14 +65,15 @@ test('signal card presenter preserves stale labels, score basis, provenance, and
     assert.match(markup, /LAST LONG/);
     assert.match(markup, /STALE · NO MARKET ENTRY · HELD/);
     assert.doesNotMatch(markup, /If holding/);
-    assert.match(markup, /Last recorded indicators · 25% each/);
-    assert.equal((markup.match(/class="signal-indicator-score"/g) || []).length, 4);
-    assert.equal((markup.match(/class="signal-indicator-weight">25% weight/g) || []).length, 4);
+    assert.match(markup, /Six signed indicators/);
+    assert.equal((markup.match(/class="signal-indicator-score"/g) || []).length, 6);
+    assert.equal((markup.match(/class="signal-indicator-weight">17% weight/g) || []).length, 6);
     assert.match(markup, /6\.0<small>\/10<\/small>/);
     assert.match(markup, /—<small>\/10<\/small>/);
     assert.doesNotMatch(markup, /out of 40|\/40|\/ 40/);
     assert.doesNotMatch(markup, /Setup strength <strong>0\.0<\/strong>/);
-    assert.match(markup, /no current market-entry signal, indicator scores NWE.*unavailable.*DSS Bressert 6\.0\/10/);
+    assert.ok(markup.includes('NWE —/10'));
+    assert.ok(markup.includes('DSS Bressert +6.0/10'));
     assert.match(markup, /RESEARCH ONLY/);
     assert.match(markup, /authorized provider · venue native · validated/);
     assert.match(markup, /signal-score-basis/);
@@ -82,18 +96,19 @@ test('signal cards show signed direction score and keep setup strength distinct'
     const longSignal = {
         signal_id: 'btc-long-4h', symbol: 'BTC-USD', timeframe: '4h', direction: 'LONG',
         exchange_id: 'pintu', product_id: 'pintu_pro_spot', signal_strategy_name: 'NWE/DSS',
-        score: 50, score_contract: 'signed_direction_vote_v1', setup_strength: 35.4,
+        score: 50, score_contract: 'signed_indicator_sum_v1', setup_strength: 35.4,
         current_price: 100, price_bar_time: 1, last_updated_at: 1,
+        price_is_fresh: true, price_fresh_until_ms: Date.now() + 60_000,
         score_basis: {},
         direction_score: { score: 50, net_score: 0, long_count: 1, short_count: 1 },
     };
     const longCard = renderSignalCard(longSignal, 1, true);
-    assert.match(longCard, /LONG \+50 · Net 0 · 1L \/ 1S/);
+    assert.match(longCard, /LONG \+50\.0 · Net 0\.0 · 1L \/ 1S/);
     assert.match(longCard, /Setup strength <strong>35\.4<\/strong>/);
-    assert.match(longCard, /Signed direction score \+50 for LONG/);
+    assert.match(longCard, /Direction score \+50\.0 for this LONG signal/);
     assert.doesNotMatch(longCard, /Vote \+50|Weighted total/);
     assert.deepEqual(signalDirectionalScore(longSignal), { score: 50, netScore: 0, longCount: 1, shortCount: 1 });
-    assert.match(signalScoreSummary(longSignal, { score_scale_max: 60 }), /^Direction score \+50 · net 0 · Setup strength 35\.4\/60/);
+    assert.match(signalScoreSummary(longSignal, { score_scale_max: 60 }), /^Direction score \+50\.0 · net 0\.0 · Setup strength 35\.4\/60/);
 
     const shortSignal = {
         ...longSignal,
@@ -102,7 +117,7 @@ test('signal cards show signed direction score and keep setup strength distinct'
         score: -50,
         direction_score: { score: -50, net_score: 0, long_count: 1, short_count: 1 },
     };
-    assert.match(renderSignalCard(shortSignal, 2, false), /SHORT −50 · Net 0 · 1L \/ 1S/);
+    assert.match(renderSignalCard(shortSignal, 2, false), /SHORT −50\.0 · Net 0\.0 · 1L \/ 1S/);
     assert.equal(signalDisplayScore(shortSignal), 35.4);
     assert.deepEqual(signalDirectionalScore(shortSignal), { score: -50, netScore: 0, longCount: 1, shortCount: 1 });
     assert.equal(signalDirectionalScore({ ...shortSignal, direction: 'LONG' }), null);

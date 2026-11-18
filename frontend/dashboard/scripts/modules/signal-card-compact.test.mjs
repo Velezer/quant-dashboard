@@ -25,6 +25,6 @@ test('compact card keeps primary facts and puts diagnostics in a separate closed
 });
 test('stale/no-entry warning remains visible without opening details',()=>{
     const button = render({...signal,price_is_fresh:false},1,true).match(/<button[\s\S]*?<\/button>/)[0];
-    assert.match(button,/Stale · no market entry/);
+    assert.match(button,/SETUP RETAINED · STALE PRICE · NOT A MARKET ENTRY/);
     assert.match(button,/aria-pressed="true"/);
 });
