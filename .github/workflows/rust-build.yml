@@ -57,10 +57,11 @@ jobs:
           cargo test --locked --release -p quant_core pluang_crypto_products_use_published_conservative_taker_rates
           cargo test --locked --release -p rust_chart_api gainer_tests -- --test-threads=1
           cargo test --locked --release -p rust_chart_api native_backfill_ -- --test-threads=1
-      - name: Verify signed indicator cancellation
+      - name: Verify the combined entry score and signed indicator cancellation
         run: |
           cargo test --locked --release -p quant_core signed_score_tests
-          cargo test --locked --release -p quant_core directional_holdout_partitions
+          cargo test --locked --release -p quant_core evidence::entry_score::tests
+          cargo test --locked --release -p rust_chart_api combined_ -- --test-threads=1
       - name: Verify Stockbit score references
         run: |
           cargo test --locked --release -p rust_chart_api stockbit_4h_scores_without_a_15m_price -- --test-threads=1

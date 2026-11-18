@@ -871,9 +871,11 @@ pub(crate) fn scoring_profile_status(connection: &Connection) -> Result<Value, r
     };
     let evaluations = {
         let mut statement = connection.prepare(
-            "SELECT evaluation_json FROM app.entry_model_scoring_evaluations ORDER BY evaluated_at DESC LIMIT 40",
+            "SELECT evaluation_json FROM app.entry_model_scoring_evaluations
+             WHERE score_model_id=?1 ORDER BY evaluated_at DESC LIMIT 40",
         )?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let rows =
+            statement.query_map([quant_core::ENTRY_SCORE_MODEL_ID], |row| row.get::<_, String>(0))?;
         let evaluations = rows
             .filter_map(Result::ok)
             .filter_map(|encoded| serde_json::from_str::<Value>(&encoded).ok())

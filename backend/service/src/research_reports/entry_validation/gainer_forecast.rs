@@ -2,7 +2,7 @@ use super::*;
 use crate::tokocrypto_storage::SOURCE;
 
 const FORECAST_TIMEFRAME: &str = "4h";
-const FORECAST_PROTOCOL: &str = "tokocrypto_native_dss_next_4h_forecast_v1";
+const FORECAST_PROTOCOL: &str = "tokocrypto_native_combined_score_next_4h_forecast_v2";
 const NATIVE_TIMEFRAME: &str = "1h";
 const HISTORY_LIMIT: i64 = 1_000;
 const UNIVERSE_LIMIT: usize = 1_000;
@@ -53,7 +53,13 @@ pub(crate) fn gainer_forecast(
         match score_instrument(directory, instrument, cutoff, duration_ns) {
             Ok(InstrumentScore::Scored(score)) => {
                 coverage.scored += 1;
-                if score >= quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60 {
+                if quant_core::entry_score_direction(
+                    score,
+                    quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60,
+                    false,
+                )
+                .is_some()
+                {
                     candidates.push(Candidate {
                         instrument_id: text(instrument, "instrument_id").to_owned(),
                         symbol: text(instrument, "symbol").to_owned(),
@@ -112,7 +118,7 @@ fn forecast_payload(
         "missing_or_stale_count": coverage.missing_or_stale,
         "invalid_history_count": coverage.invalid_history,
         "read_error_count": coverage.read_errors,
-        "model": "DSS-led signed score",
+        "model": "Combined six-indicator score",
         "validation_status": "UNVALIDATED_RESEARCH",
         "candidates": candidates,
     })
@@ -162,19 +168,15 @@ fn score_instrument(
         return Ok(InstrumentScore::MissingOrStale);
     }
     let bars = complete_four_hour_suffix(&hourly, cutoff, hour_ns, duration_ns);
-    let kind = EntryModelKind::Dss;
-    if bars.len() < kind.minimum_history_bars()
-        || bars.iter().rev().take(2).any(|bar| bar.volume <= 0.0)
-    {
+    if bars.iter().rev().take(2).any(|bar| bar.volume <= 0.0) {
         return Ok(InstrumentScore::InvalidHistory);
     }
-    let mut score = None;
-    quant_core::strategies::visit_sampled_entry_scores(
+    let score = quant_core::combined_entry_score(
         &bars,
-        kind,
-        |index| index == bars.len() - 1,
-        |_, value| score = Some(value),
-    );
+        quant_core::FOUR_INDICATOR_EQUAL_WEIGHTS,
+    )
+    .map(|score| score.total_score)
+    .filter(|score| score.is_finite());
     Ok(score.map_or(InstrumentScore::InvalidHistory, InstrumentScore::Scored))
 }
 

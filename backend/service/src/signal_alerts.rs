@@ -24,9 +24,19 @@ pub(super) const SIGNAL_SCORE_SCHEMA_VERSION: &str = "5";
 pub(super) fn is_six_indicator_score_model(score_model_id: &str) -> bool {
     matches!(
         score_model_id,
-        quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID
+        quant_core::ENTRY_SCORE_MODEL_ID
+            | quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID
             | quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID
     )
+}
+
+pub(super) fn combined_entry_components_match_direction(
+    components: &[Value],
+    expected: &str,
+) -> bool {
+    let total = components.iter().filter_map(|component| component["weighted_points"].as_f64())
+        .sum::<f64>();
+    quant_core::entry_score_direction(total, 0.0, true) == Some(expected)
 }
 
 pub(super) fn score_components_match(
@@ -261,7 +271,8 @@ pub(super) fn record_scan_signal_alerts<C: Borrow<Value>>(
         connection,
         candidates.filter_map(|candidate| {
             let candidate = candidate.borrow();
-            (candidate["Current_Price_Reference_Only"].as_bool() != Some(true))
+            (candidate["Current_Price_Reference_Only"] != true
+                && candidate["price_reference_only"] != true)
                 .then(|| signal_alert_from_candidate(candidate))
                 .flatten()
         }),

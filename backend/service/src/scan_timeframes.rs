@@ -8,10 +8,6 @@ use market_inputs::{
     latest_current_price_reference, load_15m_rolled_signal_candles, CurrentPrice,
 };
 
-#[path = "scan_timeframes/nwe_dss_models.rs"]
-mod nwe_dss_models;
-use nwe_dss_models::append_nwe_dss_model_signals;
-
 pub(super) struct TimeframeScanInput<'a> {
     pub(super) app_connection: &'a Connection,
     pub(super) market_connection: &'a Connection,
@@ -175,13 +171,13 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         stockbit_intraday_state.is_some_and(|metadata| !metadata.is_stale);
     for timeframe in SIGNAL_SCREENER_TIMEFRAMES.iter().copied() {
         let diagnosis_index = readiness.timeframes.len();
-        let is_nwe_dss_signal_scope = is_stockbit_signal_scope || is_crypto_signal_scope;
+        let is_combined_entry_scope = is_stockbit_signal_scope || is_crypto_signal_scope;
         readiness.timeframes.push(TimeframeReadiness {
             timeframe: timeframe.into(),
             ..TimeframeReadiness::default()
         });
-        let timeframe_required_history_bars = if is_nwe_dss_signal_scope {
-            quant_core::stockbit_nwe_4h_minimum_history_bars()
+        let timeframe_required_history_bars = if is_combined_entry_scope {
+            quant_core::ENTRY_SCORE_MINIMUM_HISTORY_BARS
         } else {
             required_history_bars
         };
@@ -189,7 +185,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         // The newest higher-timeframe candle is a forming rollup and its score is
         // exposed with score_bar_is_forming; 15m crypto signals stay on closed bars.
         // Stockbit keeps its existing forming-candle behavior.
-        if current_price.is_none() && timeframe != "1d" && !is_nwe_dss_signal_scope {
+        if current_price.is_none() && timeframe != "1d" && !is_combined_entry_scope {
             continue;
         }
         let preferred_source = if is_crypto_signal_scope {
@@ -234,7 +230,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                 );
             }
         }
-        if current_price.is_none() && !is_nwe_dss_signal_scope {
+        if current_price.is_none() && !is_combined_entry_scope {
             continue;
         }
         let duration_ns = timeframe_duration_ns(timeframe).unwrap_or_default();
@@ -385,17 +381,12 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         let bars = forming_strategy_bars
             .as_deref()
             .unwrap_or(completed_strategy_bars.as_slice());
-        let minimum_available_history_bars = if is_stockbit_signal_scope || is_crypto_signal_scope {
-            quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS
-        } else {
-            timeframe_required_history_bars
-        };
-        if is_nwe_dss_signal_scope
+        if is_combined_entry_scope
             && bars.len() < quant_core::stockbit_nwe_4h_minimum_history_bars()
         {
             readiness.timeframes[diagnosis_index].nwe_insufficient_history_count += 1;
         }
-        if bars.len() < minimum_available_history_bars {
+        if bars.len() < timeframe_required_history_bars {
             readiness.timeframes[diagnosis_index].insufficient_history_count += 1;
             readiness.issue(ReadinessIssue {
                 symbol: input.asset.into(),
@@ -404,7 +395,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                 source: source_metadata.as_ref().map(|metadata| metadata.0.clone()),
                 data_provider: source_metadata.as_ref().map(|metadata| metadata.1.clone()),
                 available_bars: Some(bars.len()),
-                required_bars: Some(minimum_available_history_bars),
+                required_bars: Some(timeframe_required_history_bars),
                 last_bar_time: bars.last().map(|bar| bar.time),
                 ..ReadinessIssue::default()
             });
@@ -414,7 +405,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         let same_price_source = signal_reference_price
             .zip(source_metadata.as_ref())
             .is_some_and(|(price, (source, _))| price.source == *source);
-        if is_nwe_dss_signal_scope
+        if is_combined_entry_scope
             && signal_reference_price.is_some()
             && !same_price_source
         {
@@ -429,11 +420,10 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                 ..ReadinessIssue::default()
             });
         }
-        if is_nwe_dss_signal_scope && same_price_source {
+        if is_combined_entry_scope && same_price_source {
             readiness.timeframes[diagnosis_index].evaluated_count += 1;
-            readiness.timeframes[diagnosis_index].evaluated_model_count +=
-                1 + usize::from(bars.len() >= quant_core::stockbit_nwe_4h_minimum_history_bars());
-        } else if !is_nwe_dss_signal_scope
+            readiness.timeframes[diagnosis_index].evaluated_model_count += 1;
+        } else if !is_combined_entry_scope
             && current_price.is_some()
             && completed_strategy_bars.len() >= timeframe_required_history_bars
         {
@@ -441,8 +431,8 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
             readiness.timeframes[diagnosis_index].evaluated_model_count += 1;
         }
 
-        if is_nwe_dss_signal_scope {
-            let after_fee_diagnostics = append_nwe_dss_model_signals(
+        if is_combined_entry_scope {
+            let after_fee_issue = append_combined_entry(
                 &input,
                 is_stockbit_signal_scope,
                 timeframe,
@@ -452,7 +442,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                 standalone_indicator_signals,
                 standalone_score_updates,
             );
-            for issue in after_fee_diagnostics {
+            if let Some(issue) = after_fee_issue {
                 let frame = &mut readiness.timeframes[diagnosis_index];
                 frame.after_fee_metric_count = frame.after_fee_metric_count.saturating_add(1);
                 match issue.reason.as_str() {
@@ -610,10 +600,7 @@ fn pintu_golden_cross_context_timeframe(timeframe: &str) -> &str {
 
 #[path = "scan_timeframes/score_rows.rs"]
 mod score_rows;
-use score_rows::{
-    active_scoring_profile, append_stockbit_model_result, append_timeframe_signal_candidate,
-    six_indicator_score_outputs,
-};
+use score_rows::append_combined_entry;
 
 pub(super) fn append_timeframe_to_plan_id(plan: &mut Value, timeframe: &str) {
     if let Some(plan_id) = plan
@@ -687,18 +674,6 @@ pub(super) fn annotate_new_dss_screener_rows(
 #[cfg(test)]
 #[path = "scan_timeframe_tests.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "scan_timeframe_nwe_tests.rs"]
-mod nwe_tests;
-
-#[cfg(test)]
-#[path = "scan_timeframe_nwe_matrix_tests.rs"]
-mod nwe_matrix_tests;
-
-#[cfg(test)]
-#[path = "scan_timeframe_dss_bressert_tests.rs"]
-mod dss_bressert_tests;
 
 #[cfg(test)]
 #[path = "scan_timeframe_crypto_4h_tests.rs"]

@@ -121,11 +121,13 @@ fn list_signal_screener_withholds_stale_stockbit_score_rows() {
     assert!(signals.is_empty(), "a legacy score must not appear as a current entry");
     assert_eq!(payload["summary"]["matching_rows"], 0);
     assert_eq!(payload["summary"]["stale_price_signal_count"], 0);
-    connection.execute("UPDATE signals.signal_screener_rows SET score_basis_json=?1", [
-        json!({"model_id": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
-            "score_scale_max":60,"minimum_score_out_of_60":1,
-            "score_model_status":"current","status":"stale","price_reference_only":true}).to_string()
-    ]).unwrap();
+    connection.execute("UPDATE signals.signal_screener_rows SET score_basis_json=?1, signal_strategy_id=?2",
+        rusqlite::params![
+            json!({"model_id": quant_core::ENTRY_SCORE_MODEL_ID,
+                "score_scale_max":60,"minimum_score_out_of_60":1,
+                "score_model_status":"current","status":"stale","price_reference_only":true}).to_string(),
+            crate::master_data::combined_entry_strategy_id("4h", true).unwrap(),
+        ]).unwrap();
     let retained = list_signal_screener(&connection, 900, Some("stockbit"), Some("4h")).unwrap();
     assert_eq!(retained["signals"].as_array().unwrap().len(), 1);
     assert_eq!(retained["signals"][0]["score_status"], "stale");
@@ -135,7 +137,7 @@ fn list_signal_screener_withholds_stale_stockbit_score_rows() {
 }
 
 #[test]
-fn screener_returns_only_completed_scores_with_fresh_strategy_bars() {
+fn completed_combined_stockbit_scores_keep_stale_rows_read_only() {
     for timeframe in ["1h", "2h", "4h", "1d", "1w"] {
         let connection = Connection::open_in_memory().expect("in-memory app database should open");
         connection
@@ -147,13 +149,13 @@ fn screener_returns_only_completed_scores_with_fresh_strategy_bars() {
         super::super::initialize_schema(&connection).expect("alert schema should initialize");
         super::super::initialize_screener_schema(&connection)
             .expect("signal snapshot schema should initialize");
+        crate::database::initialize_app_runtime_storage_schema(&connection).unwrap();
 
         let now = crate::now_secs() as i64;
         let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
         let price_bar_time = now_ns - 16 * 60 * crate::NANOS_PER_SECOND;
         let duration_ns = crate::timeframe_duration_ns(timeframe).expect("supported timeframe");
-        let strategy_id = quant_core::stockbit_nwe_signal_strategy_id(timeframe)
-            .expect("each supported timeframe has a Stockbit NWE model");
+        let strategy_id = crate::master_data::combined_entry_strategy_id(timeframe, true).unwrap();
         for (symbol, score_bar_time) in [
             ("FRESH.JK", now_ns - duration_ns - crate::NANOS_PER_SECOND),
             (
@@ -180,8 +182,8 @@ fn screener_returns_only_completed_scores_with_fresh_strategy_bars() {
                         strategy_id,
                         timeframe,
                         json!({
-                            "model_id": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
-                            "score_scale_max": quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX,
+                            "model_id": quant_core::ENTRY_SCORE_MODEL_ID,
+                            "score_scale_max": quant_core::SIX_INDICATOR_SCORE_SCALE_MAX,
                             "component_score_scale_max": quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX,
                             "indicator_component_score_scale_max": quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX,
                             "score_model_status": "current",
@@ -205,15 +207,18 @@ fn screener_returns_only_completed_scores_with_fresh_strategy_bars() {
         let signals = payload["signals"]
             .as_array()
             .expect("current score rows should be readable");
-        assert_eq!(signals.len(), 1, "{timeframe}");
-        assert_eq!(signals[0]["symbol"], "FRESH.JK", "{timeframe}");
-        assert_eq!(signals[0]["score_status"], "qualifying", "{timeframe}");
-        assert_eq!(signals[0]["score_basis"]["status"], "qualifying", "{timeframe}");
-        assert_eq!(signals[0]["score"], 23.5, "{timeframe}");
-        assert_eq!(signals[0]["setup_strength"], 23.5, "{timeframe}");
-        assert_eq!(signals[0]["timeframe"], timeframe);
-        assert_eq!(signals[0]["price_timeframe"], "15m");
-        assert_eq!(signals[0]["data_source"], "stockbit_regular_yfinance_fallback");
-        assert_eq!(payload["summary"]["matching_rows"], 1, "{timeframe}");
+        assert_eq!(signals.len(), 2, "{timeframe}");
+        let fresh = signals.iter().find(|row| row["symbol"] == "FRESH.JK").unwrap();
+        let stale = signals.iter().find(|row| row["symbol"] == "STALE.JK").unwrap();
+        assert_eq!(fresh["score_status"], "qualifying", "{timeframe}");
+        assert_eq!(fresh["score"], 23.5, "{timeframe}");
+        assert_eq!(fresh["setup_strength"], 23.5, "{timeframe}");
+        assert_eq!(fresh["timeframe"], timeframe);
+        assert_eq!(fresh["price_timeframe"], "15m");
+        assert_eq!(fresh["data_source"], "stockbit_regular_yfinance_fallback");
+        assert_eq!(stale["market_entry_status"], "NO_MARKET_ENTRY", "{timeframe}");
+        assert_eq!(stale["price_is_fresh"], false, "{timeframe}");
+        assert!(stale["direction_score"].is_null(), "{timeframe}");
+        assert_eq!(payload["summary"]["matching_rows"], 2, "{timeframe}");
     }
 }

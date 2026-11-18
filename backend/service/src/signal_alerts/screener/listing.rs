@@ -688,6 +688,9 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     while let Some(row) = query_rows.next()? {
         if is_unavailable_pintu_signal(row)? { continue; }
         let strategy = row.get::<_, String>(5)?;
+        if crate::master_data::is_retired_entry_strategy(&strategy) {
+            continue;
+        }
         let score = row.get::<_, f64>(9)?;
         let timeframe = row.get::<_, String>(7)?;
         let score_basis_json = row.get::<_, String>(12)?;
@@ -767,7 +770,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         }
         let retain_stale_crypto_setup = is_stale_price
             && !is_stale_score
-            && is_crypto_nwe_dss_signal_score_row(
+            && is_crypto_combined_entry_score_row(
                 signal["asset_category_id"].as_str().unwrap_or_default(),
                 signal["signal_strategy_id"].as_str().unwrap_or_default(),
                 signal["timeframe"].as_str().unwrap_or_default(),

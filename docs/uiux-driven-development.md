@@ -139,14 +139,14 @@ Decision effects for the 2026-10-27 category-sharing change:
 
 ## Per-ticker entry-model validation
 
-The primary task is to backtest the actual current entry scoring models for
+The primary task is to backtest the current combined entry score for
 each registered ticker and inspect held-out entry evidence and autocorrelation
 risk scaling. `/entry-validation` is one discoverable page, linked
 from the screener and scoring guide. App, exact product, ticker, timeframe,
-lead model/version, candle source, sample dates, costs, and frozen evaluation
+model version, candle source, sample dates, costs, and frozen evaluation
 protocol remain explicit. A completed backtest is distinct from a validated
-entry model. The existing composite NWE/DSS report is not substituted for the
-live NWE-led or DSS-led six-indicator models.
+entry model. The previous NWE-led and DSS-led reports are historical, and the
+existing backtest controls can rerun the current combined score.
 
 The page exposes paginated saved evidence, one-ticker runs, a sequential run of
 all eligible tickers in the selected scope, and the automatic daily
@@ -165,7 +165,7 @@ and untouched holdout data. A browser-only scenario calculator applies the
 latest causal multiplier to hypothetical equity, entry, stop, and configured
 fees. This is research only; no account or order state is read or changed.
 
-Reuse the live causal lead generators and one shared six-indicator mapping.
+Use the live causal six-factor score on completed candles.
 Entries occur at the next bar open, with no overlapping trades and no trades
 crossing split boundaries. Apply 60/20/20 chronological splits to bars after
 the model warm-up. Keep the equal-weight baseline, and fit one research-only

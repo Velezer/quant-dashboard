@@ -1,15 +1,19 @@
 use super::*;
 
 #[test]
-fn stockbit_proximity_catalog_retires_previous_strategy_identities() {
+fn combined_catalog_retires_previous_entry_strategy_identities() {
     let previous_strategy_id = quant_core::STOCKBIT_NWE_4H_PREVIOUS_CROSS_STRATEGY_ID;
     let previous_score_strategy_id = quant_core::STOCKBIT_NWE_4H_PREVIOUS_SCORE_STRATEGY_ID;
     let previous_binary_strategy_id = quant_core::STOCKBIT_NWE_4H_PREVIOUS_BINARY_CROSS_STRATEGY_ID;
     let previous_ranked_cross_strategy_id =
         quant_core::STOCKBIT_NWE_4H_PREVIOUS_RANKED_CROSS_STRATEGY_ID;
+    let prior_nwe = quant_core::stockbit_nwe_signal_strategy_id("4h").unwrap();
+    let prior_dss = quant_core::stockbit_dss_bressert_signal_strategy_id("4h").unwrap();
     let mut catalog = serde_json::json!({
         "indicators": [],
         "signal_strategies": [
+            {"id": prior_nwe, "implemented": true},
+            {"id": prior_dss, "implemented": true},
             {
                 "id": previous_strategy_id,
                 "label": "Historical upper-band cross",
@@ -33,7 +37,10 @@ fn stockbit_proximity_catalog_retires_previous_strategy_identities() {
         ]
     });
 
-    assert!(ensure_stockbit_signal_catalog(&mut catalog));
+    assert!(ensure_combined_entry_catalog(&mut catalog));
+    assert!(retire_stockbit_nwe_4h_legacy_strategies(&mut catalog));
+    assert!(!ensure_combined_entry_catalog(&mut catalog), "catalog upsert is idempotent");
+    let combined_id = combined_entry_strategy_id("4h", true).unwrap();
 
     let strategies = catalog["signal_strategies"].as_array().unwrap();
     for previous_id in [
@@ -41,6 +48,8 @@ fn stockbit_proximity_catalog_retires_previous_strategy_identities() {
         previous_score_strategy_id,
         previous_binary_strategy_id,
         previous_ranked_cross_strategy_id,
+        &prior_nwe,
+        &prior_dss,
     ] {
         let previous = strategies
             .iter()
@@ -49,32 +58,13 @@ fn stockbit_proximity_catalog_retires_previous_strategy_identities() {
         assert_eq!(previous["status"], "retired");
         assert_eq!(previous["validation_status"], "RETIRED");
         assert_eq!(previous["implemented"], false);
-        assert_eq!(
-            previous["replaced_by"],
-            quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID
-        );
+        assert_eq!(previous["replaced_by"], combined_id);
     }
-    let current = strategies
-        .iter()
-        .find(|model| model["id"] == quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID)
-        .unwrap();
+    let current = strategies.iter().find(|model| model["id"] == combined_id).unwrap();
     assert_eq!(current["status"], "research_only");
-    assert!(current["description"]
-        .as_str()
-        .unwrap()
-        .contains("lower-band cross or near-band state on a completed 4h candle is LONG"));
-    assert!(current["description"]
-        .as_str()
-        .unwrap()
-        .contains("upper-band cross or near-band state is SHORT"));
-    assert_eq!(
-        current["score_model_id"],
-        quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID
-    );
-    assert_eq!(
-        current["minimum_history_bars"],
-        quant_core::stockbit_nwe_4h_minimum_history_bars()
-    );
+    assert_eq!(current["score_model_id"], quant_core::ENTRY_SCORE_MODEL_ID);
+    assert_eq!(current["minimum_history_bars"], quant_core::ENTRY_SCORE_MINIMUM_HISTORY_BARS);
+    assert_eq!(current["indicator_ids"].as_array().unwrap().len(), 6);
 }
 
 #[test]
@@ -98,159 +88,33 @@ fn screener_reference_payload_exposes_app_identity_without_strategy_plans() {
     assert!(reference.get("trade_styles").is_none());
     assert!(reference.get("plan_profiles").is_none());
     let models = reference["signal_score_models"].as_array().unwrap();
-    assert_eq!(
-        models.len(),
-        quant_core::SIGNAL_SCREENER_TIMEFRAMES.len() * 4
-    );
+    assert_eq!(models.len(), quant_core::SIGNAL_SCREENER_TIMEFRAMES.len() * 2);
     for timeframe in quant_core::SIGNAL_SCREENER_TIMEFRAMES {
-        let expected_ids = [
-            quant_core::stockbit_nwe_signal_strategy_id(timeframe),
-            quant_core::stockbit_dss_bressert_signal_strategy_id(timeframe),
-            quant_core::crypto_nwe_signal_strategy_id(timeframe),
-            quant_core::crypto_dss_bressert_signal_strategy_id(timeframe),
-        ];
-        for expected_id in expected_ids.into_iter().flatten() {
-            let model = models
-                .iter()
-                .find(|model| model["id"] == expected_id)
-                .expect("each indicator and timeframe should have its own score model");
+        for is_stockbit in [true, false] {
+            let strategy_id = combined_entry_strategy_id(timeframe, is_stockbit).unwrap();
+            let model = models.iter().find(|model| model["id"] == strategy_id)
+                .expect("each scope and timeframe has one combined model");
             assert_eq!(model["timeframe"], *timeframe);
-            assert_eq!(
-                model["score_scale_max"],
-                quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX
-            );
-            assert_eq!(
-                model["minimum_score_out_of_40"],
-                quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
-            );
-            assert_eq!(
-                model["component_score_scale_max"],
-                quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX
-            );
+            assert_eq!(model["score_model_id"], quant_core::ENTRY_SCORE_MODEL_ID);
+            assert_eq!(model["score_scale_max"], quant_core::SIX_INDICATOR_SCORE_SCALE_MAX);
+            assert_eq!(model["minimum_score_out_of_60"], quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60);
+            assert_eq!(model["component_score_scale_max"], quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX);
+            assert_eq!(model["indicator_component_score_scale_max"], quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX);
+            assert_eq!(model["minimum_history_bars"], quant_core::ENTRY_SCORE_MINIMUM_HISTORY_BARS);
+            let categories = model["asset_category_ids"].as_array().unwrap();
+            if is_stockbit {
+                assert_eq!(categories, &["idx_stock"]);
+                assert_eq!(model["product_ids"], serde_json::json!(["stockbit_regular"]));
+            } else {
+                assert!(categories.iter().any(|category| category == "crypto_spot"));
+                assert!(categories.iter().all(|category| category.as_str().unwrap().starts_with("crypto_")));
+                let products = model["product_ids"].as_array().unwrap();
+                assert_eq!(products.len(), 6);
+                assert!(products.iter().any(|product| product == "tokocrypto_spot"));
+                assert_eq!(products.iter().filter(|product| *product == "pintu_pro_futures").count(), 1);
+            }
         }
     }
-    let stockbit_model = models
-        .iter()
-        .find(|model| model["id"] == quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID)
-        .expect("the Stockbit 4h NWE model should remain available");
-    assert_eq!(
-        stockbit_model["id"],
-        quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID
-    );
-    assert_eq!(
-        stockbit_model["score_model_id"],
-        quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID
-    );
-    assert_eq!(
-        stockbit_model["score_scale_max"],
-        quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX
-    );
-    assert_eq!(
-        stockbit_model["minimum_score_out_of_40"],
-        quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
-    );
-    assert_eq!(
-        stockbit_model["component_score_scale_max"],
-        quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX
-    );
-    assert_eq!(
-        stockbit_model["indicator_component_score_scale_max"],
-        quant_core::FOUR_INDICATOR_COMPONENT_SCORE_SCALE_MAX
-    );
-    assert!(stockbit_model.get("strategy_weight").is_none());
-    assert!(stockbit_model.get("confluence_weight").is_none());
-    assert_eq!(
-        stockbit_model["minimum_history_bars"],
-        quant_core::stockbit_nwe_4h_minimum_history_bars()
-    );
-    assert!(stockbit_model["score_basis_description"]
-        .as_str()
-        .unwrap()
-        .contains("lower-band cross or near-band state on a completed 4h candle is LONG"));
-    assert!(stockbit_model["score_basis_description"]
-        .as_str()
-        .unwrap()
-        .contains("upper-band cross or near-band state is SHORT"));
-    assert!(stockbit_model["score_basis_description"]
-        .as_str()
-        .unwrap()
-        .contains("four equal-weight factors: NWE, DSS Bressert"));
-    assert!(stockbit_model["score_basis_description"]
-        .as_str()
-        .unwrap()
-        .contains("estimated OHLCV volume delta"));
-    assert!(stockbit_model["score_basis_description"]
-        .as_str()
-        .unwrap()
-        .contains("1.0/40"));
-    assert!(stockbit_model["score_basis_description"]
-        .as_str()
-        .unwrap()
-        .contains("within 50% of the full envelope width"));
-
-    let dss_model = models
-        .iter()
-        .find(|model| model["id"] == quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID)
-        .expect("the DSS near-cross model should be available in the screener catalog");
-    assert_eq!(
-        dss_model["score_model_id"],
-        quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID
-    );
-    assert_eq!(
-        dss_model["minimum_history_bars"],
-        quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS
-    );
-    assert_eq!(
-        dss_model["minimum_score_out_of_40"],
-        quant_core::FOUR_INDICATOR_MINIMUM_SCORE_OUT_OF_40
-    );
-    assert_eq!(
-        dss_model["score_scale_max"],
-        quant_core::FOUR_INDICATOR_SCORE_SCALE_MAX
-    );
-    assert_eq!(
-        dss_model["component_score_scale_max"],
-        quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX
-    );
-    assert_eq!(
-        dss_model["strategy_score_label"],
-        "Price evidence (NWE + DSS)"
-    );
-    assert_eq!(
-        dss_model["confluence_score_label"],
-        "Volume evidence (relative volume + delta proxy)"
-    );
-    assert!(dss_model["score_basis_description"]
-        .as_str()
-        .unwrap()
-        .contains("approaching near-cross"));
-    assert!(dss_model["score_basis_description"]
-        .as_str()
-        .unwrap()
-        .contains("four equal-weight factors: NWE, DSS Bressert"));
-
-    let crypto_dss_model = models
-        .iter()
-        .find(|model| model["id"] == quant_core::CRYPTO_DSS_BRESSERT_4H_SIGNAL_STRATEGY_ID)
-        .expect("the crypto 4h DSS near-cross model should be published");
-    assert_eq!(
-        crypto_dss_model["score_model_id"],
-        quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID
-    );
-    assert_eq!(
-        crypto_dss_model["minimum_history_bars"],
-        quant_core::DSS_BRESSERT_MINIMUM_HISTORY_BARS
-    );
-    assert!(crypto_dss_model["asset_category_ids"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|category| category == "crypto_spot"));
-    assert!(!crypto_dss_model["asset_category_ids"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|category| category == "tokenized_stock"));
 }
 
 #[test]

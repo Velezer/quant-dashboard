@@ -20,14 +20,13 @@ multiplying it.
 
 ## Crypto signal refresh
 
-Each scan recalculates crypto NWE/DSS from the latest completed bar in the
-selected timeframe. A row requires a directional setup, sufficient history,
+Each scan calculates one combined entry score for each registered crypto or
+Stockbit product, ticker and timeframe. A row requires sufficient history,
 fresh matching reference price when a current market entry is claimed, and a
 signed-total magnitude at or above the base floor. It does not require an active cohort profile
 or a score above the backtested cutoff. Candidate weights are promoted only
 when the cohort reaches at least 50% after-fee wins, a 95% Wilson lower bound
-of at least 50%, positive mean net return, and profit factor above 1 on
-untouched holdout data, with at least 30 trades. Each app/product slice must
+of at least 50% on untouched holdout data, with at least 30 trades. Each app/product slice must
 pass independently. These metrics are displayed as historical results; they
 do not withhold signals. A successful scan replaces rows that no longer
 qualify. Notification history has a separate two-hour retention window based
@@ -53,8 +52,8 @@ calculation and cannot claim a current market entry.
 
 For each learned cohort, the service tests cumulative score cutoffs in
 ascending order using candidate-weight outcomes. It selects the lowest cutoff
-that passes the 50% after-fee target, 95% Wilson lower bound, positive mean net
-return, profit factor above 1, and 30-trade minimum on validation data. The
+that reaches at least 50% after fees with a 95% Wilson lower bound of at
+least 50% and at least 30 trades on validation data. The
 frozen cutoff is then reported against the chronological holdout and separately
 for each app/product slice. These metrics decide whether candidate weights
 may be promoted; they never filter live signal rows. The screener shows an
@@ -67,7 +66,7 @@ fee-adjusted return.
 
 ## Six signed indicator scores (−60…+60 total)
 
-The active signed NWE/DSS models evaluate six factors, each on a −10…+10
+The combined entry model evaluates six factors, each on a −10…+10
 scale. The first four share 40 nonnegative weight points; validated after-fee
 profiles may redistribute them, while the baseline assigns 10 to each. Markov
 and lag-one return autocorrelation each keep a fixed 10-point weight.
@@ -76,20 +75,21 @@ contributions sum to the signed total. The base magnitude floor is 1 point.
 
 | Factor | Signed meaning |
 | --- | --- |
-| Nadaraya-Watson Envelope (NWE) | Causal endpoint lower-band evidence is positive; upper-band evidence is negative. The registered strategy owns cross and proximity parameters. |
-| DSS Bressert | Causal bullish cross or approach evidence is positive; bearish evidence is negative. The registered strategy owns oscillator and trigger parameters. |
+| Nadaraya-Watson Envelope (NWE) | Score the causal endpoint midpoint minus the close, divided by half the band width. Scale to ±10. The factor is unavailable before 501 bars. |
+| DSS Bressert | Score the oscillator minus its trigger. A five-point gap in either direction reaches ±10. |
 | Relative volume | Compare current volume with the preceding 20-bar mean. Rising candles contribute positive points and falling candles negative points. Magnitude is `10 × clamp(relative volume − 1, 0, 1)`; a flat candle contributes zero. |
 | Estimated Volume Delta (OHLCV proxy) | `10 × clamp((2 × close − high − low) / (high − low), −1, 1)`. Positive close location is bullish and negative close location bearish. This is a candle-pressure estimate, not aggressor-side trade delta. |
 | Markov Regime | Causal bull trend or accumulation contributes +10; bear trend or distribution contributes −10; neutral or unavailable state contributes zero. Its weight is fixed. |
 | Lag-one Return Autocorrelation | Use a causal one-step AR(1) forecast from up to 128 same-timeframe log returns, requiring at least 30 adjacent pairs. Standardize the forecast by recent return deviation and map it to −10…+10. Positive forecast points are bullish, negative bearish, and zero neutral. The separately displayed Pearson correlation ρ describes dependence, not direction or win probability. |
 
-Neither the signal's prior side nor a lead-indicator label changes a factor's
-sign. In particular, an opposing regime or forecast subtracts from the total.
+The model does not preselect a direction. Opposing regime and forecast points
+subtract from the other contributions.
 Volume and delta use related OHLCV observations and are not independent trade
 flow measurements. Missing, non-finite, or invalid factor inputs contribute
 zero while retaining an unavailable label; their weights are not redistributed.
-Required model warm-up, candle provenance, freshness, and venue shorting rules
-remain separate entry checks.
+Scoring starts after 50 bars. Venue direction policy and data freshness govern
+entry status. Backtests use completed bars and simulate shorts only for perpetuals.
+The screener can show provisional scores on forming bars.
 
 Changing weights can change the total's sign. The backtest therefore determines
 entry and reverse-exit directions from the weighted signed total for every
@@ -136,8 +136,8 @@ tie does not qualify. Missing or neutral indicators do not vote. SHORT signal
 emission is disabled for these categories. The vote count is an
 eligibility rule, not a numeric subtotal. A signal that passes it still goes
 through the shared required-confirmation path and receives the `/10`
-strategy/confluence blend described above; it does not receive the NWE/DSS
-six-factor `/60` model. The profile's registered version and configuration define the
+strategy/confluence blend described above. The combined screener score is
+a separate six-factor `/60` research model. The profile's registered version and configuration define the
 vote count and indicator parameters. Do not claim that all four indicators
 agree.
 
@@ -220,10 +220,34 @@ The screener and selected chart show bullish contribution, bearish contribution,
 and cancellation: `100 × (1 − |net| / (bullish + bearish))`. A zero-contribution
 row shows zero cancellation and remains neutral. Missing factors leave this
 diagnostic unavailable. Cancellation describes disagreement, not win probability.
-Matching NWE/DSS profiles reuse the same signed factors and must not count as
-independent confirmations.
+The combined score replaced the previous NWE-led and DSS-led identities, which
+computed the same factors on different warm-up windows. Rerun historical
+reports to see evidence for the current model.
 
 The backtest page partitions the selected baseline exit policy's original
 non-overlapping holdout trade sequence by LONG and SHORT. Each side shows sample
 size, win rate after configured fees, and mean net return. Old snapshots need a
 rerun. These diagnostics do not change weights or qualification thresholds.
+
+## Decision record for the combined entry model
+
+1. Publish one score for each app, product, ticker and timeframe. The total's
+   magnitude qualifies the row and its sign determines direction.
+2. Evaluate the six factors once instead of publishing two rows for the same
+   calculation. Show available factors after the 50-bar warm-up.
+3. Keep the existing Refresh signals and Backtest actions. Reports using the
+   prior model protocol require a rerun for current evidence.
+4. Use identical factor observations and weight arithmetic for the screener
+   and chronological replay. Validate using completed candles.
+5. Keep the new model and protocol identities separate from saved historical
+   alerts, reports and weight profiles.
+6. Treat zero as neutral and mark unavailable inputs. Maintain freshness
+   checks and keep forming scores labeled provisional.
+7. Show the score and its factors on the screener. Use the backtest's data
+   coverage and validation status to diagnose missing evidence.
+8. Preserve read-only research, same-source price attribution and venue
+   direction rules for the historical trade simulation.
+9. Track scan time and qualifying coverage after release. A single evaluation
+   should reduce duplicate work, with the magnitude to be measured.
+10. Verify one current row per scope and compare weighted replay with a live
+    candle prefix. Rerun the BTC 4h archive with the same configured fees.

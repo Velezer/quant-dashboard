@@ -5,31 +5,17 @@ const MAX_SIGNAL_SCREENER_ROWS: usize = 2_000;
 const MAX_SIGNAL_SCREENER_PAGE_SIZE: usize = MAX_SIGNAL_SCREENER_ROWS;
 
 fn stockbit_signal_score_model_id(strategy_id: &str, timeframe: &str) -> Option<&'static str> {
-    if quant_core::stockbit_nwe_signal_strategy_id(timeframe).as_deref() == Some(strategy_id) {
-        Some(quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID)
-    } else if quant_core::stockbit_dss_bressert_signal_strategy_id(timeframe).as_deref()
-        == Some(strategy_id)
-    {
-        Some(quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID)
-    } else {
-        None
-    }
+    (crate::master_data::combined_entry_strategy_id(timeframe, true).as_deref() == Some(strategy_id))
+        .then_some(quant_core::ENTRY_SCORE_MODEL_ID)
 }
 
 fn stockbit_signal_score_row_scope_sql() -> String {
     let model_timeframe_pairs = quant_core::SIGNAL_SCREENER_TIMEFRAMES
         .iter()
         .copied()
-        .flat_map(|timeframe| {
-            [
-                quant_core::stockbit_nwe_signal_strategy_id(timeframe),
-                quant_core::stockbit_dss_bressert_signal_strategy_id(timeframe),
-            ]
-            .into_iter()
-            .flatten()
-            .map(move |strategy_id| {
-                format!("(timeframe='{timeframe}' AND signal_strategy_id='{strategy_id}')")
-            })
+        .filter_map(|timeframe| {
+            let strategy_id = crate::master_data::combined_entry_strategy_id(timeframe, true)?;
+            Some(format!("(timeframe='{timeframe}' AND signal_strategy_id='{strategy_id}')"))
         })
         .collect::<Vec<_>>()
         .join(" OR ");
@@ -64,15 +50,14 @@ fn is_stockbit_signal_score_row(
         && stockbit_signal_score_model_id(strategy_id, timeframe).is_some()
 }
 
-fn is_crypto_nwe_dss_signal_score_row(
+fn is_crypto_combined_entry_score_row(
     asset_category_id: &str,
     strategy_id: &str,
     timeframe: &str,
 ) -> bool {
     asset_category_id.starts_with("crypto_")
-        && (quant_core::crypto_nwe_signal_strategy_id(timeframe).as_deref() == Some(strategy_id)
-            || quant_core::crypto_dss_bressert_signal_strategy_id(timeframe).as_deref()
-                == Some(strategy_id))
+        && crate::master_data::combined_entry_strategy_id(timeframe, false).as_deref()
+            == Some(strategy_id)
 }
 
 pub(crate) fn stockbit_signal_score_rows_for_symbol(
@@ -141,8 +126,9 @@ pub(crate) fn initialize_screener_schema(connection: &Connection) -> Result<(), 
     )?;
     let display_order = signal_screener_display_order_sql();
     connection.execute_batch(&format!(
-        "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_display_order
-             ON signal_screener_rows({display_order});"
+        "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_display_order_combined
+             ON signal_screener_rows({display_order});
+         DROP INDEX IF EXISTS signals.idx_signal_screener_display_order;"
     ))?;
     connection.execute(
         "INSERT INTO signals.signal_store_meta(key,value)
@@ -414,6 +400,13 @@ pub(crate) fn compact_stockbit_signal_score_update(
         .cloned()
         .unwrap_or_default();
     if score_status == "qualifying" {
+        if score_model_id == quant_core::ENTRY_SCORE_MODEL_ID
+            && direction.is_none_or(|direction| {
+                !super::combined_entry_components_match_direction(&components, direction)
+            })
+        {
+            return None;
+        }
         let (Some(strategy_strength), Some(confluence_score)) =
             (strategy_strength, confluence_score)
         else {
@@ -494,6 +487,7 @@ pub(crate) fn compact_stockbit_signal_score_update(
         "status": score_status,
         "score_bar_time": score_bar_time,
         "score_bar_is_forming": score_bar_is_forming,
+        "price_reference_only": candidate["Current_Price_Reference_Only"] == true,
     }))
     .ok()?;
     Some(StockbitSignalScoreUpdate {
@@ -562,7 +556,7 @@ pub(crate) fn signal_screener_score_update(candidate: &Value) -> Option<Value> {
 
 #[cfg(test)]
 #[path = "../signal_alerts_screener_tests.rs"]
-mod screener_tests;
+pub(super) mod screener_tests;
 
 #[cfg(test)]
 #[path = "../signal_alerts_screener_freshness_tests.rs"]

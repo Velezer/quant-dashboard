@@ -22,7 +22,7 @@ fn compact_screener_rows_preserve_alert_price_direction_and_validation() {
             "product_id": "stockbit_regular",
             "asset_category_id": "idx_stock",
             "symbol": "AADI.JK",
-            "signal_strategy_id": quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID,
+            "signal_strategy_id": crate::master_data::combined_entry_strategy_id("4h", true).unwrap(),
             "timeframe": "4h",
             "direction": "LONG",
             "current_price": 6200.0,
@@ -71,8 +71,8 @@ fn compact_stockbit_score_updates_preserve_the_validated_basis() {
         "Asset_Category_ID": "idx_stock",
         "Symbol": "AADI.JK",
         "Data_Symbol": "AADI.JK",
-        "Signal_Strategy_ID": quant_core::STOCKBIT_NWE_4H_SIGNAL_STRATEGY_ID,
-        "Signal_Scoring_Model_ID": quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID,
+        "Signal_Strategy_ID": crate::master_data::combined_entry_strategy_id("4h", true).unwrap(),
+        "Signal_Scoring_Model_ID": quant_core::ENTRY_SCORE_MODEL_ID,
         "Signal_Scoring_Profile_Version": 1,
         "Signal_After_Fee_Gate": {
             "status": "QUALIFIED",
@@ -90,12 +90,7 @@ fn compact_stockbit_score_updates_preserve_the_validated_basis() {
         "Signal_Strength": 8.0,
         "Strategy_Strength": 6.0,
         "Signal_Confluence_Score": 2.0,
-        "Signal_Score_Components": [
-            { "indicator": "Nadaraya-Watson Envelope", "state": "NWE_SCORE", "points": 4.0 },
-            { "indicator": "DSS Bressert", "state": "DSS_SCORE", "points": 2.0 },
-            { "indicator": "Relative Volume", "state": "ALIGNED", "points": 1.0 },
-            { "indicator": "Estimated Volume Delta (OHLCV proxy)", "state": "ALIGNED_PROXY", "points": 1.0 }
-        ],
+        "Signal_Score_Components": super::screener::screener_tests::combined_components([4.0, 2.0, 1.0, 1.0, 0.0, 0.0]),
         "Score_Update_Status": "qualifying",
         "Current_Price": 6200.0,
         "Current_Price_Timeframe": "4h",
@@ -133,7 +128,7 @@ fn compact_stockbit_score_updates_preserve_the_validated_basis() {
             .as_array()
             .unwrap()
             .len(),
-        4
+        6
     );
     assert_eq!(
         compatibility_row["score_basis"]["score_bar_is_forming"],

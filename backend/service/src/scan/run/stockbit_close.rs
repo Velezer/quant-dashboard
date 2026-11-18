@@ -123,8 +123,7 @@ pub(super) fn stockbit_closed_session_checkpoint(
     }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     // Unchanged candles must still be rescored after a scoring-model upgrade.
-    std::hash::Hash::hash(&quant_core::STOCKBIT_NWE_4H_SIGNAL_SCORE_MODEL_ID, &mut hasher);
-    std::hash::Hash::hash(&quant_core::STOCKBIT_DSS_BRESSERT_4H_SIGNAL_SCORE_MODEL_ID, &mut hasher);
+    std::hash::Hash::hash(&quant_core::ENTRY_SCORE_MODEL_ID, &mut hasher);
     std::hash::Hash::hash(&state.source, &mut hasher);
     std::hash::Hash::hash(&state.data_provider, &mut hasher);
     std::hash::Hash::hash(&timestamp, &mut hasher);

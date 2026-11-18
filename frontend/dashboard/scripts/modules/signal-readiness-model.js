@@ -132,7 +132,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         errors && `${errors} unreadable price histories`, missingFrames && `${missingFrames} missing timeframe histories`,
         frameErrors && `${frameErrors} unreadable timeframe histories`,
         staleFrames && `${staleFrames} stale timeframe histories`, insufficient && `${insufficient} histories below model warm-up`,
-        nweInsufficient && `${nweInsufficient} histories below NWE warm-up`, mismatched && `${mismatched} price/history source mismatches`].filter(Boolean);
+        mismatched && `${mismatched} price/history source mismatches`].filter(Boolean);
     const backtestGateSummary = [
         missingBacktestProfile && `${missingBacktestProfile} setups have no promoted after-fee profile; equal weights were used`,
         belowBacktestCutoff && `${belowBacktestCutoff} setups are below their historical after-fee cutoff but remain shown`,
@@ -143,7 +143,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
     const lastChecked = Math.max(...products.map(row => Number(row.checked_at) || snapshot.checked_at));
     result.checkedAt = `Last completed scan: ${readinessTime(snapshot.checked_at)}. Checks describe inputs when each ticker was scanned.`
         + (lastChecked - firstChecked > 60 ? ` Selected data was checked from ${readinessTime(firstChecked)} to ${readinessTime(lastChecked)}.` : '')
-        + (nweInsufficient && snapshot.nwe_required_bars > 0 ? ` NWE needs ${snapshot.nwe_required_bars} chronological bars for its warm-up.` : '');
+        + (nweInsufficient && snapshot.nwe_required_bars > 0 ? ` NWE contributed zero where fewer than ${snapshot.nwe_required_bars} bars were available. The other indicators could still produce a combined score.` : '');
     result.metrics = [
         ...(workerMetric ? [workerMetric] : []),
         { label: 'Verified tickers checked', value: String(instruments) },
@@ -179,7 +179,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         result.title = 'Waiting for fresh 15m prices';
         result.message = `None of ${instruments} verified tickers had a fresh matching 15m price at the last scan.${blockers.length ? ` Observed: ${blockers.join('; ')}.` : ''}`;
     } else if (!evaluated) {
-        result.title = insufficient || nweInsufficient ? 'Not enough usable model history' : 'Timeframe data is not ready';
+        result.title = insufficient ? 'Not enough usable model history' : 'Timeframe data is not ready';
         result.message = `${fresh} tickers had fresh 15m prices, but no selected ticker / timeframe check could be evaluated.${blockers.length ? ` Observed: ${blockers.join('; ')}.` : ''}`;
     } else if (selection.search && selection.visibleCount === 0) {
         result.title = 'No current signals match your search';
@@ -191,7 +191,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         result.message = `${evaluated} ticker / timeframe checks were evaluated without a qualifying setup.${backtestGateSummary.length ? ` After-fee metrics (informational): ${backtestGateSummary.join('; ')}.` : ''} Other checks remain blocked: ${blockers.join('; ')}.`;
     } else if (!qualified && afterFeeChecks) {
         result.title = 'No qualifying setup in the last scan';
-        result.message = `${evaluated} ticker / timeframe checks had usable inputs but did not meet the technical setup and setup-strength rules. After-fee backtest metrics are informational and do not filter signals.${backtestGateSummary.length ? ` Status: ${backtestGateSummary.join('; ')}.` : ''}`;
+        result.message = `${evaluated} ticker / timeframe checks had usable inputs but did not meet the minimum combined score. After-fee backtest metrics are informational and do not filter signals.${backtestGateSummary.length ? ` Status: ${backtestGateSummary.join('; ')}.` : ''}`;
     } else if (!qualified) {
         result.title = 'No qualifying setup in the last scan';
         result.message = `${evaluated} ticker / timeframe checks had usable data but produced no qualifying signal. An empty result is valid when the model rules are not met.`;
@@ -202,7 +202,7 @@ export function appSignalReadiness(app, payload, summary = {}, selection = {}) {
         result.message = `The last scan recorded ${qualified} qualifying rows in this scope. This response contains no current matching rows; the saved counts are not a live signal count.`;
     } else {
         result.title = 'Signals are available in this view';
-        result.message = blockers.length ? `Some checks still need data: ${blockers.join('; ')}.` : 'The selected models had usable inputs at the last completed scan.';
+        result.message = blockers.length ? `Some checks still need data: ${blockers.join('; ')}.` : 'The combined score had usable inputs at the last completed scan.';
         result.tone = blockers.length ? 'warning' : 'ready';
         result.nextStep = 'Select a signal to inspect its score, candle source, and freshness.';
     }
