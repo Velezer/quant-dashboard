@@ -253,6 +253,23 @@ fn empty_history() -> Value {
         "read_limit_reached":false,"completed_only":true,"data_fingerprint":null})
 }
 
+fn stored_source_coverage_days(
+    connection: &Connection,
+    symbol: &str,
+    storage_interval: &str,
+    source: &str,
+) -> Result<i64, String> {
+    let (first, last): (Option<i64>, Option<i64>) = connection
+        .query_row(
+            "SELECT MIN(ts),MAX(ts) FROM bars
+              WHERE symbol=?1 AND interval=?2 AND source=?3",
+            params![symbol, storage_interval, source],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(history_coverage_days(first, last))
+}
+
 fn read_history(
     market_directory: &str,
     instrument: &Value,
@@ -292,6 +309,9 @@ fn read_history(
         .get("storage_timeframe")
         .and_then(Value::as_str)
         .unwrap_or(timeframe);
+    // Chart metadata is bounded to its display window; query exact stored bounds for research.
+    let stored_coverage_days =
+        stored_source_coverage_days(&market, symbol, storage_interval, &source)?;
     let shared_category = crate::research_proxy::shared::category_for_product(exchange, product)
         .filter(|category| *category == text(instrument, "asset_category_id"));
     let shared_reference = shared_category.is_some_and(|category| {
@@ -344,7 +364,7 @@ fn read_history(
     let last = bars.last().map(|bar| bar.time);
     let fingerprint = candle_fingerprint(&bars);
     let history = json!({"bars":bars.len(),"first_ts":first,"last_ts":last,
-        "coverage_days":history_coverage_days(first,last),"stored_coverage_days":metadata["coverage_days"],
+        "coverage_days":history_coverage_days(first,last),"stored_coverage_days":stored_coverage_days,
         "read_limit":MAX_EVIDENCE_CANDLES,"read_limit_reached":read_limit_reached,
         "completed_only":true,"data_fingerprint":fingerprint,
         "freshness_at_run":if metadata["is_stale"] == true {"STALE"} else {"CURRENT"}});
@@ -560,6 +580,9 @@ fn build_report(
     )
 }
 
+#[cfg(test)]
+#[path = "entry_validation_history_tests.rs"]
+mod history_tests;
 #[cfg(test)]
 #[path = "entry_validation_tests.rs"]
 mod tests;

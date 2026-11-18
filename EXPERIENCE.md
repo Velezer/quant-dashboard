@@ -170,6 +170,10 @@ lesson only when it will improve future tasks.
   reversal clue between separate outcomes, not a position-flip instruction or
   evidence of accuracy; any reverse-direction rule needs its own validation and
   untouched holdout evaluation.
+- Entry-validation reports must derive `stored_coverage_days` from indexed
+  MIN/MAX bounds on the exact source interval used by the backtest. Chart
+  metadata is deliberately display-bounded and can understate multi-year
+  research history; keep it separate from the complete sampled span.
 - Apply the 1,000-day validation minimum to the full chronological history, not
   the 20% holdout tail. Requiring 1,000 days inside that tail would require about
   fourteen years of stored data and exceed the bounded 100,000-candle report
