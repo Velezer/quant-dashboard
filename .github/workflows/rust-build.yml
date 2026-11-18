@@ -54,6 +54,7 @@ jobs:
         run: |
           cargo test --locked --release -p quant_core sampled_entry_tests
           cargo test --locked --release -p quant_core tokocrypto_published_quote_policy
+          cargo test --locked --release -p quant_core pluang_crypto_products_use_published_conservative_taker_rates
           cargo test --locked --release -p rust_chart_api gainer_tests -- --test-threads=1
           cargo test --locked --release -p rust_chart_api native_backfill_ -- --test-threads=1
       - name: Verify signed indicator cancellation
@@ -95,6 +96,9 @@ jobs:
             --test-threads=1
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
             preferred_risk_reward_rule_uses_the_current_weight_learning_path -- \
+            --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            pluang_perpetual_backtest_uses_its_published_taker_fee_and_source -- \
             --test-threads=1
           node --test frontend/dashboard/scripts/modules/entry-validation.test.mjs
       - name: Verify screener filter and response contracts

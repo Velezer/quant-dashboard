@@ -12,6 +12,17 @@ pub const PINTU_TAKER_FEE_PCT: f64 = PINTU_TAKER_FEE_RATE * 100.0;
 pub const PINTU_TAKER_FEE_ROUND_TRIP_PCT: f64 = PINTU_TAKER_FEE_PCT * 2.0;
 pub const PINTU_TAKER_FEE_ASSUMPTION_LABEL: &str = "Pintu Futures taker estimate: 0.2865% per side";
 
+/// Pluang Crypto Futures taker fee published as an all-in rate per side.
+/// Official schedule effective September 25, 2026.
+pub const PLUANG_CRYPTO_FUTURES_TAKER_FEE_PCT: f64 = 0.2865;
+pub const PLUANG_CRYPTO_FUTURES_FEE_ASSUMPTION_LABEL: &str =
+    "Pluang Crypto Futures published all-in taker fee: 0.2865% per side; funding excluded";
+
+/// Pluang Crypto spot taker estimate including its published CFX charge.
+pub const PLUANG_CRYPTO_SPOT_TAKER_FEE_PCT: f64 = 0.15555;
+pub const PLUANG_CRYPTO_SPOT_FEE_ASSUMPTION_LABEL: &str =
+    "Pluang Crypto PRO taker estimate: 0.15555% per side including CFX; spread and applicable taxes excluded";
+
 /// Stockbit buy-side fee assumption expressed as percent.
 pub const STOCKBIT_BUY_FEE_PCT: f64 = 0.15;
 /// Stockbit sell-side fee assumption expressed as percent.
@@ -40,6 +51,8 @@ pub const PINTU_SPOT_FEE_RULES_URL: &str =
     "https://www.pintu.co.id/blog/pengumuman-update-biaya-cfx-turun-2026";
 pub const TOKOCRYPTO_FEE_RULES_URL: &str = "https://support.tokocrypto.com/hc/id/articles/360004044591-Informasi-Biaya-Transaksi-di-Tokocrypto";
 pub const PLUANG_FEE_RULES_URL: &str = "https://pluang.com/id/biaya";
+pub const PLUANG_CRYPTO_FUTURES_FEE_RULES_URL: &str = "https://pluang.com/biaya/crypto-futures";
+pub const PLUANG_CRYPTO_SPOT_FEE_RULES_URL: &str = "https://pluang.com/biaya/crypto";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VenueFeePolicy {
@@ -74,6 +87,18 @@ pub fn venue_fee_policy(exchange_id: &str, product_id: &str) -> VenueFeePolicy {
             sell_fee_pct: PINTU_TAKER_FEE_PCT,
             fee_model: PINTU_TAKER_FEE_ASSUMPTION_LABEL,
             official_fee_rules_url: Some(PINTU_FUTURES_FEE_RULES_URL),
+        },
+        ("pluang", "pluang_perpetual") => VenueFeePolicy::Known {
+            buy_fee_pct: PLUANG_CRYPTO_FUTURES_TAKER_FEE_PCT,
+            sell_fee_pct: PLUANG_CRYPTO_FUTURES_TAKER_FEE_PCT,
+            fee_model: PLUANG_CRYPTO_FUTURES_FEE_ASSUMPTION_LABEL,
+            official_fee_rules_url: Some(PLUANG_CRYPTO_FUTURES_FEE_RULES_URL),
+        },
+        ("pluang", "pluang_spot") => VenueFeePolicy::Known {
+            buy_fee_pct: PLUANG_CRYPTO_SPOT_TAKER_FEE_PCT,
+            sell_fee_pct: PLUANG_CRYPTO_SPOT_TAKER_FEE_PCT,
+            fee_model: PLUANG_CRYPTO_SPOT_FEE_ASSUMPTION_LABEL,
+            official_fee_rules_url: Some(PLUANG_CRYPTO_SPOT_FEE_RULES_URL),
         },
         ("pintu", "pintu_retail_spot") => VenueFeePolicy::Unknown {
             fee_model: "Pintu app spot fee is reflected in the final price and spread",
@@ -111,6 +136,8 @@ pub fn venue_fee_policy_for_category(exchange_id: &str, category_id: &str) -> Ve
             "pintu_pro_futures"
         }
         ("tokocrypto", "crypto_spot") => "tokocrypto_spot",
+        ("pluang", "crypto_spot") => "pluang_spot",
+        ("pluang", "crypto_perpetual") => "pluang_perpetual",
         ("tokocrypto", "tokenized_stock") => "tokocrypto_tokenized_stock",
         _ => {
             return VenueFeePolicy::Unsupported {

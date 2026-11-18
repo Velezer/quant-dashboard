@@ -6,6 +6,10 @@ import { renderAutocorrelationRiskSizing } from './entry-validation-risk-sizing.
 const PAGE_SIZE = 50;
 const APP_LABELS = { stockbit: 'Stockbit', pintu: 'Pintu', pluang: 'Pluang', tokocrypto: 'Tokocrypto' };
 const RISK_REWARD_PROTOCOL_ID = 'entry_score_signed_risk_reward_after_fee_v5';
+const FEE_SOURCE_HOSTS = new Set([
+    'help.stockbit.com', 'pintu.co.id', 'www.pintu.co.id', 'pluang.com', 'www.pluang.com',
+    'support.tokocrypto.com',
+]);
 
 function numeric(value) {
     if (!['number', 'string'].includes(typeof value) || (typeof value === 'string' && !value.trim())) return null;
@@ -92,6 +96,13 @@ export async function processQueue(rows, { run, shouldStop = () => false, onProg
 
 function human(value) { return String(value || '').replaceAll('_', ' ').toLowerCase(); }
 function sourceName(source) { return typeof source === 'string' ? source : source?.id || source?.source || 'Source unavailable'; }
+export function officialFeeSourceUrl(value) {
+    if (typeof value !== 'string') return null;
+    try {
+        const url = new URL(value);
+        return url.protocol === 'https:' && FEE_SOURCE_HOSTS.has(url.hostname) ? url.href : null;
+    } catch { return null; }
+}
 function dateText(timestamp, detailed = false) {
     const value = numeric(timestamp);
     if (value === null || value <= 0) return 'Unavailable';
@@ -847,6 +858,21 @@ export function initializeEntryValidation(doc = document) {
         if (history.read_limit_reached) notices.append(element('p', `The ${metric(history.read_limit, '', 0)}-bar read limit was reached. Earlier candles may remain stored; validation uses only the sample dates shown here.`, 'notice'));
         metadata('history-metadata', [['Source', sourceName(report.source)], ['Provider', report.source?.data_provider || 'Unavailable'], ['Source basis', report.source?.is_proxy ? 'Research proxy' : report.source?.venue_native ? 'Venue-native history' : 'Unverified'], ['Timezone', report.source?.timezone || 'Unavailable'], ['Sampled bars', metric(history.bars, '', 0)], ['Sample dates', `${dateText(history.first_ts)} – ${dateText(history.last_ts)}`], ['Sample span', metric(history.coverage_days, ' days', 0)], ['Stored span', metric(history.stored_coverage_days, ' days', 0)], ['Protocol', report.protocol_id || 'Unavailable'], ['Data fingerprint', history.data_fingerprint || 'Unavailable']]);
         metadata('cost-metadata', [['Fee model', costs.fee_model || 'Unavailable'], ['Buy / sell fees', costs.fees_known === true ? `${metric(costs.buy_fee_pct, '%', 3)} / ${metric(costs.sell_fee_pct, '%', 3)}` : 'Unknown · gross returns only'], ['Execution-cost coverage', costs.execution_costs_complete === true ? 'Complete for this protocol' : 'Incomplete · validation blocked']]);
+        const feeSourceRow = element('div');
+        const feeSourceValue = element('dd');
+        const feeSourceUrl = officialFeeSourceUrl(costs.official_fee_rules_url);
+        feeSourceRow.append(element('dt', 'Fee source'));
+        if (feeSourceUrl) {
+            const feeSourceLink = element('a', 'Official fee schedule');
+            feeSourceLink.href = feeSourceUrl;
+            feeSourceLink.target = '_blank';
+            feeSourceLink.rel = 'noopener noreferrer';
+            feeSourceValue.append(feeSourceLink);
+        } else {
+            feeSourceValue.textContent = 'Unavailable';
+        }
+        feeSourceRow.append(feeSourceValue);
+        $('cost-metadata').append(feeSourceRow);
         text('cost-omissions', Array.isArray(costs.omissions) && costs.omissions.length ? `Not modeled: ${costs.omissions.join(', ')}.` : costs.execution_costs_complete ? 'Review the supplied cost policy and source assumptions.' : 'Complete execution-cost coverage has not been established.');
         const sizing = report.sizing || {};
         const hasRiskResearch = ['RESEARCH_ONLY', '4H_ONLY'].includes(sizing.status);

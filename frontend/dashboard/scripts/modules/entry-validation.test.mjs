@@ -1,12 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectScope, metric, normalizeList, processQueue, reportModelState, riskRewardRuleForBacktest } from './entry-validation.js';
+import { collectScope, metric, normalizeList, officialFeeSourceUrl, processQueue, reportModelState, riskRewardRuleForBacktest } from './entry-validation.js';
 
 test('missing and malformed financial metrics remain unavailable rather than zero', () => {
     for (const value of [null, undefined, '', ' ', false, true, {}, [], NaN, Infinity]) assert.equal(metric(value), '—');
     assert.equal(metric(0, '%'), '0.00%');
     assert.equal(metric(-1.25, '%'), '-1.25%');
     assert.equal(metric(1500, '', 0), '1,500');
+});
+
+test('official fee sources accept only HTTPS links on supported venue domains', () => {
+    assert.equal(officialFeeSourceUrl('https://pluang.com/biaya/crypto-futures'), 'https://pluang.com/biaya/crypto-futures');
+    assert.equal(officialFeeSourceUrl('http://pluang.com/biaya'), null);
+    assert.equal(officialFeeSourceUrl('https://example.com/fees'), null);
+    assert.equal(officialFeeSourceUrl(null), null);
 });
 
 test('completed research is separate from validation and old protocol evidence stays pending', () => {
