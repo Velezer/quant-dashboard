@@ -9,6 +9,9 @@ lesson only when it will improve future tasks.
   For a cross-sectional forecast, require four consecutive native hourly bars
   per bucket and the same completed cutoff across pairs. Reset history at
   gaps and keep stale or proxy series out of forecast coverage.
+- Keep the Tokocrypto forecast on a focused `/forecast` page linked from the
+  screener. Let that deep link start the latest request while keeping refresh,
+  cancellation, and recovery controls beside the result.
 
 - A Pintu ticker-feed entry is not proof that its Futures product offers it.
   Keep explicit product exclusions separate from official delisting notices,

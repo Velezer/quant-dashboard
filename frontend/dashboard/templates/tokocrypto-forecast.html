@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="View the latest Tokocrypto Spot four-hour research ranking.">
+    <meta name="color-scheme" content="dark">
+    <title>Tokocrypto 4h forecast · Quant Desk</title>
+    <link rel="stylesheet" href="/web/styles/entry-validation.css">
+    <script type="module" src="/web/scripts/modules/gainer-forecast.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to forecast</a>
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="Quant Desk dashboard"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>QUANT DESK<span class="brand-section"> / FORECAST</span></a>
+        <nav aria-label="Page navigation"><a href="/entry-validation">Backtests</a><a href="/">Screener <span aria-hidden="true">↗</span></a></nav>
+    </header>
+    <main id="main" class="page-shell forecast-page">
+        <p class="eyebrow accent">TOKOCRYPTO SPOT · COMPLETED 4H WINDOW</p>
+        <section id="gainer-forecast" class="scope-panel gainer-forecast" aria-labelledby="gainer-forecast-title" tabindex="-1">
+            <div class="section-heading gainer-forecast-heading">
+                <div>
+                    <h1 id="gainer-forecast-title">Top-ranked 4h candidates</h1>
+                    <p class="small-text">Latest completed Tokocrypto Spot window. Scores rank indicator strength; they are not probabilities or validated predictions.</p>
+                </div>
+                <span id="gainer-forecast-validation" class="state-badge pending">Unvalidated research ranking</span>
+            </div>
+            <div class="gainer-forecast-actions" aria-label="Forecast controls">
+                <button id="gainer-forecast-run" type="button" class="primary-button" aria-controls="gainer-forecast-results">Run latest forecast</button>
+                <button id="gainer-forecast-cancel" type="button" class="secondary-button" hidden>Cancel request</button>
+                <button id="gainer-forecast-retry" type="button" class="secondary-button" hidden>Retry after recovery</button>
+            </div>
+            <p id="gainer-forecast-status" class="status-message" role="status" aria-live="polite">No forecast loaded. Run to inspect the latest completed, aligned 4h window.</p>
+            <div id="gainer-forecast-results" class="gainer-forecast-results" aria-live="polite" aria-busy="false"></div>
+            <p class="gainer-forecast-limits">Coverage, cutoff, source and exclusions are shown with each result. Candidates expire at the end of their forecast window.</p>
+        </section>
+        <footer class="page-footer"><span>Research only · No orders are placed</span><a href="/">Back to screener</a></footer>
+    </main>
+</body>
+</html>
