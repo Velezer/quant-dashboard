@@ -3,7 +3,8 @@ use crate::market_diagnostics::load_markov_payload;
 use crate::{now_secs, open_db_minimal, Connection, Value, NANOS_PER_SECOND};
 use rusqlite::params;
 
-const SYMBOL: &str = "BTC-USD";
+const TICKER: &str = "MARKOVTEST";
+const SYMBOL: &str = "MARKOVTEST-USD";
 const PINTU_PRODUCT: &str = "pintu_pro_futures";
 const TOKO_PRODUCT: &str = "tokocrypto_spot";
 const BAR_COUNT: i64 = 1_200;
@@ -17,9 +18,17 @@ fn insert_instrument(connection: &Connection, exchange: &str, product: &str, cat
                  venue_symbol,underlying_symbol,storage_symbol,quote_currency,
                  listing_status,venue_verified,registration_source,price_source_policy,
                  registered_at,updated_at,is_active
-             ) VALUES(?1,?2,?3,?4,'BTC','BTCUSDT','BTC',?5,'USDT',
+            ) VALUES(?1,?2,?3,?4,?5,?6,?5,?7,'USDT',
                       'venue_active',1,'test','research_proxy',1,1,1)",
-            params![format!("{exchange}.{product}.btc"), exchange, product, category, SYMBOL],
+            params![
+                format!("{exchange}.{product}.markov_test"),
+                exchange,
+                product,
+                category,
+                TICKER,
+                format!("{TICKER}USDT"),
+                SYMBOL
+            ],
         )
         .expect("registered instrument should persist");
 }
@@ -116,7 +125,7 @@ fn markov_reads_the_selected_app_product_source_for_a_shared_storage_symbol() {
     assert_eq!(payload["assets"].as_array().unwrap().len(), 1);
     assert_eq!(payload["assets"][0]["exchange_id"], "pintu");
     assert!(payload["assets"][0]["current_price"].as_f64().unwrap() > 190.0);
-    assert!(payload["ticker_models"]["pintu:crypto_perpetual:BTC-USD"].is_object());
+    assert!(payload["ticker_models"]["pintu:crypto_perpetual:MARKOVTEST-USD"].is_object());
     drop(connection);
     remove_temporary_database(&path);
 }
