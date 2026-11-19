@@ -296,6 +296,11 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
     }
 
     // ─── Static / Dashboard routes ──────────────────────────────────────────
+    if route == "/forecast" && method == "GET" {
+        serve_static(stream, "frontend/dashboard/templates/tokocrypto-forecast.html");
+        return Ok(());
+    }
+
     if route == "/entry-validation" && method == "GET" {
         serve_static(stream, "frontend/dashboard/templates/entry-validation.html");
         return Ok(());

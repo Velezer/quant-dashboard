@@ -129,14 +129,15 @@ UNVALIDATED_RESEARCH: browser-computed reports never promote live profiles.
 
 ## Current 4h forecast
 
-The forecast applies the fixed equal-weight DSS-led score to the latest
-completed 4h UTC window for verified Tokocrypto Spot pairs. It reads up to
-1,000 consecutive 4h candles from native hourly data. Every bucket requires
-four consecutive hours, and a gap resets the available history. The top five
-positive candidates are ordered by signed score. A pair whose latest completed
-bar is older than the shared cutoff is excluded.
+The forecast applies the fixed equal-weight six-factor combined entry score to
+the latest completed 4h UTC window for verified Tokocrypto Spot pairs. It reads
+up to 1,000 consecutive 4h candles from native hourly data. Every bucket
+requires four consecutive hours, and a gap resets the available history. The
+top five positive candidates are ordered by signed score. A pair whose latest
+completed bar is older than the shared cutoff is excluded.
 
-1. A user can request the top candidate and shortlist from Backtests.
+1. A user opens the dedicated `/forecast` page from the screener. The screener
+   link requests the latest forecast on arrival; manual refresh remains on page.
 2. Each result expires at the end of the interval it forecasts.
 3. Users can recheck after history sync. A single request at a time bounds
    competing research work.

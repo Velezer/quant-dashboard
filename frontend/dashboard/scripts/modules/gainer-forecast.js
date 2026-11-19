@@ -421,9 +421,7 @@ export function initializeGainerForecast(doc = document) {
     });
     setControls();
 
-    if (new URLSearchParams(win.location?.search || '').get('runForecast') === '1') {
-        void runForecast();
-    }
+    void runForecast();
 }
 
 if (typeof document !== 'undefined') initializeGainerForecast(document);
