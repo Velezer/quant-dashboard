@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 
 const ATR_LOOKBACK_BARS: usize = 14;
 const LIVE_SIGNAL_STOP_ATR_MULTIPLE: f64 = 1.0;
+const LIVE_TARGET_SOLVER_ROUNDING_MARGIN_R: f64 = 1e-12;
 const STOP_ATR_MULTIPLIERS: [f64; 3] = [0.75, LIVE_SIGNAL_STOP_ATR_MULTIPLE, 1.5];
 const TARGET_AFTER_FEE_R_MULTIPLES: [f64; 5] =
     [MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE, 4.25, 4.5, 5.0, 6.0];
@@ -253,7 +254,7 @@ pub(super) fn planned_live_bracket(
         entry_price,
         stop_price,
         long,
-        MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
+        MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE * (1.0 + LIVE_TARGET_SOLVER_ROUNDING_MARGIN_R),
         buy_fee_pct,
         sell_fee_pct,
     )?;
@@ -282,7 +283,7 @@ pub(super) fn planned_live_bracket(
         && risk_after_fees_pct > 0.0
         && reward_after_fees_pct.is_finite()
         && planned_after_fee_r_multiple.is_finite()
-        && planned_after_fee_r_multiple + f64::EPSILON >= MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE)
+        && planned_after_fee_r_multiple >= MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE)
         .then(|| {
             json!({
                 "entry_price": entry_price,
