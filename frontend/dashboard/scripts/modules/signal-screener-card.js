@@ -186,15 +186,31 @@ export function createSignalScreenerCard({
             ? scoreStateText
             : scoreState?.tone === 'provisional' ? scoreStateText || 'Provisional' : '';
         const compactWinRate = hasWinProbability ? `After-fee win ${winProbabilityPct.toFixed(1)}%` : 'Unvalidated · win rate unavailable';
+        const riskRewardPlan = signal.risk_reward_plan || signal.score_basis?.risk_reward_plan || {};
+        const riskRewardPlanStatus = String(riskRewardPlan.status || 'UNAVAILABLE');
+        const riskRewardMinimum = Number(riskRewardPlan.minimum_target_after_fee_r_multiple);
+        const riskRewardMultiple = Number(riskRewardPlan.planned_after_fee_r_multiple);
+        const riskRewardMinimumLabel = Number.isFinite(riskRewardMinimum) && riskRewardMinimum > 0
+            ? riskRewardMinimum.toFixed(2).replace(/\.?0+$/, '')
+            : null;
+        const riskRewardPlanReady = ['PLANNED', 'REFERENCE_ONLY'].includes(riskRewardPlanStatus)
+            && riskRewardPlan.fees_applied === true
+            && riskRewardMinimumLabel !== null
+            && Number.isFinite(riskRewardMultiple)
+            && riskRewardMultiple >= riskRewardMinimum;
+        const riskRewardPlanLabel = riskRewardPlanReady
+            ? riskRewardPlanStatus === 'REFERENCE_ONLY' ? `1:${riskRewardMinimumLabel} reference plan` : `1:${riskRewardMinimumLabel} net plan`
+            : riskRewardPlanStatus === 'FEE_POLICY_UNAVAILABLE' ? 'fee plan unavailable' : '1:4 plan unavailable';
+        const riskRewardPlanTitle = String(riskRewardPlan.reason || 'A planned bracket does not guarantee future execution or profit.');
         const compactScore = directionScore ? signedDirectionScore(directionScore.score) : '—';
         const compactContext = rowContext ? `${rowContext}, ` : '';
-        const compactLabel = `${compactContext}${signal.symbol}, ${signal.timeframe}, ${directionLabel}, direction score ${compactScore}, price ${formatPrice(signal.current_price)}, ${compactWinRate}${compactState ? `, ${compactState}` : ''}. Select chart.`;
+        const compactLabel = `${compactContext}${signal.symbol}, ${signal.timeframe}, ${directionLabel}, direction score ${compactScore}, price ${formatPrice(signal.current_price)}, ${riskRewardPlanLabel}, ${compactWinRate}${compactState ? `, ${compactState}` : ''}. Select chart.`;
         return `<article class="signal-row-wrap" role="listitem">
             <button type="button" class="signal-row${totalStrength?.tone === 'low' ? ' is-low-total-strength' : ''}${selected ? ' is-selected' : ''}" data-signal-id="${escape(signal.signal_id)}" aria-pressed="${selected}" aria-label="${escape(compactLabel)}">
                 <span class="signal-row-top"><span class="signal-row-symbol">${escape(signal.symbol)}</span><span class="signal-row-timeframe">${escape(signal.timeframe.toUpperCase())}</span></span>
                 <span class="signal-row-meta">${escape(rowContext)}</span>
                 <span class="signal-row-main"><span class="${directionClass}">${escape(directionLabel)}</span><span class="signal-row-direction-score signal-row-direction-score-${directionScoreTone}">${escape(compactScore)}</span><span class="signal-row-price">${escape(formatPrice(signal.current_price))}</span></span>
-                <span class="signal-row-footer"><span>${escape(compactWinRate)}</span><span>Price ${escape(signalPriceBarAgeLabel(signal.price_bar_time))}</span></span>
+                <span class="signal-row-footer"><span>${escape(compactWinRate)}</span><span class="signal-risk-reward-chip${riskRewardPlanReady ? ' is-ready' : ''}${riskRewardPlanStatus === 'REFERENCE_ONLY' ? ' is-reference' : ''}" title="${escape(riskRewardPlanTitle)}">${escape(riskRewardPlanLabel)}</span><span>Price ${escape(signalPriceBarAgeLabel(signal.price_bar_time))}</span></span>
                 ${compactState ? `<span class="signal-score-state signal-score-state-${scoreState.tone}">${escape(compactState)}</span>` : ''}
             </button>
             <details class="signal-card-details">

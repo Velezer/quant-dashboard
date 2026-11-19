@@ -44,6 +44,7 @@ fn scan_for(
             exchange_id: exchange,
             product_id: product,
             category_id: category,
+            quote_currency: "USD",
             symbol: "BTC-USD",
             asset: "BTC",
             strategy: "tokocrypto_spot_day_trade",

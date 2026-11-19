@@ -169,6 +169,95 @@ fn after_fee_gate_for_product(
     })
 }
 
+fn live_risk_reward_plan(
+    input: &TimeframeScanInput<'_>,
+    timeframe: &str,
+    bars: &[StrategyBar],
+    entry_price: f64,
+    direction: Option<&str>,
+    reference_only: bool,
+    source: &str,
+) -> Value {
+    let Some(direction) = direction else {
+        return serde_json::json!({
+            "status": "NO_CURRENT_DIRECTION",
+            "reason": "A neutral or retained score is not a current entry plan.",
+            "minimum_target_after_fee_r_multiple": quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
+        });
+    };
+    let fee_policy = if input.exchange_id == "tokocrypto"
+        && input.product_id == "tokocrypto_spot"
+    {
+        quant_core::venue_rules::tokocrypto_spot_published_fee_policy(input.quote_currency)
+    } else {
+        quant_core::venue_fee_policy(input.exchange_id, input.product_id)
+    };
+    let (buy_fee_pct, sell_fee_pct, fee_model) = match fee_policy {
+        quant_core::VenueFeePolicy::Known {
+            buy_fee_pct,
+            sell_fee_pct,
+            fee_model,
+            ..
+        } => (buy_fee_pct, sell_fee_pct, fee_model),
+        quant_core::VenueFeePolicy::Unknown { fee_model, .. }
+        | quant_core::VenueFeePolicy::Unsupported { fee_model, .. } => {
+            return serde_json::json!({
+                "status": "FEE_POLICY_UNAVAILABLE",
+                "reason": format!("A fee-aware 1:{:.0} plan cannot be calculated: {fee_model}.", quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE),
+                "minimum_target_after_fee_r_multiple": quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
+                "fees_applied": false,
+                "quote_currency": input.quote_currency,
+            });
+        }
+    };
+    let Some(signal_index) = bars.len().checked_sub(1) else {
+        return serde_json::json!({
+            "status": "INSUFFICIENT_HISTORY",
+            "reason": "The signal timeframe needs 14 completed bars to calculate its ATR stop.",
+            "minimum_target_after_fee_r_multiple": quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
+            "fees_applied": false,
+        });
+    };
+    let Some(mut plan) = quant_core::planned_live_entry_risk_reward_bracket(
+        bars,
+        signal_index,
+        entry_price,
+        direction == "LONG",
+        buy_fee_pct,
+        sell_fee_pct,
+    ) else {
+        return serde_json::json!({
+            "status": "INSUFFICIENT_HISTORY",
+            "reason": "The signal timeframe needs 14 valid candles and positive prices to calculate its ATR stop.",
+            "minimum_target_after_fee_r_multiple": quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
+            "fees_applied": false,
+        });
+    };
+    plan["status"] = serde_json::json!(if reference_only {
+        "REFERENCE_ONLY"
+    } else {
+        "PLANNED"
+    });
+    plan["direction"] = serde_json::json!(direction);
+    plan["timeframe"] = serde_json::json!(timeframe);
+    plan["fees_applied"] = serde_json::Value::Bool(true);
+    plan["buy_fee_pct"] = serde_json::json!(buy_fee_pct);
+    plan["sell_fee_pct"] = serde_json::json!(sell_fee_pct);
+    plan["fee_model"] = serde_json::json!(fee_model);
+    plan["quote_currency"] = serde_json::json!(input.quote_currency);
+    plan["entry_price_is_reference_only"] = serde_json::Value::Bool(reference_only);
+    plan["data_source"] = serde_json::json!(source);
+    plan["reason"] = serde_json::json!(if reference_only {
+        "Bracket prices use a reference close, not a fresh executable entry.".to_string()
+    } else {
+        format!(
+            "Bracket target is set to at least 1:{:.0} net reward/risk under configured fees.",
+            quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
+        )
+    });
+    plan
+}
+
 pub(super) fn append_combined_entry(
     input: &TimeframeScanInput<'_>,
     is_stockbit: bool,
@@ -211,13 +300,12 @@ pub(super) fn append_combined_entry(
     let (price, price_timeframe, reference_only) = current_price
         .filter(|price| price.source == *source)
         .map(|price| {
-            let reference_only = is_stockbit
-                && !crate::completed_bar_is_fresh_at(
-                    input.symbol,
-                    "15m",
-                    price.signal_bar_time,
-                    current_time_ns(),
-                );
+            let reference_only = !crate::completed_bar_is_fresh_at(
+                input.symbol,
+                "15m",
+                price.signal_bar_time,
+                current_time_ns(),
+            );
             (price, "15m", reference_only)
         })
         .unwrap_or((&fallback_price, timeframe, true));
@@ -265,6 +353,15 @@ pub(super) fn append_combined_entry(
         }),
         "Signal_Win_Probability": win_probability_for_score(
             direction.map(|_| strength), profile, input.exchange_id, input.product_id,
+        ),
+        "Signal_Risk_Reward_Plan": live_risk_reward_plan(
+            input,
+            timeframe,
+            bars,
+            price.value,
+            direction,
+            reference_only,
+            source,
         ),
         "Signal_Score_Components": score_components,
         "timeframe": timeframe,

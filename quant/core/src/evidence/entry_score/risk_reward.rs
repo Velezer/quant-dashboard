@@ -3,13 +3,15 @@ use super::{
     qualifies, summary_json, EvaluationPolicy, Observation, ENTRY_SCORE_MIN_HISTORY_DAYS,
     ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
     ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
+    ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE as MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
 };
 use crate::strategies::StrategyBar;
 use serde_json::{json, Value};
 
 const ATR_LOOKBACK_BARS: usize = 14;
-const STOP_ATR_MULTIPLIERS: [f64; 3] = [0.75, 1.0, 1.5];
-const MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE: f64 = 4.0;
+const LIVE_SIGNAL_STOP_ATR_MULTIPLE: f64 = 1.0;
+const LIVE_TARGET_SOLVER_ROUNDING_MARGIN_R: f64 = 1e-12;
+const STOP_ATR_MULTIPLIERS: [f64; 3] = [0.75, LIVE_SIGNAL_STOP_ATR_MULTIPLE, 1.5];
 const TARGET_AFTER_FEE_R_MULTIPLES: [f64; 5] =
     [MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE, 4.25, 4.5, 5.0, 6.0];
 const MAXIMUM_HOLD_BARS: [usize; 3] = [4, 8, 12];
@@ -230,6 +232,75 @@ fn average_true_range(bars: &[StrategyBar], signal_index: usize) -> Option<f64> 
     (value.is_finite() && value > 0.0).then_some(value)
 }
 
+pub(super) fn planned_live_bracket(
+    bars: &[StrategyBar],
+    signal_index: usize,
+    entry_price: f64,
+    long: bool,
+    buy_fee_pct: f64,
+    sell_fee_pct: f64,
+) -> Option<Value> {
+    if !entry_price.is_finite() || entry_price <= 0.0 {
+        return None;
+    }
+    let atr = average_true_range(bars, signal_index)?;
+    let risk_distance = atr * LIVE_SIGNAL_STOP_ATR_MULTIPLE;
+    let stop_price = if long {
+        entry_price - risk_distance
+    } else {
+        entry_price + risk_distance
+    };
+    let target_price = after_fee_target_price(
+        entry_price,
+        stop_price,
+        long,
+        MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE * (1.0 + LIVE_TARGET_SOLVER_ROUNDING_MARGIN_R),
+        buy_fee_pct,
+        sell_fee_pct,
+    )?;
+    let (entry_fee_pct, exit_fee_pct) = if long {
+        (buy_fee_pct, sell_fee_pct)
+    } else {
+        (sell_fee_pct, buy_fee_pct)
+    };
+    let net_return_pct = |exit_price: f64| {
+        let gross_return_pct = if long {
+            (exit_price - entry_price) / entry_price * 100.0
+        } else {
+            (entry_price - exit_price) / entry_price * 100.0
+        };
+        crate::venue_rules::net_return_after_transaction_fees(
+            gross_return_pct,
+            exit_price / entry_price,
+            entry_fee_pct,
+            exit_fee_pct,
+        )
+    };
+    let risk_after_fees_pct = -net_return_pct(stop_price);
+    let reward_after_fees_pct = net_return_pct(target_price);
+    let planned_after_fee_r_multiple = reward_after_fees_pct / risk_after_fees_pct;
+    (risk_after_fees_pct.is_finite()
+        && risk_after_fees_pct > 0.0
+        && reward_after_fees_pct.is_finite()
+        && planned_after_fee_r_multiple.is_finite()
+        && planned_after_fee_r_multiple >= MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE)
+        .then(|| {
+            json!({
+                "entry_price": entry_price,
+                "stop_price": stop_price,
+                "target_price": target_price,
+                "atr14": atr,
+                "stop_atr_multiple": LIVE_SIGNAL_STOP_ATR_MULTIPLE,
+                "minimum_target_after_fee_r_multiple": MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
+                "planned_after_fee_r_multiple": planned_after_fee_r_multiple,
+                "planned_stop_loss_after_fees_pct": risk_after_fees_pct,
+                "planned_target_reward_after_fees_pct": reward_after_fees_pct,
+                "fees_applied": true,
+                "target_r_basis": "after configured entry and exit fees",
+            })
+        })
+}
+
 fn autocorrelation_risk_multiplier(
     bars: &[StrategyBar],
     signal_index: usize,
@@ -341,7 +412,8 @@ fn after_fee_target_price(
     stop_price: f64,
     long: bool,
     target_after_fee_r_multiple: f64,
-    policy: EvaluationPolicy,
+    buy_fee_pct: f64,
+    sell_fee_pct: f64,
 ) -> Option<f64> {
     // The R grid is net reward / net stop loss; solve for the price target after both fees.
     if !entry_price.is_finite()
@@ -350,19 +422,19 @@ fn after_fee_target_price(
         || stop_price <= 0.0
         || !target_after_fee_r_multiple.is_finite()
         || target_after_fee_r_multiple <= 0.0
-        || !policy.buy_fee_pct.is_finite()
-        || !policy.sell_fee_pct.is_finite()
-        || policy.buy_fee_pct < 0.0
-        || policy.sell_fee_pct < 0.0
-        || policy.buy_fee_pct >= 100.0
-        || policy.sell_fee_pct >= 100.0
+        || !buy_fee_pct.is_finite()
+        || !sell_fee_pct.is_finite()
+        || buy_fee_pct < 0.0
+        || sell_fee_pct < 0.0
+        || buy_fee_pct >= 100.0
+        || sell_fee_pct >= 100.0
     {
         return None;
     }
     let (entry_fee_pct, exit_fee_pct) = if long {
-        (policy.buy_fee_pct, policy.sell_fee_pct)
+        (buy_fee_pct, sell_fee_pct)
     } else {
-        (policy.sell_fee_pct, policy.buy_fee_pct)
+        (sell_fee_pct, buy_fee_pct)
     };
     let stop_gross_return_pct = if long {
         (stop_price - entry_price) / entry_price * 100.0
@@ -418,6 +490,9 @@ fn evaluate_rule_with_observer(
     rule: BracketRule,
     mut on_trade: impl FnMut(RuleTrade),
 ) -> TradeSummary {
+    if !target_meets_minimum_after_fee_r_multiple(rule.target_after_fee_r_multiple) {
+        return TradeSummary::default();
+    }
     let mut summary = TradeSummary::default();
     let policy = EvaluationPolicy {
         weights,
@@ -468,7 +543,8 @@ fn evaluate_rule_with_observer(
             stop_price,
             long,
             rule.target_after_fee_r_multiple,
-            policy,
+            policy.buy_fee_pct,
+            policy.sell_fee_pct,
         ) else {
             continue;
         };
@@ -914,3 +990,7 @@ pub(super) fn report(
         "live_weights_changed": false,
     })
 }
+
+#[cfg(test)]
+#[path = "risk_reward_tests.rs"]
+mod tests;

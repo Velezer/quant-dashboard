@@ -470,6 +470,7 @@ pub(crate) fn compact_stockbit_signal_score_update(
         "profile_version": candidate["Signal_Scoring_Profile_Version"],
         "after_fee_gate": after_fee_gate,
         "win_probability": candidate["Signal_Win_Probability"],
+        "risk_reward_plan": candidate["Signal_Risk_Reward_Plan"],
         "component_score_scale_max": if six_indicator_score_model {
             quant_core::FOUR_INDICATOR_GROUP_SCORE_SCALE_MAX
         } else {

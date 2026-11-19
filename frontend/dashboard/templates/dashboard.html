@@ -130,6 +130,11 @@
                     <button id="refreshSelectedSignal" type="button" disabled aria-label="Refresh the selected signal" class="rounded border border-cyan-800 bg-cyan-950/50 px-2.5 py-1.5 text-[10px] font-bold text-cyan-200 hover:bg-cyan-900 disabled:cursor-not-allowed disabled:opacity-40">Refresh selected</button>
                     <button id="openSelectedSignalMarkov" type="button" data-dashboard-action="openSelectedSignalMarkov" disabled aria-label="Open Markov regime analysis for the selected signal" class="rounded border border-violet-800 bg-violet-950/50 px-2.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-900 disabled:cursor-not-allowed disabled:opacity-40">Regime model</button>
                 </div>
+                <div id="selectedSignalRiskRewardBanner" class="selected-signal-risk-reward-banner" aria-live="polite" hidden>
+                    <span id="selectedSignalRiskRewardLabel">1:4 PLAN · AFTER CONFIGURED FEES</span>
+                    <strong id="selectedSignalRiskReward">Select a signal</strong>
+                    <small id="selectedSignalRiskRewardDetail">A planned bracket is a price scenario; it cannot guarantee a future fill or profit.</small>
+                </div>
                 <div id="selectedSignalSetup" class="selected-signal-setup" aria-live="polite" hidden>
                     <details class="chart-setup-disclosure">
                         <summary>Setup &amp; evidence <span>Score, win rate and price zones</span></summary>

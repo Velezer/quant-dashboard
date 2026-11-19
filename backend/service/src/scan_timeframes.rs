@@ -15,6 +15,7 @@ pub(super) struct TimeframeScanInput<'a> {
     pub(super) exchange_id: &'a str,
     pub(super) product_id: &'a str,
     pub(super) category_id: &'a str,
+    pub(super) quote_currency: &'a str,
     pub(super) symbol: &'a str,
     pub(super) asset: &'a str,
     pub(super) strategy: &'a str,

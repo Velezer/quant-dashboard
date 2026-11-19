@@ -41,6 +41,45 @@ fn policy(horizon: usize, fees_known: bool) -> EvaluationPolicy {
 }
 
 #[test]
+fn live_score_bracket_prices_achieve_at_least_minimum_net_four_to_one_after_fees() {
+    let bars = wave_bars(20);
+    let signal_index = bars.len() - 1;
+    for long in [true, false] {
+        let bracket = planned_live_entry_risk_reward_bracket(
+            &bars,
+            signal_index,
+            100.0,
+            long,
+            0.15,
+            0.25,
+        )
+        .expect("the configured 1 ATR stop should produce a fee-aware target");
+        let entry = bracket["entry_price"].as_f64().unwrap();
+        let stop = bracket["stop_price"].as_f64().unwrap();
+        let target = bracket["target_price"].as_f64().unwrap();
+        assert!(if long { stop < entry && target > entry } else { stop > entry && target < entry });
+
+        let (entry_fee, exit_fee) = if long { (0.15, 0.25) } else { (0.25, 0.15) };
+        let net_return = |exit: f64| {
+            let gross = if long {
+                (exit - entry) / entry * 100.0
+            } else {
+                (entry - exit) / entry * 100.0
+            };
+            crate::venue_rules::net_return_after_transaction_fees(
+                gross,
+                exit / entry,
+                entry_fee,
+                exit_fee,
+            )
+        };
+        let net_r = net_return(target) / -net_return(stop);
+        assert!(net_r + 1e-10 >= ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE);
+        assert_eq!(bracket["fees_applied"], true);
+    }
+}
+
+#[test]
 fn combined_score_starts_at_shared_warmup_and_keeps_unavailable_factor_weight() {
     let bars = wave_bars(stockbit_nwe_4h_minimum_history_bars() + 1);
     assert!(combined_entry_score(

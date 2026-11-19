@@ -51,7 +51,7 @@ pub(super) fn run_rust_scan_inner(
     let registered = {
         let mut statement = app_connection.prepare(
             "SELECT exchange_id, product_id, asset_category_id, storage_symbol, symbol,
-                    underlying_symbol
+                    underlying_symbol, quote_currency
                FROM instruments
               WHERE is_active=1 AND venue_verified=1
                 AND listing_status IN ('venue_active','public_listed_snapshot')
@@ -65,6 +65,7 @@ pub(super) fn run_rust_scan_inner(
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
                 row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
             ))
         })?;
         rows.collect::<Result<Vec<_>, _>>()?
@@ -775,7 +776,7 @@ fn scan_registered_app(
         signal_row_count: 0,
         paused_market_closed_count: 0,
     };
-    for (instrument_exchange, product_id, category_id, sym, asset, underlying) in instruments {
+    for (instrument_exchange, product_id, category_id, sym, asset, underlying, quote_currency) in instruments {
         if instrument_exchange != exchange_id {
             continue;
         }
@@ -946,6 +947,7 @@ fn scan_registered_app(
                 exchange_id: &instrument_exchange,
                 product_id: &product_id,
                 category_id: &category_id,
+                quote_currency: &quote_currency,
                 symbol: &market_symbol,
                 asset: &asset,
                 strategy,

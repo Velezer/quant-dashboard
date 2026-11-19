@@ -69,6 +69,34 @@ function signalNweSetupAreas(candleContext, timeframe, signal) {
     };
 }
 
+export function signalRiskRewardBracket(signal, timeframe) {
+    const plan = signal?.risk_reward_plan || signal?.score_basis?.risk_reward_plan;
+    const normalizedTimeframe = String(timeframe || '').trim().toLowerCase();
+    if (!plan || !['PLANNED', 'REFERENCE_ONLY'].includes(plan.status)
+        || plan.fees_applied !== true
+        || String(plan.timeframe || signal?.timeframe || '').trim().toLowerCase() !== normalizedTimeframe
+        || String(signal?.timeframe || '').trim().toLowerCase() !== normalizedTimeframe) return null;
+    const entry = Number(plan.entry_price);
+    const stop = Number(plan.stop_price);
+    const target = Number(plan.target_price);
+    const rMultiple = Number(plan.planned_after_fee_r_multiple);
+    const minimumRMultiple = Number(plan.minimum_target_after_fee_r_multiple);
+    if (![entry, stop, target, rMultiple].every(Number.isFinite)
+        || !Number.isFinite(minimumRMultiple)
+        || entry <= 0 || stop <= 0 || target <= 0 || minimumRMultiple <= 0
+        || rMultiple < minimumRMultiple) return null;
+    const long = String(plan.direction || signal?.direction || '').toUpperCase() === 'LONG';
+    if (long ? !(stop < entry && target > entry) : !(stop > entry && target < entry)) return null;
+    return {
+        entry,
+        stop,
+        target,
+        rMultiple,
+        direction: long ? 'LONG' : 'SHORT',
+        referenceOnly: plan.status === 'REFERENCE_ONLY' || plan.entry_price_is_reference_only === true,
+    };
+}
+
 function updateSignalSetupAreaReadout(areas) {
     const longArea = document.getElementById('selectedSignalLongArea');
     const shortArea = document.getElementById('selectedSignalShortArea');
@@ -137,6 +165,7 @@ export function installChartRenderer() {
                 const signalCandleContext = getDashboardBinding('getChartCandleContext')?.(signal, setupTimeframe)
                     || (setupTimeframe === activeTimeframe ? chartCandleContext : null);
                 const setupAreas = signalNweSetupAreas(signalCandleContext, setupTimeframe, signal);
+                const riskRewardBracket = signalRiskRewardBracket(signal, activeTimeframe);
                 updateSignalSetupAreaReadout(setupAreas);
                 getDashboardBinding('updateMarkovRegimeStatus')?.(signal);
                 const canvas = document.getElementById('candleCanvas');
@@ -315,6 +344,11 @@ export function installChartRenderer() {
                 if (setupAreas?.long && setupAreas?.short) {
                     minP = Math.min(minP, setupAreas.long.low);
                     maxP = Math.max(maxP, setupAreas.short.high);
+                }
+
+                if (riskRewardBracket) {
+                    minP = Math.min(minP, riskRewardBracket.stop, riskRewardBracket.entry, riskRewardBracket.target);
+                    maxP = Math.max(maxP, riskRewardBracket.stop, riskRewardBracket.entry, riskRewardBracket.target);
                 }
 
                 const pinePlots = chartCandleContext.hasGap
@@ -514,7 +548,7 @@ export function installChartRenderer() {
                 const gridPrices = useLogScale
                     ? Array.from({ length: gridSteps + 1 }, (_, index) => Math.exp(logMinP + (index / gridSteps) * logRange))
                     : QuantChart.priceScale(minP, maxP, gridSteps).ticks;
-                const axisTagPrices = [signal.current_price]
+                const axisTagPrices = [signal.current_price, riskRewardBracket?.stop, riskRewardBracket?.target]
                     .map(Number)
                     .filter(price => Number.isFinite(price) && price > 0 && price >= minP && price <= maxP);
                 for (const p of gridPrices) {
@@ -688,6 +722,28 @@ export function installChartRenderer() {
                 }
 
                 if (signal.current_price) queuePriceAxisTag(signal.current_price, '#f59e0b', '#000000', 'SIGNAL ', 10);
+                if (riskRewardBracket) {
+                    const levels = [
+                        { price: riskRewardBracket.stop, color: '#fb7185', label: 'STOP ' },
+                        { price: riskRewardBracket.target, color: '#34d399', label: `1:${riskRewardBracket.rMultiple.toFixed(2)} ` },
+                    ];
+                    withChartPricePaneClip(ctx, pricePlotBounds, () => {
+                        for (const level of levels) {
+                            const y = getY(level.price);
+                            ctx.strokeStyle = riskRewardBracket.referenceOnly ? `${level.color}99` : level.color;
+                            ctx.lineWidth = 1.1;
+                            ctx.setLineDash([5, 4]);
+                            ctx.beginPath();
+                            ctx.moveTo(padding.left, y);
+                            ctx.lineTo(width - padding.right, y);
+                            ctx.stroke();
+                        }
+                        ctx.setLineDash([]);
+                    });
+                    for (const level of levels) {
+                        queuePriceAxisTag(level.price, level.color, '#08110f', level.label, 8);
+                    }
+                }
 
                 // Candlestick Bodies & Wicks (TradingView Pine Green #089981 & Coral Red #f23645)
                 candles.forEach((c, i) => {

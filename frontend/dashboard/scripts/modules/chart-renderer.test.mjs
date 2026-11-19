@@ -1,6 +1,50 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { visibleOverlayPriceRange, withChartPricePaneClip } from './chart-renderer.js';
+import { signalRiskRewardBracket, visibleOverlayPriceRange, withChartPricePaneClip } from './chart-renderer.js';
+
+test('chart accepts fee-aware 1:4 bracket levels only on the signal timeframe', () => {
+    const signal = {
+        timeframe: '4h',
+        direction: 'LONG',
+        risk_reward_plan: {
+            status: 'PLANNED',
+            timeframe: '4h',
+            fees_applied: true,
+            direction: 'LONG',
+            entry_price: 100,
+            stop_price: 98,
+            target_price: 108.1,
+            minimum_target_after_fee_r_multiple: 4,
+            planned_after_fee_r_multiple: 4,
+        },
+    };
+
+    assert.deepEqual(signalRiskRewardBracket(signal, '4h'), {
+        entry: 100,
+        stop: 98,
+        target: 108.1,
+        rMultiple: 4,
+        direction: 'LONG',
+        referenceOnly: false,
+    });
+    assert.equal(signalRiskRewardBracket(signal, '1h'), null);
+    assert.equal(signalRiskRewardBracket({ ...signal, risk_reward_plan: { ...signal.risk_reward_plan, fees_applied: false } }, '4h'), null);
+});
+
+test('chart accepts short reference brackets and rejects inverted levels', () => {
+    const signal = {
+        timeframe: '4h', direction: 'SHORT',
+        risk_reward_plan: {
+            status: 'REFERENCE_ONLY', timeframe: '4h', fees_applied: true,
+            direction: 'SHORT', entry_price: 100, stop_price: 102, target_price: 91.8,
+            minimum_target_after_fee_r_multiple: 4,
+            planned_after_fee_r_multiple: 4, entry_price_is_reference_only: true,
+        },
+    };
+    assert.equal(signalRiskRewardBracket(signal, '4h')?.referenceOnly, true);
+    assert.equal(signalRiskRewardBracket({ ...signal, risk_reward_plan: { ...signal.risk_reward_plan, target_price: 101 } }, '4h'), null);
+    assert.equal(signalRiskRewardBracket({ ...signal, risk_reward_plan: { ...signal.risk_reward_plan, planned_after_fee_r_multiple: 3.99 } }, '4h'), null);
+});
 
 test('overlay autoscale ignores off-screen Pine values', () => {
     const range = visibleOverlayPriceRange([
