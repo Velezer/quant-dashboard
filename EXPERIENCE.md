@@ -375,6 +375,12 @@ lesson only when it will improve future tasks.
   pass/fail gate unless the user supplies a payoff target. Version rule changes
   and mark older gross-target reports for rerun without invalidating unrelated
   score-weight evidence.
+- When a user sets a minimum planned R multiple, enforce it inside the shared
+  trade evaluator before opening any simulated position, in addition to
+  constraining the candidate grid. Test a below-minimum rule opens zero trades
+  and an at-minimum rule remains eligible. Return the minimum in the live plan
+  so chart and screener rendering use the same threshold; unknown fees or stale
+  prices must never be presented as an executable after-fee setup.
 - Do not treat a Yahoo `range` preset as the full history horizon. IDX daily
   candles can be paged backward to `meta.firstTradeDate`; Yahoo rejects 15m
   requests older than 60 days and 60m requests older than 730 days. Keep those

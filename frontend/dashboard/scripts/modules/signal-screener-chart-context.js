@@ -199,6 +199,10 @@ export function createSignalScreenerChartContext({
         const directionBadge = document.getElementById('chart-style-badge');
         const evidenceBadge = document.getElementById('chart-evidence-badge');
         const scoreSummary = document.getElementById('chart-score-summary');
+        const riskRewardBanner = document.getElementById('selectedSignalRiskRewardBanner');
+        const riskRewardLabel = document.getElementById('selectedSignalRiskRewardLabel');
+        const riskRewardText = document.getElementById('selectedSignalRiskReward');
+        const riskRewardDetail = document.getElementById('selectedSignalRiskRewardDetail');
         const selectedSetupPanel = document.getElementById('selectedSignalSetup');
         const selectedSetupName = document.getElementById('selectedSignalSetupName');
         const selectedSetupDetail = document.getElementById('selectedSignalSetupDetail');
@@ -225,6 +229,10 @@ export function createSignalScreenerChartContext({
                 scoreSummary.textContent = '';
                 scoreSummary.classList.remove('signal-chart-low-total');
             }
+            if (riskRewardBanner) riskRewardBanner.hidden = true;
+            if (riskRewardLabel) riskRewardLabel.textContent = '1:4 PLAN · AFTER CONFIGURED FEES';
+            if (riskRewardText) riskRewardText.textContent = 'Select a signal';
+            if (riskRewardDetail) riskRewardDetail.textContent = 'A planned bracket is a price scenario; it cannot guarantee a future fill or profit.';
             if (selectedSetupPanel) selectedSetupPanel.hidden = true;
             if (selectedSetupName) selectedSetupName.textContent = '—';
             if (selectedSetupDetail) selectedSetupDetail.textContent = 'Select a signal to inspect its rules.';
@@ -270,6 +278,41 @@ export function createSignalScreenerChartContext({
             const model = scoreModelFor(signal);
             scoreSummary.textContent = signalScoreSummary(signal, model, scoreState);
             scoreSummary.classList.toggle('signal-chart-low-total', signalTotalStrength(signal, model)?.tone === 'low');
+        }
+        if (riskRewardBanner) riskRewardBanner.hidden = false;
+        const bracket = signal.risk_reward_plan || signal.score_basis?.risk_reward_plan || {};
+        const bracketStatus = String(bracket.status || 'UNAVAILABLE');
+        const minimumRMultiple = Number(bracket.minimum_target_after_fee_r_multiple);
+        const plannedRMultiple = Number(bracket.planned_after_fee_r_multiple);
+        const minimumRLabel = Number.isFinite(minimumRMultiple) && minimumRMultiple > 0
+            ? minimumRMultiple.toFixed(2).replace(/\.?0+$/, '')
+            : null;
+        const plannedBracketReady = ['PLANNED', 'REFERENCE_ONLY'].includes(bracketStatus)
+            && bracket.fees_applied === true
+            && minimumRLabel !== null
+            && Number.isFinite(plannedRMultiple)
+            && plannedRMultiple >= minimumRMultiple
+            && ['entry_price', 'stop_price', 'target_price'].every(key => Number.isFinite(Number(bracket[key])) && Number(bracket[key]) > 0);
+        if (riskRewardBanner) riskRewardBanner.dataset.status = plannedBracketReady
+            ? bracketStatus === 'REFERENCE_ONLY' ? 'reference' : 'planned'
+            : 'unavailable';
+        if (riskRewardLabel) {
+            riskRewardLabel.textContent = plannedBracketReady
+                ? bracketStatus === 'REFERENCE_ONLY' ? `REFERENCE ONLY · PLANNED 1:${minimumRLabel} AFTER FEES` : `PLANNED 1:${minimumRLabel} AFTER FEES`
+                : '1:4 PLAN UNAVAILABLE';
+        }
+        if (riskRewardText) {
+            riskRewardText.textContent = plannedBracketReady
+                ? `Entry ${formatPrice(Number(bracket.entry_price))} · Stop ${formatPrice(Number(bracket.stop_price))} · Target ${formatPrice(Number(bracket.target_price))}`
+                : bracketStatus.replaceAll('_', ' ');
+        }
+        if (riskRewardDetail) {
+            const plannedR = Number(bracket.planned_after_fee_r_multiple);
+            const stopMultiple = Number(bracket.stop_atr_multiple);
+            const feeModel = String(bracket.fee_model || 'configured venue fees');
+            riskRewardDetail.textContent = plannedBracketReady
+                ? `1:${Number.isFinite(plannedR) ? plannedR.toFixed(2) : minimumRLabel} planned net reward/risk · minimum 1:${minimumRLabel} · ${Number.isFinite(stopMultiple) ? stopMultiple.toFixed(2) : '1.00'}× ${String(bracket.timeframe || signal.timeframe || '').toUpperCase()} ATR stop · ${feeModel}${bracketStatus === 'REFERENCE_ONLY' ? ' · stale/reference close, not an executable entry' : ''}. Gaps, slippage, spread and other omitted costs can reduce realized R.`
+                : String(bracket.reason || 'Fee policy or 14-bar ATR input is unavailable. The signal score remains visible.');
         }
         if (selectedSetupPanel) selectedSetupPanel.hidden = false;
         if (selectedSetupName) {

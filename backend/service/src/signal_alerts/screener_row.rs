@@ -416,6 +416,14 @@ pub(crate) fn signal_screener_row(candidate: &Value) -> Option<Value> {
                 "status": "UNAVAILABLE",
                 "reason": "No matching historical score calibration is attached to this signal.",
             })),
+        "risk_reward_plan": candidate
+            .get("Signal_Risk_Reward_Plan")
+            .cloned()
+            .unwrap_or_else(|| json!({
+                "status": "UNAVAILABLE",
+                "reason": "This saved signal predates fee-aware 1:4 plan calculation; refresh signals to recalculate it.",
+                "minimum_target_after_fee_r_multiple": quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
+            })),
         "score_scale_max": score_scale_max,
         "minimum_score": minimum_score,
         "minimum_score_out_of_10": if score_scale_max == quant_core::SIGNAL_STRENGTH_SCORE_SCALE_MAX {

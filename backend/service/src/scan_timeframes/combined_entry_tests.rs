@@ -50,6 +50,7 @@ fn scan_input<'a>(
         exchange_id: exchange,
         product_id: product,
         category_id: category,
+        quote_currency: if is_stockbit { "IDR" } else { "USD" },
         symbol,
         asset,
         strategy: "",
@@ -103,6 +104,13 @@ fn combined_score_publishes_one_signal_and_uses_signed_total_without_warmed_nwe(
         row["Signal_Strength"].as_f64().unwrap(),
         score.total_score.abs()
     );
+    let bracket = &row["Signal_Risk_Reward_Plan"];
+    assert_eq!(bracket["status"], "REFERENCE_ONLY");
+    assert_eq!(bracket["fees_applied"], true);
+    assert_eq!(bracket["direction"], "SHORT");
+    assert!(bracket["stop_price"].as_f64().unwrap() > bracket["entry_price"].as_f64().unwrap());
+    assert!(bracket["target_price"].as_f64().unwrap() < bracket["entry_price"].as_f64().unwrap());
+    assert!(bracket["planned_after_fee_r_multiple"].as_f64().unwrap() >= 4.0);
     let components = row["Signal_Score_Components"].as_array().unwrap();
     assert_eq!(components.len(), 6);
     assert_eq!(components[0]["state"], "UNAVAILABLE");

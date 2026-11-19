@@ -26,6 +26,7 @@ const MIN_WEIGHT_FIT_TRADES: usize = 30;
 pub const ENTRY_SCORE_MIN_HISTORY_DAYS: i64 = 1_000;
 pub const ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT: f64 = 0.0;
 pub const ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR: f64 = 1.0;
+pub const ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE: f64 = 4.0;
 const MIN_HOUR_SELECTION_TRADES: usize = crate::MIN_EVIDENCE_SAMPLE_TRADES;
 const WEIGHT_FIT_EXIT_BARS: usize = 8;
 const BASELINE_WEIGHTS: [u8; 4] = FOUR_INDICATOR_EQUAL_WEIGHTS;
@@ -42,6 +43,24 @@ const FACTOR_NAMES: [&str; 4] = [
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
     "entry_signed_six_indicator_combined_evidence_v16";
 pub const ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID: &str = risk_reward::PROTOCOL_ID;
+
+pub fn planned_live_entry_risk_reward_bracket(
+    bars: &[StrategyBar],
+    signal_index: usize,
+    entry_price: f64,
+    long: bool,
+    buy_fee_pct: f64,
+    sell_fee_pct: f64,
+) -> Option<Value> {
+    risk_reward::planned_live_bracket(
+        bars,
+        signal_index,
+        entry_price,
+        long,
+        buy_fee_pct,
+        sell_fee_pct,
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Observation {

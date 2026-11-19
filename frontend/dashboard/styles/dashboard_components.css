@@ -809,6 +809,9 @@
 .signal-after-fee-metric { display:grid; gap:.2rem; border:1px solid #065f46; border-radius:.4rem; padding:.35rem .45rem; background:#052e2b; color:#a7f3d0; font-size:10px; font-weight:700; }
 .signal-after-fee-metric small { color:#99f6e4; font-size:9px; font-weight:400; line-height:1.4; }
 .signal-win-probability { display:grid; gap:.2rem; border:1px solid #155e75; border-radius:.4rem; padding:.4rem .5rem; background:#08232c; color:#a5f3fc; font-size:10px; font-weight:700; }.signal-win-probability small { color:#a5cbd1; font-size:9px; font-weight:400; line-height:1.45; }.signal-win-probability.is-unavailable { border-color:#475569; background:#111827; color:#cbd5e1; }
+.signal-risk-reward-chip { border:1px solid #854d0e; border-radius:4px; padding:2px 5px; color:#fcd34d; white-space:nowrap; }
+.signal-risk-reward-chip.is-ready { border-color:#166653; color:#6ee7b7; }
+.signal-risk-reward-chip.is-ready.is-reference { border-color:#854d0e; color:#fcd34d; }
 .tv-terminal .tv-watchlist-column #signalsList .signal-row.is-low-total-strength { border-left:3px solid #d97706 !important; }
 
 #chart-score-summary.signal-chart-low-total { color:#fde68a; font-weight:600; }
@@ -821,6 +824,23 @@
 }
 .tv-terminal #signal-banner .selected-signal-setup[hidden] { display:none; }
 .tv-terminal #signal-banner .selected-signal-setup-cell { gap:3px !important; }
+.tv-terminal #signal-banner .selected-signal-risk-reward-banner {
+    display:grid;
+    flex:1 0 100%;
+    gap:3px;
+    border:1px solid #166653;
+    border-radius:6px;
+    background:rgba(4,40,34,.72);
+    padding:7px 9px;
+}
+.tv-terminal #signal-banner .selected-signal-risk-reward-banner[hidden] { display:none !important; }
+.selected-signal-risk-reward-banner > span { color:#5eead4; font:700 9px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.07em; }
+.selected-signal-risk-reward-banner > strong { overflow-wrap:anywhere; color:#e5fff7; font:600 11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.selected-signal-risk-reward-banner > small { color:#a7c8c0; font-size:9px; line-height:1.4; }
+.selected-signal-risk-reward-banner[data-status="unavailable"] { border-color:#92400e; background:rgba(69,26,3,.65); }
+.selected-signal-risk-reward-banner[data-status="unavailable"] > span { color:#fbbf24; }
+.selected-signal-risk-reward-banner[data-status="reference"] { border-color:#92400e; background:rgba(69,26,3,.5); }
+.selected-signal-risk-reward-banner[data-status="reference"] > span { color:#fbbf24; }
 .selected-signal-setup-main { grid-column:span 2; }
 .selected-signal-setup-cell {
     display:flex;

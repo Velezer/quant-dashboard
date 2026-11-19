@@ -76,6 +76,7 @@ fn combined_scores_scan_and_publish_one_row_per_app_product_timeframe() {
             exchange_id: exchange,
             product_id: product,
             category_id: category,
+            quote_currency: "USDT",
             symbol,
             asset,
             strategy: "",

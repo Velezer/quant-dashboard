@@ -511,6 +511,11 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             "strategy_strength": row.get::<_, Option<f64>>(10)?,
             "confluence_score": row.get::<_, Option<f64>>(11)?,
             "win_probability": score_basis["win_probability"].clone(),
+            "risk_reward_plan": score_basis.get("risk_reward_plan").cloned().unwrap_or_else(|| json!({
+                "status": "UNAVAILABLE",
+                "reason": "Refresh signals to calculate a 1:4 plan with the current configured fee schedule.",
+                "minimum_target_after_fee_r_multiple": quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
+            })),
             "score_basis": score_basis,
             "current_price": row.get::<_, f64>(13)?,
             "price_timeframe": price_timeframe,

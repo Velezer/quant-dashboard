@@ -1,7 +1,7 @@
 use super::super::*;
 use super::stockbit_close::StockbitCloseScanCheckpoint;
 
-pub(super) type RegisteredInstrument = (String, String, String, String, String, String);
+pub(super) type RegisteredInstrument = (String, String, String, String, String, String, String);
 
 pub(super) struct ScanCycleOutput {
     pub(super) user_indicator_alerts: Vec<Value>,

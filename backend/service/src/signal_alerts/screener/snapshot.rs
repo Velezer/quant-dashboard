@@ -637,6 +637,7 @@ fn insert_signal_screener_rows<'a>(
             "profile_version": signal["profile_version"],
             "after_fee_gate": after_fee_gate,
             "win_probability": signal["win_probability"],
+            "risk_reward_plan": signal["risk_reward_plan"],
             "component_score_scale_max": signal["component_score_scale_max"],
             "score_model_status": "current",
             "strategy_strength": signal["strategy_strength"],
