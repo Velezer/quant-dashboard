@@ -28,15 +28,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(),RequestContex
             api_error(stream, "405 Method Not Allowed", "Use GET for the Tokocrypto forecast.");
             return Ok(());
         }
-        let _permit = match ENTRY_VALIDATION_WORK.try_lock() {
-            Ok(permit) => permit,
-            Err(TryLockError::Poisoned(error)) => error.into_inner(),
-            Err(TryLockError::WouldBlock) => {
-                api_error(stream, "503 Service Unavailable", "Research is busy. Retry the forecast after the current calculation finishes.");
-                return Ok(());
-            }
-        };
-        match open_db_minimal(db).and_then(|connection| gainer_forecast(&connection, db)) {
+        match open_db_minimal(db).and_then(|connection| gainer_forecast_latest(&connection)) {
             Ok(value) => respond(stream, crate::wire::encode(&value).unwrap_or_default(), "200 OK"),
             Err(error) => api_error(stream, "500 Internal Server Error", error),
         }

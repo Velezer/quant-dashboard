@@ -3,8 +3,21 @@ import { requestJson } from './api.js';
 const FORECAST_URL = '/api/entry-validation/gainer-forecast';
 const MAX_SCORE = 60;
 const SHORTLIST_LIMIT = 5;
-const REQUEST_TIMEOUT_MS = 30_000;
-const FORECAST_STATUSES = new Set(['READY', 'INSUFFICIENT_COVERAGE', 'NO_POSITIVE_CANDIDATES']);
+const REQUEST_TIMEOUT_MS = 15_000;
+const POLL_INTERVAL_MS = 60_000;
+const FORECAST_STATUSES = new Set([
+    'SCHEDULED',
+    'READY',
+    'INSUFFICIENT_COVERAGE',
+    'NO_POSITIVE_CANDIDATES',
+]);
+const SCHEDULE_STATUSES = new Set([
+    'scheduled',
+    'running',
+    'waiting_for_coverage',
+    'complete',
+    'error',
+]);
 const OPTIONAL_COVERAGE_COUNTS = [
     ['missing_or_stale_count', 'Missing or stale'],
     ['invalid_history_count', 'Invalid history'],
@@ -26,6 +39,37 @@ function optionalText(value, field) {
     return value.trim();
 }
 
+function optionalEpoch(value, field) {
+    if (value === undefined || value === null) return null;
+    if (!Number.isSafeInteger(value) || value <= 0) {
+        throw new Error('The forecast response has an invalid ' + field + '.');
+    }
+    return value;
+}
+
+function normalizeSchedule(schedule) {
+    if (!schedule || typeof schedule !== 'object' || Array.isArray(schedule)
+        || !SCHEDULE_STATUSES.has(schedule.status)) {
+        throw new Error('The service returned an invalid forecast schedule.');
+    }
+    const attemptCount = countValue(schedule.attempt_count, 'scheduled scan attempt');
+    const maxAttempts = countValue(schedule.max_attempts_per_window, 'maximum scheduled scan attempt');
+    if (maxAttempts < 1 || attemptCount > maxAttempts) {
+        throw new Error('The forecast response has inconsistent scheduled scan attempts.');
+    }
+    const forecastCutoff = optionalEpoch(schedule.forecast_cutoff, 'scheduled cutoff');
+    if (forecastCutoff === null) throw new Error('The service omitted the scheduled cutoff.');
+    return {
+        status: schedule.status,
+        attempt_count: attemptCount,
+        max_attempts_per_window: maxAttempts,
+        last_attempt_at: optionalEpoch(schedule.last_attempt_at, 'last scan time'),
+        next_scan_at: optionalEpoch(schedule.next_scan_at, 'next scan time'),
+        last_error: optionalText(schedule.last_error, 'scheduled scan error'),
+        forecast_cutoff: forecastCutoff,
+    };
+}
+
 function normalizeCandidate(candidate) {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
         throw new Error('The forecast response contains an invalid candidate.');
@@ -36,7 +80,8 @@ function normalizeCandidate(candidate) {
     if (typeof candidate.source_family !== 'string' || !candidate.source_family.trim()) {
         throw new Error('A forecast candidate is missing its source family.');
     }
-    if (typeof candidate.score !== 'number' || !Number.isFinite(candidate.score) || candidate.score <= 0 || candidate.score > MAX_SCORE) {
+    if (typeof candidate.score !== 'number' || !Number.isFinite(candidate.score)
+        || candidate.score <= 0 || candidate.score > MAX_SCORE) {
         throw new Error('A forecast candidate must have a positive score within the model’s /60 scale.');
     }
     if (candidate.source_family !== 'tokocrypto_native') {
@@ -57,8 +102,17 @@ function normalizeCandidate(candidate) {
 }
 
 export function normalizeGainerForecast(payload) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !FORECAST_STATUSES.has(payload.status)) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+        || !FORECAST_STATUSES.has(payload.status)) {
         throw new Error('The service returned an unknown forecast state.');
+    }
+    const schedule = normalizeSchedule(payload.schedule);
+    if (payload.status === 'SCHEDULED') {
+        return {
+            status: 'SCHEDULED',
+            candidates: [],
+            schedule,
+        };
     }
     if (!Number.isSafeInteger(payload.as_of) || payload.as_of <= 0
         || !Number.isSafeInteger(payload.forecast_until) || payload.forecast_until <= payload.as_of) {
@@ -80,20 +134,17 @@ export function normalizeGainerForecast(payload) {
     if (scoredCount > eligibleCount) {
         throw new Error('The forecast coverage counts are inconsistent.');
     }
-
     const coverageReady = scoredCount >= minimumScoredCount;
     if ((payload.status === 'INSUFFICIENT_COVERAGE') === coverageReady) {
         throw new Error('The forecast state does not match its scored coverage.');
     }
 
-    const candidateCount = payload.candidates.length;
     const candidates = payload.status === 'READY'
         ? payload.candidates.slice(0, SHORTLIST_LIMIT).map(normalizeCandidate)
         : [];
-    if (payload.status === 'READY' && candidateCount === 0) {
+    if (payload.status === 'READY' && candidates.length === 0) {
         throw new Error('The service marked the forecast ready without a top candidate.');
     }
-
     const excludedCounts = {};
     for (const [field] of OPTIONAL_COVERAGE_COUNTS) {
         if (payload[field] !== undefined && payload[field] !== null) {
@@ -109,22 +160,20 @@ export function normalizeGainerForecast(payload) {
         scored_count: scoredCount,
         minimum_scored_count: minimumScoredCount,
         candidates,
-        candidate_count: candidateCount,
+        candidate_count: candidates.length,
         model: payload.model.trim(),
         validation_status: payload.validation_status || null,
         excluded_counts: excludedCounts,
+        schedule,
     };
 }
 
 export function initializeGainerForecast(doc = document) {
     const $ = id => doc.getElementById(id);
     const section = $('gainer-forecast');
-    const runButton = $('gainer-forecast-run');
-    const cancelButton = $('gainer-forecast-cancel');
-    const retryButton = $('gainer-forecast-retry');
     const status = $('gainer-forecast-status');
     const results = $('gainer-forecast-results');
-    if (!section || !runButton || !cancelButton || !retryButton || !status || !results) return;
+    if (!section || !status || !results) return;
 
     const win = doc.defaultView || globalThis;
     const dateFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -134,9 +183,8 @@ export function initializeGainerForecast(doc = document) {
         hourCycle: 'h23',
     });
     let requestController = null;
-    let retryAvailable = false;
-    let abortRequested = false;
     let latestPayload = null;
+    let pollTimer = null;
     let expiryTimer = null;
 
     function element(tagName, className = '', value = '') {
@@ -152,20 +200,14 @@ export function initializeGainerForecast(doc = document) {
         else delete status.dataset.tone;
     }
 
-    function setControls() {
-        const busy = requestController !== null;
-        runButton.disabled = busy;
-        cancelButton.hidden = !busy;
-        cancelButton.disabled = !busy || abortRequested;
-        retryButton.hidden = busy || !retryAvailable;
-        retryButton.disabled = busy;
+    function setBusy(busy) {
         results.setAttribute('aria-busy', String(busy));
         section.setAttribute('aria-busy', String(busy));
     }
 
     function formatDate(epochSeconds) {
-        const date = new Date(epochSeconds * 1000);
-        return Number.isFinite(date.getTime()) ? dateFormatter.format(date) + ' WIB' : 'Unavailable';
+        if (!Number.isSafeInteger(epochSeconds) || epochSeconds <= 0) return 'Unavailable';
+        return dateFormatter.format(new Date(epochSeconds * 1000)) + ' WIB';
     }
 
     function formatAge(epochSeconds) {
@@ -177,49 +219,119 @@ export function initializeGainerForecast(doc = document) {
         return hours + 'h' + (minutes ? ' ' + minutes + 'm' : '') + ' ago';
     }
 
-    function clearExpiryTimer() {
-        if (expiryTimer !== null) win.clearTimeout(expiryTimer);
-        expiryTimer = null;
+    function clearTimer(name) {
+        if (name === 'poll' && pollTimer !== null) win.clearTimeout(pollTimer);
+        if (name === 'expiry' && expiryTimer !== null) win.clearTimeout(expiryTimer);
+        if (name === 'poll') pollTimer = null;
+        else expiryTimer = null;
+    }
+
+    function appendMeta(meta, label, value) {
+        const item = element('div');
+        item.append(element('dt', '', label), element('dd', '', value));
+        meta.append(item);
+    }
+
+    function scheduleLabel(schedule) {
+        return {
+            scheduled: 'Scheduled',
+            running: 'Running',
+            waiting_for_coverage: 'Waiting for more history',
+            complete: 'Complete',
+            error: 'Retry planned',
+        }[schedule.status];
+    }
+
+    function scheduleMessage(schedule) {
+        if (schedule.status === 'running') return 'The scheduled forecast scan is running now.';
+        if (schedule.status === 'waiting_for_coverage') return 'Coverage is short. The service will retry the scheduled scan.';
+        if (schedule.status === 'error') return schedule.last_error
+            ? 'The scheduled scan failed: ' + schedule.last_error
+            : 'The scheduled scan failed and a retry is planned.';
+        if (schedule.status === 'complete') return 'No retry is pending; the next scan follows the next 4h close.';
+        return 'The next scheduled scan is queued.';
+    }
+
+    function nextScanText(schedule) {
+        if (schedule.status === 'running') return 'In progress';
+        return schedule.next_scan_at ? formatDate(schedule.next_scan_at) : 'No retry pending';
+    }
+
+    function nextScanMessage(schedule, label = 'Next scan') {
+        if (schedule.status === 'running') return ' A scheduled scan is in progress.';
+        return ' ' + label + ': ' + nextScanText(schedule) + '.';
     }
 
     function statusFor(payload, expired) {
+        if (payload.status === 'SCHEDULED') {
+            const next = payload.schedule.status === 'running' ? '' : nextScanMessage(payload.schedule);
+            return {
+                label: scheduleLabel(payload.schedule),
+                tone: 'pending',
+                message: scheduleMessage(payload.schedule) + next,
+            };
+        }
         if (expired) {
             return {
                 label: 'Forecast window ended',
                 tone: 'pending',
-                message: 'The completed 4h window ended at ' + formatDate(payload.forecast_until) + '. The candidate is hidden. Run the forecast again to check the latest completed window.',
+                message: 'The forecast window ended at ' + formatDate(payload.forecast_until)
+                    + '. The candidate list is hidden.' + nextScanMessage(payload.schedule, 'Next scheduled scan'),
             };
         }
         if (payload.status === 'READY') {
             return {
                 label: 'Coverage ready',
                 tone: 'valid',
-                message: 'Coverage met the service minimum. The top candidate and shortlist are shown for this completed window.',
+                message: 'The scheduled scan met the coverage minimum.' + nextScanMessage(payload.schedule),
             };
         }
         if (payload.status === 'INSUFFICIENT_COVERAGE') {
+            const more = Math.max(0, payload.minimum_scored_count - payload.scored_count);
+            const need = more ? ' ' + more.toLocaleString('en-US') + ' more pairs must score.' : '';
+            const retry = nextScanMessage(
+                payload.schedule,
+                payload.schedule.status === 'waiting_for_coverage' ? 'Coverage retry' : 'Next scheduled scan',
+            );
             return {
                 label: 'Insufficient coverage',
                 tone: 'pending',
-                message: 'Coverage is below the service minimum, so no candidate ranking is shown. Sync native Tokocrypto history on the screener, then retry.',
+                message: 'Coverage is below the service minimum, so no candidate ranking is shown.' + need + retry,
             };
         }
         return {
             label: 'No positive candidates',
             tone: 'pending',
-            message: 'Coverage completed, but no positive-scoring candidates qualified in this window. Run again after a newer 4h window is available.',
+            message: 'Coverage completed, but no positive-scoring candidates qualified.' + nextScanMessage(payload.schedule),
         };
     }
 
-    function appendMeta(meta, label, value) {
-        const item = element('div');
-        const term = element('dt', '', label);
-        const description = element('dd', '', value);
-        item.append(term, description);
-        meta.append(item);
+    function appendSchedule(payload, host) {
+        const { schedule } = payload;
+        const meta = element('dl', 'gainer-forecast-meta');
+        appendMeta(meta, 'Scheduled scan', scheduleLabel(schedule));
+        appendMeta(meta, 'Scheduled cutoff', formatDate(schedule.forecast_cutoff));
+        if (schedule.attempt_count > 0) {
+            appendMeta(meta, 'Attempts this window', schedule.attempt_count + ' of ' + schedule.max_attempts_per_window);
+        }
+        if (schedule.last_attempt_at) appendMeta(meta, 'Last scan attempt', formatDate(schedule.last_attempt_at));
+        appendMeta(meta, schedule.status === 'running' ? 'Current scan' : 'Next scheduled scan', nextScanText(schedule));
+        host.append(meta);
+        if (payload.status === 'SCHEDULED') {
+            const message = schedule.status === 'error'
+                ? 'No saved forecast is available yet. The background worker will retry this scan.'
+                : schedule.status === 'complete'
+                    ? 'No saved forecast is available yet. The next scan is scheduled after the next completed 4h window.'
+                    : 'No saved forecast is available yet. The background scan will publish its result here.';
+            host.append(element('p', 'gainer-forecast-empty', message));
+        }
+        if (schedule.last_error) {
+            host.append(element('p', 'gainer-forecast-exclusions', 'Latest scan error: ' + schedule.last_error));
+        }
     }
 
     function appendCoverage(payload, host) {
+        if (payload.status === 'SCHEDULED') return;
         const meta = element('dl', 'gainer-forecast-meta');
         appendMeta(meta, 'Completed cutoff', formatDate(payload.as_of) + ' · ' + formatAge(payload.as_of));
         appendMeta(meta, 'Forecast window ends', formatDate(payload.forecast_until));
@@ -231,14 +343,18 @@ export function initializeGainerForecast(doc = document) {
             appendMeta(meta, 'Scored coverage', percentage.toLocaleString('en-US', { maximumFractionDigits: 1 }) + '%');
         }
         host.append(meta);
-
+        if (payload.status === 'INSUFFICIENT_COVERAGE') {
+            const additional = Math.max(0, payload.minimum_scored_count - payload.scored_count);
+            host.append(element(
+                'p',
+                'gainer-forecast-exclusions',
+                additional.toLocaleString('en-US') + ' more instruments must have current native history before the ranking is shown.',
+            ));
+        }
         const exclusions = OPTIONAL_COVERAGE_COUNTS
             .filter(([field]) => Object.hasOwn(payload.excluded_counts, field))
             .map(([field, label]) => label + ' ' + payload.excluded_counts[field].toLocaleString('en-US'));
-        if (exclusions.length) {
-            const line = element('p', 'gainer-forecast-exclusions', 'Excluded from scoring: ' + exclusions.join(' · ') + '.');
-            host.append(line);
-        }
+        if (exclusions.length) host.append(element('p', 'gainer-forecast-exclusions', 'Excluded from scoring: ' + exclusions.join(' · ') + '.'));
     }
 
     function candidateName(candidate) {
@@ -265,14 +381,12 @@ export function initializeGainerForecast(doc = document) {
     }
 
     function appendCandidates(payload, host, expired) {
-        const candidates = payload.candidates;
+        if (payload.status === 'SCHEDULED') return;
         if (expired) {
-            host.append(element('p', 'gainer-forecast-empty', payload.status === 'READY'
-                ? 'This completed 4h forecast window has ended. The candidate list is hidden; run again for the latest completed window.'
-                : 'This completed 4h forecast window has ended. Run again to check the latest completed window.'));
+            host.append(element('p', 'gainer-forecast-empty', 'This completed 4h forecast window has ended. Its candidate list is hidden until a new scheduled result is ready.'));
             return;
         }
-        if (payload.status !== 'READY' || !candidates.length) {
+        if (payload.status !== 'READY' || !payload.candidates.length) {
             const empty = payload.status === 'INSUFFICIENT_COVERAGE'
                 ? 'The minimum coverage was not met. No ranked candidates are displayed.'
                 : 'No positive-scoring candidate qualified for this completed 4h window.';
@@ -281,7 +395,7 @@ export function initializeGainerForecast(doc = document) {
         }
 
         const grid = element('div', 'gainer-forecast-candidate-grid');
-        const top = candidates[0];
+        const top = payload.candidates[0];
         const topCard = element('article', 'gainer-forecast-top');
         topCard.append(element('span', 'gainer-forecast-top-label', 'Top candidate'));
         topCard.append(element('h3', '', candidateName(top)));
@@ -291,7 +405,7 @@ export function initializeGainerForecast(doc = document) {
 
         const shortlist = element('section', 'gainer-forecast-shortlist');
         shortlist.append(element('h4', '', 'Shortlist · next candidates'));
-        const remaining = candidates.slice(1, SHORTLIST_LIMIT);
+        const remaining = payload.candidates.slice(1, SHORTLIST_LIMIT);
         if (!remaining.length) {
             shortlist.append(element('p', 'gainer-forecast-empty', 'No additional positive-scoring candidates qualified in this window.'));
         } else {
@@ -299,8 +413,7 @@ export function initializeGainerForecast(doc = document) {
             for (const candidate of remaining) {
                 const row = element('li');
                 const line = element('div');
-                line.append(element('strong', '', candidateName(candidate)));
-                line.append(element('span', '', formatScore(candidate.score)));
+                line.append(element('strong', '', candidateName(candidate)), element('span', '', formatScore(candidate.score)));
                 row.append(line);
                 const detail = [];
                 if (candidate.quote_currency) detail.push('Quote ' + candidate.quote_currency);
@@ -310,118 +423,83 @@ export function initializeGainerForecast(doc = document) {
                 list.append(row);
             }
             shortlist.append(list);
-            if (payload.candidate_count > SHORTLIST_LIMIT) {
-                shortlist.append(element('p', 'gainer-forecast-exclusions', 'Showing the next ' + remaining.length + ' of ' + (payload.candidate_count - 1).toLocaleString('en-US') + ' candidates.'));
-            }
         }
         grid.append(shortlist);
         host.append(grid);
     }
 
     function render(payload) {
-        const expired = Date.now() >= payload.forecast_until * 1000;
+        const expired = payload.status !== 'SCHEDULED' && Date.now() >= payload.forecast_until * 1000;
         const resultState = statusFor(payload, expired);
         results.replaceChildren();
         const header = element('div', 'gainer-forecast-result-header');
-        header.append(element('h3', '', 'Latest aligned 4h snapshot'));
-        const badge = element('span', 'state-badge ' + resultState.tone, resultState.label);
-        header.append(badge);
+        header.append(element('h3', '', 'Latest scheduled 4h snapshot'));
+        header.append(element('span', 'state-badge ' + resultState.tone, resultState.label));
         results.append(header);
-
         appendCandidates(payload, results, expired);
         appendCoverage(payload, results);
-        setStatus(resultState.message, expired || payload.status !== 'READY' ? 'pending' : 'ready');
-        retryAvailable = payload.status === 'INSUFFICIENT_COVERAGE' && !expired;
-        setControls();
+        appendSchedule(payload, results);
+        setStatus(resultState.message, payload.status === 'READY' && !expired ? 'ready' : 'pending');
+        clearTimer('expiry');
+        if (payload.status !== 'SCHEDULED' && !expired) {
+            const remaining = payload.forecast_until * 1000 - Date.now();
+            expiryTimer = win.setTimeout(() => {
+                expiryTimer = null;
+                if (latestPayload === payload) render(payload);
+            }, Math.max(0, remaining + 25));
+        }
     }
 
-    function scheduleExpiry(payload) {
-        clearExpiryTimer();
-        const remaining = payload.forecast_until * 1000 - Date.now();
-        expiryTimer = win.setTimeout(() => {
-            if (latestPayload !== payload) return;
-            if (Date.now() < payload.forecast_until * 1000) {
-                scheduleExpiry(payload);
-                return;
-            }
-            expiryTimer = null;
-            render(payload);
-        }, Math.max(0, remaining + 20));
+    function schedulePoll() {
+        clearTimer('poll');
+        pollTimer = win.setTimeout(() => {
+            pollTimer = null;
+            if (doc.hidden) schedulePoll();
+            else void refreshForecast({ quiet: true });
+        }, POLL_INTERVAL_MS);
     }
 
-    async function runForecast() {
+    async function refreshForecast({ quiet = false } = {}) {
         if (requestController) return;
-        clearExpiryTimer();
-        latestPayload = null;
-        retryAvailable = false;
-        abortRequested = false;
-        results.replaceChildren();
-        setStatus('Requesting the latest completed, aligned Tokocrypto Spot 4h window…', 'loading');
-
         const controller = new AbortController();
         requestController = controller;
-        setControls();
-        let timedOut = false;
-        const timeout = win.setTimeout(() => {
-            timedOut = true;
-            controller.abort();
-        }, REQUEST_TIMEOUT_MS);
-
+        const timeout = win.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        if (!quiet) {
+            setBusy(true);
+            setStatus('Loading the latest saved scheduled forecast…', 'loading');
+        }
         try {
-            const response = normalizeGainerForecast(await requestJson(FORECAST_URL, {
+            const payload = normalizeGainerForecast(await requestJson(FORECAST_URL, {
                 signal: controller.signal,
                 cache: 'no-store',
             }));
             if (requestController !== controller) return;
-            latestPayload = response;
-            render(response);
-            scheduleExpiry(response);
+            latestPayload = payload;
+            render(payload);
         } catch (error) {
             if (requestController !== controller) return;
-            if (error?.name === 'AbortError') {
-                setStatus(
-                    timedOut
-                        ? 'The forecast request timed out. Check service or market-data recovery, then retry.'
-                        : 'The request was canceled before a result returned. Run the forecast again when ready.',
-                    timedOut ? 'error' : 'pending',
-                );
-                retryAvailable = timedOut;
-            } else {
-                const detail = String(error?.message || error).slice(0, 240);
-                setStatus('Forecast unavailable: ' + detail + ' Retry after the service or history recovers.', 'error');
-                retryAvailable = true;
-            }
+            const detail = error?.name === 'AbortError'
+                ? 'The scheduled result request timed out.'
+                : String(error?.message || error).slice(0, 240);
+            setStatus('Could not load the scheduled forecast: ' + detail + ' It will retry automatically.', 'error');
         } finally {
             win.clearTimeout(timeout);
-            if (requestController === controller) {
-                requestController = null;
-                abortRequested = false;
-                setControls();
-            }
+            if (requestController === controller) requestController = null;
+            setBusy(false);
+            schedulePoll();
         }
     }
 
-    function cancelForecast() {
-        if (!requestController || abortRequested) return;
-        abortRequested = true;
-        setStatus('Canceling the forecast request…', 'loading');
-        setControls();
-        requestController.abort();
-    }
-
-    runButton.addEventListener('click', () => { void runForecast(); });
-    cancelButton.addEventListener('click', cancelForecast);
-    retryButton.addEventListener('click', () => { void runForecast(); });
     doc.addEventListener('visibilitychange', () => {
-        if (!doc.hidden && latestPayload) render(latestPayload);
+        if (!doc.hidden) void refreshForecast({ quiet: true });
     });
     win.addEventListener?.('pagehide', () => {
-        clearExpiryTimer();
+        clearTimer('poll');
+        clearTimer('expiry');
         requestController?.abort();
     });
-    setControls();
-
-    void runForecast();
+    setBusy(false);
+    void refreshForecast();
 }
 
 if (typeof document !== 'undefined') initializeGainerForecast(document);
