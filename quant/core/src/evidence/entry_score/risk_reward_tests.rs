@@ -60,7 +60,7 @@ fn bracket_backtest_does_not_open_a_trade_below_the_minimum_after_fee_r_multiple
         candles.len(),
         [10; 4],
         policy(),
-        rule(ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE - 0.01),
+        rule(MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE - 0.01),
         |_| opened += 1,
     );
     assert_eq!(below_minimum.trades, 0);
@@ -81,7 +81,7 @@ fn bracket_backtest_allows_a_trade_at_the_minimum_after_fee_r_multiple() {
         candles.len(),
         [10; 4],
         policy(),
-        rule(ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE),
+        rule(MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE),
         |_| opened += 1,
     );
     assert_eq!(at_minimum.trades, 1);
