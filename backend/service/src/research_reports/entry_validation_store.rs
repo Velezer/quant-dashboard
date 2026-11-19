@@ -141,6 +141,8 @@ fn report_summary(report: &Value) -> Value {
                     model.get("entry_validation_status").cloned()
                 },
                 "holdout_trades": model.pointer("/backtest/holdout/trades"),
+                "holdout_wins": model.pointer("/backtest/holdout/wins"),
+                "holdout_fees_applied": model.pointer("/backtest/holdout/fees_applied"),
                 "holdout_win_rate_pct": model.pointer("/backtest/holdout/win_rate_after_fees_pct"),
                 "holdout_payoff_ratio": model.pointer("/backtest/holdout/payoff_ratio_after_fees"),
                 "holdout_mean_return_pct": model.pointer("/backtest/holdout/mean_net_return_pct"),
