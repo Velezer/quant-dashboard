@@ -583,6 +583,9 @@ pub(crate) use snapshot::{
 #[path = "screener/timeframe_signals.rs"]
 mod timeframe_signals;
 
+#[path = "screener/ticker_holdout.rs"]
+mod ticker_holdout;
+
 #[path = "screener/listing.rs"]
 mod listing;
 #[cfg(test)]

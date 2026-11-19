@@ -48,7 +48,7 @@ fn report(conn: &Connection, id: &str, timeframe: &str) -> Value {
         "models":[{
             "kind":"combined","label":"Combined score","score_model_id":quant_core::ENTRY_SCORE_MODEL_ID,
             "entry_validation_status":"VALIDATION_PENDING","sizing_eligible":false,
-            "backtest":{"selected_exit_bars":8,"holdout":{"trades":20,"win_rate_pct":75,"win_rate_after_fees_pct":60,"payoff_ratio":1.7,"payoff_ratio_after_fees":1.1,"mean_return_pct":1.5,"mean_net_return_pct":0.75}},
+            "backtest":{"selected_exit_bars":8,"holdout":{"trades":20,"wins":12,"fees_applied":true,"win_rate_pct":75,"win_rate_after_fees_pct":60,"payoff_ratio":1.7,"payoff_ratio_after_fees":1.1,"mean_return_pct":1.5,"mean_net_return_pct":0.75}},
             "blocking_reasons":["Execution costs are incomplete"]
         }],
         "sizing":{"status":"BLOCKED"},"sizing_eligible":true
@@ -128,6 +128,8 @@ fn snapshots_upsert_only_the_exact_instrument_and_timeframe_and_preserve_aggrega
     assert_eq!(summary["models"].as_array().unwrap().len(),1);
     assert_eq!(summary["models"][0]["score_model_id"],quant_core::ENTRY_SCORE_MODEL_ID);
     assert_eq!(summary["models"][0]["holdout_trades"],20);
+    assert_eq!(summary["models"][0]["holdout_wins"],12);
+    assert_eq!(summary["models"][0]["holdout_fees_applied"],true);
     assert_eq!(summary["models"][0]["holdout_win_rate_pct"].as_f64(),Some(60.0));
     assert_eq!(summary["models"][0]["holdout_payoff_ratio"],1.1);
     assert_eq!(summary["models"][0]["holdout_mean_return_pct"],0.75);
