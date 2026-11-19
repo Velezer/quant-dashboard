@@ -156,7 +156,12 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
     let now = now_secs().min(i64::MAX as u64) as i64;
     let persisted = store::daily_refresh_state(&connection).map_err(|error| error.to_string())?;
     let control = store::daily_refresh_control(&connection).map_err(|error| error.to_string())?;
-    let protocol_changed = persisted.protocol_id != PROTOCOL_ID;
+    let refresh_protocol_id = format!(
+        "{}::{}",
+        PROTOCOL_ID,
+        quant_core::ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID
+    );
+    let protocol_changed = persisted.protocol_id != refresh_protocol_id;
     let unfinished = persisted.cycle_started_at > persisted.cycle_completed_at
         && !matches!(persisted.status.as_str(), "idle" | "complete" | "complete_with_errors");
     if control.paused {
@@ -229,11 +234,17 @@ fn run_due_daily_refresh(state: &AppState) -> Result<u64, String> {
             eprintln!(
                 "[EntryValidation] Backtest protocol changed from {} to {}; restarting the daily refresh from the first eligible pair.",
                 persisted.protocol_id,
-                PROTOCOL_ID
+                refresh_protocol_id
             );
         }
-        store::start_daily_refresh(&connection, now, targets.len(), next_due_at, PROTOCOL_ID)
-            .map_err(|error| error.to_string())?;
+        store::start_daily_refresh(
+            &connection,
+            now,
+            targets.len(),
+            next_due_at,
+            &refresh_protocol_id,
+        )
+        .map_err(|error| error.to_string())?;
         store::consume_daily_refresh_request(&connection, now)
             .map_err(|error| error.to_string())?;
         (now, 0)

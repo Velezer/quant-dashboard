@@ -8,7 +8,9 @@ use serde_json::{json, Value};
 
 const ATR_LOOKBACK_BARS: usize = 14;
 const STOP_ATR_MULTIPLIERS: [f64; 3] = [0.75, 1.0, 1.5];
-const TARGET_AFTER_FEE_R_MULTIPLES: [f64; 5] = [1.1, 1.25, 1.5, 2.0, 2.5];
+const MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE: f64 = 4.0;
+const TARGET_AFTER_FEE_R_MULTIPLES: [f64; 5] =
+    [MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE, 4.25, 4.5, 5.0, 6.0];
 const MAXIMUM_HOLD_BARS: [usize; 3] = [4, 8, 12];
 const SCORE_FLOORS_OUT_OF_60: [f64; 3] = [
     crate::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60,
@@ -20,7 +22,7 @@ const MAX_AUTOCORRELATION_RETURN_BARS: usize = 128;
 const MIN_AUTOCORRELATION_RETURN_SAMPLES: usize = 30;
 const HYPOTHETICAL_BASE_RISK_PCT: f64 = 1.0;
 const MINIMUM_RISK_MODEL_TRADES: usize = 30;
-pub(super) const PROTOCOL_ID: &str = "entry_score_signed_risk_reward_after_fee_v5";
+pub(super) const PROTOCOL_ID: &str = "entry_score_signed_risk_reward_after_fee_v6";
 pub(super) const RISK_SIZING_PROTOCOL_ID: &str = "causal_return_autocorrelation_horizon_variance_v1";
 
 #[derive(Clone, Copy)]
@@ -569,6 +571,9 @@ fn candidate_json(
 ) -> Value {
     let validation_passed = validation_passes(validation, fees_known);
     let holdout_passed = validation_passes(holdout, fees_known);
+    let minimum_target_passed = target_meets_minimum_after_fee_r_multiple(
+        candidate.rule.target_after_fee_r_multiple,
+    );
     json!({
         "entry_rule": "Use the signed six-factor total and the selected /60 score floor on a completed bar. Enter at the next 4h bar open.",
         "weights": weights,
@@ -577,14 +582,25 @@ fn candidate_json(
         "stop_distance": format!("{} × 4h ATR", candidate.rule.stop_atr_multiple),
         "stop_atr_multiple": candidate.rule.stop_atr_multiple,
         "target_after_fee_r_multiple": candidate.rule.target_after_fee_r_multiple,
+        "target_r_basis": "after configured entry and exit fees",
+        "minimum_target_after_fee_r_multiple": MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
+        "minimum_target_after_fee_r_passed": minimum_target_passed,
         "maximum_hold_bars": candidate.rule.maximum_hold_bars,
         "validation": summary_json(validation, fees_known),
         "holdout": summary_json(holdout, fees_known),
         "validation_passed": validation_passed,
         "holdout_passed": holdout_passed,
         "history_span_passed": history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS,
-        "qualified": validation_passed && holdout_passed && history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS,
+        "qualified": minimum_target_passed
+            && validation_passed
+            && holdout_passed
+            && history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS,
     })
+}
+
+fn target_meets_minimum_after_fee_r_multiple(target_after_fee_r_multiple: f64) -> bool {
+    target_after_fee_r_multiple.is_finite()
+        && target_after_fee_r_multiple >= MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
 }
 pub(super) fn report(
     bars: &[StrategyBar],
@@ -609,6 +625,7 @@ pub(super) fn report(
             "preferred_timeframe": "4h",
             "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
             "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
+            "minimum_target_after_fee_r_multiple": MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
             "candidate_count": candidate_count,
             "minimum_validation_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
             "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
@@ -768,7 +785,11 @@ pub(super) fn report(
     let validation_passed = selected.passes_win_rate_target;
     let holdout_passed = validation_passes(holdout, template.fees_known);
     let history_span_passed = history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS;
-    let entry_rule_qualified = validation_passed && holdout_passed && history_span_passed;
+    let minimum_target_passed = target_meets_minimum_after_fee_r_multiple(
+        selected.rule.target_after_fee_r_multiple,
+    );
+    let entry_rule_qualified =
+        minimum_target_passed && validation_passed && holdout_passed && history_span_passed;
     let risk_sizing_status = if !risk_sizing_ready {
         "INSUFFICIENT_EVIDENCE"
     } else if !entry_rule_qualified {
@@ -778,10 +799,15 @@ pub(super) fn report(
     };
     let risk_sizing_reason = if !risk_sizing_ready {
         "The validation or untouched holdout sample lacks 30 trades with complete causal autocorrelation estimates."
+            .to_string()
     } else if !entry_rule_qualified {
-        "The selected entry rule did not pass its 50% after-fee win-rate, confidence, and history gates; sizing scenarios remain exploratory."
+        format!(
+            "The selected entry rule did not pass its minimum 1:{:.0} after-fee risk:reward, 50% after-fee win-rate, confidence, and history gates; sizing scenarios remain exploratory.",
+            MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
+        )
     } else {
         "The frozen entry rule passed its existing validation and untouched holdout gates. The size model remains research-only and is not activated for live positions."
+            .to_string()
     };
     let latest_estimate = bars
         .len()
@@ -821,6 +847,8 @@ pub(super) fn report(
     });
     let status = if !history_span_passed {
         "INSUFFICIENT_HISTORY"
+    } else if !minimum_target_passed {
+        "MINIMUM_REWARD_RISK_NOT_MET"
     } else if !validation_passed {
         "NO_VALIDATION_RULE"
     } else if !holdout_passed {
@@ -829,10 +857,26 @@ pub(super) fn report(
         "QUALIFIED"
     };
     let reason = match status {
-        "INSUFFICIENT_HISTORY" => "The selected rule is exploratory; qualification needs at least 1,000 calendar days. This is a minimum, not a maximum lookback.",
-        "NO_VALIDATION_RULE" => "No candidate rule met the 50% after-fee win-rate target and its 95% Wilson lower bound on validation data.",
-        "HOLDOUT_FAILED" => "The validation-selected rule did not meet the 50% after-fee win-rate target and its 95% Wilson lower bound on the untouched holdout.",
-        _ => "The frozen 4h rule met the 50% after-fee win-rate target and its 95% Wilson lower bound on validation and untouched holdout data.",
+        "INSUFFICIENT_HISTORY" => {
+            "The selected rule is exploratory; qualification needs at least 1,000 calendar days. This is a minimum, not a maximum lookback."
+                .to_string()
+        }
+        "MINIMUM_REWARD_RISK_NOT_MET" => format!(
+            "The selected rule's planned target is below the required 1:{:.0} risk:reward after configured fees.",
+            MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
+        ),
+        "NO_VALIDATION_RULE" => format!(
+            "No candidate with at least 1:{:.0} planned risk:reward after configured fees met the 50% after-fee win-rate target and its 95% Wilson lower bound on validation data.",
+            MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
+        ),
+        "HOLDOUT_FAILED" => format!(
+            "The validation-selected rule with at least 1:{:.0} planned risk:reward after configured fees did not meet the 50% after-fee win-rate target and its 95% Wilson lower bound on the untouched holdout.",
+            MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
+        ),
+        _ => format!(
+            "The frozen 4h rule with at least 1:{:.0} planned risk:reward after configured fees met the 50% after-fee win-rate target and its 95% Wilson lower bound on validation and untouched holdout data.",
+            MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
+        ),
     };
     json!({
         "protocol_id": PROTOCOL_ID,
@@ -841,6 +885,7 @@ pub(super) fn report(
         "preferred_timeframe": "4h",
         "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
         "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
+        "minimum_target_after_fee_r_multiple": MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
         "search_space": {
             "atr14_stop_multiples": STOP_ATR_MULTIPLIERS,
             "target_after_fee_r_multiples": TARGET_AFTER_FEE_R_MULTIPLES,
@@ -851,8 +896,14 @@ pub(super) fn report(
         "eligible_validation_candidate_count": eligible_candidates,
         "minimum_validation_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
         "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
-        "selection_method": "Predeclared ATR stop, target-to-stop net R after configured entry and exit fees, max-hold, and score-floor grid; among candidates meeting the 50% after-fee win-rate target and its 95% Wilson lower bound on validation, select the highest validation win rate, then the stronger lower bound and larger sample. Payoff and net return are reported as diagnostics, not qualification targets. The selected rule is evaluated once on untouched holdout data.",
-        "fill_assumptions": "Enter at the next 4h open. The target price is solved so planned target reward divided by planned stop loss is the selected R multiple after configured entry and exit fees. Stops fill at the stop or worse after a gap, so gaps can reduce realized payoff. Targets fill at the target. If both stop and target are inside one bar, assume the stop fills first. Untriggered rules exit at the max-hold bar close. Observed validation and holdout payoff uses realized net trade returns after fees.",
+        "selection_method": format!(
+            "Predeclared ATR stop, target-to-stop net R after configured entry and exit fees with a minimum planned 1:{:.0} risk:reward, max-hold, and score-floor grid; among candidates meeting the minimum and the 50% after-fee win-rate target with its 95% Wilson lower bound on validation, select the highest validation win rate, then the stronger lower bound and larger sample. Observed realized payoff and net return are diagnostics, not qualification targets. The selected rule is evaluated once on untouched holdout data.",
+            MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
+        ),
+        "fill_assumptions": format!(
+            "Enter at the next 4h open. The target price is solved so planned target reward divided by planned stop loss is at least {:.0}:1 after configured entry and exit fees. Stops fill at the stop or worse after a gap, so gaps can reduce realized payoff. Targets fill at the target. If both stop and target are inside one bar, assume the stop fills first. Untriggered rules exit at the max-hold bar close. Observed validation and holdout payoff uses realized net trade returns after fees.",
+            MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
+        ),
         "target_r_basis": "after configured entry and exit fees",
         "fees_applied": true,
         "excluded_costs": ["Spread", "Slippage", "Market impact", "Funding or borrow costs"],

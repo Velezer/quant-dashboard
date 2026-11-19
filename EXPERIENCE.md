@@ -229,6 +229,9 @@ lesson only when it will improve future tasks.
   category; let the single backtest worker drain it between scan pairs and
   expose the pending count. Any successful manual or scheduled rerun clears its
   queue row.
+- When a 4h bracket rule changes, version its nested risk/reward protocol and
+  daily refresh identity independently of the signed scoring-evidence protocol.
+  This refreshes saved exit research without invalidating active entry weights.
 - Progressive ingestion must also recheck saved `BACKTEST_COMPLETE` or
   `VALIDATION_PENDING` reports when the indexed source span reaches the full
   history minimum. Do not use chart metadata for this threshold: its 1,000-bar
