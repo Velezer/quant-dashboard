@@ -1,8 +1,8 @@
 use super::*;
 use crate::tokocrypto_storage::SOURCE;
 
-const FORECAST_TIMEFRAME: &str = "4h";
-const FORECAST_PROTOCOL: &str = "tokocrypto_native_combined_score_next_4h_forecast_v2";
+pub(super) const FORECAST_TIMEFRAME: &str = "4h";
+pub(super) const FORECAST_PROTOCOL: &str = "tokocrypto_native_combined_score_next_4h_forecast_v2";
 const NATIVE_TIMEFRAME: &str = "1h";
 const HISTORY_LIMIT: i64 = 1_000;
 const UNIVERSE_LIMIT: usize = 1_000;
@@ -38,14 +38,13 @@ fn minimum_scored_count(eligible: usize) -> usize {
     MIN_COVERAGE_PAIRS.max((eligible * MIN_COVERAGE_PCT).div_ceil(100))
 }
 
-pub(crate) fn gainer_forecast(
+pub(crate) fn gainer_forecast_at(
     connection: &Connection,
     directory: &str,
+    cutoff: i64,
 ) -> Result<Value, rusqlite::Error> {
     let duration_ns =
         timeframe_duration_ns(FORECAST_TIMEFRAME).expect("supported forecast timeframe");
-    let now_ns = (now_secs() as i64).saturating_mul(NANOS_PER_SECOND);
-    let cutoff = now_ns - now_ns.rem_euclid(duration_ns);
     let instruments = store::verified_gainer_universe(connection, UNIVERSE_LIMIT)?;
     let mut coverage = Coverage::default();
     let mut candidates = Vec::new();

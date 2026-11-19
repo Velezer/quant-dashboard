@@ -433,6 +433,15 @@ fn main() {
                 .expect("spawn daily entry-validation daemon");
         }
 
+        // Calculate the Tokocrypto gainer forecast on the completed 4h schedule.
+        {
+            let state_clone = Arc::clone(&state);
+            thread::Builder::new()
+                .name("gainer-forecast-daemon".to_string())
+                .spawn(move || background_gainer_forecast_loop(state_clone))
+                .expect("spawn scheduled Tokocrypto forecast daemon");
+        }
+
         // Keep local hourly history current for the 4H chart even when the
         // dashboard is closed or idle. This worker has its own bounded sync batch
         // and does not generate signal results.

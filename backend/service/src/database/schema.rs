@@ -3,6 +3,19 @@ CREATE TABLE IF NOT EXISTS app.gainer_research_reports (
     id INTEGER PRIMARY KEY CHECK(id=1), protocol_id TEXT NOT NULL,
     computed_at INTEGER NOT NULL, report_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS app.tokocrypto_gainer_forecast_schedule (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    protocol_id TEXT NOT NULL,
+    forecast_cutoff INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK(status IN ('scheduled','running','waiting_for_coverage','complete','error')),
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    result_json TEXT NOT NULL DEFAULT '{}',
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS app.storage_layout_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS app.storage_split_migrations (
     migration_id TEXT PRIMARY KEY, source_path TEXT NOT NULL, source_hash TEXT NOT NULL,
