@@ -1,7 +1,8 @@
-use super::super::nwe_dss::{wilson_interval, TradeSummary};
+use super::super::nwe_dss::TradeSummary;
 use super::{
     qualifies, summary_json, EvaluationPolicy, Observation, ENTRY_SCORE_MIN_HISTORY_DAYS,
-    ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
+    ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+    ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
 };
 use crate::strategies::StrategyBar;
 use serde_json::{json, Value};
@@ -22,7 +23,7 @@ const MAX_AUTOCORRELATION_RETURN_BARS: usize = 128;
 const MIN_AUTOCORRELATION_RETURN_SAMPLES: usize = 30;
 const HYPOTHETICAL_BASE_RISK_PCT: f64 = 1.0;
 const MINIMUM_RISK_MODEL_TRADES: usize = 30;
-pub(super) const PROTOCOL_ID: &str = "entry_score_signed_risk_reward_after_fee_v6";
+pub(super) const PROTOCOL_ID: &str = "entry_score_signed_risk_reward_after_fee_v7";
 pub(super) const RISK_SIZING_PROTOCOL_ID: &str = "causal_return_autocorrelation_horizon_variance_v1";
 
 #[derive(Clone, Copy)]
@@ -37,7 +38,7 @@ struct BracketRule {
 struct ValidationCandidate {
     rule: BracketRule,
     summary: TradeSummary,
-    passes_win_rate_target: bool,
+    passes_profitability_gate: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -527,36 +528,26 @@ fn evaluate_rule(
 }
 
 fn validation_passes(summary: TradeSummary, fees_known: bool) -> bool {
-    summary.trades >= crate::MIN_EVIDENCE_SAMPLE_TRADES
-        && fees_known
-        && summary.win_rate().is_some_and(|rate| {
-            rate >= ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT
-        })
-        && wilson_interval(summary.wins, summary.trades)
-            .is_some_and(|interval| interval[0] >= ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT)
+    summary.profitable_after_fees(crate::MIN_EVIDENCE_SAMPLE_TRADES, fees_known)
 }
 
 fn candidate_is_better(candidate: ValidationCandidate, current: ValidationCandidate) -> bool {
     candidate
-        .passes_win_rate_target
-        .cmp(&current.passes_win_rate_target)
+        .passes_profitability_gate
+        .cmp(&current.passes_profitability_gate)
         .then_with(|| {
             candidate
                 .summary
-                .win_rate()
-                .unwrap_or_default()
-                .total_cmp(&current.summary.win_rate().unwrap_or_default())
+                .mean_net()
+                .unwrap_or(f64::NEG_INFINITY)
+                .total_cmp(&current.summary.mean_net().unwrap_or(f64::NEG_INFINITY))
         })
         .then_with(|| {
-            let candidate_lower =
-                wilson_interval(candidate.summary.wins, candidate.summary.trades)
-                    .map(|interval| interval[0])
-                    .unwrap_or_default();
-            let current_lower = wilson_interval(current.summary.wins, current.summary.trades)
-                .map(|interval| interval[0])
-                .unwrap_or_default();
-            candidate_lower.total_cmp(&current_lower)
+            candidate.summary.profit_factor().unwrap_or_default()
+                .total_cmp(&current.summary.profit_factor().unwrap_or_default())
         })
+        .then_with(|| candidate.summary.aggregate_net_return_pct().unwrap_or(f64::NEG_INFINITY)
+            .total_cmp(&current.summary.aggregate_net_return_pct().unwrap_or(f64::NEG_INFINITY)))
         .then_with(|| candidate.summary.trades.cmp(&current.summary.trades))
         .is_gt()
 }
@@ -588,8 +579,8 @@ fn candidate_json(
         "maximum_hold_bars": candidate.rule.maximum_hold_bars,
         "validation": summary_json(validation, fees_known),
         "holdout": summary_json(holdout, fees_known),
-        "validation_passed": validation_passed,
-        "holdout_passed": holdout_passed,
+        "validation_profitable_after_fees": validation_passed,
+        "holdout_profitable_after_fees": holdout_passed,
         "history_span_passed": history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS,
         "qualified": minimum_target_passed
             && validation_passed
@@ -623,7 +614,8 @@ pub(super) fn report(
             "status": status,
             "reason": reason,
             "preferred_timeframe": "4h",
-            "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
+            "minimum_mean_net_return_after_fees_pct": ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+            "minimum_profit_factor_after_fees": ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
             "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
             "minimum_target_after_fee_r_multiple": MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
             "candidate_count": candidate_count,
@@ -708,7 +700,7 @@ pub(super) fn report(
                     let candidate = ValidationCandidate {
                         rule,
                         summary,
-                        passes_win_rate_target: validation_passes(summary, template.fees_known),
+                        passes_profitability_gate: validation_passes(summary, template.fees_known),
                     };
                     if selected
                         .is_none_or(|current| candidate_is_better(candidate, current))
@@ -782,7 +774,7 @@ pub(super) fn report(
     let holdout_risk_json = holdout_sizing.to_json();
     let risk_sizing_ready = validation_risk_json["status"] == "RESEARCH_ONLY"
         && holdout_risk_json["status"] == "RESEARCH_ONLY";
-    let validation_passed = selected.passes_win_rate_target;
+    let validation_passed = selected.passes_profitability_gate;
     let holdout_passed = validation_passes(holdout, template.fees_known);
     let history_span_passed = history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS;
     let minimum_target_passed = target_meets_minimum_after_fee_r_multiple(
@@ -802,7 +794,7 @@ pub(super) fn report(
             .to_string()
     } else if !entry_rule_qualified {
         format!(
-            "The selected entry rule did not pass its minimum 1:{:.0} after-fee risk:reward, 50% after-fee win-rate, confidence, and history gates; sizing scenarios remain exploratory.",
+            "The selected entry rule did not pass its minimum 1:{:.0} planned after-fee risk:reward, positive validation and holdout expectancy after configured fees, and history gates; sizing scenarios remain exploratory.",
             MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
         )
     } else {
@@ -843,16 +835,16 @@ pub(super) fn report(
         "validation": validation_risk_json,
         "holdout": holdout_risk_json,
         "live_sizing_enabled": false,
-        "qualification_target": "Research diagnostics only; this sizing comparison does not alter the after-fee entry win-rate gate or promote a live position-size profile.",
+        "qualification_target": "Research diagnostics only; this sizing comparison does not alter the after-fee profitability gate or promote a live position-size profile.",
     });
     let status = if !history_span_passed {
         "INSUFFICIENT_HISTORY"
     } else if !minimum_target_passed {
         "MINIMUM_REWARD_RISK_NOT_MET"
     } else if !validation_passed {
-        "NO_VALIDATION_RULE"
+        "NO_VALIDATION_PROFITABLE_RULE"
     } else if !holdout_passed {
-        "HOLDOUT_FAILED"
+        "HOLDOUT_NOT_PROFITABLE"
     } else {
         "QUALIFIED"
     };
@@ -865,16 +857,16 @@ pub(super) fn report(
             "The selected rule's planned target is below the required 1:{:.0} risk:reward after configured fees.",
             MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
         ),
-        "NO_VALIDATION_RULE" => format!(
-            "No candidate with at least 1:{:.0} planned risk:reward after configured fees met the 50% after-fee win-rate target and its 95% Wilson lower bound on validation data.",
+        "NO_VALIDATION_PROFITABLE_RULE" => format!(
+            "No candidate with at least 1:{:.0} planned risk:reward after configured fees had positive mean net return and profit factor above 1 on validation data.",
             MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
         ),
-        "HOLDOUT_FAILED" => format!(
-            "The validation-selected rule with at least 1:{:.0} planned risk:reward after configured fees did not meet the 50% after-fee win-rate target and its 95% Wilson lower bound on the untouched holdout.",
+        "HOLDOUT_NOT_PROFITABLE" => format!(
+            "The validation-selected rule with at least 1:{:.0} planned risk:reward after configured fees did not have positive mean net return and profit factor above 1 on the untouched holdout.",
             MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
         ),
         _ => format!(
-            "The frozen 4h rule with at least 1:{:.0} planned risk:reward after configured fees met the 50% after-fee win-rate target and its 95% Wilson lower bound on validation and untouched holdout data.",
+            "The frozen 4h rule with at least 1:{:.0} planned risk:reward after configured fees had positive mean net return and profit factor above 1 on both validation and untouched holdout data.",
             MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
         ),
     };
@@ -883,7 +875,8 @@ pub(super) fn report(
         "status": status,
         "reason": reason,
         "preferred_timeframe": "4h",
-        "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
+        "minimum_mean_net_return_after_fees_pct": ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+        "minimum_profit_factor_after_fees": ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
         "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
         "minimum_target_after_fee_r_multiple": MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
         "search_space": {
@@ -897,7 +890,7 @@ pub(super) fn report(
         "minimum_validation_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
         "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
         "selection_method": format!(
-            "Predeclared ATR stop, target-to-stop net R after configured entry and exit fees with a minimum planned 1:{:.0} risk:reward, max-hold, and score-floor grid; among candidates meeting the minimum and the 50% after-fee win-rate target with its 95% Wilson lower bound on validation, select the highest validation win rate, then the stronger lower bound and larger sample. Observed realized payoff and net return are diagnostics, not qualification targets. The selected rule is evaluated once on untouched holdout data.",
+            "Predeclared ATR stop, target-to-stop net R after configured entry and exit fees with a minimum planned 1:{:.0} risk:reward, max-hold, and score-floor grid; select on validation mean net return after configured fees, with profitability requiring positive mean net return and profit factor above 1 plus the minimum sample. The selected rule is evaluated once on untouched holdout data, which must independently remain profitable. Win rate and realized payoff are diagnostics.",
             MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE
         ),
         "fill_assumptions": format!(

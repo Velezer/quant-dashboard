@@ -172,7 +172,8 @@ fn recent_scoring_decisions_only_include_the_combined_model() {
     let conn = connection();
     let current = quant_core::ENTRY_SCORE_MODEL_ID;
     for (model, evaluated_at) in [(current, 1), ("retired-nwe-model", 2)] {
-        let evaluation = json!({"scope":{"score_model_id":model},"evaluated_at":evaluated_at});
+        let evaluation = json!({"protocol_id":quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
+            "scope":{"score_model_id":model},"evaluated_at":evaluated_at});
         conn.execute(
             "INSERT INTO app.entry_model_scoring_evaluations
              (score_model_id,asset_category_id,timeframe,source_family,evaluated_at,evaluation_json)

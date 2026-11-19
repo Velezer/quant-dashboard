@@ -25,10 +25,11 @@ Stockbit product, ticker and timeframe. A row requires sufficient history,
 fresh matching reference price when a current market entry is claimed, and a
 signed-total magnitude at or above the base floor. It does not require an active cohort profile
 or a score above the backtested cutoff. Candidate weights are promoted only
-when the cohort reaches at least 50% after-fee wins, a 95% Wilson lower bound
-of at least 50% on untouched holdout data, with at least 30 trades. Each app/product slice must
-pass independently. These metrics are displayed as historical results; they
-do not withhold signals. A successful scan replaces rows that no longer
+when the cohort shows positive mean net return and profit factor above 1 after
+configured fees on validation and untouched holdout data, with at least 30
+trades. Each app/product slice must pass independently. Win rate and Wilson
+intervals remain descriptive. These metrics are displayed as historical
+results; they do not withhold signals. A successful scan replaces rows that no longer
 qualify. Notification history has a separate two-hour retention window based
 on when the alert was created. A stale reference price can remain visible with
 its freshness label, but it is not a current market entry.
@@ -52,14 +53,16 @@ calculation and cannot claim a current market entry.
 
 For each learned cohort, the service tests cumulative score cutoffs in
 ascending order using candidate-weight outcomes. It selects the lowest cutoff
-that reaches at least 50% after fees with a 95% Wilson lower bound of at
-least 50% and at least 30 trades on validation data. The
-frozen cutoff is then reported against the chronological holdout and separately
-for each app/product slice. These metrics decide whether candidate weights
-may be promoted; they never filter live signal rows. The screener shows an
-available profile's holdout rate, confidence lower bound, sample count, and
-cutoff as historical cohort evidence. Without a promoted profile, live scoring
-uses equal weights and still shows setups that meet the base score floor.
+that has positive mean net return and profit factor above 1 after configured
+fees, with at least 30 trades on validation data. The frozen cutoff is then
+reported against the chronological holdout and separately for each app/product
+slice; each must also remain profitable. Win rate and its Wilson interval are
+shown as descriptive evidence, not a qualification target. These metrics
+decide whether candidate weights may be promoted; they never filter live signal
+rows. The screener shows an available profile's holdout mean net return, profit
+factor, descriptive win rate, sample count, and cutoff as historical cohort
+evidence. Without a promoted profile, live scoring uses equal weights and still
+shows setups that meet the base score floor.
 Historical results do not estimate an individual signal's future win rate.
 Spread, slippage, depth, market impact, funding, and borrow remain outside the
 fee-adjusted return.

@@ -100,9 +100,10 @@ finishes.
 
 1. Refresh per-ticker reports from stored completed candles using the existing
    bounded, causal protocol. The fitter searches the predeclared grid on
-   training bars only. A candidate needs 30 non-overlapping trades and at least
-   50% wins after configured fees; candidates are ranked by their Wilson 95%
-   lower bound, then mean net return and proximity to equal weights.
+   training bars only. A candidate needs 30 non-overlapping trades, positive
+   mean net return, and profit factor above 1 after configured fees. Rank by
+   mean net return, then profit factor, aggregate net return, sample size, and
+   proximity to equal weights.
 2. Evaluate each exact training-selected vector against cohort coverage,
    validation, holdout, fees, and app/product gates. Prefer a passing vector
    with the broadest coverage; if none passes, report blockers for the best
@@ -125,12 +126,14 @@ Promote only an exact weight vector that passed all of these checks:
   and in every app/product slice.
 - At least 730 calendar days of input history and at least 30 validation and
   holdout trades after configured transaction fees.
-- Validation and untouched holdout each reach the 50% after-fee win-rate target
-  and a 95% Wilson lower bound of at least 50%.
-- Positive mean net return and profit factor above 1 in validation and holdout.
+- Validation and untouched holdout each have positive mean net return and
+  profit factor above 1 after configured fees, with at least 30 trades.
+- The frozen holdout is evaluated once and never used to select weights, score
+  cutoff, exit, hour pair, or bracket. Win rate and Wilson intervals are
+  descriptive metrics, not gates.
 - The candidate beats the equal-weight baseline on mean net return in both
-  validation and holdout, and every app/product slice meets the same win-rate,
-  history, and coverage gates.
+  validation and holdout, and every app/product slice meets the same
+  profitability, history, and coverage gates.
 
 Training candidates, unknown-fee reports, partial cohorts, database failures,
 and missing validation or holdout metrics never activate a profile. If any gate
@@ -175,8 +178,8 @@ previous current-protocol profile or the equal-weight default.
   validation and holdout. The cohort evaluator selects the lowest cumulative
   score cutoff that passes on validation, then checks the same frozen cutoff on
   untouched holdout and every app/product slice. Each gate requires at least 30
-  fee-aware trades, at least 50% wins after fees, a 95% Wilson lower bound of at
-  least 50%, positive mean net return, and profit factor above 1.
+  fee-aware trades, positive mean net return, and profit factor above 1. Win
+  rate and Wilson intervals remain descriptive.
 - Pass the selected profile through the existing typed scoring API. Keep raw
   NWE, DSS, relative-volume, and estimated-delta evidence visible as four
   component scores out of 10. Return the profile weights and version beside
@@ -200,15 +203,16 @@ The existing Entry Validation page has a **Live scoring weights** panel with:
 - Active profile by model, category, timeframe, and source family.
 - Four component scores out of 10, current weight allocation, profile version,
   and effective scan.
-- The score cutoff and its held-out after-fee win rate, Wilson lower bound, and
-  sample count. The screener presents these as historical cohort evidence, not
-  an individual win-probability estimate.
+- The score cutoff, held-out after-fee mean net return, profit factor,
+  descriptive win rate, and sample count. The screener presents these as
+  historical cohort evidence, not an individual win-probability estimate.
 - Latest candidate beside the active profile, with validation/holdout metrics,
   source, fee coverage, coverage dates, and exact promotion blockers.
 - Promotion state, latest cohort metrics, and exact blockers.
 
-The screener shows the profile version, historical after-fee win rate, and
-score cutoff as informational metrics. The panel distinguishes a new candidate
+The screener shows the profile version, historical after-fee mean net return,
+profit factor, descriptive win rate, and score cutoff as informational metrics.
+The panel distinguishes a new candidate
 from a live profile and explains when equal weights are used. If no candidate
 passes promotion, signals continue with equal weights and Signal availability
 reports profile status without presenting it as a signal blocker. Loading,
@@ -243,5 +247,6 @@ of the current UI yet.
 The current implementation wires daily candidate fitting, cohort promotion,
 versioned profile storage, scan-pinned live scoring, and the Entry Validation
 status panel. Available history may still block activation. Continuous
-backtesting alone is not a reason to promote a candidate; the 50% target must
-clear on both validation and untouched holdout after configured fees.
+backtesting alone is not a reason to promote a candidate; positive mean net
+return and profit factor above 1 must clear on both validation and untouched
+holdout after configured fees.

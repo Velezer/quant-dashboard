@@ -4,6 +4,7 @@ use crate::strategies::{
     StrategyBar, ENTRY_SCORE_MINIMUM_HISTORY_BARS, ENTRY_SCORE_MODEL_ID, FOUR_INDICATOR_EQUAL_WEIGHTS,
 };
 use serde_json::{json, Value};
+use std::cmp::Ordering;
 
 #[path = "entry_score/risk_reward.rs"]
 mod risk_reward;
@@ -22,8 +23,9 @@ const FACTOR_SCORE_BAND_COUNT: usize = 4;
 const SCORE_WEIGHT_BUDGET: u8 = 40;
 const SCORE_WEIGHT_STEP: u8 = 5;
 const MIN_WEIGHT_FIT_TRADES: usize = 30;
-pub const ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT: f64 = 50.0;
 pub const ENTRY_SCORE_MIN_HISTORY_DAYS: i64 = 1_000;
+pub const ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT: f64 = 0.0;
+pub const ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR: f64 = 1.0;
 const MIN_HOUR_SELECTION_TRADES: usize = crate::MIN_EVIDENCE_SAMPLE_TRADES;
 const WEIGHT_FIT_EXIT_BARS: usize = 8;
 const BASELINE_WEIGHTS: [u8; 4] = FOUR_INDICATOR_EQUAL_WEIGHTS;
@@ -38,7 +40,7 @@ const FACTOR_NAMES: [&str; 4] = [
     "Estimated Volume Delta (OHLCV proxy)",
 ];
 pub const ENTRY_SCORE_VALIDATION_PROTOCOL_ID: &str =
-    "entry_signed_six_indicator_combined_evidence_v15";
+    "entry_signed_six_indicator_combined_evidence_v16";
 pub const ENTRY_SCORE_RISK_REWARD_PROTOCOL_ID: &str = risk_reward::PROTOCOL_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -259,6 +261,23 @@ fn weight_distance_from_baseline(weights: [u8; 4]) -> u16 {
         .sum()
 }
 
+fn compare_profitability(left: TradeSummary, right: TradeSummary) -> Ordering {
+    left.mean_net()
+        .unwrap_or(f64::NEG_INFINITY)
+        .total_cmp(&right.mean_net().unwrap_or(f64::NEG_INFINITY))
+        .then_with(|| {
+            left.profit_factor()
+                .unwrap_or_default()
+                .total_cmp(&right.profit_factor().unwrap_or_default())
+        })
+        .then_with(|| {
+            left.aggregate_net_return_pct()
+                .unwrap_or(f64::NEG_INFINITY)
+                .total_cmp(&right.aggregate_net_return_pct().unwrap_or(f64::NEG_INFINITY))
+        })
+        .then_with(|| left.trades.cmp(&right.trades))
+}
+
 fn fit_weights(
     bars: &[StrategyBar],
     observations: &[Option<Observation>],
@@ -281,36 +300,17 @@ fn fit_weights(
             continue;
         }
         eligible_candidates += 1;
-        let win_rate = summary.wins as f64 / summary.trades as f64 * 100.0;
-        if win_rate + f64::EPSILON < ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT {
+        if !summary.profitable_after_fees(MIN_WEIGHT_FIT_TRADES, policy.fees_known) {
             continue;
         }
-        let lower_bound = wilson_interval(summary.wins, summary.trades)
-            .map(|interval| interval[0])
-            .unwrap_or_default();
-        let best_lower_bound = wilson_interval(selected_summary.wins, selected_summary.trades)
-            .map(|interval| interval[0]);
-        let selected_win_rate = selected_summary.win_rate();
-        let replace = match selected_win_rate {
-            None => true,
-            Some(best_rate) if win_rate > best_rate + f64::EPSILON => true,
-            Some(best_rate) if (win_rate - best_rate).abs() <= f64::EPSILON => {
-                match best_lower_bound {
-                    None => true,
-                    Some(best) if lower_bound > best + f64::EPSILON => true,
-                    Some(best) if (lower_bound - best).abs() <= f64::EPSILON => {
-                        summary.trades > selected_summary.trades
-                            || (summary.trades == selected_summary.trades
-                                && weight_distance_from_baseline(weights)
-                                    < weight_distance_from_baseline(
-                                        selected.unwrap_or(BASELINE_WEIGHTS),
-                                    ))
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
-        };
+        let replace = selected.is_none_or(|selected_weights| {
+            compare_profitability(summary, selected_summary)
+                .then_with(|| {
+                    weight_distance_from_baseline(selected_weights)
+                        .cmp(&weight_distance_from_baseline(weights))
+                })
+                .is_gt()
+        });
         if replace {
             selected = Some(weights);
             selected_summary = summary;
@@ -348,7 +348,7 @@ fn select_exit_on_validation(
             });
             result.candidates.push(candidate_json);
             if candidate.overall.trades >= crate::MIN_EVIDENCE_SAMPLE_TRADES
-                && candidate_win_rate_is_better(
+                && candidate_profitability_is_better(
                     candidate.overall,
                     result.validation.overall,
                 )
@@ -361,27 +361,8 @@ fn select_exit_on_validation(
     result
 }
 
-fn candidate_win_rate_is_better(candidate: TradeSummary, current: TradeSummary) -> bool {
-    let Some(candidate_rate) = candidate.win_rate() else {
-        return false;
-    };
-    let Some(current_rate) = current.win_rate() else {
-        return true;
-    };
-    let rate_order = candidate_rate.total_cmp(&current_rate);
-    if !rate_order.is_eq() {
-        return rate_order.is_gt();
-    }
-    let candidate_lower = wilson_interval(candidate.wins, candidate.trades)
-        .map(|interval| interval[0])
-        .unwrap_or_default();
-    let current_lower = wilson_interval(current.wins, current.trades)
-        .map(|interval| interval[0])
-        .unwrap_or_default();
-    candidate_lower
-        .total_cmp(&current_lower)
-        .then_with(|| candidate.trades.cmp(&current.trades))
-        .is_gt()
+fn candidate_profitability_is_better(candidate: TradeSummary, current: TradeSummary) -> bool {
+    compare_profitability(candidate, current).is_gt()
 }
 
 fn evaluate_selected_policy(
@@ -486,20 +467,7 @@ fn select_hour_pair_on_validation(
         }
     }
     eligible.sort_by(|left, right| {
-        right
-            .summary
-            .win_rate()
-            .unwrap_or_default()
-            .total_cmp(&left.summary.win_rate().unwrap_or_default())
-            .then_with(|| {
-                let right_lower = wilson_interval(right.summary.wins, right.summary.trades)
-                    .map(|interval| interval[0])
-                    .unwrap_or_default();
-                let left_lower = wilson_interval(left.summary.wins, left.summary.trades)
-                    .map(|interval| interval[0])
-                    .unwrap_or_default();
-                right_lower.total_cmp(&left_lower)
-            })
+        compare_profitability(right.summary, left.summary)
             .then_with(|| right.summary.trades.cmp(&left.summary.trades))
             .then_with(|| left.entry_hour.cmp(&right.entry_hour))
             .then_with(|| left.exit_hour.cmp(&right.exit_hour))
@@ -602,15 +570,24 @@ fn hour_rule_report(
         .copied()
         .max()
         .unwrap_or(WEIGHT_FIT_EXIT_BARS);
+    let validation_profitable = selected
+        .summary
+        .profitable_after_fees(MIN_HOUR_SELECTION_TRADES, policy.fees_known);
+    let holdout_profitable = holdout.profitable_after_fees(MIN_HOUR_SELECTION_TRADES, policy.fees_known);
+    let hour_pair_profitable = validation_profitable && holdout_profitable;
     json!({
-        "status":"HOUR_PAIR_SELECTED",
-        "reason":"The pair was selected on validation data and then evaluated on the untouched holdout.",
+        "status":if hour_pair_profitable { "HOUR_PAIR_PROFITABLE" } else { "HOUR_PAIR_NOT_PROFITABLE" },
+        "reason":if hour_pair_profitable { "The hour pair has positive mean net return and profit factor above 1 after configured fees on validation and untouched holdout." } else { "The best validation hour pair did not remain profitable after configured fees on both validation and untouched holdout." },
         "timezone":"Asia/Jakarta (WIB; UTC+07:00)","candidate_pair_count":HOURS_PER_DAY * HOURS_PER_DAY,
         "eligible_pair_count":selection.eligible_pairs,"minimum_validation_trades":MIN_HOUR_SELECTION_TRADES,
         "maximum_hold_bars":maximum_hold_bars,"weights":weights,
+        "minimum_mean_net_return_after_fees_pct":crate::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+        "minimum_profit_factor_after_fees":crate::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
+        "validation_profitable_after_fees":validation_profitable,
+        "holdout_profitable_after_fees":holdout_profitable,
         "entry_hour_basis":"Open time of the bar after the qualifying signal bar.",
         "exit_hour_basis":"Close time of the first bar at the selected hour; if it is not reached within the maximum hold, exit at the maximum-hold close.",
-        "selection_metric":"Highest validation win rate after configured transaction fees; ties favor the stronger Wilson 95% lower bound, larger sample, earlier entry hour, then earlier exit hour.",
+        "selection_metric":"Rank hour pairs by validation mean net return after configured fees, then profit factor and sample size; ties favor earlier entry and exit hours. Win rate is descriptive.",
         "candidate":{"entry_hour_wib":selected.entry_hour,"exit_hour_wib":selected.exit_hour,
             "validation":summary_json(selected.summary, policy.fees_known),
             "holdout":summary_json(holdout, policy.fees_known)},
@@ -849,13 +826,8 @@ pub fn evaluate_entry_score_backtest(
         baseline_policy,
         selected_weights,
     );
-    let after_fee_target_met = |summary: TradeSummary| {
-        fees_known
-            && summary.trades >= MIN_WEIGHT_FIT_TRADES
-            && summary.wins as f64 / summary.trades as f64 * 100.0
-                >= ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT
-            && wilson_interval(summary.wins, summary.trades)
-                .is_some_and(|interval| interval[0] >= ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT)
+    let after_fee_profitable = |summary: TradeSummary| {
+        summary.profitable_after_fees(MIN_WEIGHT_FIT_TRADES, fees_known)
     };
     let weight_learning_status = if invalid {
         "INVALID_HISTORY"
@@ -865,7 +837,7 @@ pub fn evaluate_entry_score_backtest(
         "FEES_UNKNOWN"
     } else if selected_weights.is_none() {
         if eligible_weight_candidates > 0 {
-            "AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED"
+            "AFTER_FEE_PROFITABILITY_NOT_REACHED"
         } else {
             "INSUFFICIENT_TRAINING_SAMPLE"
         }
@@ -874,6 +846,8 @@ pub fn evaluate_entry_score_backtest(
         .is_some_and(|selection| selection.selected_policy.is_none())
     {
         "NO_VALIDATION_EXIT"
+    } else if !after_fee_profitable(learned_validation) {
+        "NO_PROFITABLE_VALIDATION_EXIT"
     } else {
         "CANDIDATE_READY"
     };
@@ -882,9 +856,10 @@ pub fn evaluate_entry_score_backtest(
         "INSUFFICIENT_HISTORY" => "The strategy warm-up is incomplete; no candidate weights were fitted.",
         "FEES_UNKNOWN" => "Weight fitting requires known transaction fees; the equal-weight gross-only backtest remains available.",
         "INSUFFICIENT_TRAINING_SAMPLE" => "No candidate weight vector produced the minimum 30 non-overlapping training outcomes at the existing score floor.",
-        "AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED" => "Training candidates had enough outcomes, but none reached the 50% after-fee win-rate target; live weights stay at the active validated profile.",
+        "AFTER_FEE_PROFITABILITY_NOT_REACHED" => "Training candidates had enough outcomes, but none had positive mean net return and profit factor above 1 after configured fees; live weights stay at the active validated profile.",
         "NO_VALIDATION_EXIT" => "Weights were selected on training data, but no exit candidate met the minimum validation sample.",
-        _ => "A training-only weight candidate and validation-selected exit are available for untouched holdout comparison.",
+        "NO_PROFITABLE_VALIDATION_EXIT" => "Training found a profitable weight candidate, but the validation-selected exit did not preserve positive net expectancy after configured fees; live weights stay at the active validated profile.",
+        _ => "A training-only weight candidate and validation-selected exit are profitable after configured fees; the untouched holdout still determines whether the evidence is promoted.",
     };
     let baseline_weight_comparison = policy_comparison_json(
         BASELINE_WEIGHTS,
@@ -945,10 +920,12 @@ pub fn evaluate_entry_score_backtest(
         "eligible_candidate_count": eligible_weight_candidates,
         "minimum_training_trades": MIN_WEIGHT_FIT_TRADES,
         "training_exit_bars": WEIGHT_FIT_EXIT_BARS,
-        "target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
-        "selection_metric": "Among candidates with at least 30 non-overlapping training outcomes and at least 50% wins after configured transaction fees, maximize observed after-fee win rate; tie-break by the Wilson 95% lower bound, larger sample, then proximity to equal weights.",
-        "validation_after_fee_target_met": after_fee_target_met(learned_validation),
-        "holdout_after_fee_target_met": after_fee_target_met(learned_holdout.overall),
+        "minimum_mean_net_return_after_fees_pct": crate::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+        "minimum_profit_factor_after_fees": crate::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
+        "selection_metric": "Keep weight vectors with at least 30 non-overlapping fee-aware training outcomes and positive mean net return with profit factor above 1; maximize training mean net return, then profit factor, cumulative net return, sample size, and proximity to equal weights. Select exits and hour pairs by validation mean net return; require profitability on validation and untouched holdout before profile promotion.",
+        "training_profitable_after_fees": selected_training_fit.profitable_after_fees(MIN_WEIGHT_FIT_TRADES, fees_known),
+        "validation_profitable_after_fees": after_fee_profitable(learned_validation),
+        "holdout_profitable_after_fees": after_fee_profitable(learned_holdout.overall),
         "selected_weights": selected_weights,
         "weighted_score_autocorrelation": selected_weights.map(|weights|
             weighted_score_autocorrelation(&observations, warmup_end, train_end, weights)),
@@ -961,13 +938,10 @@ pub fn evaluate_entry_score_backtest(
             bar_interval_ns, selected_weights, baseline_policy),
         "live_weights_changed": false,
     });
-    let profitable = holdout.overall.mean_net().is_some_and(|mean| mean > 0.0) && {
-        let value = summary_json(holdout.overall, fees_known);
-        value["profit_factor_unbounded"] == true
-            || value["profit_factor"]
-                .as_f64()
-                .is_some_and(|factor| factor > 1.0)
-    };
+    let profitable = holdout.overall.profitable_after_fees(
+        crate::MIN_EVIDENCE_SAMPLE_TRADES,
+        fees_known,
+    );
     json!({
         "status": if invalid { "INVALID_HISTORY" } else if bars.len() < minimum_history { "INSUFFICIENT_HISTORY" }
             else if baseline_selection.selected_policy.is_none() { "NO_VALIDATION_TRADES" } else { "HOLDOUT_RESEARCH_COMPLETE" },
@@ -996,17 +970,19 @@ pub fn evaluate_entry_score_backtest(
         "weight_learning": weight_learning,
         "checks": { "holdout_sample_sufficient": holdout.overall.trades >= crate::MIN_EVIDENCE_SAMPLE_TRADES,
             "history_span_sufficient": !invalid && history_days >= ENTRY_SCORE_MIN_HISTORY_DAYS,
+            "profitable_validation": baseline_selection.validation.overall.profitable_after_fees(crate::MIN_EVIDENCE_SAMPLE_TRADES, fees_known),
             "profitable_holdout": profitable,
             "score_discrimination_supported": score_discrimination_supported(&holdout.total_bands) },
         "minimum_holdout_trades": crate::MIN_EVIDENCE_SAMPLE_TRADES,
         "minimum_history_days": ENTRY_SCORE_MIN_HISTORY_DAYS,
         "fees_known": fees_known,
-        "weight_promotion_target_after_fee_win_rate_pct": ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT,
-        "selection_metric": "Exit rules are ranked by validation win rate after configured transaction fees, then Wilson 95% lower bound and sample size. Fee-unknown results are gross only and are not fee-qualified.",
+        "minimum_mean_net_return_after_fees_pct": crate::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+        "minimum_profit_factor_after_fees": crate::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
+        "selection_metric": "Exit rules are ranked by validation mean net return after configured transaction fees, then profit factor, cumulative net return, and sample size. Fee-unknown results are gross only and are not fee-qualified.",
         "entry_rule": "Direction and eligibility come from the signed combined score on the completed bar; enter next bar open; no overlapping trades or trades crossing split boundaries.",
         "exit_rule": "Validation compares fixed bar-close timeouts with a close on the first opposite-direction entry signal that qualifies under the tested weights and existing score floor, capped by the same maximum hold. Each selected policy is evaluated once on the untouched holdout.",
         "discrimination_note": "Exploratory conservative screen: at least two ordered score bands each meet the minimum trade count; the highest eligible band's lower Wilson 95% win bound exceeds the lowest eligible band's upper bound and its mean return is higher. This is not independent statistical proof.",
-        "validation_note": "Historical research only. The bounded weight grid is fitted on training data using a fixed 8-bar timeout; validation selects the exit rule and maximum hold for the equal-weight baseline and fitted candidate independently, and selects the WIB entry/exit-hour pair for the fitted candidate. The final chronological tail evaluates each selected policy once and never selects weights, exits, or hours. Reusing the tail for model or threshold tuning contaminates it. No slippage, spread, depth, market impact, funding, or borrow is modeled."
+        "validation_note": "Historical research only. The bounded weight grid is fitted on training data using a fixed 8-bar timeout and positive fee-adjusted expectancy; validation selects exits, brackets, and WIB entry/exit-hour pairs by net return. The final chronological tail evaluates each selected policy once and never selects weights, exits, or hours. Reusing the tail for model or threshold tuning contaminates it. Positive configured-fee returns do not include slippage, spread, depth, market impact, funding, or borrow and do not guarantee future profit."
     })
 }
 

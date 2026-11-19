@@ -157,8 +157,10 @@ fn after_fee_gate_for_product(
     serde_json::json!({
         "status": profile.after_fee_gate.get("status").cloned().unwrap_or(Value::Null),
         "minimum_score_out_of_60": profile.minimum_score,
-        "target_after_fee_win_rate_pct": profile.after_fee_gate
-            .get("target_after_fee_win_rate_pct").cloned().unwrap_or(Value::Null),
+        "minimum_mean_net_return_after_fees_pct": profile.after_fee_gate
+            .get("minimum_mean_net_return_after_fees_pct").cloned().unwrap_or(Value::Null),
+        "minimum_profit_factor_after_fees": profile.after_fee_gate
+            .get("minimum_profit_factor_after_fees").cloned().unwrap_or(Value::Null),
         "fees_applied": true,
         "validation": product_slice.get("signal_gate_validation").cloned().unwrap_or(Value::Null),
         "holdout": product_slice.get("signal_gate_holdout").cloned().unwrap_or(Value::Null),

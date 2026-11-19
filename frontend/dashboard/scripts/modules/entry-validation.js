@@ -6,7 +6,7 @@ import { renderAutocorrelationRiskSizing } from './entry-validation-risk-sizing.
 const PAGE_SIZE = 50;
 const APP_LABELS = { stockbit: 'Stockbit', pintu: 'Pintu', pluang: 'Pluang', tokocrypto: 'Tokocrypto' };
 const HISTORICAL_MODEL_LABELS = { nwe: 'Historical NWE-led entry', dss: 'Historical DSS-led entry' };
-const RISK_REWARD_PROTOCOL_ID = 'entry_score_signed_risk_reward_after_fee_v6';
+const RISK_REWARD_PROTOCOL_ID = 'entry_score_signed_risk_reward_after_fee_v7';
 const FEE_SOURCE_HOSTS = new Set([
     'help.stockbit.com', 'pintu.co.id', 'www.pintu.co.id', 'pluang.com', 'www.pluang.com',
     'support.tokocrypto.com',
@@ -167,7 +167,7 @@ export function initializeEntryValidation(doc = document) {
         const outdatedProfiles = storedProfiles.filter(profile => profile.protocol_current === false);
         activeContainer.replaceChildren();
         if (!profiles.length) {
-            activeContainer.append(element('p', `${outdatedProfiles.length ? 'Stored profiles use an outdated protocol and are ignored. ' : 'No score range has passed the after-fee promotion checks. '}A profile needs at least ${metric(scoring?.target_after_fee_win_rate_pct, '% wins', 0)} on validation and untouched holdout evidence, with the required sample, history, and app coverage. Payoff and return are diagnostics, not targets. Live signals remain visible using equal research weights (${weightVectorText(scoring?.default_weights || [10, 10, 10, 10])}). These metrics never filter signals.`, 'empty-cell'));
+            activeContainer.append(element('p', `${outdatedProfiles.length ? 'Stored profiles use an outdated protocol and are ignored. ' : 'No score range has passed the after-fee promotion checks. '}A profile needs positive mean net return and profit factor above 1 on validation, untouched holdout, and each app/product slice, plus the required sample, history, coverage, and source checks. Win rate and payoff are diagnostics. Live signals remain visible using equal research weights (${weightVectorText(scoring?.default_weights || [10, 10, 10, 10])}). These metrics never filter signals, and historical profitability does not guarantee future profit.`, 'empty-cell'));
             status('live-scoring-state', 'No active profile · signals shown', 'pending');
         } else {
             for (const profile of profiles) {
@@ -182,7 +182,7 @@ export function initializeEntryValidation(doc = document) {
                     element('p', weightVectorText(profile.weights), 'profile-metrics'));
                 const gate = profile.signal_gate || {};
                 const holdout = gate.holdout || {};
-                card.append(element('p', `Historical holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} after fees vs ${metric(gate.target_after_fee_win_rate_pct ?? scoring?.target_after_fee_win_rate_pct, '% target', 0)} · 95% lower bound ${metric(holdout.win_rate_after_fees_wilson_95_lower_pct, '%', 1)} · ${metric(holdout.trades, ' trades', 0)} · observed average net payoff ${metric(holdout.observed_payoff_ratio_after_fees, '×', 2)} (diagnostic) · setup-strength cutoff ${metric(gate.minimum_score_out_of_60, '/60', 0)} is informational and does not filter signals`, 'profile-metrics'));
+                card.append(element('p', `Holdout mean net ${metric(holdout.mean_net_return_pct, '%')} per trade · profit factor ${metric(holdout.profit_factor, '×', 2)} · win rate ${metric(holdout.win_rate_after_fees_pct, '%', 1)} (diagnostic) · 95% interval ${Array.isArray(holdout.win_rate_after_fees_wilson_95_pct) ? `${metric(holdout.win_rate_after_fees_wilson_95_pct[0], '%', 1)}–${metric(holdout.win_rate_after_fees_wilson_95_pct[1], '%', 1)}` : 'unavailable'} · ${metric(holdout.trades, ' trades', 0)} · setup-strength cutoff ${metric(gate.minimum_score_out_of_60, '/60', 0)} is informational and does not filter signals`, 'profile-metrics'));
                 activeContainer.append(card);
             }
             status('live-scoring-state', `${profiles.length} active profile${profiles.length === 1 ? '' : 's'}`, 'valid');
@@ -207,13 +207,13 @@ export function initializeEntryValidation(doc = document) {
             const validation = decision.validation || {};
             const holdout = decision.holdout || {};
             if (validation.trades != null || holdout.trades != null) {
-                card.append(element('p', `Validation ${metric(validation.win_rate_after_fees_pct, '%', 1)} · ${metric(validation.trades, '', 0)} trades · holdout ${metric(holdout.win_rate_after_fees_pct, '%', 1)} · ${metric(holdout.trades, '', 0)} trades · target ${metric(decision.target_after_fee_win_rate_pct, '% after fees', 0)} · observed net payoff ${metric(holdout.observed_payoff_ratio_after_fees, '×', 2)} and mean return ${metric(holdout.mean_net_return_pct, '%')} are diagnostics`));
+                card.append(element('p', `Validation mean net ${metric(validation.mean_net_return_pct, '%')} · PF ${metric(validation.profit_factor, '×', 2)} · holdout mean net ${metric(holdout.mean_net_return_pct, '%')} · PF ${metric(holdout.profit_factor, '×', 2)} · win rates ${metric(validation.win_rate_after_fees_pct, '%', 1)} / ${metric(holdout.win_rate_after_fees_pct, '%', 1)} are descriptive · ${metric(holdout.trades, '', 0)} holdout trades`));
             }
             const gate = decision.signal_gate || {};
             if (gate.minimum_score_out_of_60 != null) {
-                card.append(element('p', `Backtested setup-strength cutoff ${metric(gate.minimum_score_out_of_60, '/60', 0)} · validation ${metric(gate.validation?.win_rate_after_fees_pct, '%', 1)} · holdout ${metric(gate.holdout?.win_rate_after_fees_pct, '%', 1)} after fees · metric only; live signals are not filtered`, 'profile-metrics'));
+                card.append(element('p', `Backtested setup-strength cutoff ${metric(gate.minimum_score_out_of_60, '/60', 0)} · validation mean net ${metric(gate.validation?.mean_net_return_pct, '%')} / PF ${metric(gate.validation?.profit_factor, '×', 2)} · holdout mean net ${metric(gate.holdout?.mean_net_return_pct, '%')} / PF ${metric(gate.holdout?.profit_factor, '×', 2)} · win rates are descriptive · live signals are not filtered`, 'profile-metrics'));
             } else {
-                card.append(element('p', 'No setup-strength cutoff met the after-fee promotion target. The measured validation and holdout rates above remain visible; live signals are not filtered.', 'profile-metrics'));
+                card.append(element('p', 'No setup-strength cutoff was profitable after fees on both validation and untouched holdout. Win-rate readings remain descriptive; live signals are not filtered.', 'profile-metrics'));
             }
             const blockers = Array.isArray(decision.blockers) ? decision.blockers : [];
             if (blockers.length) card.append(element('p', `Blocked: ${blockers.slice(0, 3).join(' ')}`));
@@ -343,7 +343,7 @@ export function initializeEntryValidation(doc = document) {
                         : daily.status === 'error'
                             ? 'The daily backtest worker could not prepare its ticker list and will retry shortly.'
                             : daily.status === 'complete'
-                                ? 'All eligible registered ticker/timeframe pairs were refreshed. Shared profiles use the 50% after-fee win-rate target plus sample, history, coverage, and source checks.'
+                                ? 'All eligible registered ticker/timeframe pairs were refreshed. Shared profiles require positive net expectancy after fees on validation, untouched holdout, and app/product slices, plus sample, history, coverage, and source checks.'
                                 : 'The first daily backtest cycle is waiting to start.';
             if (pendingHistoryRechecks > 0) {
                 message += ` ${metric(pendingHistoryRechecks, '', 0)} saved no-history reports are queued to refresh after candles arrive.`;
@@ -499,10 +499,10 @@ export function initializeEntryValidation(doc = document) {
         const labels = {
             registered_identity: 'Registered ticker and model identity match',
             holdout_sample_sufficient: 'Enough completed holdout trades', history_span_sufficient: 'Enough total calendar history',
-            after_fee_win_rate_target_met: 'At least 50% wins after configured fees on validation and holdout',
-            profitable_holdout: 'Positive held-out return and profit factor · diagnostic, not a target', score_discrimination_supported: 'Held-out score discrimination supported · diagnostic',
+            after_fee_profitability_met: 'Positive validation and untouched holdout expectancy after configured fees',
+            profitable_holdout: 'Positive held-out return and profit factor after fees', score_discrimination_supported: 'Held-out score discrimination supported · diagnostic',
             venue_native_history: 'Venue-native history', fees_known: 'Product transaction fees are known',
-            asymmetric_risk_reward_rule: '4h planned risk:reward meets the minimum and the after-fee validation gates',
+            asymmetric_risk_reward_rule: '4h planned risk:reward meets the minimum and validation/holdout are profitable after fees',
             execution_costs_complete: 'Execution costs are fully covered',
         };
         const checkEntries = Object.entries(labels).filter(([key]) => checks[key] !== undefined || key !== 'asymmetric_risk_reward_rule');
@@ -596,9 +596,10 @@ export function initializeEntryValidation(doc = document) {
             INSUFFICIENT_HISTORY: 'The strategy warm-up is incomplete. The equal-weight baseline remains available when history allows.',
             FEES_UNKNOWN: 'Fees are unknown, so weight fitting is disabled. The baseline result is gross-only.',
             INSUFFICIENT_TRAINING_SAMPLE: 'No candidate had 30 or more non-overlapping training trades at the existing setup-strength floor.',
-            AFTER_FEE_WIN_RATE_TARGET_NOT_REACHED: 'Training candidates had enough trades, but none reached the 50% win-rate target after configured transaction fees.',
+            AFTER_FEE_PROFITABILITY_NOT_REACHED: 'Training candidates had enough trades, but none had positive mean net return and profit factor above 1 after configured fees.',
             NO_VALIDATION_EXIT: 'Training selected a weight candidate, but no exit rule met the validation sample minimum.',
-            CANDIDATE_READY: 'Training selected a candidate at the 50% after-fee win-rate target; validation selected the exit. The untouched holdout reports the frozen rule once.',
+            NO_PROFITABLE_VALIDATION_EXIT: 'Training found positive expectancy, but no validation exit kept mean net return positive and profit factor above 1 after fees.',
+            CANDIDATE_READY: 'Training selected weights for positive after-fee expectancy, and validation selected an exit. The untouched holdout reports the frozen rule once.',
         };
         const statusText = learning?.reason || reasons[learning?.status] || 'This saved report predates weight learning. Rerun this ticker to calculate a training-only candidate.';
         status('weight-learning-status', `${statusText}${learning?.live_weights_changed === false ? ' Live screener weights were not changed.' : ''}`, learning?.status === 'CANDIDATE_READY' ? '' : '');
@@ -641,8 +642,8 @@ export function initializeEntryValidation(doc = document) {
         const labels = {
             QUALIFIED: 'Research candidate',
             INSUFFICIENT_HISTORY: 'History too short',
-            NO_VALIDATION_RULE: 'No validation rule passed',
-            HOLDOUT_FAILED: 'Holdout failed',
+            NO_VALIDATION_PROFITABLE_RULE: 'No profitable validation rule',
+            HOLDOUT_NOT_PROFITABLE: 'Holdout not profitable',
             INSUFFICIENT_VALIDATION_SAMPLE: 'Insufficient validation trades',
             FEES_UNKNOWN: 'Fees unknown',
             INVALID_HISTORY: 'Invalid history',
@@ -660,8 +661,7 @@ export function initializeEntryValidation(doc = document) {
             : `1:${metric(minimumTargetMultiple, '', 0)}`;
         const stateLabel = feeAdjustedTargetProtocol ? (labels[rule?.status] || 'Evidence unavailable') : 'Rerun for fee-aware target';
         text('risk-reward-state', stateLabel);
-        state.className = `state-badge ${feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? 'valid' : feeAdjustedTargetProtocol && ['HOLDOUT_FAILED', 'MINIMUM_REWARD_RISK_NOT_MET'].includes(rule?.status) ? 'error' : 'pending'}`;
-        const targetRate = metric(rule?.target_after_fee_win_rate_pct, '% after fees', 0);
+        state.className = `state-badge ${feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? 'valid' : feeAdjustedTargetProtocol && ['HOLDOUT_NOT_PROFITABLE', 'NO_VALIDATION_PROFITABLE_RULE', 'MINIMUM_REWARD_RISK_NOT_MET'].includes(rule?.status) ? 'error' : 'pending'}`;
         const message = feeAdjustedTargetProtocol
             ? (rule?.reason || 'This saved report predates the current 4h risk/reward protocol. Rerun it to calculate candidate rules.')
             : 'This saved 4h report used gross target R multiples. Rerun the ticker to calculate target levels and asymmetric R:R after configured entry and exit fees.';
@@ -670,7 +670,7 @@ export function initializeEntryValidation(doc = document) {
         const targetValues = search.target_after_fee_r_multiples ?? search.target_r_multiples;
         const targetSuffix = Array.isArray(search.target_after_fee_r_multiples) ? '× net risk after fees' : ' gross R';
         const searchDescription = `Search grid: ${values(search.atr14_stop_multiples, ' × ATR14')} stops; ${values(targetValues, targetSuffix)} targets; ${values(search.maximum_hold_bars, ' bars', 0)} maximum holds; setup-strength floors ${values(search.score_floors_out_of_60, '/60', 0)}`;
-        status('risk-reward-status', `${message} Minimum planned risk:reward ${minimumRiskRewardText} after fees. Qualification also requires ${targetRate} and its 95% Wilson lower bound. Realized payoff and net return are diagnostics.`, feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? '' : 'pending');
+        status('risk-reward-status', `${message} Minimum planned risk:reward ${minimumRiskRewardText} after fees. Validation and untouched holdout each need positive mean net return and profit factor above 1 after configured fees; win rate is descriptive.`, feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? '' : 'pending');
         if (!candidate) {
             text('risk-reward-description', `${metric(rule?.eligible_validation_candidate_count, '', 0)} of ${metric(rule?.candidate_count, '', 0)} bracket combinations had enough validation trades. No rule was selected from holdout data.`);
             metrics.replaceChildren(
@@ -686,19 +686,21 @@ export function initializeEntryValidation(doc = document) {
         const targetDescription = afterFeeTarget === null
             ? `Legacy gross target ${metric(candidate.target_r_multiple, 'R', 2)}`
             : `planned risk:reward 1:${metric(afterFeeTarget, '', 2)} after fees`;
-        const verdict = candidate.qualified === true ? 'Passed history, validation, and holdout checks.' : `Validation ${candidate.validation_passed === true ? 'passed' : 'failed'} · holdout ${candidate.holdout_passed === true ? 'passed' : 'failed'} · 1,000-day minimum ${candidate.history_span_passed === true ? 'passed' : 'not met'}.`;
+        const verdict = candidate.qualified === true ? 'Passed history, validation, and holdout profitability checks.' : `Validation ${candidate.validation_profitable_after_fees === true ? 'profitable' : 'not profitable'} · holdout ${candidate.holdout_profitable_after_fees === true ? 'profitable' : 'not profitable'} · 1,000-day minimum ${candidate.history_span_passed === true ? 'passed' : 'not met'}.`;
         const wilsonLower = summary => Array.isArray(summary.win_rate_after_fees_wilson_95_pct) ? summary.win_rate_after_fees_wilson_95_pct[0] : null;
         text('risk-reward-description', `${candidate.entry_rule || '4h score-based entry.'} Setup-strength floor ${metric(candidate.minimum_score_out_of_60, '/60', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; ${targetDescription}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
         metrics.replaceChildren(
             metricCard('Minimum planned risk:reward', minimumRiskRewardText, 'Net target reward ÷ stop risk after configured fees'),
             metricCard('Selected planned risk:reward', afterFeeTarget === null ? 'Unavailable' : `1:${metric(afterFeeTarget, '', 2)}`, 'Net target reward ÷ stop risk · before gap and fill effects'),
-            metricCard('Validation win rate', metric(validation.win_rate_after_fees_pct, '%', 1), `${metric(validation.trades, ' trades', 0)} · target ${targetRate}`),
-            metricCard('Validation 95% lower bound', metric(wilsonLower(validation), '%', 1), `Must also reach ${targetRate}`),
+            metricCard('Validation mean net per trade', metric(validation.mean_net_return_pct, '%'), `${metric(validation.trades, ' trades', 0)} · configured fees applied`),
+            metricCard('Validation profit factor', metric(validation.profit_factor, '×', 2), 'Must be above 1 with positive mean net return'),
+            metricCard('Validation win rate', metric(validation.win_rate_after_fees_pct, '%', 1), 'Descriptive metric · no win-rate target'),
             metricCard('Validation payoff after fees', metric(validation.payoff_ratio_after_fees ?? validation.payoff_ratio, '×', 2), 'Average net win / net loss · diagnostic only'),
             metricCard('Validation mean net', metric(validation.mean_net_return_pct, '%'), validation.return_basis || 'Configured fees applied'),
-            metricCard('Untouched holdout win', metric(holdout.win_rate_after_fees_pct, '%', 1), `${metric(holdout.trades, ' trades', 0)} · not used to select rule`),
-            metricCard('Holdout 95% lower bound', metric(wilsonLower(holdout), '%', 1), `Must also reach ${targetRate}`),
-            metricCard('Untouched holdout payoff after fees', metric(holdout.payoff_ratio_after_fees ?? holdout.payoff_ratio, '×', 2), `Diagnostic · mean net ${metric(holdout.mean_net_return_pct, '%')}`),
+            metricCard('Untouched holdout mean net per trade', metric(holdout.mean_net_return_pct, '%'), `${metric(holdout.trades, ' trades', 0)} · frozen rule, not used to select`),
+            metricCard('Holdout profit factor', metric(holdout.profit_factor, '×', 2), 'Must be above 1 with positive mean net return'),
+            metricCard('Holdout win rate', metric(holdout.win_rate_after_fees_pct, '%', 1), 'Descriptive metric · no win-rate target'),
+            metricCard('Holdout 95% interval', metric(wilsonLower(holdout), '%', 1), 'Descriptive uncertainty for win rate'),
         );
         text('risk-reward-limits', `Selected from ${metric(rule.candidate_count, '', 0)} predeclared 4h combinations. ${searchDescription}. ${metric(rule.eligible_validation_candidate_count, '', 0)} had enough validation trades. ${rule.fill_assumptions || ''} Configured fees are included; spread, slippage, impact, funding and borrow costs are not. Research does not change live weights or signals.`);
     }
@@ -728,14 +730,18 @@ export function initializeEntryValidation(doc = document) {
         const body = $('hour-rule-rows');
         body.replaceChildren();
         const statusMessages = {
-            HOUR_PAIR_SELECTED: 'A training-weighted hour pair was selected on validation data. The holdout evaluates that frozen pair once.',
+            HOUR_PAIR_SELECTED: 'This saved hour result used the previous selection protocol. Rerun it to check after-fee profitability.',
+            HOUR_PAIR_PROFITABLE: 'The selected hour pair passed the validation and untouched-holdout profitability checks.',
+            HOUR_PAIR_NOT_PROFITABLE: 'The best validation hour pair did not pass both profitability checks; do not treat it as a proven setup.',
             WEIGHTS_UNAVAILABLE: 'Hourly search needs a fee-aware candidate weight vector fitted on training data.',
             INVALID_BAR_INTERVAL: 'Candle interval metadata is missing, so local hours could not be evaluated.',
             INTRADAY_HOURS_NOT_APPLICABLE: 'Daily and weekly bars do not contain intraday entry or exit timing.',
             INSUFFICIENT_VALIDATION_SAMPLE: `No hour pair met the minimum ${metric(rule?.minimum_validation_trades, ' validation trades', 0)}. No best hour is reported.`,
         };
         const message = rule?.reason || statusMessages[rule?.status] || 'This saved report predates the hour analysis. Rerun the ticker to calculate entry and exit hours.';
-        status('hour-rule-status', `${message}${rule?.timezone ? ` Time basis: ${rule.timezone}.` : ''}`, rule?.status === 'HOUR_PAIR_SELECTED' ? '' : 'pending');
+        const tone = rule?.status === 'HOUR_PAIR_PROFITABLE'
+            ? 'valid' : rule?.status === 'HOUR_PAIR_NOT_PROFITABLE' ? 'error' : 'pending';
+        status('hour-rule-status', `${message}${rule?.timezone ? ` Time basis: ${rule.timezone}.` : ''}`, tone);
         const candidate = rule?.candidate;
         if (candidate) {
             const validation = candidate.validation || {};
@@ -743,8 +749,8 @@ export function initializeEntryValidation(doc = document) {
             metrics.replaceChildren(
                 metricCard('Entry hour', hourText(candidate.entry_hour_wib), 'Next bar open · WIB'),
                 metricCard('Exit hour', hourText(candidate.exit_hour_wib), `First matching bar close · maximum ${metric(rule.maximum_hold_bars, ' bars', 0)}`),
-                metricCard('Validation', `${metric(validation.trades, '', 0)} trades · ${metric(validation.mean_return_pct, '%')}`, validation.return_basis || 'Validation result'),
-                metricCard('Untouched holdout', `${metric(holdout.trades, '', 0)} trades · ${metric(holdout.mean_return_pct, '%')}`, holdout.return_basis || 'Holdout result'),
+                metricCard('Validation', `${metric(validation.trades, '', 0)} trades · ${metric(validation.mean_return_pct, '%')} mean net · PF ${metric(validation.profit_factor, '×', 2)}`, 'Win rate is descriptive · configured fees applied'),
+                metricCard('Untouched holdout', `${metric(holdout.trades, '', 0)} trades · ${metric(holdout.mean_return_pct, '%')} mean net · PF ${metric(holdout.profit_factor, '×', 2)}`, 'Win rate is descriptive · configured fees applied'),
             );
         } else {
             metrics.replaceChildren(metricCard('Entry / exit hours', 'Unavailable', rule?.status || 'Insufficient data'));

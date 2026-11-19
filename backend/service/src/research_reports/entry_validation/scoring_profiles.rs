@@ -5,8 +5,6 @@ use std::collections::BTreeMap;
 
 const MIN_PROFILE_SYMBOLS: usize = 5;
 const MIN_PROFILE_TRADES: usize = 30;
-const TARGET_AFTER_FEE_WIN_RATE_PCT: f64 =
-    quant_core::ENTRY_SCORE_TARGET_AFTER_FEE_WIN_RATE_PCT;
 const SCORE_BAND_COUNT: usize = quant_core::ENTRY_SCORE_CALIBRATION_BAND_COUNT;
 
 pub(crate) type ScoringProfileKey = (String, String, String, String);
@@ -148,18 +146,18 @@ impl MetricTotals {
         self.wilson_95_pct().map(|interval| interval[0])
     }
 
-    fn target_passes(self) -> bool {
+    fn profitable_after_fees(self) -> bool {
         self.trades >= MIN_PROFILE_TRADES
-            && self
-                .win_rate()
-                .is_some_and(|rate| rate >= TARGET_AFTER_FEE_WIN_RATE_PCT)
-            && self
-                .wilson_lower_pct()
-                .is_some_and(|lower| lower >= TARGET_AFTER_FEE_WIN_RATE_PCT)
+            && self.mean_net().is_some_and(|mean| {
+                mean > quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT
+            })
+            && self.profit_factor().is_some_and(|factor| {
+                factor > quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR
+            })
     }
 
-    fn signal_win_rate_passes(self) -> bool {
-        self.target_passes()
+    fn signal_profitability_passes(self) -> bool {
+        self.profitable_after_fees()
     }
 
     fn merge(&mut self, incoming: Self) {
@@ -181,6 +179,7 @@ impl MetricTotals {
             "win_rate_after_fees_wilson_95_pct": self.wilson_95_pct(),
             "observed_payoff_ratio_after_fees": self.payoff_ratio(),
             "mean_net_return_pct": self.mean_net(),
+            "aggregate_net_return_pct": (self.trades > 0).then_some(self.net_sum_pct),
             "profit_factor": self.profit_factor(),
         })
     }
@@ -438,7 +437,7 @@ fn candidate_decision(
     // that frozen cutoff and never participates in selecting it.
     let calibration_band = (0..SCORE_BAND_COUNT).find(|band| {
         cumulative_score_bands(&evidence.validation_score_bands, *band)
-            .signal_win_rate_passes()
+            .signal_profitability_passes()
     });
     let validation_signal_gate = calibration_band
         .map(|band| cumulative_score_bands(&evidence.validation_score_bands, band));
@@ -457,17 +456,17 @@ fn candidate_decision(
     if evidence.minimum_history_days < quant_core::ENTRY_SCORE_MIN_HISTORY_DAYS {
         blockers.push("Every included instrument needs at least 1,000 calendar days of stored history.");
     }
-    if !evidence.validation.target_passes() {
-        blockers.push("Validation does not meet the 50% after-fee win-rate target with a 95% Wilson lower bound.");
+    if !evidence.validation.profitable_after_fees() {
+        blockers.push("Validation does not show positive mean net return and profit factor above 1 after configured fees with the required sample.");
     }
-    if !evidence.holdout.target_passes() {
-        blockers.push("The untouched holdout does not meet the 50% after-fee win-rate target with a 95% Wilson lower bound.");
+    if !evidence.holdout.profitable_after_fees() {
+        blockers.push("The untouched holdout does not show positive mean net return and profit factor above 1 after configured fees with the required sample.");
     }
     if validation_signal_gate.is_none() {
-        blockers.push("No validation score cutoff meets the 50% after-fee win-rate target and its 95% Wilson lower bound.");
+        blockers.push("No validation score cutoff shows positive mean net return and profit factor above 1 after configured fees with the required sample.");
     }
-    if holdout_signal_gate.is_none_or(|summary| !summary.signal_win_rate_passes()) {
-        blockers.push("The frozen validation score cutoff does not meet the 50% after-fee win-rate target and its 95% Wilson lower bound on untouched holdout data.");
+    if holdout_signal_gate.is_none_or(|summary| !summary.signal_profitability_passes()) {
+        blockers.push("The frozen validation score cutoff is not profitable after configured fees on untouched holdout data.");
     }
     let product_slices = cohort
         .product_report_counts
@@ -497,16 +496,16 @@ fn candidate_decision(
             if slice_coverage + f64::EPSILON < PROFILE_MIN_COHORT_COVERAGE_PCT as f64 {
                 slice_blockers.push("candidate coverage below 80%".to_string());
             }
-            if !validation.target_passes() || !holdout.target_passes() {
-                slice_blockers.push("validation or holdout misses the 50% after-fee target".to_string());
+            if !validation.profitable_after_fees() || !holdout.profitable_after_fees() {
+                slice_blockers.push("validation or holdout is not profitable after configured fees with the required sample".to_string());
             }
             if minimum_history_days < quant_core::ENTRY_SCORE_MIN_HISTORY_DAYS {
                 slice_blockers.push("history is shorter than 1,000 days".to_string());
             }
-            if signal_validation.is_none_or(|summary| !summary.signal_win_rate_passes())
-                || signal_holdout.is_none_or(|summary| !summary.signal_win_rate_passes())
+            if signal_validation.is_none_or(|summary| !summary.signal_profitability_passes())
+                || signal_holdout.is_none_or(|summary| !summary.signal_profitability_passes())
             {
-                slice_blockers.push("the calibrated score range misses the 50% after-fee setup gate".to_string());
+                slice_blockers.push("the calibrated score range is not profitable after configured fees".to_string());
             }
             json!({"exchange_id":exchange,"product_id":product,"symbols":symbol_count,
                 "expected_reports":expected,"coverage_pct":slice_coverage,
@@ -520,26 +519,27 @@ fn candidate_decision(
     if product_slices.iter().any(|slice| {
         slice.get("blockers").and_then(Value::as_array).is_some_and(|items| !items.is_empty())
     }) {
-        blockers.push("Every app/product slice must independently meet cohort coverage and the after-fee target.");
+        blockers.push("Every app/product slice must independently meet cohort coverage and after-fee profitability.");
     }
     let product_signal_gate_passes = calibration_band.is_some()
         && cohort.product_report_counts.keys().all(|key| {
             evidence.product_slices.get(key).is_some_and(|slice| {
                 let band = calibration_band.unwrap_or_default();
                 cumulative_score_bands(&slice.validation_score_bands, band)
-                    .signal_win_rate_passes()
+                    .signal_profitability_passes()
                     && cumulative_score_bands(&slice.holdout_score_bands, band)
-                        .signal_win_rate_passes()
+                        .signal_profitability_passes()
             })
         });
     let signal_gate_qualified = validation_signal_gate
-        .is_some_and(MetricTotals::signal_win_rate_passes)
-        && holdout_signal_gate.is_some_and(MetricTotals::signal_win_rate_passes)
+        .is_some_and(MetricTotals::signal_profitability_passes)
+        && holdout_signal_gate.is_some_and(MetricTotals::signal_profitability_passes)
         && product_signal_gate_passes;
     let signal_gate = json!({
         "status": if signal_gate_qualified {"QUALIFIED"} else {"BLOCKED"},
         "minimum_score_out_of_60": calibration_band.map(score_floor_for_band),
-        "target_after_fee_win_rate_pct": TARGET_AFTER_FEE_WIN_RATE_PCT,
+        "minimum_mean_net_return_after_fees_pct": quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+        "minimum_profit_factor_after_fees": quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
         "fees_applied": true,
         "validation": validation_signal_gate.map(MetricTotals::as_json),
         "holdout": holdout_signal_gate.map(MetricTotals::as_json),
@@ -547,11 +547,13 @@ fn candidate_decision(
         "selection_basis": "lowest score cutoff passing validation; same cutoff evaluated once on untouched holdout",
     });
     json!({
+        "protocol_id": quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
         "evaluated_at": evaluated_at,
         "decision": if blockers.is_empty() {"PROMOTED"} else {"BLOCKED"},
         "scope": {"score_model_id":scope.score_model_id,"asset_category_id":scope.asset_category_id,
             "timeframe":scope.timeframe,"source_family":scope.source_family},
-        "target_after_fee_win_rate_pct": TARGET_AFTER_FEE_WIN_RATE_PCT,
+        "minimum_mean_net_return_after_fees_pct": quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+        "minimum_profit_factor_after_fees": quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
         "weights": weights,
         "cohort": {"reports":cohort.report_count,"candidate_symbols":evidence.symbol_count,"coverage_pct":coverage_pct,
             "minimum_history_days":evidence.minimum_history_days,"minimum_holdout_days":evidence.minimum_holdout_days},
@@ -677,9 +679,11 @@ pub(crate) fn evaluate_daily_profiles(
             let decision = json!({"evaluated_at":evaluated_at,"decision":"BLOCKED",
                 "scope":{"score_model_id":scope.score_model_id,"asset_category_id":scope.asset_category_id,
                     "timeframe":scope.timeframe,"source_family":scope.source_family},
-                "target_after_fee_win_rate_pct":TARGET_AFTER_FEE_WIN_RATE_PCT,
+                "protocol_id":quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID,
+                "minimum_mean_net_return_after_fees_pct":quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+                "minimum_profit_factor_after_fees":quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
                 "cohort":{"reports":cohort.report_count,"candidate_symbols":0,"coverage_pct":0.0},
-                "blockers":["No report in this cohort produced a fee-aware candidate meeting the 50% training target."]});
+                "blockers":["No report in this cohort produced a fee-aware training candidate with positive net expectancy and profit factor above 1."]});
             (None, decision)
         };
         let promote = decision.get("decision").and_then(Value::as_str) == Some("PROMOTED");
@@ -806,12 +810,12 @@ fn validated_gate_summary(summary: &Value) -> bool {
     summary["trades"]
         .as_u64()
         .is_some_and(|trades| trades >= MIN_PROFILE_TRADES as u64)
-        && summary["win_rate_after_fees_pct"]
+        && summary["mean_net_return_pct"]
             .as_f64()
-            .is_some_and(|rate| rate >= TARGET_AFTER_FEE_WIN_RATE_PCT)
-        && summary["win_rate_after_fees_wilson_95_lower_pct"]
+            .is_some_and(|mean| mean > quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT)
+        && summary["profit_factor"]
             .as_f64()
-            .is_some_and(|lower| lower >= TARGET_AFTER_FEE_WIN_RATE_PCT)
+            .is_some_and(|factor| factor > quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR)
 }
 
 fn validated_signal_gate(evaluation: &Value) -> Option<Value> {
@@ -831,9 +835,13 @@ pub(crate) fn signal_gate_is_qualified(gate: &Value) -> bool {
     gate.get("fees_applied").and_then(Value::as_bool) == Some(true)
         && gate.get("status").and_then(Value::as_str) == Some("QUALIFIED")
         && gate
-            .get("target_after_fee_win_rate_pct")
+            .get("minimum_mean_net_return_after_fees_pct")
             .and_then(Value::as_f64)
-            == Some(TARGET_AFTER_FEE_WIN_RATE_PCT)
+            == Some(quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT)
+        && gate
+            .get("minimum_profit_factor_after_fees")
+            .and_then(Value::as_f64)
+            == Some(quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR)
         && minimum_score.is_finite()
         && (quant_core::SIX_INDICATOR_MINIMUM_SCORE_OUT_OF_60
             ..=quant_core::SIX_INDICATOR_SCORE_SCALE_MAX)
@@ -879,10 +887,15 @@ pub(crate) fn scoring_profile_status(connection: &Connection) -> Result<Value, r
         let evaluations = rows
             .filter_map(Result::ok)
             .filter_map(|encoded| serde_json::from_str::<Value>(&encoded).ok())
+            .filter(|evaluation| {
+                evaluation.get("protocol_id").and_then(Value::as_str)
+                    == Some(quant_core::ENTRY_SCORE_VALIDATION_PROTOCOL_ID)
+            })
             .collect::<Vec<_>>();
         evaluations
     };
-    Ok(json!({"target_after_fee_win_rate_pct":TARGET_AFTER_FEE_WIN_RATE_PCT,
+    Ok(json!({"minimum_mean_net_return_after_fees_pct":quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT,
+        "minimum_profit_factor_after_fees":quant_core::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR,
         "active_profiles":profiles,"latest_evaluations":evaluations,
-        "default_weights":[10,10,10,10],"default_status":"equal-weight live scoring when no validated profile exists; after-fee metrics are informational"}))
+        "default_weights":[10,10,10,10],"default_status":"equal-weight live scoring when no profitable validated profile exists; after-fee metrics do not filter signals"}))
 }
