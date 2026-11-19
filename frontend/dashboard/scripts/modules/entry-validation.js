@@ -6,7 +6,7 @@ import { renderAutocorrelationRiskSizing } from './entry-validation-risk-sizing.
 const PAGE_SIZE = 50;
 const APP_LABELS = { stockbit: 'Stockbit', pintu: 'Pintu', pluang: 'Pluang', tokocrypto: 'Tokocrypto' };
 const HISTORICAL_MODEL_LABELS = { nwe: 'Historical NWE-led entry', dss: 'Historical DSS-led entry' };
-const RISK_REWARD_PROTOCOL_ID = 'entry_score_signed_risk_reward_after_fee_v5';
+const RISK_REWARD_PROTOCOL_ID = 'entry_score_signed_risk_reward_after_fee_v6';
 const FEE_SOURCE_HOSTS = new Set([
     'help.stockbit.com', 'pintu.co.id', 'www.pintu.co.id', 'pluang.com', 'www.pluang.com',
     'support.tokocrypto.com',
@@ -502,7 +502,7 @@ export function initializeEntryValidation(doc = document) {
             after_fee_win_rate_target_met: 'At least 50% wins after configured fees on validation and holdout',
             profitable_holdout: 'Positive held-out return and profit factor · diagnostic, not a target', score_discrimination_supported: 'Held-out score discrimination supported · diagnostic',
             venue_native_history: 'Venue-native history', fees_known: 'Product transaction fees are known',
-            asymmetric_risk_reward_rule: '4h stop/target rule meets the after-fee win-rate target',
+            asymmetric_risk_reward_rule: '4h planned risk:reward meets the minimum and the after-fee validation gates',
             execution_costs_complete: 'Execution costs are fully covered',
         };
         const checkEntries = Object.entries(labels).filter(([key]) => checks[key] !== undefined || key !== 'asymmetric_risk_reward_rule');
@@ -648,12 +648,19 @@ export function initializeEntryValidation(doc = document) {
             INVALID_HISTORY: 'Invalid history',
             PREFERRED_TIMEFRAME_IS_4H: '4h preferred',
             WEIGHTS_UNAVAILABLE: 'Weights unavailable',
+            MINIMUM_REWARD_RISK_NOT_MET: 'Minimum risk:reward not met',
         };
         const feeAdjustedTargetProtocol = rule?.protocol_id === RISK_REWARD_PROTOCOL_ID;
         const candidate = feeAdjustedTargetProtocol ? rule?.candidate : null;
+        const minimumTargetMultiple = feeAdjustedTargetProtocol
+            ? numeric(rule?.minimum_target_after_fee_r_multiple)
+            : null;
+        const minimumRiskRewardText = minimumTargetMultiple === null
+            ? 'Unavailable · rerun required'
+            : `1:${metric(minimumTargetMultiple, '', 0)}`;
         const stateLabel = feeAdjustedTargetProtocol ? (labels[rule?.status] || 'Evidence unavailable') : 'Rerun for fee-aware target';
         text('risk-reward-state', stateLabel);
-        state.className = `state-badge ${feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? 'valid' : feeAdjustedTargetProtocol && rule?.status === 'HOLDOUT_FAILED' ? 'error' : 'pending'}`;
+        state.className = `state-badge ${feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? 'valid' : feeAdjustedTargetProtocol && ['HOLDOUT_FAILED', 'MINIMUM_REWARD_RISK_NOT_MET'].includes(rule?.status) ? 'error' : 'pending'}`;
         const targetRate = metric(rule?.target_after_fee_win_rate_pct, '% after fees', 0);
         const message = feeAdjustedTargetProtocol
             ? (rule?.reason || 'This saved report predates the current 4h risk/reward protocol. Rerun it to calculate candidate rules.')
@@ -663,10 +670,13 @@ export function initializeEntryValidation(doc = document) {
         const targetValues = search.target_after_fee_r_multiples ?? search.target_r_multiples;
         const targetSuffix = Array.isArray(search.target_after_fee_r_multiples) ? '× net risk after fees' : ' gross R';
         const searchDescription = `Search grid: ${values(search.atr14_stop_multiples, ' × ATR14')} stops; ${values(targetValues, targetSuffix)} targets; ${values(search.maximum_hold_bars, ' bars', 0)} maximum holds; setup-strength floors ${values(search.score_floors_out_of_60, '/60', 0)}`;
-        status('risk-reward-status', `${message} Qualification target: ${targetRate} after fees, with its 95% Wilson lower bound also at target. Payoff and net return are shown as diagnostics.`, feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? '' : 'pending');
+        status('risk-reward-status', `${message} Minimum planned risk:reward ${minimumRiskRewardText} after fees. Qualification also requires ${targetRate} and its 95% Wilson lower bound. Realized payoff and net return are diagnostics.`, feeAdjustedTargetProtocol && rule?.status === 'QUALIFIED' ? '' : 'pending');
         if (!candidate) {
             text('risk-reward-description', `${metric(rule?.eligible_validation_candidate_count, '', 0)} of ${metric(rule?.candidate_count, '', 0)} bracket combinations had enough validation trades. No rule was selected from holdout data.`);
-            metrics.replaceChildren(metricCard('Rule candidate', 'Unavailable', `${metric(rule?.minimum_validation_trades, ' trades minimum', 0)} per validation and holdout`));
+            metrics.replaceChildren(
+                metricCard('Minimum planned risk:reward', minimumRiskRewardText, 'Net target reward ÷ stop risk after configured fees'),
+                metricCard('Rule candidate', 'Unavailable', `${metric(rule?.minimum_validation_trades, ' trades minimum', 0)} per validation and holdout`),
+            );
             text('risk-reward-limits', `${searchDescription}. The search requires known fees. If stop and target both touch within one candle, it assumes the stop first. Spread, slippage, market impact, funding and borrow costs remain excluded. Research does not change live weights or signals.`);
             return;
         }
@@ -675,11 +685,13 @@ export function initializeEntryValidation(doc = document) {
         const afterFeeTarget = numeric(candidate.target_after_fee_r_multiple);
         const targetDescription = afterFeeTarget === null
             ? `Legacy gross target ${metric(candidate.target_r_multiple, 'R', 2)}`
-            : `target ${metric(afterFeeTarget, '× net risk after fees', 2)}`;
+            : `planned risk:reward 1:${metric(afterFeeTarget, '', 2)} after fees`;
         const verdict = candidate.qualified === true ? 'Passed history, validation, and holdout checks.' : `Validation ${candidate.validation_passed === true ? 'passed' : 'failed'} · holdout ${candidate.holdout_passed === true ? 'passed' : 'failed'} · 1,000-day minimum ${candidate.history_span_passed === true ? 'passed' : 'not met'}.`;
         const wilsonLower = summary => Array.isArray(summary.win_rate_after_fees_wilson_95_pct) ? summary.win_rate_after_fees_wilson_95_pct[0] : null;
         text('risk-reward-description', `${candidate.entry_rule || '4h score-based entry.'} Setup-strength floor ${metric(candidate.minimum_score_out_of_60, '/60', 0)} with weights ${weightVectorText(candidate.weights || rule.selected_score_weights || [10, 10, 10, 10])}. Stop ${metric(candidate.stop_atr_multiple, ' × ATR14', 2)}; ${targetDescription}; maximum hold ${metric(candidate.maximum_hold_bars, ' 4h bars', 0)}. ${verdict}`);
         metrics.replaceChildren(
+            metricCard('Minimum planned risk:reward', minimumRiskRewardText, 'Net target reward ÷ stop risk after configured fees'),
+            metricCard('Selected planned risk:reward', afterFeeTarget === null ? 'Unavailable' : `1:${metric(afterFeeTarget, '', 2)}`, 'Net target reward ÷ stop risk · before gap and fill effects'),
             metricCard('Validation win rate', metric(validation.win_rate_after_fees_pct, '%', 1), `${metric(validation.trades, ' trades', 0)} · target ${targetRate}`),
             metricCard('Validation 95% lower bound', metric(wilsonLower(validation), '%', 1), `Must also reach ${targetRate}`),
             metricCard('Validation payoff after fees', metric(validation.payoff_ratio_after_fees ?? validation.payoff_ratio, '×', 2), 'Average net win / net loss · diagnostic only'),
