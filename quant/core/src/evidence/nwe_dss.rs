@@ -161,6 +161,31 @@ impl TradeSummary {
         (self.trades > 0).then(|| self.net_sum_pct / self.trades as f64)
     }
 
+    pub(super) fn aggregate_net_return_pct(self) -> Option<f64> {
+        (self.trades > 0).then_some(self.net_sum_pct)
+    }
+
+    pub(super) fn profit_factor(self) -> Option<f64> {
+        if self.negative_returns_pct > 0.0 {
+            Some(self.positive_returns_pct / self.negative_returns_pct)
+        } else if self.positive_returns_pct > 0.0 {
+            Some(99.0)
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn profitable_after_fees(self, minimum_trades: usize, fees_known: bool) -> bool {
+        fees_known
+            && self.trades >= minimum_trades
+            && self.mean_net().is_some_and(|mean| {
+                mean > crate::ENTRY_SCORE_MINIMUM_AFTER_FEE_MEAN_NET_RETURN_PCT
+            })
+            && self.profit_factor().is_some_and(|factor| {
+                factor > crate::ENTRY_SCORE_MINIMUM_AFTER_FEE_PROFIT_FACTOR
+            })
+    }
+
     pub(super) fn win_rate(self) -> Option<f64> {
         (self.trades > 0).then(|| self.wins as f64 / self.trades as f64 * 100.0)
     }
@@ -207,9 +232,10 @@ impl TradeSummary {
             "win_rate_after_fees_wilson_95_pct": fees_known.then_some(confidence_interval).flatten(),
             "mean_return_pct": self.mean_net(),
             "mean_net_return_pct": fees_known.then(|| self.mean_net()).flatten(),
+            "aggregate_net_return_pct": fees_known.then(|| self.aggregate_net_return_pct()).flatten(),
             "mean_gross_return_pct": (self.trades > 0).then(|| self.gross_sum_pct / self.trades as f64),
             "return_basis": if fees_known { "after configured fees" } else { "gross; fees unknown" },
-            "profit_factor": if self.negative_returns_pct > 0.0 { Some(self.positive_returns_pct / self.negative_returns_pct) } else if profit_factor_unbounded { Some(99.0) } else { None },
+            "profit_factor": self.profit_factor(),
             "profit_factor_unbounded": profit_factor_unbounded,
             "trade_span_days": sample_days,
             "first_entry_ts": self.first_time,

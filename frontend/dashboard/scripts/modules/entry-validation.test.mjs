@@ -24,7 +24,7 @@ test('completed research is separate from validation and old protocol evidence s
 });
 
 test('4h status reads the current after-fee rule from the weight-learning result', () => {
-    const rule = { protocol_id: 'entry_score_signed_risk_reward_after_fee_v6', status: 'INSUFFICIENT_HISTORY' };
+    const rule = { protocol_id: 'entry_score_signed_risk_reward_after_fee_v7', status: 'INSUFFICIENT_HISTORY' };
     const backtest = { status: 'HOLDOUT_RESEARCH_COMPLETE', weight_learning: { risk_reward_rule: rule } };
     assert.equal(riskRewardRuleForBacktest(backtest), rule);
     assert.deepEqual(reportModelState({ backtest }, 'v1', 'v1', '4h'), {

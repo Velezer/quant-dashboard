@@ -475,19 +475,19 @@ fn build_report(
             json!(source["venue_native"] == true && source["is_proxy"] != true);
         checks["fees_known"] = json!(fees_known);
         checks["execution_costs_complete"] = json!(false);
-        checks["after_fee_win_rate_target_met"] = json!(
+        checks["after_fee_profitability_met"] = json!(
             backtest
-                .pointer("/weight_learning/validation_after_fee_target_met")
+                .pointer("/weight_learning/validation_profitable_after_fees")
                 .and_then(Value::as_bool)
                 == Some(true)
                 && backtest
-                    .pointer("/weight_learning/holdout_after_fee_target_met")
+                    .pointer("/weight_learning/holdout_profitable_after_fees")
                     .and_then(Value::as_bool)
                     == Some(true)
         );
         let mut requirements = vec![
             ("registered_identity","Exact verified app/product/ticker identity is required."),
-            ("after_fee_win_rate_target_met","The learned entry rule has not reached a 50% win rate after configured fees on both validation and untouched holdout data."),
+            ("after_fee_profitability_met","The learned entry rule must have positive mean net return and profit factor above 1 after configured fees on both validation and untouched holdout data."),
             ("holdout_sample_sufficient","The untouched holdout needs more completed entry outcomes."),
             ("history_span_sufficient","The full completed history does not meet the 1,000-day minimum."),
             ("venue_native_history","Venue-native history is required; research proxies cannot establish execution evidence."),

@@ -74,15 +74,15 @@ export function createSignalScreenerCard({
         const afterFeeGate = signal.score_basis?.after_fee_gate;
         const gateHoldout = afterFeeGate?.holdout || {};
         const gateWinRate = Number(gateHoldout.win_rate_after_fees_pct);
-        const gateLowerBound = Number(gateHoldout.win_rate_after_fees_wilson_95_lower_pct);
+        const gateMeanNet = Number(gateHoldout.mean_net_return_pct);
+        const gateProfitFactor = Number(gateHoldout.profit_factor);
         const gateTrades = Number(gateHoldout.trades);
         const gateMinimumScore = Number(afterFeeGate?.minimum_score_out_of_60);
-        const targetAfterFeeWinRate = Number(afterFeeGate?.target_after_fee_win_rate_pct ?? 50);
-        const hasAfterFeeMetric = Number.isFinite(gateWinRate) && Number.isFinite(gateLowerBound)
+        const hasAfterFeeMetric = Number.isFinite(gateMeanNet) && Number.isFinite(gateProfitFactor)
             && Number.isFinite(gateTrades) && Number.isFinite(gateMinimumScore);
         const afterFeeMetricText = sixIndicators && (hasAfterFeeMetric || signal.persistent_score !== true)
             ? hasAfterFeeMetric
-                ? `Product holdout ${gateWinRate.toFixed(1)}% after fees vs ${targetAfterFeeWinRate.toFixed(0)}% target · ${Math.trunc(gateTrades)} trades · 95% lower bound ${gateLowerBound.toFixed(1)}% · profile cutoff ${gateMinimumScore.toFixed(0)}/60 is informational, not a signal filter`
+                ? `Product holdout ${gateMeanNet >= 0 ? '+' : ''}${gateMeanNet.toFixed(3)}% mean net/trade · PF ${gateProfitFactor.toFixed(2)} · ${Math.trunc(gateTrades)} trades · win rate ${Number.isFinite(gateWinRate) ? `${gateWinRate.toFixed(1)}% (descriptive)` : 'unavailable'} · profile cutoff ${gateMinimumScore.toFixed(0)}/60 is informational, not a signal filter`
                 : 'No promoted after-fee profile · equal weights used · signal shown without a profile filter'
             : '';
         const afterFeeAccessibleText = hasAfterFeeMetric
@@ -209,7 +209,7 @@ export function createSignalScreenerCard({
                 ${exitCue ? `<span class="signal-exit-cue"><strong>${escape(exitText)}</strong><small>${escape(exitExplanation)}</small></span>` : ''}
                 ${totalStrength ? `<span class="signal-total-strength signal-total-strength-${totalStrength.tone}" title="${escape(totalStrength.description)}">${escape(totalStrength.label)}<small>${escape(totalStrength.description)}</small></span>` : ''}
                 <span class="signal-win-probability${hasWinProbability ? '' : ' is-unavailable'}" title="${escape(winProbability.basis || winProbability.reason || 'Estimate uses after-fee holdout outcomes matched to the active setup-strength profile.')}"><strong>${escape(winProbabilityText)}</strong><small>${escape(winProbabilityDetail)}</small></span>
-                ${afterFeeMetricText ? `<span class="signal-after-fee-metric" title="${escape(hasAfterFeeMetric ? 'Historical product-scoped cohort evidence; the separate setup-strength-matched win estimate is shown above.' : 'After-fee status is informational; it does not filter signals.')}">${escape(afterFeeMetricText)}<small>${hasAfterFeeMetric ? 'Product-scoped cohort holdout evidence; the win estimate above is matched to setup strength.' : 'This signal remains visible without a validated profile.'}</small></span>` : ''}
+                ${afterFeeMetricText ? `<span class="signal-after-fee-metric" title="${escape(hasAfterFeeMetric ? 'Historical product-scoped net-return and profit-factor evidence; the separate setup-strength-matched win estimate is shown above.' : 'After-fee status is informational; it does not filter signals.')}">${escape(afterFeeMetricText)}<small>${hasAfterFeeMetric ? 'Product-scoped cohort holdout evidence; the win estimate above is matched to setup strength.' : 'This signal remains visible without a validated profile.'}</small></span>` : ''}
                 ${renderScoreBasis(signal)}
                 <span class="signal-row-footer"><span>${escape(evidence)}</span><span>Price ${escape(signalPriceBarAgeLabel(signal.price_bar_time))}</span><span>Scanned ${escape(ageLabel(signal.last_updated_at))}</span></span>
                 ${provenance.length ? `<span class="signal-row-provenance">${escape(provenance.join(' · '))}</span>` : ''}

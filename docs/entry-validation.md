@@ -43,12 +43,16 @@ only when it is shared by at least five instruments and covers at least 80% of
 the refreshed cohort and each app/product slice.
 
 Live profile promotion requires known transaction fees, at least 1,000 days of
-history, positive net expectancy and profit factor above 1, and both validation
-and untouched holdout to meet the 50% after-fee win-rate target with a 95%
-Wilson lower bound at or above 50%. It must also improve mean net return over
-equal weights in both samples. If any requirement fails, the current active
-profile remains; when no profile exists, scans use `[10, 10, 10, 10]`. A 50%
-historical result is a target, not a future win guarantee.
+history, positive mean net return and profit factor above 1 on validation,
+untouched holdout, and every app/product slice, plus sufficient trades and
+cohort coverage. Weight training keeps vectors with positive fee-adjusted
+expectancy and ranks them by mean net return; the holdout never selects weights
+or rules. Win rate and its confidence interval are descriptive, not promotion
+gates. The preferred 4h bracket also requires at least 1:4 planned net
+risk:reward after fees. If any requirement fails, the current active profile
+remains; when no profile exists, scans use `[10, 10, 10, 10]`. Historical
+profitability does not guarantee future returns; spread, slippage, market
+impact, funding, and borrow costs are not included.
 
 The `/entry-validation` page shows active profile versions and the latest
 cohort blockers. Each signal scan loads one profile snapshot at its start and
@@ -77,12 +81,13 @@ Weight learning tests 165 predeclared nonnegative weight vectors in steps of 5
 that sum to 40, with fixed 10-point Markov and autocorrelation weights. Each
 vector recomputes the signed total and its direction before entry and reverse
 exit checks. Missing factor values contribute zero and their weight is not
-redistributed. Training candidates need at least 30 non-overlapping outcomes
-and 50% winners after configured transaction fees using a fixed 8-bar timeout.
-Among those candidates, the fitter maximizes the Wilson 95% lower bound for
-after-fee win rate, then mean net return, then proximity to equal weights.
-Unknown fees disable weight fitting; if no candidate reaches 50%, no candidate
-vector is produced.
+redistributed. Training candidates need at least 30 non-overlapping outcomes,
+positive mean net return, and profit factor above 1 after configured
+transaction fees using a fixed 8-bar timeout. Among those candidates, the
+fitter maximizes mean net return, then profit factor, aggregate net return,
+sample size, and proximity to equal weights. Win rate is descriptive, not a
+target. Unknown fees disable weight fitting; if no candidate has positive
+after-fee expectancy, no candidate vector is produced.
 
 For the fixed equal-weight baseline and the training-selected candidate,
 validation compares fixed 4, 8, and 12-bar timeouts with an exit on the first
@@ -176,7 +181,8 @@ comparison.
 
 1. **Direct effect:** Saved per-ticker candidates refresh daily; shared live
    profiles are evaluated once successful jobs cover 80% of the cycle, then
-   again at cycle end against the 50% after-fee target.
+   again at cycle end against positive after-fee expectancy and profit factor
+   above 1.
 2. **Immediate consequence:** A full pass can contain thousands of pairs, so
    it processes one pair at a time and yields briefly between reports.
 3. **Repeated operation:** The next cycle becomes due 24 hours after start;
@@ -193,8 +199,9 @@ comparison.
    and resume continues from the saved cursor. Item failures retry in the next
    daily pass and worker-level failures retry after 15 minutes.
 8. **Governance:** A candidate reaches live screener scoring only when its
-   after-fee validation and untouched holdout both pass the 50% target, score
-   cutoff, sample, and return checks. A failed or incomplete cohort leaves the
+   after-fee validation and untouched holdout both have positive mean net
+   return and profit factor above 1, with passing score-cutoff, sample, history,
+   coverage, and source checks. A failed or incomplete cohort leaves the
    existing active profile unchanged.
 9. **Trajectory:** A long or repeatedly failing cycle can leave some reports
    older than a day; progress and completion timestamps expose that condition.

@@ -14,8 +14,9 @@ fn qualified_after_fee_gate() -> serde_json::Value {
     });
     json!({
         "status": "QUALIFIED",
-        "minimum_score_out_of_40": 1.0,
-        "target_after_fee_win_rate_pct": 50.0,
+        "minimum_score_out_of_60": 1.0,
+        "minimum_mean_net_return_after_fees_pct": 0.0,
+        "minimum_profit_factor_after_fees": 1.0,
         "fees_applied": true,
         "validation": evidence.clone(),
         "holdout": evidence

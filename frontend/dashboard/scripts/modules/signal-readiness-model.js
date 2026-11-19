@@ -19,8 +19,10 @@ function latestAfterFeeMetric(liveScoring, app, product, timeframe) {
         return productSlices
             .filter(slice => String(slice?.exchange_id || '').toLowerCase() === appId
                 && (productId === 'all' || String(slice?.product_id || '').toLowerCase() === productId))
-            .filter(slice => typeof slice?.holdout?.win_rate_after_fees_pct === 'number'
-                && Number.isFinite(slice.holdout.win_rate_after_fees_pct))
+            .filter(slice => typeof slice?.holdout?.mean_net_return_pct === 'number'
+                && Number.isFinite(slice.holdout.mean_net_return_pct)
+                && typeof slice?.holdout?.profit_factor === 'number'
+                && Number.isFinite(slice.holdout.profit_factor))
             .map(slice => ({ evaluation, slice, evaluatedAt: Number(evaluation.evaluated_at) || 0 }));
     }).sort((a, b) => b.evaluatedAt - a.evaluatedAt);
     const candidate = candidates[0];
@@ -28,19 +30,20 @@ function latestAfterFeeMetric(liveScoring, app, product, timeframe) {
     const { evaluation, slice } = candidate;
     const scope = evaluation.scope || {};
     const holdout = slice.holdout || {};
+    const meanNet = holdout.mean_net_return_pct;
+    const profitFactor = holdout.profit_factor;
     const rate = holdout.win_rate_after_fees_pct;
     const lowerBound = typeof holdout.win_rate_after_fees_wilson_95_lower_pct === 'number'
         ? holdout.win_rate_after_fees_wilson_95_lower_pct : null;
     const trades = typeof holdout.trades === 'number' ? holdout.trades : null;
-    const target = Number(evaluation.target_after_fee_win_rate_pct ?? liveScoring?.target_after_fee_win_rate_pct ?? 50);
-    if (!Number.isFinite(rate) || !Number.isFinite(target)) return null;
+    if (!Number.isFinite(meanNet) || !Number.isFinite(profitFactor)) return null;
     const decision = String(evaluation.decision).toUpperCase();
     const blockers = Array.isArray(evaluation.blockers) ? evaluation.blockers.slice(0, 2).join(' ') : '';
     const productLabel = words(slice.product_id || 'product');
     return {
         label: `Latest after-fee holdout · ${productLabel}`,
-        value: `${rate.toFixed(1)}% after fees · ${rate >= target ? 'rate meets' : 'below'} ${target.toFixed(0)}% target · ${decision.toLowerCase()} evaluation${Number.isFinite(trades) ? ` · ${Math.trunc(trades)} trades` : ''}`,
-        detail: `${Number.isFinite(lowerBound) ? `95% lower bound ${lowerBound.toFixed(1)}%. ` : ''}${APP_LABELS[appId] || appId} · ${productLabel} · ${scope.asset_category_id || 'asset category unavailable'} · ${String(scope.timeframe || '').toUpperCase()} · ${scope.score_model_id || 'model unavailable'} · ${scope.source_family || 'source unavailable'} · transaction fees applied${decision === 'BLOCKED' && blockers ? `. Blockers: ${blockers}` : ''}`,
+        value: `${meanNet >= 0 ? '+' : ''}${meanNet.toFixed(3)}% mean net/trade · PF ${profitFactor.toFixed(2)} · ${Number.isFinite(rate) ? `${rate.toFixed(1)}% wins (descriptive)` : 'win rate unavailable'} · ${decision.toLowerCase()} evaluation${Number.isFinite(trades) ? ` · ${Math.trunc(trades)} trades` : ''}`,
+        detail: `${Number.isFinite(lowerBound) ? `Win-rate 95% interval lower bound ${lowerBound.toFixed(1)}% (descriptive). ` : ''}${APP_LABELS[appId] || appId} · ${productLabel} · ${scope.asset_category_id || 'asset category unavailable'} · ${String(scope.timeframe || '').toUpperCase()} · ${scope.score_model_id || 'model unavailable'} · ${scope.source_family || 'source unavailable'} · transaction fees applied${decision === 'BLOCKED' && blockers ? `. Blockers: ${blockers}` : ''}`,
         highlight: true,
     };
 }

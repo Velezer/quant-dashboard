@@ -218,7 +218,9 @@ lesson only when it will improve future tasks.
   price inputs first; do not hide a setup because its cohort lacks a promoted
   profile or misses a historical score cutoff. Use equal weights when no
   profile is active and report validation/holdout percentages as informational
-  metrics. Keep the 50% evidence threshold for profile promotion.
+  metrics. Promote combined-score profiles only on positive after-fee mean net
+  return and profit factor above 1 in validation and untouched holdout, with
+  sample, history, coverage, and source checks.
 - When an authorized promotion path moves learned scoring weights into live
   scans, persist immutable profile versions and pin one profile snapshot per
   scan. Stamp signal output with that version so a promotion cannot mix scores
@@ -354,10 +356,11 @@ lesson only when it will improve future tasks.
   fails.
 - A preferred-timeframe rule search must use a predeclared grid, select only on
   chronological validation data, and score its frozen choice once on holdout.
-  The performance target is a 50% win rate after configured transaction fees;
-  use its 95% lower confidence bound and sufficient samples to describe the
-  strength of that evidence. Do not invent a minimum payoff ratio, profit
-  factor, or positive-return target. Report those as diagnostics. A 4h
+  For combined-score research, train weights and select exits by fee-adjusted
+  mean net return; qualification requires positive mean net return and profit
+  factor above 1 on validation and untouched holdout with sufficient samples.
+  Win rate and Wilson intervals remain descriptive. The preferred 4h bracket
+  separately keeps its 1:4 minimum planned net risk:reward after fees. A 4h
   preference must not block otherwise valid research at other timeframes.
 - An absent after-fee win-rate can mean the product fee policy is unsupported,
   not that the strategy had zero wins. Check the exact app/product fee gate and
