@@ -125,6 +125,8 @@ jobs:
         run: |
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api signal_screener_route_accepts_all_six_visible_indicator_filters -- --test-threads=1
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api filter_tests -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            signal_alerts::screener::ticker_holdout::tests -- --test-threads=1
           node --test \
             frontend/dashboard/scripts/modules/screener-response-contract.test.mjs \
             frontend/dashboard/scripts/modules/signal-screener-freshness-contract.test.mjs \
