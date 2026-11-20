@@ -183,7 +183,7 @@ fn candidate(symbol: &str, forecast_return_pct: f64) -> Candidate {
 }
 
 #[test]
-fn rank_is_bounded_and_withheld_until_cohort_coverage_is_sufficient() {
+fn ranking_keeps_the_coverage_gate_and_returns_the_best_nonpositive_projection() {
     let cutoff = 3 * FOUR_HOUR_NS;
     let insufficient = forecast_payload(
         ForecastScope::TokocryptoSpot,
@@ -204,14 +204,18 @@ fn rank_is_bounded_and_withheld_until_cohort_coverage_is_sufficient() {
         forecasted: 10,
         ..Coverage::default()
     };
-    let empty = forecast_payload(
+    let nonpositive = forecast_payload(
         ForecastScope::TokocryptoSpot,
         cutoff,
         10,
         sufficient(),
         vec![candidate("DOWN", -2.5), candidate("FLAT", 0.0)],
     );
-    assert_eq!(empty["status"], "NO_POSITIVE_FORECASTS");
+    assert_eq!(nonpositive["status"], "READY");
+    assert_eq!(nonpositive["candidates"][0]["symbol"], "FLAT");
+    assert_eq!(nonpositive["candidates"][0]["forecast_return_pct"], 0.0);
+    assert_eq!(nonpositive["candidates"][1]["symbol"], "DOWN");
+    assert_eq!(nonpositive["candidates"][1]["forecast_return_pct"], -2.5);
     let ranked = forecast_payload(
         ForecastScope::TokocryptoSpot,
         cutoff,
