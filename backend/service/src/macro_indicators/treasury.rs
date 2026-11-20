@@ -6,7 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 const TREASURY_XML_URL: &str = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_real_yield_curve&field_tdr_date_value=";
-const MAX_RESPONSE_BYTES_PER_YEAR: usize = 128 * 1024;
+const MAX_RESPONSE_BYTES_PER_YEAR: usize = 512 * 1024;
 const MAX_SERIES_OBSERVATIONS: usize = 3_000;
 const CACHE_TTL_SECONDS: u64 = 6 * 60 * 60;
 const MINIMUM_RETRY_INTERVAL_SECONDS: u64 = 60;
