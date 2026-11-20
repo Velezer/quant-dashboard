@@ -16,7 +16,7 @@ mod gainer;
 mod gainer_forecast;
 mod gainer_forecast_scheduler;
 pub(crate) use gainer::{gainer_observations, gainer_saved};
-pub(crate) use gainer_forecast::gainer_forecast_at;
+pub(crate) use gainer_forecast::ForecastScope;
 pub(crate) use gainer_forecast_scheduler::{
     background_gainer_forecast_loop, gainer_forecast_latest,
 };

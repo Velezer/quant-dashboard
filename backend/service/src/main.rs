@@ -433,13 +433,13 @@ fn main() {
                 .expect("spawn daily entry-validation daemon");
         }
 
-        // Calculate the Tokocrypto gainer forecast on the completed 4h schedule.
+        // Run scheduled gainer forecasts for Tokocrypto Spot and Stockbit IDX.
         {
             let state_clone = Arc::clone(&state);
             thread::Builder::new()
                 .name("gainer-forecast-daemon".to_string())
                 .spawn(move || background_gainer_forecast_loop(state_clone))
-                .expect("spawn scheduled Tokocrypto forecast daemon");
+                .expect("spawn scheduled gainer forecast daemon");
         }
 
         // Keep local hourly history current for the 4H chart even when the

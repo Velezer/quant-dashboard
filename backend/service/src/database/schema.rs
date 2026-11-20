@@ -3,8 +3,8 @@ CREATE TABLE IF NOT EXISTS app.gainer_research_reports (
     id INTEGER PRIMARY KEY CHECK(id=1), protocol_id TEXT NOT NULL,
     computed_at INTEGER NOT NULL, report_json TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS app.tokocrypto_gainer_forecast_schedule (
-    id INTEGER PRIMARY KEY CHECK(id=1),
+CREATE TABLE IF NOT EXISTS app.gainer_forecast_schedule (
+    scope_id TEXT PRIMARY KEY CHECK(scope_id IN ('tokocrypto_spot','stockbit_idx')),
     protocol_id TEXT NOT NULL,
     forecast_cutoff INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'scheduled'
@@ -14,8 +14,38 @@ CREATE TABLE IF NOT EXISTS app.tokocrypto_gainer_forecast_schedule (
     next_attempt_at INTEGER NOT NULL DEFAULT 0,
     last_error TEXT NOT NULL DEFAULT '',
     result_json TEXT NOT NULL DEFAULT '{}',
+    universe_json TEXT NOT NULL DEFAULT 'null',
     updated_at INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS app.gainer_forecast_runs (
+    scope_id TEXT NOT NULL CHECK(scope_id IN ('tokocrypto_spot','stockbit_idx')),
+    protocol_id TEXT NOT NULL,
+    forecast_cutoff INTEGER NOT NULL,
+    computed_at INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    PRIMARY KEY(scope_id,protocol_id,forecast_cutoff)
+);
+CREATE INDEX IF NOT EXISTS app.idx_gainer_forecast_runs_recent
+    ON gainer_forecast_runs(scope_id,computed_at DESC);
+CREATE TABLE IF NOT EXISTS app.gainer_forecast_predictions (
+    scope_id TEXT NOT NULL CHECK(scope_id IN ('tokocrypto_spot','stockbit_idx')),
+    protocol_id TEXT NOT NULL,
+    forecast_cutoff INTEGER NOT NULL,
+    instrument_id TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    reference_bar_time INTEGER NOT NULL,
+    reference_close REAL NOT NULL,
+    predicted_return_pct REAL NOT NULL,
+    target_bar_time INTEGER,
+    realized_return_pct REAL,
+    created_at INTEGER NOT NULL,
+    settled_at INTEGER,
+    PRIMARY KEY(scope_id,protocol_id,forecast_cutoff,instrument_id)
+);
+CREATE INDEX IF NOT EXISTS app.idx_gainer_forecast_predictions_pending
+    ON gainer_forecast_predictions(scope_id,settled_at,forecast_cutoff);
 CREATE TABLE IF NOT EXISTS app.storage_layout_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS app.storage_split_migrations (
     migration_id TEXT PRIMARY KEY, source_path TEXT NOT NULL, source_hash TEXT NOT NULL,
