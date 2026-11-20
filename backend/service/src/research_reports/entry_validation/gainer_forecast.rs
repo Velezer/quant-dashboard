@@ -353,7 +353,7 @@ pub(super) fn settle_forecast_outcomes(
              WHERE scope_id=?1 AND protocol_id=?2 AND settled_at IS NULL
              ORDER BY forecast_cutoff,instrument_id LIMIT ?3",
         )?;
-        statement
+        let rows = statement
             .query_map(
                 params![scope.id(), scope.protocol(), MAX_OUTCOMES_PER_TICK as i64],
                 |row| {
@@ -364,8 +364,8 @@ pub(super) fn settle_forecast_outcomes(
                         row.get::<_, f64>(3)?,
                     ))
                 },
-            )?
-            .collect::<Result<Vec<_>, _>>()?
+            )?;
+        rows.collect::<Result<Vec<_>, _>>()?
     };
     let mut settled = 0;
     for (forecast_cutoff, instrument_id, reference_bar_time, reference_close) in pending {
