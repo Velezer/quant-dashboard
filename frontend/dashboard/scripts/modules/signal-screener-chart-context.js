@@ -311,7 +311,7 @@ export function createSignalScreenerChartContext({
             const stopMultiple = Number(bracket.stop_atr_multiple);
             const feeModel = String(bracket.fee_model || 'configured venue fees');
             riskRewardDetail.textContent = plannedBracketReady
-                ? `1:${Number.isFinite(plannedR) ? plannedR.toFixed(2) : minimumRLabel} planned net reward/risk · minimum 1:${minimumRLabel} · ${Number.isFinite(stopMultiple) ? stopMultiple.toFixed(2) : '1.00'}× ${String(bracket.timeframe || signal.timeframe || '').toUpperCase()} ATR stop · ${feeModel}${bracketStatus === 'REFERENCE_ONLY' ? ' · stale/reference close, not an executable entry' : ''}. Gaps, slippage, spread and other omitted costs can reduce realized R.`
+                ? `1:${Number.isFinite(plannedR) ? plannedR.toFixed(2) : minimumRLabel} planned net reward/risk · minimum 1:${minimumRLabel} · ${Number.isFinite(stopMultiple) ? stopMultiple.toFixed(2) : '1.00'}× ${String(bracket.timeframe || signal.timeframe || '').toUpperCase()} ATR stop · ${feeModel}${bracketStatus === 'REFERENCE_ONLY' ? ' · stale/reference close, not an executable entry' : ''}. On chart: green is target reward, red is stop risk, cyan is entry. Gaps, slippage, spread and other omitted costs can reduce realized R.`
                 : String(bracket.reason || 'Fee policy or 14-bar ATR input is unavailable. The signal score remains visible.');
         }
         if (selectedSetupPanel) selectedSetupPanel.hidden = false;
