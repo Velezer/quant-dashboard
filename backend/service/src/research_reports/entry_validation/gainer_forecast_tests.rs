@@ -334,9 +334,10 @@ fn stockbit_outcome_uses_latest_version_of_next_observed_session_bar() {
     ).unwrap();
     let reference_time = 11 * SECONDS_PER_DAY;
     let target_time = 12 * SECONDS_PER_DAY;
+    let hour_seconds = HOUR_NS / NANOS_PER_SECOND;
     for (timestamp, close) in [
         (target_time, 120.0),
-        (target_time + SECONDS_PER_HOUR, 125.0),
+        (target_time + hour_seconds, 125.0),
         (target_time + SECONDS_PER_DAY, 130.0),
     ] {
         connection.execute(
@@ -349,12 +350,12 @@ fn stockbit_outcome_uses_latest_version_of_next_observed_session_bar() {
         &connection,
         "BBCA.JK",
         reference_time,
-        target_time + SECONDS_PER_DAY + 2 * SECONDS_PER_HOUR,
+        target_time + SECONDS_PER_DAY + 2 * hour_seconds,
     ).unwrap().unwrap();
     assert_eq!(
         target,
         (
-            (target_time + SECONDS_PER_HOUR) * NANOS_PER_SECOND,
+            (target_time + hour_seconds) * NANOS_PER_SECOND,
             125.0,
         ),
     );
