@@ -5,7 +5,8 @@ use crate::public_http::{get_bounded, RequestOptions};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-const FRED_CSV_URL: &str = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFII10";
+const FRED_CSV_URL: &str =
+    "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFII10&cosd=2015-01-01";
 const MAX_CSV_BYTES: usize = 256 * 1024;
 const MAX_SERIES_OBSERVATIONS: usize = 3_000;
 const CACHE_TTL_SECONDS: u64 = 6 * 60 * 60;
@@ -104,7 +105,7 @@ fn fetch_ten_year_tips() -> Result<Vec<MacroObservation>, String> {
         FRED_CSV_URL,
         RequestOptions {
             connect_timeout: Duration::from_secs(3),
-            total_timeout: Duration::from_secs(8),
+            total_timeout: Duration::from_secs(20),
             max_body_bytes: MAX_CSV_BYTES,
             max_redirects: 2,
             accept: "text/csv",
