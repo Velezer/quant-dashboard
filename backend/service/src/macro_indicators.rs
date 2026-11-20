@@ -1,7 +1,7 @@
 //! Application-owned macro indicator data contract and provider selection.
 //! Macro observations are descriptive context and do not enter ticker scores.
 
-mod fred;
+mod treasury;
 
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -77,20 +77,27 @@ pub(crate) struct ProviderSeriesSnapshot {
 }
 
 /// Narrow app-owned port: providers return dated percentage observations while
-/// the source format and snapshot parsing remain inside their adapter.
+/// the source format and provider parsing remain inside their adapter.
 pub(crate) trait MacroSeriesProvider: Sync {
-    fn read_series(&self, id: MacroIndicatorId) -> Result<ProviderSeriesSnapshot, String>;
+    fn read_series(
+        &self,
+        id: MacroIndicatorId,
+        force_refresh: bool,
+    ) -> Result<ProviderSeriesSnapshot, String>;
 }
 
 fn provider_for(id: MacroIndicatorId) -> &'static dyn MacroSeriesProvider {
     match id {
-        MacroIndicatorId::TenYearTipsRealYield => &fred::FRED_PROVIDER,
+        MacroIndicatorId::TenYearTipsRealYield => &treasury::TREASURY_PROVIDER,
     }
 }
 
 /// Read the registered macro series and map it into the stable UI contract.
-pub(crate) fn read(id: MacroIndicatorId) -> Result<MacroIndicatorData, String> {
-    let snapshot = provider_for(id).read_series(id)?;
+pub(crate) fn read(
+    id: MacroIndicatorId,
+    force_refresh: bool,
+) -> Result<MacroIndicatorData, String> {
+    let snapshot = provider_for(id).read_series(id, force_refresh)?;
     let latest = snapshot
         .observations
         .last()
@@ -112,7 +119,7 @@ pub(crate) fn read(id: MacroIndicatorId) -> Result<MacroIndicatorData, String> {
     let status_note = if snapshot.refresh_error.is_some() {
         Some("The latest refresh failed; showing the last successfully retrieved observations.".to_string())
     } else if too_old {
-        Some("The latest FRED snapshot or observation is more than seven days old. Check FRED again later.".to_string())
+        Some("The latest Treasury observation is more than seven days old. Check the Treasury feed again later.".to_string())
     } else {
         None
     };
@@ -120,8 +127,8 @@ pub(crate) fn read(id: MacroIndicatorId) -> Result<MacroIndicatorData, String> {
         MacroIndicatorId::TenYearTipsRealYield => (
             "10-Year TIPS real yield",
             "The market yield on 10-year Treasury inflation-indexed securities. This is a real yield, not the nominal 10-year Treasury yield or a direct inflation forecast.",
-            "DFII10",
-            "https://fred.stlouisfed.org/series/DFII10",
+            "TC_10YEAR",
+            "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve",
         ),
     };
     Ok(MacroIndicatorData {
@@ -130,7 +137,7 @@ pub(crate) fn read(id: MacroIndicatorId) -> Result<MacroIndicatorData, String> {
         description,
         unit: "% per year",
         frequency: "Daily, business days",
-        source: "Federal Reserve Bank of St. Louis · FRED",
+        source: "U.S. Department of the Treasury",
         source_series_id,
         source_url,
         freshness,

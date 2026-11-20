@@ -22,9 +22,9 @@
             <div class="section-heading macro-heading">
                 <div>
                     <h1 id="macro-title">Macroeconomic indicators</h1>
-                    <p class="small-text">A dedicated view for rates, inflation and other market-wide context. These indicators are shown separately and do not change ticker scores or create signals. The FRED snapshot updates on weekdays.</p>
+                    <p class="small-text">A dedicated view for rates, inflation and other market-wide context. These indicators are shown separately and do not change ticker scores or create signals. Treasury publishes this real-yield series on business days.</p>
                 </div>
-                <button id="macro-refresh" class="macro-refresh" type="button" title="Load the latest published FRED snapshot">Refresh data</button>
+                <button id="macro-refresh" class="macro-refresh" type="button" title="Load the latest published Treasury observations">Refresh data</button>
             </div>
             <p id="macro-status" class="status-message" role="status" aria-live="polite">Loading the latest available 10-year TIPS real yield…</p>
             <div id="macro-empty" class="macro-empty" hidden>
@@ -43,7 +43,7 @@
                 <div class="macro-metrics" aria-label="Latest indicator values">
                     <div class="macro-metric macro-primary-metric"><span>Latest observation</span><strong id="macro-latest-value">—</strong><small id="macro-observation-date">Date unavailable</small></div>
                     <div class="macro-metric"><span>Change from prior published day</span><strong id="macro-daily-change">—</strong><small>Basis points</small></div>
-                    <div class="macro-metric"><span>FRED snapshot retrieved</span><strong id="macro-retrieved-at">—</strong><small>Source update time</small></div>
+                    <div class="macro-metric"><span>Source checked</span><strong id="macro-retrieved-at">—</strong><small>Last successful retrieval</small></div>
                 </div>
                 <div id="macro-stale-note" class="macro-stale-note" role="note" hidden></div>
                 <div class="macro-chart-panel">
@@ -62,18 +62,18 @@
                     <summary>Source and methodology</summary>
                     <dl class="macro-source-list">
                         <div><dt>Provider</dt><dd id="macro-source"></dd></div>
-                        <div><dt>FRED series</dt><dd id="macro-source-series"></dd></div>
+                        <div><dt>Treasury series</dt><dd id="macro-source-series"></dd></div>
                         <div><dt>Frequency and unit</dt><dd id="macro-frequency-unit"></dd></div>
                         <div><dt>Definition</dt><dd id="macro-source-definition"></dd></div>
                         <div><dt>Signal relationship</dt><dd>Independent macro context. This value does not enter NWE/DSS calculations, the combined ticker score, or signal direction.</dd></div>
                     </dl>
-                    <a id="macro-source-link" class="macro-source-link" href="https://fred.stlouisfed.org/series/DFII10" target="_blank" rel="noreferrer">Open the series at FRED</a>
+                    <a id="macro-source-link" class="macro-source-link" href="https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve" target="_blank" rel="noreferrer">Open the series at Treasury</a>
                 </details>
                 <details class="macro-observations-details">
                     <summary>Recent observations</summary>
                     <div class="table-scroll"><table><thead><tr><th scope="col">Observation date</th><th scope="col">Real yield</th></tr></thead><tbody id="macro-observations-table"></tbody></table></div>
                 </details>
-                <p class="macro-limits">FRED publishes this series on business days and may revise observations. The observation date is shown separately from the time this dashboard last checked the source. Real yields describe market pricing; they are not a guaranteed forecast of future inflation or returns.</p>
+                <p class="macro-limits">Treasury publishes this series on business days and may revise observations. The observation date is shown separately from the time this dashboard last checked the source. Real yields describe market pricing; they are not a guaranteed forecast of future inflation or returns.</p>
             </article>
         </section>
         <footer class="page-footer"><span>Macroeconomic context · Independent from ticker signals</span><a href="/">Back to screener</a></footer>

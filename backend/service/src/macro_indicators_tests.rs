@@ -1,12 +1,10 @@
-use super::{
-    daily_change_basis_points, observation_is_stale, snapshot_is_stale, MacroIndicatorId,
-    MacroObservation,
-};
+use super::{daily_change_basis_points, observation_is_stale, snapshot_is_stale, MacroIndicatorId, MacroObservation};
 
 #[test]
-fn fred_parser_skips_missing_and_empty_values_and_keeps_negative_real_yields() {
-    let parsed = super::fred::parse_fred_csv(
-        "observation_date,DFII10\n2026-11-15,\n2026-11-16,2.92\n2026-11-17,.\n2026-11-18,-0.08\n",
+fn treasury_parser_skips_missing_values_and_keeps_negative_real_yields() {
+    let parsed = super::treasury::parse_treasury_year_xml(
+        "<feed><entry><d:NEW_DATE>2026-11-16T00:00:00</d:NEW_DATE><d:TC_10YEAR>2.92</d:TC_10YEAR></entry><entry><d:NEW_DATE>2026-11-17T00:00:00</d:NEW_DATE><d:TC_10YEAR>.</d:TC_10YEAR></entry><entry><d:NEW_DATE>2026-11-18T00:00:00</d:NEW_DATE><d:TC_10YEAR>-0.08</d:TC_10YEAR></entry></feed>",
+        2026,
     )
     .unwrap();
     assert_eq!(parsed.len(), 2);
@@ -17,51 +15,23 @@ fn fred_parser_skips_missing_and_empty_values_and_keeps_negative_real_yields() {
 }
 
 #[test]
-fn fred_snapshot_parser_preserves_the_source_retrieval_time() {
-    let (retrieved_at, parsed) = super::fred::parse_fred_snapshot_csv(
-        "# retrieved_at_seconds=1795164809\nobservation_date,DFII10\n2026-11-18,2.88\n",
-    )
-    .unwrap();
-    assert_eq!(retrieved_at, 1_795_164_809);
-    assert_eq!(parsed.len(), 1);
-    assert_eq!(parsed[0].date, "2026-11-18");
-    assert_eq!(parsed[0].value, 2.88);
-}
-
-#[test]
-fn fred_snapshot_parser_rejects_missing_or_invalid_retrieval_time() {
-    assert!(super::fred::parse_fred_snapshot_csv(
-        "observation_date,DFII10\n2026-11-18,2.88\n"
+fn treasury_parser_rejects_missing_feed_bad_dates_values_and_ordering() {
+    assert!(super::treasury::parse_treasury_year_xml("<html>unavailable</html>", 2026).is_err());
+    assert!(super::treasury::parse_treasury_year_xml(
+        "<feed><entry><d:NEW_DATE>2026-13-18T00:00:00</d:NEW_DATE><d:TC_10YEAR>2.8</d:TC_10YEAR></entry></feed>",
+        2026,
     )
     .is_err());
-    assert!(super::fred::parse_fred_snapshot_csv(
-        "# retrieved_at_seconds=0\nobservation_date,DFII10\n2026-11-18,2.88\n"
+    assert!(super::treasury::parse_treasury_year_xml(
+        "<feed><entry><d:NEW_DATE>2026-11-18T00:00:00</d:NEW_DATE><d:TC_10YEAR>NaN</d:TC_10YEAR></entry></feed>",
+        2026,
     )
     .is_err());
-}
-
-#[test]
-fn fred_parser_rejects_bad_headers_dates_values_and_ordering() {
-    assert!(super::fred::parse_fred_csv("date,DFII10\n2026-11-18,2.8\n").is_err());
-    assert!(super::fred::parse_fred_csv("observation_date,DFII10\n2026-13-18,2.8\n").is_err());
-    assert!(super::fred::parse_fred_csv("observation_date,DFII10\n2026-11-18,NaN\n").is_err());
-    assert!(super::fred::parse_fred_csv(
-        "observation_date,DFII10\n2026-11-18,2.8\n2026-11-18,2.9\n"
+    assert!(super::treasury::parse_treasury_year_xml(
+        "<feed><entry><d:NEW_DATE>2026-11-18T00:00:00</d:NEW_DATE><d:TC_10YEAR>2.8</d:TC_10YEAR></entry><entry><d:NEW_DATE>2026-11-18T00:00:00</d:NEW_DATE><d:TC_10YEAR>2.9</d:TC_10YEAR></entry></feed>",
+        2026,
     )
     .is_err());
-}
-
-#[test]
-fn fred_parser_bounds_observations_to_the_latest_chart_window() {
-    let mut csv = String::from("observation_date,DFII10\n");
-    for index in 0..3_010 {
-        let date = format!("{:04}-01-01", 2000 + index);
-        csv.push_str(&format!("{date},{}.0\n", index));
-    }
-    let parsed = super::fred::parse_fred_csv(&csv).unwrap();
-    assert_eq!(parsed.len(), 3_000);
-    assert_eq!(parsed.first().map(|row| row.date.as_str()), Some("2010-01-01"));
-    assert_eq!(parsed.last().map(|row| row.date.as_str()), Some("5009-01-01"));
 }
 
 #[test]
