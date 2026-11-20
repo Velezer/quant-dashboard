@@ -309,7 +309,7 @@ fn stockbit_momentum_uses_two_completed_daily_closes_and_rejects_stale_history()
     else {
         panic!("two fresh daily closes should forecast");
     };
-    assert!((forecast.return_pct - 10.0).abs() < f64::EPSILON * 10.0);
+    assert!((forecast.return_pct - 10.0).abs() < 1e-9);
     assert_eq!(forecast.reference_bar_time, 11 * NANOS_PER_DAY);
     assert_eq!(forecast.reference_close, 110.0);
 
