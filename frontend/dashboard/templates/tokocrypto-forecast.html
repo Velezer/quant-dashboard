@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="View the latest Tokocrypto Spot four-hour research ranking.">
+    <meta name="description" content="View scheduled gainer forecasts for Tokocrypto Spot and Stockbit IDX.">
     <meta name="color-scheme" content="dark">
-    <title>Tokocrypto 4h forecast · Quant Desk</title>
+    <title>Gainer forecasts · Quant Desk</title>
     <link rel="stylesheet" href="/web/styles/entry-validation.css">
     <script type="module" src="/web/scripts/modules/gainer-forecast.js"></script>
 </head>
@@ -16,20 +16,24 @@
         <nav aria-label="Page navigation"><a href="/entry-validation">Backtests</a><a href="/">Screener <span aria-hidden="true">↗</span></a></nav>
     </header>
     <main id="main" class="page-shell forecast-page">
-        <p class="eyebrow accent">TOKOCRYPTO SPOT · COMPLETED 4H WINDOW</p>
+        <p class="eyebrow accent">SCHEDULED GAINER FORECAST</p>
         <section id="gainer-forecast" class="scope-panel gainer-forecast" aria-labelledby="gainer-forecast-title" tabindex="-1">
             <div class="section-heading gainer-forecast-heading">
                 <div>
-                    <h1 id="gainer-forecast-title">Top-ranked 4h candidates</h1>
-                    <p class="small-text">A background scan runs after each completed Tokocrypto Spot 4h window and retries when history coverage is short. Scores rank indicator strength; they are not probabilities or validated predictions.</p>
+                    <h1 id="gainer-forecast-title">Next gainer forecasts</h1>
+                    <p class="small-text">Scheduled forecasts rank positive projected returns independently for each market. Estimates are research baselines, not probabilities or validated predictions.</p>
                 </div>
-                <span id="gainer-forecast-validation" class="state-badge pending">Unvalidated research ranking</span>
+                <span id="gainer-forecast-validation" class="state-badge pending">Unvalidated research</span>
+            </div>
+            <div class="gainer-forecast-scope" role="group" aria-label="Forecast market">
+                <button id="gainer-forecast-tab-tokocrypto_spot" type="button" aria-pressed="true">Tokocrypto Spot</button>
+                <button id="gainer-forecast-tab-stockbit_idx" type="button" aria-pressed="false">Stockbit IDX</button>
             </div>
             <p id="gainer-forecast-status" class="status-message" role="status" aria-live="polite">Loading the latest saved scheduled forecast…</p>
             <div id="gainer-forecast-results" class="gainer-forecast-results" aria-live="polite" aria-busy="false"></div>
-            <p class="gainer-forecast-limits">The page refreshes the saved result automatically. Coverage, scan time, cutoff, source and exclusions are shown with each result. Candidates expire at the end of their forecast window.</p>
+            <p class="gainer-forecast-limits">Results refresh automatically. Tokocrypto uses native Spot candles and forecasts the next 24 hours. Stockbit forecasts the next available IDX session from Yahoo Finance unadjusted daily prices; those prices are a research proxy, not Stockbit broker prices. Observed returns are gross, omit costs, and do not validate future performance.</p>
         </section>
-        <footer class="page-footer"><span>Research only · No orders are placed</span><a href="/">Back to screener</a></footer>
+        <footer class="page-footer"><span>Research only · No orders are placed</span><a href="/#appSignalReadinessPanel">Market data checks</a><a href="/">Back to screener</a></footer>
     </main>
 </body>
 </html>

@@ -121,6 +121,10 @@ td { padding:13px; vertical-align:top; border-top:1px solid #263447; color:#c7d3
 .gainer-forecast-heading > div { min-width:0; }
 .gainer-forecast-heading .small-text { max-width:62ch; margin:0; }
 .gainer-forecast-heading > .state-badge { flex:0 0 auto; margin-top:3px; white-space:nowrap; }
+.gainer-forecast-scope { display:flex; flex-wrap:wrap; gap:7px; margin:15px 0 10px; }
+.gainer-forecast-scope button { min-height:38px; border:1px solid #2a4654; border-radius:6px; background:#0b1822; color:#afc2cc; padding:8px 13px; font:600 .72rem/1.2 ui-sans-serif,system-ui,sans-serif; cursor:pointer; }
+.gainer-forecast-scope button[aria-pressed="true"] { border-color:#4ba7a3; background:#123035; color:#c5f2eb; }
+.gainer-forecast-scope button:focus-visible { outline:2px solid #74d8ce; outline-offset:2px; }
 .gainer-forecast-actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:17px; }
 .gainer-forecast-results { display:grid; gap:14px; margin-top:17px; min-width:0; }
 .gainer-forecast-results:empty { display:none; }
@@ -140,7 +144,7 @@ td { padding:13px; vertical-align:top; border-top:1px solid #263447; color:#c7d3
 .gainer-forecast-top-label,.gainer-forecast-shortlist h4 { display:block; color:#81d8d5; font-size:.65rem; font-weight:650; letter-spacing:.08em; text-transform:uppercase; }
 .gainer-forecast-top-label { margin-bottom:7px; }
 .gainer-forecast-top h3 { margin:0 0 6px; color:#f0f8f8; font-size:1.12rem; overflow-wrap:anywhere; }
-.gainer-forecast-score { display:block; color:#b7eee2; font:600 1.15rem/1.45 ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+.gainer-forecast-return { display:block; color:#b7eee2; font:600 1.15rem/1.45 ui-monospace,monospace; font-variant-numeric:tabular-nums; }
 .gainer-forecast-candidate-meta { display:flex; flex-wrap:wrap; gap:4px 13px; margin:8px 0 0; color:#a9bec7; font-size:.68rem; overflow-wrap:anywhere; }
 .gainer-forecast-shortlist h4 { margin:0 0 7px; }
 .gainer-forecast-shortlist ol { display:grid; gap:5px; margin:0; padding-left:20px; color:#d9e5eb; }

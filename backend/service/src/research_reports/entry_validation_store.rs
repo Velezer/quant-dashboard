@@ -86,19 +86,63 @@ pub(super) fn verified_gainer_universe(
     conn: &Connection,
     max_instruments: usize,
 ) -> Result<Vec<Value>, rusqlite::Error> {
+    verified_forecast_universe(conn, "tokocrypto", "tokocrypto_spot", "crypto_spot", max_instruments)
+}
+
+pub(super) fn verified_stockbit_gainer_universe(
+    conn: &Connection,
+    max_instruments: usize,
+) -> Result<Vec<Value>, rusqlite::Error> {
     let mut statement = conn.prepare(&format!(
         "SELECT {INSTRUMENT_COLUMNS} FROM app.instruments i
-         WHERE i.is_active=1 AND i.exchange_id='tokocrypto' AND i.product_id='tokocrypto_spot'
-           AND i.asset_category_id='crypto_spot' AND i.venue_verified=1
+         WHERE i.is_active=1 AND i.exchange_id='stockbit' AND i.product_id='stockbit_regular'
+           AND i.asset_category_id='idx_stock' AND i.venue_verified=1
+           AND i.listing_status IN ('venue_active','public_listed_snapshot')
          ORDER BY i.instrument_id"
     ))?;
+    read_forecast_universe(conn, &mut statement, max_instruments, "Stockbit IDX")
+}
+
+fn verified_forecast_universe(
+    conn: &Connection,
+    exchange_id: &str,
+    product_id: &str,
+    category_id: &str,
+    max_instruments: usize,
+) -> Result<Vec<Value>, rusqlite::Error> {
+    let mut statement = conn.prepare(&format!(
+        "SELECT {INSTRUMENT_COLUMNS} FROM app.instruments i
+         WHERE i.is_active=1 AND i.exchange_id=?1 AND i.product_id=?2
+           AND i.asset_category_id=?3 AND i.venue_verified=1
+         ORDER BY i.instrument_id"
+    ))?;
+    let mut instruments = Vec::new();
+    for row in statement.query_map([exchange_id, product_id, category_id], read_instrument)? {
+        let mut instrument = row?;
+        annotate_eligibility(conn, &mut instrument)?;
+        if instrument["research_eligibility"] == "eligible" {
+            if instruments.len() == max_instruments {
+                return Err(invalid("The forecast universe exceeds the bounded instrument limit."));
+            }
+            instruments.push(instrument);
+        }
+    }
+    Ok(instruments)
+}
+
+fn read_forecast_universe(
+    conn: &Connection,
+    statement: &mut rusqlite::Statement<'_>,
+    max_instruments: usize,
+    scope_label: &str,
+) -> Result<Vec<Value>, rusqlite::Error> {
     let mut instruments = Vec::new();
     for row in statement.query_map([], read_instrument)? {
         let mut instrument = row?;
         annotate_eligibility(conn, &mut instrument)?;
         if instrument["research_eligibility"] == "eligible" {
             if instruments.len() == max_instruments {
-                return Err(invalid("The Tokocrypto Spot universe exceeds the bounded forecast limit."));
+                return Err(invalid(&format!("The {scope_label} universe exceeds the bounded forecast limit.")));
             }
             instruments.push(instrument);
         }

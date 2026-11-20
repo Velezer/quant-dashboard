@@ -57,6 +57,9 @@ mod market_identity;
 #[path = "database/shared_crypto.rs"]
 mod shared_crypto;
 pub(crate) use shared_crypto::share_crypto_candles;
+#[cfg(test)]
+#[path = "database_gainer_forecast_tests.rs"]
+mod gainer_forecast_migration_tests;
 #[path = "database/schema.rs"]
 mod schema;
 use schema::{APP_RUNTIME_SCHEMA, MARKET_SCHEMA};
@@ -72,6 +75,7 @@ pub(super) fn initialize_app_runtime_storage_schema(
 ) -> Result<(), rusqlite::Error> {
     signal_alerts::reject_legacy_screener_tables(connection)?;
     connection.execute_batch(APP_RUNTIME_SCHEMA)?;
+    migrate_gainer_forecast_schedule(connection)?;
     ensure_entry_validation_protocol_column(connection)?;
     connections::initialize_market_app_schema(connection)?;
     master_data::initialize_schema(connection)?;
@@ -79,6 +83,32 @@ pub(super) fn initialize_app_runtime_storage_schema(
     foreign_flow::initialize_schema(connection)?;
     signal_alerts::initialize_schema(connection)?;
     pine_registry::initialize_schema(connection)
+}
+
+fn migrate_gainer_forecast_schedule(connection: &Connection) -> Result<(), rusqlite::Error> {
+    let has_legacy_schedule = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM app.sqlite_schema
+                       WHERE type='table' AND name='tokocrypto_gainer_forecast_schedule')",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !has_legacy_schedule {
+        return Ok(());
+    }
+    connection.execute_batch(
+        "INSERT OR IGNORE INTO app.gainer_forecast_runs
+            (scope_id,protocol_id,forecast_cutoff,computed_at,status,result_json)
+         SELECT 'tokocrypto_spot',protocol_id,forecast_cutoff,updated_at,status,result_json
+         FROM app.tokocrypto_gainer_forecast_schedule
+         WHERE result_json<>'{}';
+         INSERT OR IGNORE INTO app.gainer_forecast_schedule
+            (scope_id,protocol_id,forecast_cutoff,status,attempt_count,last_attempt_at,
+             next_attempt_at,last_error,result_json,universe_json,updated_at)
+         SELECT 'tokocrypto_spot',protocol_id,forecast_cutoff,'scheduled',0,0,
+             0,'','{}','null',updated_at
+         FROM app.tokocrypto_gainer_forecast_schedule WHERE id=1;
+         DROP TABLE app.tokocrypto_gainer_forecast_schedule;",
+    )
 }
 
 fn ensure_entry_validation_protocol_column(

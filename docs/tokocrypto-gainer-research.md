@@ -127,30 +127,41 @@ UNVALIDATED_RESEARCH: browser-computed reports never promote live profiles.
 10. Reject or revise the protocol if causal tests fail, universe coverage is
     inadequate or resource checks regress. No result changes live eligibility.
 
-## Current 4h forecast
+## Scheduled next-gainer forecasts
 
-The forecast applies the fixed equal-weight six-factor combined entry score to
-the latest completed 4h UTC window for verified Tokocrypto Spot pairs. It reads
-up to 1,000 consecutive 4h candles from native hourly data. Every bucket
-requires four consecutive hours, and a gap resets the available history. The
-top five positive candidates are ordered by signed score. A pair whose latest
-completed bar is older than the shared cutoff is excluded.
+The dedicated `/forecast` page has separate Tokocrypto Spot and Stockbit IDX
+profiles. One background worker runs the profiles on their market cadence, and
+the page loads the selected saved result automatically. Each profile has an
+independent universe, protocol, data source, schedule and outcome history.
 
-1. A user opens the dedicated `/forecast` page from the screener. The screener
-   link requests the latest forecast on arrival; manual refresh remains on page.
-2. Each result expires at the end of the interval it forecasts.
-3. Users can recheck after history sync. A single request at a time bounds
-   competing research work.
-4. Forecasts reuse the causal score and keep the exact Spot pair and source.
-5. Results are computed on demand and remain transient.
-6. Candidates are withheld when fewer than 10 pairs or 80% of the eligible
-   universe can be scored. A covered universe can have no positive candidate.
-7. The page reports the cutoff, coverage, excluded inputs and retry path.
-8. The ranking carries an unvalidated research label. The historical study
-   and its fee scenarios provide separate evidence.
-9. Hypothesis: the ranking may help find short-term winners. Untouched
-   after-cost results are needed to establish that it improves on momentum.
-10. Check exact timestamps, incomplete buckets, deterministic ranking and
-    coverage in tests. Revisit the read limit if observations show the bounded
-    prefix changes ranks materially. Historical replay can use longer prefixes
-    and proxy data, so its results do not establish this forecast's accuracy.
+Tokocrypto scans after each aligned 4h close. It uses seven contiguous 4h
+buckets assembled from exact native 1h candles and projects the previous 24h
+close-to-close return into the next 24h. Its top-five positive projections are
+withheld unless at least 80% of eligible pairs and at least 10 pairs have fresh,
+contiguous history. Tokenized stocks are excluded by exact product/category.
+
+Stockbit scans at 14:00 WIB from active, verified `stockbit_regular` IDX
+listings, after the bounded daily history refresh has had time to run and before
+the IDX close. The target is the next available session close-to-close return;
+it is not labeled as a fixed 24-hour horizon.
+The only current price history is `stockbit_regular_yfinance_fallback` from
+Yahoo Finance, with `yahoo_unadjusted` prices. It is shown as a research proxy,
+not a Stockbit broker price. Returns are raw unadjusted close returns. Current
+listing snapshots do not provide a point-in-time historical universe, so
+retrospective Stockbit tests would have survivorship bias.
+
+Each scope freezes its eligible instrument snapshot and cutoff for coverage
+retries. Results and top-five predictions are saved in the existing app SQLite
+database. Once the relevant next candle is available, the worker stores the
+realized gross return and the page reports the prospective sample count, mean
+return and positive-return rate. Those observations remain descriptive; neither
+baseline is promoted to validated status. Fee, spread, slippage and other costs
+are not included.
+
+The API selects a profile with `scope=tokocrypto_spot` or `scope=stockbit_idx`.
+The page shows profile-specific source, price basis, target, cutoff, coverage,
+schedule, recovery status and observed outcomes. It refreshes automatically;
+scans do not require a page action. Verify exact source matching, frozen retry
+universes, four-hour candle contiguity, daily-session target settlement,
+weekend scheduling, stale and insufficient-coverage states, and separation of
+each scope's forecast and outcome history.

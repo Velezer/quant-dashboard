@@ -8,6 +8,7 @@ pub(super) use entry_validation::{
     gainer_forecast_latest, gainer_observations, gainer_saved,
     queue_history_rechecks_after_market_sync, run_entry_validation,
     entry_validation_active_profile_snapshot, ActiveScoringProfile, ActiveScoringProfiles,
+    ForecastScope,
 };
 pub(crate) use entry_validation::ENTRY_VALIDATION_WORK;
 

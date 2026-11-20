@@ -25,10 +25,16 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(),RequestContex
     let RequestContext {stream,db,method,path,route,request_text,..} = request;
     if route == "/api/entry-validation/gainer-forecast" {
         if method != "GET" {
-            api_error(stream, "405 Method Not Allowed", "Use GET for the Tokocrypto forecast.");
+            api_error(stream, "405 Method Not Allowed", "Use GET for the scheduled market forecast.");
             return Ok(());
         }
-        match open_db_minimal(db).and_then(|connection| gainer_forecast_latest(&connection)) {
+        let values = query_values(path);
+        let scope_id = values.get("scope").map(String::as_str).unwrap_or("tokocrypto_spot");
+        let Some(scope) = ForecastScope::from_id(scope_id) else {
+            api_error(stream, "400 Bad Request", "Choose tokocrypto_spot or stockbit_idx forecast scope.");
+            return Ok(());
+        };
+        match open_db_minimal(db).and_then(|connection| gainer_forecast_latest(&connection, scope)) {
             Ok(value) => respond(stream, crate::wire::encode(&value).unwrap_or_default(), "200 OK"),
             Err(error) => api_error(stream, "500 Internal Server Error", error),
         }

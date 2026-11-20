@@ -18,9 +18,18 @@ lesson only when it will improve future tasks.
   screener. Generate each result in a background scan after an aligned 4h close,
   persist it with scan status and the next run time, and let the page read that
   saved result with a light automatic refresh.
+- Keep the 4h scan cadence separate from the forecast horizon. A next-24h
+  performance forecast must expose a projected return percentage and target
+  window; label any unvalidated momentum extrapolation and its limitations.
 - Keep its 80% cross-sectional coverage gate. Retry scheduled scans at a bounded
   interval while current native history is insufficient; do not lower the gate
   or perform forecast work in the page's GET request.
+- A shared gainer forecast worker must keep market schedules, universes,
+  protocols, candle-source identities and target windows scoped per app/product.
+  IDX targets settle on the next observed daily session bar; a Yahoo unadjusted
+  series remains a labeled research proxy. Save frozen run snapshots and
+  prospective outcomes in app SQLite so result history can be evaluated without
+  blending markets or rewriting an earlier prediction.
 
 - A Pintu ticker-feed entry is not proof that its Futures product offers it.
   Keep explicit product exclusions separate from official delisting notices,

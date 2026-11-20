@@ -134,14 +134,51 @@ fn forecast_universe_requires_verified_active_spot_and_honors_exclusions() {
     assert!(store::verified_gainer_universe(&connection, 0).is_err());
 }
 
-fn candidate(symbol: &str, score: f64) -> Candidate {
+#[test]
+fn stockbit_forecast_universe_includes_only_active_regular_idx_listings() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch(
+        "ATTACH DATABASE ':memory:' AS app;
+         CREATE TABLE app.instruments (
+             instrument_id TEXT, exchange_id TEXT, product_id TEXT, asset_category_id TEXT,
+             symbol TEXT, storage_symbol TEXT, venue_verified INTEGER, listing_status TEXT,
+             venue_symbol TEXT, quote_currency TEXT, underlying_symbol TEXT, price_source_policy TEXT,
+             execution_supported INTEGER, is_active INTEGER
+         );
+         CREATE TABLE instrument_exclusions (
+             exchange_id TEXT, asset_category_id TEXT, symbol TEXT, is_active INTEGER
+         );"
+    ).unwrap();
+    for (instrument_id, product, category, active, status) in [
+        ("stockbit.stockbit_regular.bbca", "stockbit_regular", "idx_stock", true, "public_listed_snapshot"),
+        ("stockbit.stockbit_regular.pending", "stockbit_regular", "idx_stock", true, "reconcile_pending"),
+        ("stockbit.stockbit_regular.inactive", "stockbit_regular", "idx_stock", false, "public_listed_snapshot"),
+        ("stockbit.other.bbca", "other_product", "idx_stock", true, "public_listed_snapshot"),
+        ("tokocrypto.tokenized_stock.tsla", "tokocrypto_tokenized_stock", "tokenized_stock", true, "venue_active"),
+    ] {
+        let symbol = instrument_id.rsplit('.').next().unwrap().to_ascii_uppercase();
+        connection.execute(
+            "INSERT INTO app.instruments VALUES(?1,'stockbit',?2,?3,?4,?4,1,?5,?4,'IDR',?4,'research_proxy',0,?6)",
+            params![instrument_id, product, category, symbol, status, active],
+        ).unwrap();
+    }
+    let instruments = store::verified_stockbit_gainer_universe(&connection, UNIVERSE_LIMIT).unwrap();
+    assert_eq!(instruments.len(), 1);
+    assert_eq!(instruments[0]["instrument_id"], "stockbit.stockbit_regular.bbca");
+}
+
+fn candidate(symbol: &str, forecast_return_pct: f64) -> Candidate {
     Candidate {
         instrument_id: format!("tokocrypto.spot.{symbol}"),
         symbol: symbol.to_owned(),
         venue_symbol: format!("{symbol}IDR"),
         quote_currency: "IDR".to_owned(),
-        score,
+        forecast_return_pct,
         source_family: SOURCE,
+        data_provider: "tokocrypto",
+        price_basis: "venue_native",
+        reference_bar_time: 3 * FOUR_HOUR_NS / NANOS_PER_SECOND,
+        reference_close: 110.0,
     }
 }
 
@@ -149,29 +186,35 @@ fn candidate(symbol: &str, score: f64) -> Candidate {
 fn rank_is_bounded_and_withheld_until_cohort_coverage_is_sufficient() {
     let cutoff = 3 * FOUR_HOUR_NS;
     let insufficient = forecast_payload(
+        ForecastScope::TokocryptoSpot,
         cutoff,
-        FOUR_HOUR_NS,
         20,
         Coverage {
-            scored: 15,
+            forecasted: 15,
             missing_or_stale: 5,
             ..Coverage::default()
         },
         vec![candidate("A", 50.0)],
     );
-    assert_eq!(insufficient["minimum_scored_count"], 16);
+    assert_eq!(insufficient["minimum_forecasted_count"], 16);
     assert_eq!(insufficient["status"], "INSUFFICIENT_COVERAGE");
     assert_eq!(insufficient["candidates"], json!([]));
 
     let sufficient = || Coverage {
-        scored: 10,
+        forecasted: 10,
         ..Coverage::default()
     };
-    let empty = forecast_payload(cutoff, FOUR_HOUR_NS, 10, sufficient(), Vec::new());
-    assert_eq!(empty["status"], "NO_POSITIVE_CANDIDATES");
-    let ranked = forecast_payload(
+    let empty = forecast_payload(
+        ForecastScope::TokocryptoSpot,
         cutoff,
-        FOUR_HOUR_NS,
+        10,
+        sufficient(),
+        vec![candidate("DOWN", -2.5), candidate("FLAT", 0.0)],
+    );
+    assert_eq!(empty["status"], "NO_POSITIVE_FORECASTS");
+    let ranked = forecast_payload(
+        ForecastScope::TokocryptoSpot,
+        cutoff,
         10,
         sufficient(),
         vec![
@@ -188,8 +231,14 @@ fn rank_is_bounded_and_withheld_until_cohort_coverage_is_sufficient() {
     assert_eq!(ranked["as_of"], cutoff / NANOS_PER_SECOND);
     assert_eq!(
         ranked["forecast_until"],
-        (cutoff + FOUR_HOUR_NS) / NANOS_PER_SECOND
+        (cutoff + FORECAST_HORIZON_NS) / NANOS_PER_SECOND
     );
+    assert_eq!(
+        ranked["forecast_target"],
+        "Next 24h close-to-close return (%)"
+    );
+    assert_eq!(ranked["forecast_horizon_seconds"], 24 * 60 * 60);
+    assert_eq!(ranked["model"], "Naive 24h momentum extrapolation");
     let symbols = ranked["candidates"]
         .as_array()
         .unwrap()
@@ -197,4 +246,145 @@ fn rank_is_bounded_and_withheld_until_cohort_coverage_is_sufficient() {
         .map(|row| row["symbol"].as_str().unwrap())
         .collect::<Vec<_>>();
     assert_eq!(symbols, ["A", "Z", "E", "D", "C"]);
+}
+
+#[test]
+fn stockbit_payload_uses_its_own_session_target_and_proxy_identity() {
+    let cutoff = 20 * NANOS_PER_DAY;
+    let payload = forecast_payload(
+        ForecastScope::StockbitIdx,
+        cutoff,
+        10,
+        Coverage { forecasted: 10, ..Coverage::default() },
+        vec![Candidate {
+            instrument_id: "stockbit.stockbit_regular.bbca".to_owned(),
+            symbol: "BBCA".to_owned(),
+            venue_symbol: "BBCA.JK".to_owned(),
+            quote_currency: "IDR".to_owned(),
+            forecast_return_pct: 3.5,
+            source_family: STOCKBIT_SOURCE,
+            data_provider: "yfinance",
+            price_basis: "yahoo_unadjusted",
+            reference_bar_time: cutoff - NANOS_PER_DAY,
+            reference_close: 10_000.0,
+        }],
+    );
+    assert_eq!(payload["status"], "READY");
+    assert_eq!(payload["scope_id"], "stockbit_idx");
+    assert_eq!(payload["target_kind"], "next_idx_session");
+    assert!(payload["forecast_until"].is_null());
+    assert!(payload["forecast_horizon_seconds"].is_null());
+    assert_eq!(payload["source_family"], STOCKBIT_SOURCE);
+    assert_eq!(payload["data_provider"], "yfinance");
+    assert_eq!(payload["price_basis"], "yahoo_unadjusted");
+    assert_eq!(payload["candidates"][0]["forecast_return_pct"], 3.5);
+}
+
+#[test]
+fn stockbit_momentum_uses_two_completed_daily_closes_and_rejects_stale_history() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch(
+        "CREATE TABLE bars (
+            symbol TEXT NOT NULL,interval TEXT NOT NULL,source TEXT NOT NULL,ts INTEGER NOT NULL,
+            open REAL NOT NULL,high REAL NOT NULL,low REAL NOT NULL,close REAL NOT NULL,
+            volume REAL NOT NULL,PRIMARY KEY(symbol,interval,source,ts));
+         CREATE TABLE series (
+            symbol TEXT NOT NULL,interval TEXT NOT NULL,source TEXT NOT NULL,
+            timezone TEXT NOT NULL,PRIMARY KEY(symbol,interval,source));"
+    ).unwrap();
+    let cutoff = 12 * NANOS_PER_DAY;
+    connection.execute(
+        "INSERT INTO series VALUES('BBCA.JK','1d',?1,'Asia/Jakarta')",
+        [STOCKBIT_SOURCE],
+    ).unwrap();
+    for (day, close) in [(10_i64, 100.0), (11_i64, 110.0)] {
+        let timestamp = day * NANOS_PER_DAY;
+        connection.execute(
+            "INSERT INTO bars VALUES('BBCA.JK','1d',?1,?2,?3,?3,?3,?3,1000)",
+            params![STOCKBIT_SOURCE, timestamp, close],
+        ).unwrap();
+    }
+    let InstrumentForecast::Forecasted(forecast) =
+        forecast_stockbit_history(&connection, "BBCA.JK", cutoff).unwrap()
+    else {
+        panic!("two fresh daily closes should forecast");
+    };
+    assert!((forecast.return_pct - 10.0).abs() < 1e-9);
+    assert_eq!(forecast.reference_bar_time, 11 * NANOS_PER_DAY);
+    assert_eq!(forecast.reference_close, 110.0);
+
+    assert!(matches!(
+        forecast_stockbit_history(&connection, "BBCA.JK", 17 * NANOS_PER_DAY).unwrap(),
+        InstrumentForecast::MissingOrStale
+    ));
+}
+
+#[test]
+fn stockbit_outcome_uses_latest_version_of_next_observed_session_bar() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch(
+        "CREATE TABLE bars (
+            symbol TEXT NOT NULL,interval TEXT NOT NULL,source TEXT NOT NULL,ts INTEGER NOT NULL,
+            open REAL NOT NULL,high REAL NOT NULL,low REAL NOT NULL,close REAL NOT NULL,
+            volume REAL NOT NULL,PRIMARY KEY(symbol,interval,source,ts));
+         CREATE TABLE series (
+            symbol TEXT NOT NULL,interval TEXT NOT NULL,source TEXT NOT NULL,
+            timezone TEXT NOT NULL,PRIMARY KEY(symbol,interval,source));
+         INSERT INTO series VALUES('BBCA.JK','1d','stockbit_regular_yfinance_fallback','Asia/Jakarta');"
+    ).unwrap();
+    let reference_time = 11 * SECONDS_PER_DAY;
+    let target_time = 12 * SECONDS_PER_DAY;
+    let hour_seconds = HOUR_NS / NANOS_PER_SECOND;
+    for (timestamp, close) in [
+        (target_time, 120.0),
+        (target_time + hour_seconds, 125.0),
+        (target_time + SECONDS_PER_DAY, 130.0),
+    ] {
+        connection.execute(
+            "INSERT INTO bars VALUES('BBCA.JK','1d',?1,?2,?3,?3,?3,?3,1000)",
+            params![STOCKBIT_SOURCE, timestamp * NANOS_PER_SECOND, close],
+        ).unwrap();
+    }
+
+    let target = next_stockbit_target_candle(
+        &connection,
+        "BBCA.JK",
+        reference_time,
+        target_time + SECONDS_PER_DAY + 2 * hour_seconds,
+    ).unwrap().unwrap();
+    assert_eq!(
+        target,
+        (
+            (target_time + hour_seconds) * NANOS_PER_SECOND,
+            125.0,
+        ),
+    );
+    assert_eq!(
+        next_stockbit_target_candle(
+            &connection,
+            "BBCA.JK",
+            reference_time,
+            target_time - 1,
+        ).unwrap(),
+        None,
+    );
+}
+
+#[test]
+fn momentum_forecast_projects_the_prior_24h_percent_return() {
+    let closes = [100.0, 101.0, 102.0, 104.0, 106.0, 108.0, 110.0];
+    let bars = closes
+        .into_iter()
+        .enumerate()
+        .map(|(index, close)| StrategyBar {
+            time: index as i64 * FOUR_HOUR_NS,
+            open: close,
+            high: close,
+            low: close,
+            close,
+            volume: 1.0,
+        })
+        .collect::<Vec<_>>();
+    assert!((forecast_return_pct(&bars, 6).unwrap() - 10.0).abs() < f64::EPSILON * 100.0);
+    assert_eq!(forecast_return_pct(&bars, 7), None);
 }
