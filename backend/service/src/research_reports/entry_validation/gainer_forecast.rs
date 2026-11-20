@@ -223,6 +223,7 @@ pub(super) fn scheduled_payload(scope: ForecastScope) -> Value {
         "model_description": scope.description(),
         "validation_status": "UNVALIDATED_RESEARCH",
         "candidates": [],
+        "provisional_candidate": null,
     })
 }
 
@@ -486,19 +487,22 @@ fn forecast_payload(
     mut candidates: Vec<Candidate>,
 ) -> Value {
     candidates.retain(|candidate| candidate.forecast_return_pct.is_finite());
+    candidates.sort_by(|a, b| {
+        b.forecast_return_pct
+            .total_cmp(&a.forecast_return_pct)
+            .then_with(|| a.symbol.cmp(&b.symbol))
+            .then_with(|| a.instrument_id.cmp(&b.instrument_id))
+    });
     let minimum_forecasted = minimum_forecast_count(eligible);
-    let status = if coverage.forecasted < minimum_forecasted {
-        candidates.clear();
-        "INSUFFICIENT_COVERAGE"
+    let (status, candidates, provisional_candidate) = if coverage.forecasted < minimum_forecasted {
+        (
+            "INSUFFICIENT_COVERAGE",
+            Vec::new(),
+            candidates.into_iter().next(),
+        )
     } else {
-        candidates.sort_by(|a, b| {
-            b.forecast_return_pct
-                .total_cmp(&a.forecast_return_pct)
-                .then_with(|| a.symbol.cmp(&b.symbol))
-                .then_with(|| a.instrument_id.cmp(&b.instrument_id))
-        });
         candidates.truncate(SHORTLIST_LIMIT);
-        "READY"
+        ("READY", candidates, None)
     };
     let horizon_seconds = match scope {
         ForecastScope::TokocryptoSpot => Some(FORECAST_HORIZON_NS / NANOS_PER_SECOND),
@@ -531,6 +535,7 @@ fn forecast_payload(
         "model_description": scope.description(),
         "validation_status": "UNVALIDATED_RESEARCH",
         "candidates": candidates,
+        "provisional_candidate": provisional_candidate,
     })
 }
 

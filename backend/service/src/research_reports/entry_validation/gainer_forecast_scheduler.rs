@@ -9,8 +9,9 @@ use std::time::Duration;
 const FORECAST_CHECK_INTERVAL_SECONDS: u64 = 30;
 const FORECAST_CLOSE_GRACE_SECONDS: i64 = 5 * 60;
 const STOCKBIT_DAILY_DATA_GRACE_SECONDS: i64 = 14 * 60 * 60;
-const COVERAGE_RETRY_SECONDS: i64 = 15 * 60;
-const MAX_FORECAST_ATTEMPTS_PER_WINDOW: usize = 5;
+const COVERAGE_RETRY_SECONDS: i64 = 60;
+const FORECAST_ERROR_RETRY_SECONDS: i64 = 15 * 60;
+const MAX_FORECAST_ATTEMPTS_PER_WINDOW: usize = 15;
 const MAX_FORECAST_ERROR_BYTES: usize = 500;
 const JAKARTA_OFFSET_SECONDS: i64 = quant_core::JAKARTA_UTC_OFFSET_SECONDS;
 
@@ -253,6 +254,22 @@ fn recover_interrupted_schedule(
     Ok(schedule)
 }
 
+fn refresh_waiting_coverage_retry(
+    connection: &Connection,
+    schedule: &mut ForecastSchedule,
+    now: i64,
+) -> Result<(), rusqlite::Error> {
+    if schedule.status != "waiting_for_coverage" || schedule.last_attempt_at <= 0 {
+        return Ok(());
+    }
+    let retry_at = schedule.last_attempt_at.saturating_add(COVERAGE_RETRY_SECONDS);
+    if schedule.next_attempt_at > retry_at {
+        schedule.next_attempt_at = retry_at;
+        save_schedule(connection, schedule, now)?;
+    }
+    Ok(())
+}
+
 fn mark_attempt_started(
     connection: &Connection,
     schedule: &mut ForecastSchedule,
@@ -293,7 +310,7 @@ fn finish_attempt(
             let retries_remain = schedule.attempt_count < MAX_FORECAST_ATTEMPTS_PER_WINDOW;
             schedule.status = "error".to_owned();
             schedule.next_attempt_at = if retries_remain {
-                now + COVERAGE_RETRY_SECONDS
+                now + FORECAST_ERROR_RETRY_SECONDS
             } else {
                 next_window_attempt_at(scope, schedule.forecast_cutoff)
             };
@@ -318,6 +335,8 @@ fn scheduled_forecast_tick(state: &AppState, scope: ForecastScope) -> Result<u64
             .map_err(|error| error.to_string())?,
     };
     schedule = recover_interrupted_schedule(&connection, scope, schedule, now)
+        .map_err(|error| error.to_string())?;
+    refresh_waiting_coverage_retry(&connection, &mut schedule, now)
         .map_err(|error| error.to_string())?;
     if schedule.next_attempt_at > now {
         return Ok((schedule.next_attempt_at - now).max(1) as u64);

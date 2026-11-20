@@ -21,9 +21,12 @@ lesson only when it will improve future tasks.
 - Keep the 4h scan cadence separate from the forecast horizon. A next-24h
   performance forecast must expose a projected return percentage and target
   window; label any unvalidated momentum extrapolation and its limitations.
-- Keep its 80% cross-sectional coverage gate. Retry scheduled scans at a bounded
-  interval while current native history is insufficient; do not lower the gate
-  or perform forecast work in the page's GET request.
+- Keep its 80% cross-sectional coverage gate. Show the best currently covered
+  ticker separately as provisional while coverage is short, and retry every
+  minute up to 15 times so scans can overlap the bounded 12-tick candle sweep.
+  Shorten an already-persisted long coverage wait when deploying the faster
+  cadence; do not lower the gate or perform forecast work in the page's GET
+  request. Keep scan-error retries on their longer backoff.
 - Once that gate passes, rank every finite signed projection and always return
   the top-ranked ticker, even when the return is flat or negative. Label a
   non-positive leader as the highest relative projection, not a gainer, and

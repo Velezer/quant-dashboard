@@ -118,6 +118,23 @@ fn insufficient_coverage_persists_a_bounded_retry_time() {
 }
 
 #[test]
+fn previously_persisted_coverage_wait_is_shortened_to_the_new_retry_cadence() {
+    let connection = schedule_database();
+    let scope = ForecastScope::TokocryptoSpot;
+    let now = 1_800_000_000;
+    let mut saved_schedule = schedule(scope, now - 30, now - 30, 1);
+    saved_schedule.status = "waiting_for_coverage".to_owned();
+    saved_schedule.next_attempt_at = now + 15 * 60;
+    save_schedule(&connection, &saved_schedule, now - 30).unwrap();
+
+    refresh_waiting_coverage_retry(&connection, &mut saved_schedule, now).unwrap();
+
+    let refreshed = load_schedule(&connection, scope).unwrap().unwrap();
+    assert_eq!(refreshed.next_attempt_at, now + 30);
+    assert_eq!(refreshed.status, "waiting_for_coverage");
+}
+
+#[test]
 fn exhausted_stockbit_coverage_retries_wait_until_the_next_session_window() {
     let connection = schedule_database();
     let scope = ForecastScope::StockbitIdx;
@@ -183,7 +200,7 @@ fn scan_error_is_saved_with_a_retry_and_a_utf8_safe_size_limit() {
     .unwrap();
     let saved = load_schedule(&connection, scope).unwrap().unwrap();
     assert_eq!(saved.status, "error");
-    assert_eq!(saved.next_attempt_at, now + COVERAGE_RETRY_SECONDS);
+    assert_eq!(saved.next_attempt_at, now + FORECAST_ERROR_RETRY_SECONDS);
     assert!(saved.last_error.len() <= MAX_FORECAST_ERROR_BYTES);
     assert_eq!(saved.last_error.chars().count(), 250);
 }
@@ -223,7 +240,7 @@ fn latest_result_includes_scope_schedule_and_observed_outcomes() {
     assert_eq!(latest["status"], "INSUFFICIENT_COVERAGE");
     assert_eq!(latest["schedule"]["status"], "waiting_for_coverage");
     assert_eq!(latest["schedule"]["attempt_count"], 2);
-    assert_eq!(latest["schedule"]["max_attempts_per_window"], 5);
+    assert_eq!(latest["schedule"]["max_attempts_per_window"], 15);
     assert_eq!(latest["schedule"]["next_scan_at"], 1_800_001_000);
     assert_eq!(latest["observed_outcomes"]["sample_count"], 0);
 }

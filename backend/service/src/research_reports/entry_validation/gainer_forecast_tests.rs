@@ -194,11 +194,13 @@ fn ranking_keeps_the_coverage_gate_and_returns_the_best_nonpositive_projection()
             missing_or_stale: 5,
             ..Coverage::default()
         },
-        vec![candidate("A", 50.0)],
+        vec![candidate("LOW", 2.0), candidate("HIGH", 50.0)],
     );
     assert_eq!(insufficient["minimum_forecasted_count"], 16);
     assert_eq!(insufficient["status"], "INSUFFICIENT_COVERAGE");
     assert_eq!(insufficient["candidates"], json!([]));
+    assert_eq!(insufficient["provisional_candidate"]["symbol"], "HIGH");
+    assert_eq!(insufficient["provisional_candidate"]["forecast_return_pct"], 50.0);
 
     let sufficient = || Coverage {
         forecasted: 10,
@@ -231,6 +233,7 @@ fn ranking_keeps_the_coverage_gate_and_returns_the_best_nonpositive_projection()
         ],
     );
     assert_eq!(ranked["status"], "READY");
+    assert!(ranked["provisional_candidate"].is_null());
     assert_eq!(ranked["validation_status"], "UNVALIDATED_RESEARCH");
     assert_eq!(ranked["as_of"], cutoff / NANOS_PER_SECOND);
     assert_eq!(

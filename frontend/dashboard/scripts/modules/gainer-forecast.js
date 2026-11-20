@@ -177,6 +177,7 @@ export function normalizeGainerForecast(payload, scopeId = 'tokocrypto_spot') {
             scope: scope.id,
             status: 'SCHEDULED',
             candidates: [],
+            provisional_candidate: null,
             model: payload.model,
             model_description: payload.model_description,
             schedule,
@@ -218,6 +219,12 @@ export function normalizeGainerForecast(payload, scopeId = 'tokocrypto_spot') {
     if (payload.status === 'READY' && candidates.length === 0) {
         throw new Error('The service marked the forecast ready without a top candidate.');
     }
+    const provisionalCandidate = payload.provisional_candidate === undefined || payload.provisional_candidate === null
+        ? null
+        : normalizeCandidate(payload.provisional_candidate, scope);
+    if (payload.status === 'READY' && provisionalCandidate !== null) {
+        throw new Error('A full-coverage forecast cannot include a provisional candidate.');
+    }
     const excludedCounts = {};
     for (const [field] of OPTIONAL_COVERAGE_COUNTS) {
         if (payload[field] !== undefined && payload[field] !== null) {
@@ -234,6 +241,7 @@ export function normalizeGainerForecast(payload, scopeId = 'tokocrypto_spot') {
         minimum_forecasted_count: minimumForecastedCount,
         candidates,
         candidate_count: candidates.length,
+        provisional_candidate: provisionalCandidate,
         model: payload.model.trim(),
         model_description: payload.model_description.trim(),
         forecast_target: payload.forecast_target,
@@ -375,6 +383,8 @@ export function initializeGainerForecast(doc = document) {
                 message: 'The saved forecast is outside its freshness window' + targetEnd
                     + (payload.status === 'READY'
                         ? '. Its last ticker remains visible as a stale research reference.'
+                        : payload.provisional_candidate
+                            ? '. Its provisional top ticker remains visible as a stale partial-coverage reference.'
                         : '. No current ticker is available until a covered scan is ready.')
                     + nextScanMessage(payload.schedule, 'Next scheduled scan'),
             };
@@ -393,14 +403,19 @@ export function initializeGainerForecast(doc = document) {
         if (payload.status === 'INSUFFICIENT_COVERAGE') {
             const more = Math.max(0, payload.minimum_forecasted_count - payload.forecasted_count);
             const need = more ? ' ' + more.toLocaleString('en-US') + ' more instruments need current history.' : '';
+            const provisional = payload.provisional_candidate;
             const retry = nextScanMessage(
                 payload.schedule,
                 payload.schedule.status === 'waiting_for_coverage' ? 'Coverage retry' : 'Next scheduled scan',
             );
             return {
-                label: 'Insufficient coverage',
+                label: provisional ? 'Provisional top ticker' : 'Insufficient coverage',
                 tone: 'pending',
-                message: 'Coverage is below the service minimum, so candidates are hidden.' + need + retry,
+                message: provisional
+                    ? 'Showing ' + candidateName(provisional) + ' (' + formatForecastReturn(provisional.forecast_return_pct)
+                        + ') as the highest projection among ' + payload.forecasted_count.toLocaleString('en-US')
+                        + ' instruments with current history. This is partial coverage, not a full-market winner.' + need + retry
+                    : 'Coverage is below the service minimum and no instrument has usable current history yet.' + need + retry,
             };
         }
         return {
@@ -454,7 +469,11 @@ export function initializeGainerForecast(doc = document) {
         if (payload.status === 'INSUFFICIENT_COVERAGE') {
             const additional = Math.max(0, payload.minimum_forecasted_count - payload.forecasted_count);
             host.append(element('p', 'gainer-forecast-exclusions',
-                additional.toLocaleString('en-US') + ' more instruments need current profile history before a forecast is available.'));
+                additional.toLocaleString('en-US') + ' more instruments need current profile history before full-market coverage is met.'));
+            if (payload.provisional_candidate) {
+                host.append(element('p', 'gainer-forecast-exclusions',
+                    'The provisional ticker ranks only the instruments with usable current history and may not be the full-market leader.'));
+            }
         }
         const exclusions = OPTIONAL_COVERAGE_COUNTS
             .filter(([field]) => Object.hasOwn(payload.excluded_counts, field))
@@ -517,9 +536,20 @@ export function initializeGainerForecast(doc = document) {
             host.append(element('p', 'gainer-forecast-exclusions',
                 'This forecast is stale' + expiry + '. The last saved candidate list stays visible with its cutoff; it is not a current recommendation.'));
         }
+        if (payload.status === 'INSUFFICIENT_COVERAGE' && payload.provisional_candidate) {
+            const top = payload.provisional_candidate;
+            const topCard = element('article', 'gainer-forecast-top');
+            topCard.append(element('span', 'gainer-forecast-top-label',
+                expired ? 'Provisional projection · stale' : 'Partial coverage · provisional'));
+            topCard.append(element('h3', '', candidateName(top)));
+            topCard.append(element('strong', 'gainer-forecast-return', formatForecastReturn(top.forecast_return_pct)));
+            appendCandidateMeta(topCard, top);
+            host.append(topCard);
+            return;
+        }
         if (payload.status !== 'READY' || !payload.candidates.length) {
             const empty = payload.status === 'INSUFFICIENT_COVERAGE'
-                ? 'The minimum history coverage was not met. No current ticker can be ranked safely.'
+                ? 'No instrument has usable current history yet. The background service will retry automatically.'
                 : 'No current ticker is available for the selected target window.';
             host.append(element('p', 'gainer-forecast-empty', empty));
             return;
