@@ -482,3 +482,8 @@ lesson only when it will improve future tasks.
 - Keep macroeconomic series on a dedicated, source-labeled view. Show the last
   published observation date separately from the retrieval time and keep macro
   context out of ticker scores unless a separately validated rule is requested.
+- For a production macro series, prefer an official provider endpoint that the
+  dashboard can reach directly when the application host has restricted
+  egress. Keep the provider adapter bounded and validated, cache successful
+  observations, preserve the last good series on refresh failure, and show
+  the observation date separately from the retrieval time.

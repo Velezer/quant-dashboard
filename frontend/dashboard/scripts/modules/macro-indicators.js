@@ -1,5 +1,6 @@
 import { requestJson } from './api.js';
 import { formatBasisPoints, formatYield, observationsForRange, renderYieldChart } from './macro-indicator-view.js';
+import { loadTreasurySnapshot } from './macro-indicator-treasury.js';
 
 const statusElement = document.getElementById('macro-status');
 const refreshButton = document.getElementById('macro-refresh');
@@ -76,25 +77,41 @@ function renderChart() {
     chartElement.setAttribute('aria-label', `${snapshot.title} history, ${selectedRange} range`);
 }
 
+async function loadLatestSnapshot(refresh) {
+    let treasuryError;
+    try {
+        return await loadTreasurySnapshot();
+    } catch (error) {
+        treasuryError = error;
+    }
+
+    const deployedSnapshot = await requestJson(`/api/macro/indicators${refresh ? '?refresh=1' : ''}`);
+    const fallbackNote = `The direct Treasury feed could not be loaded; using the dashboard API response. ${treasuryError?.message || ''}`.trim();
+    return {
+        ...deployedSnapshot,
+        status_note: [deployedSnapshot.status_note, fallbackNote].filter(Boolean).join(' '),
+    };
+}
+
 async function loadData({ refresh = false } = {}) {
     refreshButton.disabled = true;
     retryButton.disabled = true;
     emptyState.hidden = true;
-    setStatus(refresh ? 'Checking FRED for updated macro data…' : 'Loading the latest 10-year TIPS real yield from FRED…');
+    setStatus(refresh ? 'Checking the latest Treasury observations…' : 'Loading the latest available 10-year TIPS real yield…');
     try {
-        const data = await requestJson(`/api/macro/indicators${refresh ? '?refresh=1' : ''}`);
+        const data = await loadLatestSnapshot(refresh);
         renderSnapshot(data);
         const freshnessText = data.freshness === 'stale'
-            ? 'FRED data is stale. Review the status note and retry when the source is available.'
+            ? 'Treasury data is stale. Review the status note; the dashboard updates when Treasury publishes a newer observation.'
             : `Loaded ${data.title}; the latest observation is ${data.observation_date}.`;
         const retrievalText = data.fetch_status === 'cached'
-            ? `Showing cached FRED data last retrieved at ${formatRetrievedAt(data.retrieved_at_seconds)}.`
+            ? `Showing the Treasury series last retrieved at ${formatRetrievedAt(data.retrieved_at_seconds)}.`
             : data.fetch_status === 'stale'
-                ? `Showing the last successful FRED retrieval from ${formatRetrievedAt(data.retrieved_at_seconds)}.`
-                : `FRED was checked at ${formatRetrievedAt(data.retrieved_at_seconds)}.`;
+                ? `Showing the last available Treasury series from ${formatRetrievedAt(data.retrieved_at_seconds)}.`
+                : `Treasury series retrieved at ${formatRetrievedAt(data.retrieved_at_seconds)}.`;
         setStatus(`${freshnessText} ${retrievalText}`, data.freshness === 'stale' ? 'error' : 'ready');
     } catch (error) {
-        const message = error?.message || 'FRED could not be reached.';
+        const message = error?.message || 'Treasury could not be reached.';
         if (snapshot) {
             freshnessBadge.textContent = 'Refresh failed';
             freshnessBadge.className = 'state-badge error';
@@ -105,7 +122,7 @@ async function loadData({ refresh = false } = {}) {
         } else {
             emptyState.hidden = false;
             emptyMessage.textContent = `Macroeconomic data is unavailable right now. ${message}`;
-            setStatus('FRED data could not be loaded. Retry to try again.', 'error');
+            setStatus('Treasury data could not be loaded. Retry to try again.', 'error');
         }
     } finally {
         refreshButton.disabled = false;

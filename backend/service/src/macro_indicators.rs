@@ -1,7 +1,7 @@
 //! Application-owned macro indicator data contract and provider selection.
 //! Macro observations are descriptive context and do not enter ticker scores.
 
-mod fred;
+mod treasury;
 
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod tests;
 
 const MAX_OBSERVATION_AGE_DAYS: i64 = 7;
+const MAX_SNAPSHOT_AGE_SECONDS: u64 = MAX_OBSERVATION_AGE_DAYS as u64 * 86_400;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MacroIndicatorId {
@@ -76,7 +77,7 @@ pub(crate) struct ProviderSeriesSnapshot {
 }
 
 /// Narrow app-owned port: providers return dated percentage observations while
-/// the provider protocol and transport remain inside their adapter.
+/// the source format and provider parsing remain inside their adapter.
 pub(crate) trait MacroSeriesProvider: Sync {
     fn read_series(
         &self,
@@ -87,7 +88,7 @@ pub(crate) trait MacroSeriesProvider: Sync {
 
 fn provider_for(id: MacroIndicatorId) -> &'static dyn MacroSeriesProvider {
     match id {
-        MacroIndicatorId::TenYearTipsRealYield => &fred::FRED_PROVIDER,
+        MacroIndicatorId::TenYearTipsRealYield => &treasury::TREASURY_PROVIDER,
     }
 }
 
@@ -102,16 +103,23 @@ pub(crate) fn read(
         .last()
         .ok_or_else(|| "The macro data provider returned no observations.".to_string())?;
     let daily_change_basis_points = daily_change_basis_points(&snapshot.observations);
-    let too_old = observation_is_stale(&latest.date, now_secs());
+    let now = now_secs();
+    let too_old = observation_is_stale(&latest.date, now)
+        || snapshot_is_stale(snapshot.retrieved_at_seconds, now);
     let freshness = if too_old || snapshot.refresh_error.is_some() {
         DataFreshness::Stale
     } else {
         DataFreshness::Current
     };
+    let fetch_status = if too_old {
+        FetchStatus::Stale
+    } else {
+        snapshot.fetch_status
+    };
     let status_note = if snapshot.refresh_error.is_some() {
         Some("The latest refresh failed; showing the last successfully retrieved observations.".to_string())
     } else if too_old {
-        Some("The latest available observation is more than seven days old. Check FRED again later.".to_string())
+        Some("The latest Treasury observation is more than seven days old. Check the Treasury feed again later.".to_string())
     } else {
         None
     };
@@ -119,8 +127,8 @@ pub(crate) fn read(
         MacroIndicatorId::TenYearTipsRealYield => (
             "10-Year TIPS real yield",
             "The market yield on 10-year Treasury inflation-indexed securities. This is a real yield, not the nominal 10-year Treasury yield or a direct inflation forecast.",
-            "DFII10",
-            "https://fred.stlouisfed.org/series/DFII10",
+            "TC_10YEAR",
+            "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve",
         ),
     };
     Ok(MacroIndicatorData {
@@ -129,11 +137,11 @@ pub(crate) fn read(
         description,
         unit: "% per year",
         frequency: "Daily, business days",
-        source: "Federal Reserve Bank of St. Louis · FRED",
+        source: "U.S. Department of the Treasury",
         source_series_id,
         source_url,
         freshness,
-        fetch_status: snapshot.fetch_status,
+        fetch_status,
         observation_date: latest.date.clone(),
         latest_value: latest.value,
         daily_change_basis_points,
@@ -157,6 +165,10 @@ fn observation_is_stale(date: &str, now_seconds: u64) -> bool {
     let (year, month, day) = quant_core::gregorian_date_from_unix_days(cutoff_days);
     let cutoff = format!("{year:04}-{month:02}-{day:02}");
     date < cutoff.as_str()
+}
+
+fn snapshot_is_stale(retrieved_at_seconds: u64, now_seconds: u64) -> bool {
+    now_seconds.saturating_sub(retrieved_at_seconds) > MAX_SNAPSHOT_AGE_SECONDS
 }
 
 fn now_secs() -> u64 {

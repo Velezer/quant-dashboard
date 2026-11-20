@@ -79,6 +79,7 @@ jobs:
             macro_indicators::tests -- --test-threads=1
           node --test \
             frontend/dashboard/scripts/modules/macro-indicator-view.test.mjs \
+            frontend/dashboard/scripts/modules/macro-indicator-treasury.test.mjs \
             frontend/dashboard/scripts/modules/macro-indicators-page.test.mjs
       - name: Verify shared crypto history backfill ownership
         run: |
