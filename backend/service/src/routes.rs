@@ -402,6 +402,7 @@ mod calculations_product_scope_tests;
 mod calculations_shared_source_tests;
 mod charts;
 mod control;
+mod macro_indicators;
 mod market;
 mod entry_validation;
 mod pine;
@@ -459,6 +460,10 @@ pub(super) fn handle(mut stream: TcpStream, db: &str, state: &Arc<AppState>) {
         Err(request) => request,
     };
     let request = match control::handle(request) {
+        Ok(()) => return,
+        Err(request) => request,
+    };
+    let request = match macro_indicators::handle(request) {
         Ok(()) => return,
         Err(request) => request,
     };
