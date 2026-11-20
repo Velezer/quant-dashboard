@@ -31,7 +31,7 @@ function schedule(scopeId = 'tokocrypto_spot', overrides = {}) {
     return {
         status: 'scheduled',
         attempt_count: 0,
-        max_attempts_per_window: 5,
+        max_attempts_per_window: 15,
         scan_interval_seconds: scope.scan_interval_seconds,
         last_attempt_at: null,
         next_scan_at: 1_800_000_300,
@@ -63,6 +63,7 @@ function forecast(overrides = {}, scopeId = 'tokocrypto_spot') {
         model_description: 'Momentum baseline; unvalidated research.',
         validation_status: 'UNVALIDATED_RESEARCH',
         candidates: [],
+        provisional_candidate: null,
         schedule: schedule(scopeId, {
             status: 'waiting_for_coverage',
             attempt_count: 2,
@@ -106,6 +107,7 @@ test('scheduled response gives each profile a scan time without fabricating a ca
     const normalized = normalizeGainerForecast(payload);
     assert.equal(normalized.status, 'SCHEDULED');
     assert.deepEqual(normalized.candidates, []);
+    assert.equal(normalized.provisional_candidate, null);
     assert.equal(normalized.schedule.next_scan_at, 1_800_000_300);
 
     const stockbit = normalizeGainerForecast({
@@ -123,9 +125,26 @@ test('insufficient coverage preserves retry status and does not expose sync targ
     assert.equal(normalized.status, 'INSUFFICIENT_COVERAGE');
     assert.equal(normalized.schedule.status, 'waiting_for_coverage');
     assert.equal(normalized.schedule.attempt_count, 2);
-    assert.equal(normalized.schedule.max_attempts_per_window, 5);
+    assert.equal(normalized.schedule.max_attempts_per_window, 15);
     assert.equal(normalized.schedule.next_scan_at, 1_800_001_000);
+    assert.equal(normalized.provisional_candidate, null);
     assert.equal('sync_targets' in normalized, false);
+});
+
+test('partial coverage exposes only a validated provisional candidate', () => {
+    const normalized = normalizeGainerForecast(forecast({
+        provisional_candidate: candidate('tokocrypto_spot', { forecast_return_pct: -2.5 }),
+    }));
+    assert.equal(normalized.status, 'INSUFFICIENT_COVERAGE');
+    assert.equal(normalized.candidates.length, 0);
+    assert.equal(normalized.provisional_candidate.symbol, 'BTCIDR');
+    assert.equal(normalized.provisional_candidate.forecast_return_pct, -2.5);
+    assert.throws(() => normalizeGainerForecast(forecast({
+        status: 'READY',
+        forecasted_count: 18,
+        candidates: [candidate('tokocrypto_spot')],
+        provisional_candidate: candidate('tokocrypto_spot'),
+    })));
 });
 
 test('Tokocrypto ready result accepts signed native Spot projections and rejects proxy candidates', () => {
@@ -248,6 +267,29 @@ test('ready page shows the projected return and prospective outcomes', async () 
         assert.match(renderedText, /Latest scheduled Tokocrypto Spot forecast/);
         assert.match(renderedText, /\+8\.25%/);
         assert.match(renderedText, /Mean realized gross return/);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('partial coverage still shows the best currently covered ticker as provisional', async () => {
+    const { doc, status, results } = fakeDocument();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+        ok: true,
+        json: async () => forecast({
+            provisional_candidate: candidate('tokocrypto_spot', { forecast_return_pct: -2.5 }),
+        }),
+    });
+    try {
+        initializeGainerForecast(doc);
+        await new Promise(resolve => setImmediate(resolve));
+        const renderedText = collectText(results);
+        assert.match(renderedText, /BTC\/IDR/);
+        assert.match(renderedText, /-2\.5%/);
+        assert.match(renderedText, /Partial coverage · provisional/);
+        assert.match(renderedText, /may not be the full-market leader/);
+        assert.match(status.textContent, /highest projection among 10 instruments/);
     } finally {
         globalThis.fetch = originalFetch;
     }
