@@ -3,9 +3,9 @@ use crate::tokocrypto_storage::SOURCE;
 
 pub(super) const FORECAST_SCAN_TIMEFRAME: &str = "4h";
 pub(super) const TOKOCRYPTO_FORECAST_PROTOCOL: &str =
-    "tokocrypto_native_momentum_next_24h_return_forecast_v1";
+    "tokocrypto_native_momentum_top_rank_next_24h_return_forecast_v2";
 pub(super) const STOCKBIT_FORECAST_PROTOCOL: &str =
-    "stockbit_yahoo_momentum_next_idx_session_return_forecast_v1";
+    "stockbit_yahoo_momentum_top_rank_next_idx_session_return_forecast_v2";
 
 const FORECAST_HORIZON_NS: i64 = 24 * 60 * 60 * NANOS_PER_SECOND;
 const NATIVE_TIMEFRAME: &str = "1h";
@@ -127,8 +127,8 @@ impl ForecastScope {
 
     fn description(self) -> &'static str {
         match self {
-            Self::TokocryptoSpot => "Projects the previous 24h return as the next 24h return using native Tokocrypto Spot candles; unvalidated research.",
-            Self::StockbitIdx => "Projects the latest completed session return into the next available IDX session. History is the Yahoo Finance unadjusted research proxy, not Stockbit broker prices; unvalidated research.",
+            Self::TokocryptoSpot => "Projects the previous 24h return as the next 24h return using native Tokocrypto Spot candles, then ranks all instruments with sufficient current history. The top projection may be negative; unvalidated research.",
+            Self::StockbitIdx => "Projects the latest completed session return into the next available IDX session, then ranks all instruments with sufficient current history. The top projection may be negative. History is the Yahoo Finance unadjusted research proxy, not Stockbit broker prices; unvalidated research.",
         }
     }
 }
@@ -195,9 +195,7 @@ pub(super) fn gainer_forecast_for_scope_at(
         match forecast_instrument(directory, scope, instrument, cutoff) {
             Ok(InstrumentForecast::Forecasted(value)) => {
                 coverage.forecasted += 1;
-                if value.return_pct > 0.0 {
-                    candidates.push(candidate(scope, instrument, value));
-                }
+                candidates.push(candidate(scope, instrument, value));
             }
             Ok(InstrumentForecast::MissingOrStale) => coverage.missing_or_stale += 1,
             Ok(InstrumentForecast::InvalidHistory) => coverage.invalid_history += 1,
@@ -487,15 +485,11 @@ fn forecast_payload(
     coverage: Coverage,
     mut candidates: Vec<Candidate>,
 ) -> Value {
-    candidates.retain(|candidate| {
-        candidate.forecast_return_pct.is_finite() && candidate.forecast_return_pct > 0.0
-    });
+    candidates.retain(|candidate| candidate.forecast_return_pct.is_finite());
     let minimum_forecasted = minimum_forecast_count(eligible);
     let status = if coverage.forecasted < minimum_forecasted {
         candidates.clear();
         "INSUFFICIENT_COVERAGE"
-    } else if candidates.is_empty() {
-        "NO_POSITIVE_FORECASTS"
     } else {
         candidates.sort_by(|a, b| {
             b.forecast_return_pct

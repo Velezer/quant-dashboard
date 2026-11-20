@@ -24,6 +24,11 @@ lesson only when it will improve future tasks.
 - Keep its 80% cross-sectional coverage gate. Retry scheduled scans at a bounded
   interval while current native history is insufficient; do not lower the gate
   or perform forecast work in the page's GET request.
+- Once that gate passes, rank every finite signed projection and always return
+  the top-ranked ticker, even when the return is flat or negative. Label a
+  non-positive leader as the highest relative projection, not a gainer, and
+  version its protocol so its prospective outcomes do not mix with the older
+  positive-only selection rule.
 - A shared gainer forecast worker must keep market schedules, universes,
   protocols, candle-source identities and target windows scoped per app/product.
   IDX targets settle on the next observed daily session bar; a Yahoo unadjusted

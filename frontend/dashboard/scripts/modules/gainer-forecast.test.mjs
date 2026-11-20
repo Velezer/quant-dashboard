@@ -4,7 +4,7 @@ import { initializeGainerForecast, normalizeGainerForecast } from './gainer-fore
 
 const SCOPES = {
     tokocrypto_spot: {
-        protocol_id: 'tokocrypto_native_momentum_next_24h_return_forecast_v1',
+        protocol_id: 'tokocrypto_native_momentum_top_rank_next_24h_return_forecast_v2',
         target_kind: 'calendar_24h',
         forecast_target: 'Next 24h close-to-close return (%)',
         forecast_horizon_seconds: 86_400,
@@ -15,7 +15,7 @@ const SCOPES = {
     },
     stockbit_idx: {
         scope_id: 'stockbit_idx',
-        protocol_id: 'stockbit_yahoo_momentum_next_idx_session_return_forecast_v1',
+        protocol_id: 'stockbit_yahoo_momentum_top_rank_next_idx_session_return_forecast_v2',
         target_kind: 'next_idx_session',
         forecast_target: 'Next available IDX session close-to-close return (%)',
         forecast_horizon_seconds: null,
@@ -128,7 +128,7 @@ test('insufficient coverage preserves retry status and does not expose sync targ
     assert.equal('sync_targets' in normalized, false);
 });
 
-test('Tokocrypto ready result accepts native Spot history and rejects proxy candidates', () => {
+test('Tokocrypto ready result accepts signed native Spot projections and rejects proxy candidates', () => {
     const normalized = normalizeGainerForecast(forecast({
         status: 'READY',
         forecasted_count: 18,
@@ -136,15 +136,22 @@ test('Tokocrypto ready result accepts native Spot history and rejects proxy cand
     }));
     assert.equal(normalized.candidates[0].symbol, 'BTCIDR');
     assert.equal(normalized.candidates[0].forecast_return_pct, 8.25);
+    const negative = normalizeGainerForecast(forecast({
+        status: 'READY',
+        forecasted_count: 18,
+        candidates: [candidate('tokocrypto_spot', { forecast_return_pct: -2 })],
+    }));
+    assert.equal(negative.candidates[0].forecast_return_pct, -2);
+    const flat = normalizeGainerForecast(forecast({
+        status: 'READY',
+        forecasted_count: 18,
+        candidates: [candidate('tokocrypto_spot', { forecast_return_pct: 0 })],
+    }));
+    assert.equal(flat.candidates[0].forecast_return_pct, 0);
     assert.throws(() => normalizeGainerForecast(forecast({
         status: 'READY',
         forecasted_count: 18,
         candidates: [candidate('tokocrypto_spot', { source_family: 'proxy' })],
-    })));
-    assert.throws(() => normalizeGainerForecast(forecast({
-        status: 'READY',
-        forecasted_count: 18,
-        candidates: [candidate('tokocrypto_spot', { forecast_return_pct: -2 })],
     })));
 });
 
@@ -241,6 +248,30 @@ test('ready page shows the projected return and prospective outcomes', async () 
         assert.match(renderedText, /Latest scheduled Tokocrypto Spot forecast/);
         assert.match(renderedText, /\+8\.25%/);
         assert.match(renderedText, /Mean realized gross return/);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('ready page shows the top-ranked ticker when every projection is non-positive', async () => {
+    const { doc, status, results } = fakeDocument();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+        ok: true,
+        json: async () => forecast({
+            status: 'READY',
+            forecasted_count: 18,
+            candidates: [candidate('tokocrypto_spot', { forecast_return_pct: -2.5 })],
+        }),
+    });
+    try {
+        initializeGainerForecast(doc);
+        await new Promise(resolve => setImmediate(resolve));
+        const renderedText = collectText(results);
+        assert.match(renderedText, /BTC\/IDR/);
+        assert.match(renderedText, /-2\.5%/);
+        assert.match(renderedText, /Top-ranked ticker/);
+        assert.match(status.textContent, /No positive return is projected/);
     } finally {
         globalThis.fetch = originalFetch;
     }

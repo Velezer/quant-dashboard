@@ -10,7 +10,7 @@ const FORECAST_SCOPES = {
     tokocrypto_spot: {
         id: 'tokocrypto_spot',
         label: 'Tokocrypto Spot',
-        protocol: 'tokocrypto_native_momentum_next_24h_return_forecast_v1',
+        protocol: 'tokocrypto_native_momentum_top_rank_next_24h_return_forecast_v2',
         targetKind: 'calendar_24h',
         target: 'Next 24h close-to-close return (%)',
         horizonSeconds: DAY_SECONDS,
@@ -23,7 +23,7 @@ const FORECAST_SCOPES = {
     stockbit_idx: {
         id: 'stockbit_idx',
         label: 'Stockbit IDX',
-        protocol: 'stockbit_yahoo_momentum_next_idx_session_return_forecast_v1',
+        protocol: 'stockbit_yahoo_momentum_top_rank_next_idx_session_return_forecast_v2',
         targetKind: 'next_idx_session',
         target: 'Next available IDX session close-to-close return (%)',
         horizonSeconds: null,
@@ -38,7 +38,6 @@ const FORECAST_STATUSES = new Set([
     'SCHEDULED',
     'READY',
     'INSUFFICIENT_COVERAGE',
-    'NO_POSITIVE_FORECASTS',
 ]);
 const SCHEDULE_STATUSES = new Set([
     'scheduled',
@@ -117,9 +116,8 @@ function normalizeCandidate(candidate, scope) {
         || candidate.price_basis !== scope.priceBasis) {
         throw new Error('A forecast candidate does not match its market data source.');
     }
-    if (typeof candidate.forecast_return_pct !== 'number' || !Number.isFinite(candidate.forecast_return_pct)
-        || candidate.forecast_return_pct <= 0) {
-        throw new Error('A forecast candidate must have a finite positive projected return.');
+    if (typeof candidate.forecast_return_pct !== 'number' || !Number.isFinite(candidate.forecast_return_pct)) {
+        throw new Error('A forecast candidate must have a finite projected return.');
     }
     if (candidate.validation_status !== undefined && candidate.validation_status !== 'UNVALIDATED_RESEARCH') {
         throw new Error('A forecast candidate did not identify itself as unvalidated research.');
@@ -375,15 +373,21 @@ export function initializeGainerForecast(doc = document) {
                 label: 'Forecast is stale',
                 tone: 'pending',
                 message: 'The saved forecast is outside its freshness window' + targetEnd
-                    + '. Its candidate list is hidden.' + nextScanMessage(payload.schedule, 'Next scheduled scan'),
+                    + (payload.status === 'READY'
+                        ? '. Its last ticker remains visible as a stale research reference.'
+                        : '. No current ticker is available until a covered scan is ready.')
+                    + nextScanMessage(payload.schedule, 'Next scheduled scan'),
             };
         }
         if (payload.status === 'READY') {
+            const topReturn = payload.candidates[0]?.forecast_return_pct;
             return {
-                label: 'Forecast ready',
-                tone: 'valid',
-                message: 'The scheduled scan met its coverage minimum and produced positive return projections.'
-                    + nextScanMessage(payload.schedule),
+                label: topReturn > 0 ? 'Forecast ready' : 'Top-ranked ticker',
+                tone: topReturn > 0 ? 'valid' : 'pending',
+                message: (topReturn > 0
+                    ? 'The scheduled scan met its coverage minimum and ranks the highest projected return.'
+                    : 'No positive return is projected. Showing the top-ranked ticker with the highest non-positive return.'
+                ) + nextScanMessage(payload.schedule),
             };
         }
         if (payload.status === 'INSUFFICIENT_COVERAGE') {
@@ -400,9 +404,9 @@ export function initializeGainerForecast(doc = document) {
             };
         }
         return {
-            label: 'No positive forecasts',
+            label: 'Forecast unavailable',
             tone: 'pending',
-            message: 'Coverage completed, but no positive return projections qualified.' + nextScanMessage(payload.schedule),
+            message: 'No current ticker is available for this forecast window.' + nextScanMessage(payload.schedule),
         };
     }
 
@@ -485,7 +489,8 @@ export function initializeGainerForecast(doc = document) {
     }
 
     function formatForecastReturn(returnPct) {
-        return '+' + returnPct.toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%';
+        const sign = returnPct > 0 ? '+' : '';
+        return sign + returnPct.toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%';
     }
 
     function appendCandidateMeta(host, candidate) {
@@ -501,7 +506,7 @@ export function initializeGainerForecast(doc = document) {
     function appendCandidates(payload, host, expired) {
         const scope = scopeConfig(payload);
         if (payload.status === 'SCHEDULED') return;
-        if (expired) {
+        if (expired && payload.status === 'READY' && payload.candidates.length) {
             const expiry = payload.forecast_until
                 ? ' at ' + formatDate(payload.forecast_until)
                 : payload.schedule.target_window_passed
@@ -514,8 +519,8 @@ export function initializeGainerForecast(doc = document) {
         }
         if (payload.status !== 'READY' || !payload.candidates.length) {
             const empty = payload.status === 'INSUFFICIENT_COVERAGE'
-                ? 'The minimum coverage was not met. No forecast candidates are displayed.'
-                : 'No candidate has a positive projected return for the selected target.';
+                ? 'The minimum history coverage was not met. No current ticker can be ranked safely.'
+                : 'No current ticker is available for the selected target window.';
             host.append(element('p', 'gainer-forecast-empty', empty));
             return;
         }
@@ -523,17 +528,17 @@ export function initializeGainerForecast(doc = document) {
         const top = payload.candidates[0];
         const topCard = element('article', 'gainer-forecast-top');
         topCard.append(element('span', 'gainer-forecast-top-label',
-            expired ? 'Last forecast · stale' : 'Highest projected return'));
+            expired ? 'Last forecast · stale' : 'Top-ranked ticker'));
         topCard.append(element('h3', '', candidateName(top)));
         topCard.append(element('strong', 'gainer-forecast-return', formatForecastReturn(top.forecast_return_pct)));
         appendCandidateMeta(topCard, top);
         grid.append(topCard);
 
         const shortlist = element('section', 'gainer-forecast-shortlist');
-        shortlist.append(element('h4', '', expired ? 'Other stale projections' : 'Next highest projected returns'));
+        shortlist.append(element('h4', '', expired ? 'Other stale projections' : 'Other ranked projections'));
         const remaining = payload.candidates.slice(1, SHORTLIST_LIMIT);
         if (!remaining.length) {
-            shortlist.append(element('p', 'gainer-forecast-empty', 'No additional positive projections qualified in this window.'));
+            shortlist.append(element('p', 'gainer-forecast-empty', 'No additional ticker is shown in this shortlist.'));
         } else {
             const list = element('ol');
             for (const rowCandidate of remaining) {
@@ -568,7 +573,12 @@ export function initializeGainerForecast(doc = document) {
         appendCoverage(payload, results);
         appendOutcomes(payload, results);
         appendSchedule(payload, results);
-        setStatus(resultState.message, payload.status === 'READY' && !expired ? 'ready' : 'pending');
+        setStatus(
+            resultState.message,
+            payload.status === 'READY' && !expired && payload.candidates[0]?.forecast_return_pct > 0
+                ? 'ready'
+                : 'pending',
+        );
         clearTimer('expiry');
         if (payload.status !== 'SCHEDULED' && !expired) {
             const remaining = payload.scope === 'tokocrypto_spot'
