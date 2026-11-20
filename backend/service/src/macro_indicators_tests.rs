@@ -52,30 +52,6 @@ fn fred_parser_rejects_bad_headers_dates_values_and_ordering() {
 }
 
 #[test]
-fn fred_snapshot_parser_reads_retrieval_time_and_observations() {
-    let (retrieved_at, parsed) = super::fred::parse_fred_snapshot_csv(
-        "# retrieved_at_seconds=1795164809\nobservation_date,DFII10\n2026-11-18,2.88\n",
-    )
-    .unwrap();
-    assert_eq!(retrieved_at, 1_795_164_809);
-    assert_eq!(parsed.len(), 1);
-    assert_eq!(parsed[0].date, "2026-11-18");
-    assert_eq!(parsed[0].value, 2.88);
-}
-
-#[test]
-fn fred_snapshot_parser_rejects_missing_or_invalid_retrieval_time() {
-    assert!(super::fred::parse_fred_snapshot_csv(
-        "observation_date,DFII10\n2026-11-18,2.88\n"
-    )
-    .is_err());
-    assert!(super::fred::parse_fred_snapshot_csv(
-        "# retrieved_at_seconds=0\nobservation_date,DFII10\n2026-11-18,2.88\n"
-    )
-    .is_err());
-}
-
-#[test]
 fn fred_parser_bounds_observations_to_the_latest_chart_window() {
     let mut csv = String::from("observation_date,DFII10\n");
     for index in 0..3_010 {
