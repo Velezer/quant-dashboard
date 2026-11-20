@@ -1,4 +1,4 @@
-use super::{query_values, respond_status, serve_static, RequestContext};
+use super::{respond_status, serve_static, RequestContext};
 use crate::macro_indicators::MacroIndicatorId;
 
 pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestContext<'a>> {
@@ -7,13 +7,7 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
         return Ok(());
     }
     if request.route == "/api/macro/indicators" && request.method == "GET" {
-        let force_refresh = query_values(request.path)
-            .get("refresh")
-            .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
-        match crate::macro_indicators::read(
-            MacroIndicatorId::TenYearTipsRealYield,
-            force_refresh,
-        ) {
+        match crate::macro_indicators::read(MacroIndicatorId::TenYearTipsRealYield) {
             Ok(payload) => respond_status(
                 request.stream,
                 crate::wire::encode(&payload).unwrap_or_default(),

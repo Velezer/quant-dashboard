@@ -1,30 +1,20 @@
-//! FRED's CSV protocol and bounded transport adapter for the registered TIPS series.
+//! FRED's time-stamped CSV snapshot adapter for the registered TIPS series.
 
 use super::{FetchStatus, MacroIndicatorId, MacroObservation, MacroSeriesProvider, ProviderSeriesSnapshot};
-use crate::public_http::{get_bounded, RequestOptions};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
 
-const FRED_CSV_URL: &str =
-    "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFII10&cosd=2015-01-01";
-const MAX_CSV_BYTES: usize = 256 * 1024;
+const FRED_CSV_SNAPSHOT: &str = include_str!("../../../../macrodata/DFII10.csv");
 const MAX_SERIES_OBSERVATIONS: usize = 3_000;
-const CACHE_TTL_SECONDS: u64 = 6 * 60 * 60;
-const MINIMUM_RETRY_INTERVAL_SECONDS: u64 = 60;
-const MAX_REFRESH_ERROR_CHARS: usize = 240;
+const SNAPSHOT_RETRIEVED_AT_PREFIX: &str = "# retrieved_at_seconds=";
 
 pub(super) static FRED_PROVIDER: FredProvider = FredProvider;
 
 pub(super) struct FredProvider;
 
 impl MacroSeriesProvider for FredProvider {
-    fn read_series(
-        &self,
-        id: MacroIndicatorId,
-        force_refresh: bool,
-    ) -> Result<ProviderSeriesSnapshot, String> {
+    fn read_series(&self, id: MacroIndicatorId) -> Result<ProviderSeriesSnapshot, String> {
         match id {
-            MacroIndicatorId::TenYearTipsRealYield => load_ten_year_tips(force_refresh),
+            MacroIndicatorId::TenYearTipsRealYield => load_ten_year_tips(),
         }
     }
 }
@@ -33,8 +23,6 @@ impl MacroSeriesProvider for FredProvider {
 struct CachedSeries {
     observations: Vec<MacroObservation>,
     retrieved_at_seconds: u64,
-    last_attempt_seconds: u64,
-    refresh_error: Option<String>,
 }
 
 static CACHE: OnceLock<Mutex<Option<CachedSeries>>> = OnceLock::new();
@@ -43,83 +31,56 @@ fn cache() -> &'static Mutex<Option<CachedSeries>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }
 
-fn load_ten_year_tips(force_refresh: bool) -> Result<ProviderSeriesSnapshot, String> {
-    let now = now_secs();
+fn load_ten_year_tips() -> Result<ProviderSeriesSnapshot, String> {
+    if let Some(current) = cache()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .as_ref()
+        .cloned()
+    {
+        return Ok(snapshot_from_cache(&current));
+    }
+
+    let (retrieved_at_seconds, observations) = parse_fred_snapshot_csv(FRED_CSV_SNAPSHOT)?;
+    let loaded = CachedSeries {
+        observations,
+        retrieved_at_seconds,
+    };
     let mut cache = cache().lock().unwrap_or_else(|error| error.into_inner());
     if let Some(current) = cache.as_ref() {
-        let recently_retrieved = now.saturating_sub(current.retrieved_at_seconds) < CACHE_TTL_SECONDS;
-        let retry_too_soon = now.saturating_sub(current.last_attempt_seconds)
-            < MINIMUM_RETRY_INTERVAL_SECONDS;
-        if (recently_retrieved && !force_refresh) || retry_too_soon {
-            return Ok(snapshot_from_cache(current, current.refresh_error.is_some()));
-        }
+        return Ok(snapshot_from_cache(current));
     }
-    if let Some(current) = cache.as_mut() {
-        current.last_attempt_seconds = now;
-    }
-
-    match fetch_ten_year_tips() {
-        Ok(observations) => {
-            let refreshed = CachedSeries {
-                observations,
-                retrieved_at_seconds: now,
-                last_attempt_seconds: now,
-                refresh_error: None,
-            };
-            let snapshot = ProviderSeriesSnapshot {
-                observations: refreshed.observations.clone(),
-                retrieved_at_seconds: refreshed.retrieved_at_seconds,
-                fetch_status: FetchStatus::Fresh,
-                refresh_error: None,
-            };
-            *cache = Some(refreshed);
-            Ok(snapshot)
-        }
-        Err(error) => {
-            if let Some(current) = cache.as_mut() {
-                current.last_attempt_seconds = now;
-                current.refresh_error = Some(truncate_error(&error));
-                Ok(snapshot_from_cache(current, true))
-            } else {
-                Err(error)
-            }
-        }
-    }
+    let snapshot = ProviderSeriesSnapshot {
+        observations: loaded.observations.clone(),
+        retrieved_at_seconds: loaded.retrieved_at_seconds,
+        fetch_status: FetchStatus::Fresh,
+        refresh_error: None,
+    };
+    *cache = Some(loaded);
+    Ok(snapshot)
 }
 
-fn snapshot_from_cache(cached: &CachedSeries, stale: bool) -> ProviderSeriesSnapshot {
+fn snapshot_from_cache(cached: &CachedSeries) -> ProviderSeriesSnapshot {
     ProviderSeriesSnapshot {
         observations: cached.observations.clone(),
         retrieved_at_seconds: cached.retrieved_at_seconds,
-        fetch_status: if stale {
-            FetchStatus::Stale
-        } else {
-            FetchStatus::Cached
-        },
-        refresh_error: cached.refresh_error.clone(),
+        fetch_status: FetchStatus::Cached,
+        refresh_error: None,
     }
 }
 
-fn fetch_ten_year_tips() -> Result<Vec<MacroObservation>, String> {
-    let response = get_bounded(
-        FRED_CSV_URL,
-        RequestOptions {
-            connect_timeout: Duration::from_secs(3),
-            total_timeout: Duration::from_secs(20),
-            max_body_bytes: MAX_CSV_BYTES,
-            max_redirects: 2,
-            accept: "text/csv",
-            user_agent: Some("Quant Desk macro indicators/1.0"),
-            accept_encoding: None,
-            referer: None,
-        },
-    )?;
-    if response.status >= 400 {
-        return Err(format!("FRED returned HTTP {}.", response.status));
-    }
-    let csv = std::str::from_utf8(&response.body)
-        .map_err(|_| "FRED returned CSV that was not valid UTF-8.".to_string())?;
-    parse_fred_csv(csv)
+pub(super) fn parse_fred_snapshot_csv(csv: &str) -> Result<(u64, Vec<MacroObservation>), String> {
+    let (metadata, csv) = csv
+        .split_once('\n')
+        .ok_or_else(|| "The DFII10 snapshot is missing retrieval metadata.".to_string())?;
+    let retrieved_at_seconds = metadata
+        .trim_end_matches('\r')
+        .strip_prefix(SNAPSHOT_RETRIEVED_AT_PREFIX)
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "The DFII10 snapshot has invalid retrieval metadata.".to_string())?;
+    let observations = parse_fred_csv(csv)?;
+    Ok((retrieved_at_seconds, observations))
 }
 
 pub(super) fn parse_fred_csv(csv: &str) -> Result<Vec<MacroObservation>, String> {
@@ -145,7 +106,7 @@ pub(super) fn parse_fred_csv(csv: &str) -> Result<Vec<MacroObservation>, String>
         if !valid_date(date) {
             return Err("FRED returned an invalid DFII10 observation date.".to_string());
         }
-        if value == "." {
+        if value.is_empty() || value == "." {
             continue;
         }
         let value = value
@@ -199,13 +160,3 @@ fn valid_date(date: &str) -> bool {
     (1..=days_in_month).contains(&day)
 }
 
-fn truncate_error(error: &str) -> String {
-    error.chars().take(MAX_REFRESH_ERROR_CHARS).collect()
-}
-
-fn now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}

@@ -22,11 +22,11 @@
             <div class="section-heading macro-heading">
                 <div>
                     <h1 id="macro-title">Macroeconomic indicators</h1>
-                    <p class="small-text">A dedicated view for rates, inflation and other market-wide context. These indicators are shown separately and do not change ticker scores or create signals.</p>
+                    <p class="small-text">A dedicated view for rates, inflation and other market-wide context. These indicators are shown separately and do not change ticker scores or create signals. The FRED snapshot updates on weekdays.</p>
                 </div>
-                <button id="macro-refresh" class="macro-refresh" type="button">Refresh data</button>
+                <button id="macro-refresh" class="macro-refresh" type="button" title="Load the latest published FRED snapshot">Refresh data</button>
             </div>
-            <p id="macro-status" class="status-message" role="status" aria-live="polite">Loading the latest 10-year TIPS real yield from FRED…</p>
+            <p id="macro-status" class="status-message" role="status" aria-live="polite">Loading the latest available 10-year TIPS real yield…</p>
             <div id="macro-empty" class="macro-empty" hidden>
                 <p id="macro-empty-message">Macroeconomic data is unavailable right now.</p>
                 <button id="macro-retry" class="macro-refresh" type="button">Retry</button>
@@ -43,7 +43,7 @@
                 <div class="macro-metrics" aria-label="Latest indicator values">
                     <div class="macro-metric macro-primary-metric"><span>Latest observation</span><strong id="macro-latest-value">—</strong><small id="macro-observation-date">Date unavailable</small></div>
                     <div class="macro-metric"><span>Change from prior published day</span><strong id="macro-daily-change">—</strong><small>Basis points</small></div>
-                    <div class="macro-metric"><span>Last checked</span><strong id="macro-retrieved-at">—</strong><small>FRED refresh time</small></div>
+                    <div class="macro-metric"><span>FRED snapshot retrieved</span><strong id="macro-retrieved-at">—</strong><small>Source update time</small></div>
                 </div>
                 <div id="macro-stale-note" class="macro-stale-note" role="note" hidden></div>
                 <div class="macro-chart-panel">

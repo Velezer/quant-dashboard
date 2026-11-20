@@ -477,3 +477,7 @@ lesson only when it will improve future tasks.
 - Keep macroeconomic series on a dedicated, source-labeled view. Show the last
   published observation date separately from the retrieval time and keep macro
   context out of ticker scores unless a separately validated rule is requested.
+- If a production host cannot reach a public data source, bundle a validated,
+  time-stamped snapshot and refresh it from a scheduled runner. Keep the
+  observation date and snapshot retrieval time visible so missed updates are
+  detectable.

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { FRED_SNAPSHOT_URL } from './macro-indicator-snapshot.js';
 
 const observationRows = [
     { date: '2026-01-02', value: 2.75 },
@@ -14,6 +15,7 @@ const responseData = {
     retrieved_at_seconds: 1_794_960_000, status_note: null, refresh_error: null,
     observations: observationRows,
 };
+const snapshotCsv = '# retrieved_at_seconds=1795164809\nobservation_date,DFII10\n2026-11-17,2.89\n2026-11-18,2.88\n';
 
 class FakeElement {
     constructor() {
@@ -65,19 +67,22 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 test('macro page loads the series, changes chart range and retains values after refresh failure', async () => {
     const { document, elements } = mockDocument();
     globalThis.document = document;
-    let fetchCount = 0;
-    globalThis.fetch = async () => {
-        fetchCount += 1;
-        return fetchCount === 1
-            ? new Response(JSON.stringify(responseData), { status: 200 })
-            : new Response(JSON.stringify({ error: 'FRED request timed out.' }), { status: 502 });
+    let snapshotFetchCount = 0;
+    globalThis.fetch = async url => {
+        if (String(url).startsWith(FRED_SNAPSHOT_URL)) {
+            snapshotFetchCount += 1;
+            return snapshotFetchCount === 1
+                ? new Response(snapshotCsv, { status: 200 })
+                : new Response('FRED request timed out.', { status: 503 });
+        }
+        return new Response(JSON.stringify({ error: 'FRED request timed out.' }), { status: 502 });
     };
     await import(`./macro-indicators.js?success=${Date.now()}`);
     await settle();
 
     assert.equal(elements.get('macro-series-card').hidden, false);
     assert.equal(elements.get('macro-latest-value').textContent, '2.88%');
-    assert.match(elements.get('macro-status').textContent, /FRED was checked at/);
+    assert.match(elements.get('macro-status').textContent, /FRED snapshot retrieved at/);
     assert.match(elements.get('macro-chart').innerHTML, /<svg/);
     assert.equal(elements.get('macro-freshness').textContent, 'Current data');
 
@@ -105,4 +110,20 @@ test('macro page exposes retry after its first data request is unavailable', asy
     assert.match(elements.get('macro-empty-message').textContent, /FRED is unavailable/);
     assert.match(elements.get('macro-status').textContent, /Retry to try again/);
     assert.equal(elements.get('macro-retry').disabled, false);
+});
+
+test('macro page keeps a chart from the deployed snapshot when the latest source is unavailable', async () => {
+    const { document, elements } = mockDocument();
+    globalThis.document = document;
+    globalThis.fetch = async url => String(url).startsWith(FRED_SNAPSHOT_URL)
+        ? new Response('FRED snapshot is unavailable.', { status: 503 })
+        : new Response(JSON.stringify(responseData), { status: 200 });
+    await import(`./macro-indicators.js?fallback=${Date.now()}`);
+    await settle();
+
+    assert.equal(elements.get('macro-series-card').hidden, false);
+    assert.equal(elements.get('macro-latest-value').textContent, '2.88%');
+    assert.match(elements.get('macro-chart').innerHTML, /<svg/);
+    assert.equal(elements.get('macro-freshness').textContent, 'Stale data');
+    assert.match(elements.get('macro-stale-note').textContent, /last snapshot bundled with this dashboard/);
 });

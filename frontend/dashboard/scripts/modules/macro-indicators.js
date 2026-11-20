@@ -1,5 +1,6 @@
 import { requestJson } from './api.js';
 import { formatBasisPoints, formatYield, observationsForRange, renderYieldChart } from './macro-indicator-view.js';
+import { FRED_SNAPSHOT_URL, parseFredSnapshotCsv } from './macro-indicator-snapshot.js';
 
 const statusElement = document.getElementById('macro-status');
 const refreshButton = document.getElementById('macro-refresh');
@@ -76,22 +77,45 @@ function renderChart() {
     chartElement.setAttribute('aria-label', `${snapshot.title} history, ${selectedRange} range`);
 }
 
+async function loadLatestSnapshot() {
+    let snapshotError;
+    try {
+        const response = await fetch(`${FRED_SNAPSHOT_URL}?v=${Date.now()}`, {
+            cache: 'no-store',
+            headers: { Accept: 'text/plain' },
+        });
+        if (!response.ok) throw new Error(`FRED snapshot returned HTTP ${response.status}.`);
+        return parseFredSnapshotCsv(await response.text());
+    } catch (error) {
+        snapshotError = error;
+    }
+
+    const deployedSnapshot = await requestJson('/api/macro/indicators');
+    const fallbackNote = `The latest FRED snapshot could not be loaded; showing the last snapshot bundled with this dashboard. ${snapshotError?.message || ''}`.trim();
+    return {
+        ...deployedSnapshot,
+        freshness: 'stale',
+        fetch_status: 'stale',
+        status_note: [deployedSnapshot.status_note, fallbackNote].filter(Boolean).join(' '),
+    };
+}
+
 async function loadData({ refresh = false } = {}) {
     refreshButton.disabled = true;
     retryButton.disabled = true;
     emptyState.hidden = true;
-    setStatus(refresh ? 'Checking FRED for updated macro data…' : 'Loading the latest 10-year TIPS real yield from FRED…');
+    setStatus(refresh ? 'Checking for the latest published FRED snapshot…' : 'Loading the latest available 10-year TIPS real yield…');
     try {
-        const data = await requestJson(`/api/macro/indicators${refresh ? '?refresh=1' : ''}`);
+        const data = await loadLatestSnapshot();
         renderSnapshot(data);
         const freshnessText = data.freshness === 'stale'
-            ? 'FRED data is stale. Review the status note and retry when the source is available.'
+            ? 'FRED data is stale. Review the status note; the dashboard updates when FRED publishes a newer snapshot.'
             : `Loaded ${data.title}; the latest observation is ${data.observation_date}.`;
         const retrievalText = data.fetch_status === 'cached'
-            ? `Showing cached FRED data last retrieved at ${formatRetrievedAt(data.retrieved_at_seconds)}.`
+            ? `Showing the FRED snapshot last retrieved at ${formatRetrievedAt(data.retrieved_at_seconds)}.`
             : data.fetch_status === 'stale'
-                ? `Showing the last successful FRED retrieval from ${formatRetrievedAt(data.retrieved_at_seconds)}.`
-                : `FRED was checked at ${formatRetrievedAt(data.retrieved_at_seconds)}.`;
+                ? `Showing the last available FRED snapshot from ${formatRetrievedAt(data.retrieved_at_seconds)}.`
+                : `FRED snapshot retrieved at ${formatRetrievedAt(data.retrieved_at_seconds)}.`;
         setStatus(`${freshnessText} ${retrievalText}`, data.freshness === 'stale' ? 'error' : 'ready');
     } catch (error) {
         const message = error?.message || 'FRED could not be reached.';

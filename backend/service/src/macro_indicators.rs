@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod tests;
 
 const MAX_OBSERVATION_AGE_DAYS: i64 = 7;
+const MAX_SNAPSHOT_AGE_SECONDS: u64 = MAX_OBSERVATION_AGE_DAYS as u64 * 86_400;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MacroIndicatorId {
@@ -76,13 +77,9 @@ pub(crate) struct ProviderSeriesSnapshot {
 }
 
 /// Narrow app-owned port: providers return dated percentage observations while
-/// the provider protocol and transport remain inside their adapter.
+/// the source format and snapshot parsing remain inside their adapter.
 pub(crate) trait MacroSeriesProvider: Sync {
-    fn read_series(
-        &self,
-        id: MacroIndicatorId,
-        force_refresh: bool,
-    ) -> Result<ProviderSeriesSnapshot, String>;
+    fn read_series(&self, id: MacroIndicatorId) -> Result<ProviderSeriesSnapshot, String>;
 }
 
 fn provider_for(id: MacroIndicatorId) -> &'static dyn MacroSeriesProvider {
@@ -92,26 +89,30 @@ fn provider_for(id: MacroIndicatorId) -> &'static dyn MacroSeriesProvider {
 }
 
 /// Read the registered macro series and map it into the stable UI contract.
-pub(crate) fn read(
-    id: MacroIndicatorId,
-    force_refresh: bool,
-) -> Result<MacroIndicatorData, String> {
-    let snapshot = provider_for(id).read_series(id, force_refresh)?;
+pub(crate) fn read(id: MacroIndicatorId) -> Result<MacroIndicatorData, String> {
+    let snapshot = provider_for(id).read_series(id)?;
     let latest = snapshot
         .observations
         .last()
         .ok_or_else(|| "The macro data provider returned no observations.".to_string())?;
     let daily_change_basis_points = daily_change_basis_points(&snapshot.observations);
-    let too_old = observation_is_stale(&latest.date, now_secs());
+    let now = now_secs();
+    let too_old = observation_is_stale(&latest.date, now)
+        || snapshot_is_stale(snapshot.retrieved_at_seconds, now);
     let freshness = if too_old || snapshot.refresh_error.is_some() {
         DataFreshness::Stale
     } else {
         DataFreshness::Current
     };
+    let fetch_status = if too_old {
+        FetchStatus::Stale
+    } else {
+        snapshot.fetch_status
+    };
     let status_note = if snapshot.refresh_error.is_some() {
         Some("The latest refresh failed; showing the last successfully retrieved observations.".to_string())
     } else if too_old {
-        Some("The latest available observation is more than seven days old. Check FRED again later.".to_string())
+        Some("The latest FRED snapshot or observation is more than seven days old. Check FRED again later.".to_string())
     } else {
         None
     };
@@ -133,7 +134,7 @@ pub(crate) fn read(
         source_series_id,
         source_url,
         freshness,
-        fetch_status: snapshot.fetch_status,
+        fetch_status,
         observation_date: latest.date.clone(),
         latest_value: latest.value,
         daily_change_basis_points,
@@ -157,6 +158,10 @@ fn observation_is_stale(date: &str, now_seconds: u64) -> bool {
     let (year, month, day) = quant_core::gregorian_date_from_unix_days(cutoff_days);
     let cutoff = format!("{year:04}-{month:02}-{day:02}");
     date < cutoff.as_str()
+}
+
+fn snapshot_is_stale(retrieved_at_seconds: u64, now_seconds: u64) -> bool {
+    now_seconds.saturating_sub(retrieved_at_seconds) > MAX_SNAPSHOT_AGE_SECONDS
 }
 
 fn now_secs() -> u64 {
