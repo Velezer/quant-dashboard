@@ -1,0 +1,35 @@
+.tv-terminal .macro-quick-nav {
+    display: none;
+}
+
+@media (max-width: 1180px) {
+    .tv-terminal .macro-quick-nav {
+        display: flex;
+        justify-content: flex-end;
+        padding: 6px 4px 0;
+    }
+
+    .tv-terminal .macro-quick-nav a {
+        display: inline-flex;
+        min-height: 34px;
+        align-items: center;
+        gap: 7px;
+        padding: 0 12px;
+        border: 1px solid #14536c;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #0d2b39, #101c2a);
+        color: #c3efff;
+        font-size: 11px;
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .tv-terminal .macro-quick-nav a:hover,
+    .tv-terminal .macro-quick-nav a:focus-visible {
+        border-color: #38bdf8;
+        background: #123749;
+        color: #fff;
+        outline: 2px solid #67e8f9;
+        outline-offset: 2px;
+    }
+}
