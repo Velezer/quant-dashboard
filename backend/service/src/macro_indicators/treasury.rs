@@ -102,6 +102,8 @@ fn snapshot_from_cache(cached: &CachedSeries, stale: bool) -> ProviderSeriesSnap
 fn fetch_ten_year_tips() -> Result<Vec<MacroObservation>, String> {
     let now_days = i64::try_from(now_secs() / 86_400).unwrap_or(i64::MAX);
     let (current_year, _, _) = quant_core::gregorian_date_from_unix_days(now_days);
+    let current_year = i32::try_from(current_year)
+        .map_err(|_| "The current year is outside the Treasury data range.".to_string())?;
     let years: Vec<i32> = (current_year - 10..=current_year).collect();
     let yearly_observations: Result<Vec<Vec<MacroObservation>>, String> =
         std::thread::scope(|scope| {
