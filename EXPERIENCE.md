@@ -474,3 +474,6 @@ lesson only when it will improve future tasks.
   expose the reference-only distinction and color key in accessible text; keep
   bracket prices sourced from the backend plan rather than recalculating them
   in the chart.
+- Keep macroeconomic series on a dedicated, source-labeled view. Show the last
+  published observation date separately from the retrieval time and keep macro
+  context out of ticker scores unless a separately validated rule is requested.

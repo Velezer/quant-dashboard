@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="View standalone macroeconomic indicators, starting with the 10-year TIPS real yield.">
+    <meta name="color-scheme" content="dark">
+    <title>Macroeconomic indicators · Quant Desk</title>
+    <link rel="stylesheet" href="/web/styles/entry-validation.css">
+    <link rel="stylesheet" href="/web/styles/macro-indicators.css">
+    <script type="module" src="/web/scripts/modules/macro-indicators.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to macroeconomic indicators</a>
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="Quant Desk dashboard"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>QUANT DESK<span class="brand-section"> / MACRO</span></a>
+        <nav aria-label="Page navigation"><a href="/">Screener</a><a href="/entry-validation">Backtests</a><a href="/registry">Registry</a><a href="/scoring">Scoring</a></nav>
+    </header>
+    <main id="main" class="page-shell macro-page">
+        <p class="eyebrow accent">MARKET-WIDE CONTEXT</p>
+        <section class="scope-panel macro-panel" aria-labelledby="macro-title">
+            <div class="section-heading macro-heading">
+                <div>
+                    <h1 id="macro-title">Macroeconomic indicators</h1>
+                    <p class="small-text">A dedicated view for rates, inflation and other market-wide context. These indicators are shown separately and do not change ticker scores or create signals.</p>
+                </div>
+                <button id="macro-refresh" class="macro-refresh" type="button">Refresh data</button>
+            </div>
+            <p id="macro-status" class="status-message" role="status" aria-live="polite">Loading the latest 10-year TIPS real yield from FRED…</p>
+            <div id="macro-empty" class="macro-empty" hidden>
+                <p id="macro-empty-message">Macroeconomic data is unavailable right now.</p>
+                <button id="macro-retry" class="macro-refresh" type="button">Retry</button>
+            </div>
+            <article id="macro-series-card" class="macro-series-card" aria-labelledby="macro-series-title" hidden>
+                <div class="macro-card-heading">
+                    <div>
+                        <p class="macro-kicker">REAL INTEREST RATE · UNITED STATES</p>
+                        <h2 id="macro-series-title">10-Year TIPS real yield</h2>
+                        <p id="macro-description" class="small-text"></p>
+                    </div>
+                    <span id="macro-freshness" class="state-badge pending">Loading</span>
+                </div>
+                <div class="macro-metrics" aria-label="Latest indicator values">
+                    <div class="macro-metric macro-primary-metric"><span>Latest observation</span><strong id="macro-latest-value">—</strong><small id="macro-observation-date">Date unavailable</small></div>
+                    <div class="macro-metric"><span>Change from prior published day</span><strong id="macro-daily-change">—</strong><small>Basis points</small></div>
+                    <div class="macro-metric"><span>Last checked</span><strong id="macro-retrieved-at">—</strong><small>FRED refresh time</small></div>
+                </div>
+                <div id="macro-stale-note" class="macro-stale-note" role="note" hidden></div>
+                <div class="macro-chart-panel">
+                    <div class="macro-chart-heading">
+                        <div><h3>Yield history</h3><p id="macro-chart-caption" class="small-text">Daily observations, in percent per year.</p></div>
+                        <div id="macro-range-controls" class="macro-range-controls" role="group" aria-label="Chart history range">
+                            <button type="button" data-range="6m" aria-pressed="false">6M</button>
+                            <button type="button" data-range="1y" aria-pressed="true">1Y</button>
+                            <button type="button" data-range="5y" aria-pressed="false">5Y</button>
+                            <button type="button" data-range="10y" aria-pressed="false">10Y</button>
+                        </div>
+                    </div>
+                    <div id="macro-chart" class="macro-chart" role="group" aria-label="10-Year TIPS real yield chart loading"></div>
+                </div>
+                <details class="macro-source-details">
+                    <summary>Source and methodology</summary>
+                    <dl class="macro-source-list">
+                        <div><dt>Provider</dt><dd id="macro-source"></dd></div>
+                        <div><dt>FRED series</dt><dd id="macro-source-series"></dd></div>
+                        <div><dt>Frequency and unit</dt><dd id="macro-frequency-unit"></dd></div>
+                        <div><dt>Definition</dt><dd id="macro-source-definition"></dd></div>
+                        <div><dt>Signal relationship</dt><dd>Independent macro context. This value does not enter NWE/DSS calculations, the combined ticker score, or signal direction.</dd></div>
+                    </dl>
+                    <a id="macro-source-link" class="macro-source-link" href="https://fred.stlouisfed.org/series/DFII10" target="_blank" rel="noreferrer">Open the series at FRED</a>
+                </details>
+                <details class="macro-observations-details">
+                    <summary>Recent observations</summary>
+                    <div class="table-scroll"><table><thead><tr><th scope="col">Observation date</th><th scope="col">Real yield</th></tr></thead><tbody id="macro-observations-table"></tbody></table></div>
+                </details>
+                <p class="macro-limits">FRED publishes this series on business days and may revise observations. The observation date is shown separately from the time this dashboard last checked the source. Real yields describe market pricing; they are not a guaranteed forecast of future inflation or returns.</p>
+            </article>
+        </section>
+        <footer class="page-footer"><span>Macroeconomic context · Independent from ticker signals</span><a href="/">Back to screener</a></footer>
+    </main>
+</body>
+</html>

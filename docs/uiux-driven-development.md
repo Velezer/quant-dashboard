@@ -1348,3 +1348,38 @@ removes rows that no longer qualify, while a failed scan preserves the last
 good snapshot and marks it stale. Notification history retains its separate
 two-hour window from alert creation. Stale reference prices remain visible
 with their freshness label and are not presented as current market entries.
+
+## 2026-11-20 — Dedicated macroeconomic indicators
+
+The Macro page shows the daily 10-Year TIPS real yield (FRED `DFII10`) as an
+independent market-wide series. The initial view reports its latest published
+value, prior published-day change, observation date, retrieval time, history,
+source and recovery state. Users can select 6-month, 1-year, 5-year, or 10-year
+history and retry a failed provider request. The source definition explains how
+real yield differs from nominal Treasury yield and an inflation forecast.
+
+1. **Direct effect:** Users can inspect one clearly defined macro series in a
+   dedicated view. The success condition is a visible chart and source date for
+   the latest FRED observation.
+2. **Immediate consequence:** Macro context is available without changing a
+   ticker's score, direction, NWE/DSS evidence, or signal eligibility.
+3. **Repeated use:** A bounded in-memory six-hour cache limits requests to the
+   daily public series; refresh is explicit and retries are rate-limited.
+4. **Interactions:** The app-owned macro data contract selects a bounded FRED
+   adapter. The screener and strategy modules do not consume macro values.
+5. **Accumulation:** No macro history is persisted; at most 3,000 observations
+   are held in process and returned for the chart's 10-year range.
+6. **Failure conditions:** Malformed/empty FRED data fails closed. An old
+   observation or a failed refresh with retained data is marked stale; an
+   initial unavailable response has a retry action.
+7. **Recovery:** The page shows the FRED source, last observation and last
+   retrieval time, and allows the user to retry. Without a successful first
+   fetch there is no value to display.
+8. **Governance:** The public Federal Reserve series is descriptive research
+   context. This feature adds no execution action or signal rule.
+9. **Trajectory:** More macro series may be useful, but the present view does
+   not imply a combined macro regime or a causal effect on ticker performance.
+10. **Decision:** Keep this first series dedicated, bounded, sourced, and
+    separate from scoring. Reconsider integration only after the user requests
+    and validates a specific macro rule against the strategy's existing
+    evidence requirements.
