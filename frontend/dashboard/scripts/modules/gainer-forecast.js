@@ -509,8 +509,8 @@ export function initializeGainerForecast(doc = document) {
                     : payload.as_of < payload.schedule.forecast_cutoff
                         ? ' while the next IDX scan is pending'
                         : ' after five days without a new IDX forecast';
-            host.append(element('p', 'gainer-forecast-empty', 'This forecast is stale' + expiry + '. Its candidate list is hidden until a new scheduled result is ready.'));
-            return;
+            host.append(element('p', 'gainer-forecast-exclusions',
+                'This forecast is stale' + expiry + '. The last saved candidate list stays visible with its cutoff; it is not a current recommendation.'));
         }
         if (payload.status !== 'READY' || !payload.candidates.length) {
             const empty = payload.status === 'INSUFFICIENT_COVERAGE'
@@ -522,14 +522,15 @@ export function initializeGainerForecast(doc = document) {
         const grid = element('div', 'gainer-forecast-candidate-grid');
         const top = payload.candidates[0];
         const topCard = element('article', 'gainer-forecast-top');
-        topCard.append(element('span', 'gainer-forecast-top-label', 'Highest projected return'));
+        topCard.append(element('span', 'gainer-forecast-top-label',
+            expired ? 'Last forecast · stale' : 'Highest projected return'));
         topCard.append(element('h3', '', candidateName(top)));
         topCard.append(element('strong', 'gainer-forecast-return', formatForecastReturn(top.forecast_return_pct)));
         appendCandidateMeta(topCard, top);
         grid.append(topCard);
 
         const shortlist = element('section', 'gainer-forecast-shortlist');
-        shortlist.append(element('h4', '', 'Next highest projected returns'));
+        shortlist.append(element('h4', '', expired ? 'Other stale projections' : 'Next highest projected returns'));
         const remaining = payload.candidates.slice(1, SHORTLIST_LIMIT);
         if (!remaining.length) {
             shortlist.append(element('p', 'gainer-forecast-empty', 'No additional positive projections qualified in this window.'));

@@ -164,7 +164,7 @@ test('Stockbit accepts only next-session forecasts from the unadjusted Yahoo res
     }, 'stockbit_idx'), 'stockbit_idx'));
 });
 
-test('Stockbit candidates are hidden after their target session closes', async () => {
+test('Stockbit candidates remain visible with a stale label after their target session closes', async () => {
     const { doc, results, stockbitTab } = fakeDocument();
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => ({
@@ -183,7 +183,8 @@ test('Stockbit candidates are hidden after their target session closes', async (
         await new Promise(resolve => setImmediate(resolve));
         const renderedText = collectText(results);
         assert.match(renderedText, /targeted IDX session has closed/);
-        assert.doesNotMatch(renderedText, /BBCA/);
+        assert.match(renderedText, /BBCA/);
+        assert.match(renderedText, /Last forecast · stale/);
     } finally {
         globalThis.fetch = originalFetch;
     }
