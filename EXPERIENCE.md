@@ -419,10 +419,14 @@ lesson only when it will improve future tasks.
   start its own API call during that render. Push app/timeframe predicates into
   SQLite before per-row freshness work, while leaving product/search filtering
   after direction-score aggregation when those summaries must cover the whole
-  ticker/timeframe. Do not add an all-app signal-count request solely for a
-  notification badge; current screener rows and unread alert history are
-  different concepts, and the alert panel can show its unread count from the
-  alert-history response it already loads.
+  ticker/timeframe. Materialize selected rows and readiness under one read
+  snapshot, then close the SQLite transaction before per-row freshness,
+  filtering, and pagination; reuse those copied rows instead of querying the
+  page again. This keeps incremental scan writes from waiting on API-side CPU
+  work, including on rollback-journal storage. Do not add an all-app signal-count
+  request solely for a notification badge; current screener rows and unread
+  alert history are different concepts, and the alert panel can show its unread
+  count from the alert-history response it already loads.
 
 - Cross-sectional research must freeze the universe, cutoff and costs across
   retries, purge outcomes across common time splits, and deduplicate instrument

@@ -20,21 +20,75 @@ const PINTU_FUTURES_REGISTRY_GUARD: &str = "(signal_screener_rows.exchange_id <>
            AND registered.listing_status IN ('venue_active', 'public_listed_snapshot')
     ))";
 
-// Apply official delisting notices even when the last registry refresh failed.
-fn is_unavailable_pintu_signal(row: &rusqlite::Row<'_>) -> Result<bool, rusqlite::Error> {
-    let exchange = row.get::<_, String>(0)?;
-    let product = row.get::<_, String>(1)?;
-    if exchange != "pintu" || product != "pintu_pro_futures" {
-        return Ok(false);
+struct SignalScreenerRowSnapshot {
+    exchange_id: String,
+    product_id: String,
+    asset_category_id: String,
+    symbol: String,
+    storage_symbol: String,
+    signal_strategy_id: String,
+    signal_strategy_name: String,
+    timeframe: String,
+    direction: String,
+    score: f64,
+    strategy_strength: Option<f64>,
+    confluence_score: Option<f64>,
+    score_basis_json: String,
+    current_price: f64,
+    price_timeframe: String,
+    price_bar_time: i64,
+    signal_bar_time: i64,
+    data_source: String,
+    data_provider: String,
+    data_quality: String,
+    evidence_status: String,
+    evidence_source: String,
+    last_updated_at: i64,
+}
+
+impl SignalScreenerRowSnapshot {
+    fn from_row(row: &rusqlite::Row<'_>) -> Result<Self, rusqlite::Error> {
+        Ok(Self {
+            exchange_id: row.get(0)?,
+            product_id: row.get(1)?,
+            asset_category_id: row.get(2)?,
+            symbol: row.get(3)?,
+            storage_symbol: row.get(4)?,
+            signal_strategy_id: row.get(5)?,
+            signal_strategy_name: row.get(6)?,
+            timeframe: row.get(7)?,
+            direction: row.get(8)?,
+            score: row.get(9)?,
+            strategy_strength: row.get(10)?,
+            confluence_score: row.get(11)?,
+            score_basis_json: row.get(12)?,
+            current_price: row.get(13)?,
+            price_timeframe: row.get(14)?,
+            price_bar_time: row.get(15)?,
+            signal_bar_time: row.get(16)?,
+            data_source: row.get(17)?,
+            data_provider: row.get(18)?,
+            data_quality: row.get(19)?,
+            evidence_status: row.get(20)?,
+            evidence_source: row.get(21)?,
+            last_updated_at: row.get(22)?,
+        })
     }
-    let symbol = row.get::<_, String>(3)?.trim().to_ascii_uppercase();
+}
+
+// Apply official delisting notices even when the last registry refresh failed.
+fn is_unavailable_pintu_signal(row: &SignalScreenerRowSnapshot) -> bool {
+    if row.exchange_id != "pintu" || row.product_id != "pintu_pro_futures" {
+        return false;
+    }
+    let symbol = row.symbol.trim().to_ascii_uppercase();
     let symbol = symbol.strip_suffix("-USD").unwrap_or(&symbol).to_string();
     let contract = if symbol.ends_with("USDT-PERP") {
         symbol
     } else {
         format!("{symbol}USDT-PERP")
     };
-    Ok(crate::pintu_listing::is_unavailable_pintu_future(&contract))
+    crate::pintu_listing::is_unavailable_pintu_future(&contract)
 }
 
 fn score_model_by_strategy() -> std::collections::HashMap<&'static str, &'static str> {
@@ -433,9 +487,11 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     offset: usize,
     limit: usize,
 ) -> Result<Value, rusqlite::Error> {
-    // Keep selection and page hydration on the same scan snapshot.
+    // Keep rows and readiness on one scan snapshot, then release SQLite before
+    // per-row JSON, freshness, and pagination work. This gives batch publishers
+    // a short read-lock window while preserving a coherent set of saved rows.
     let transaction = connection.unchecked_transaction()?;
-    let connection = &transaction;
+    let snapshot_connection = &transaction;
     let now = now_secs() as i64;
     let mut query_values = Vec::new();
     let mut where_clause = String::new();
@@ -450,56 +506,59 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let page_size = limit.clamp(1, MAX_SIGNAL_SCREENER_PAGE_SIZE);
     let display_order = signal_screener_display_order_sql();
     let score_model_by_strategy = score_model_by_strategy();
-    let master_data = crate::master_data::signal_screener_master_data_for_connection(connection)?;
+    let master_data =
+        crate::master_data::signal_screener_master_data_for_connection(snapshot_connection)?;
     let signal_score_models = signal_score_model_index(&master_data["signal_score_models"]);
     let columns = "exchange_id,product_id,asset_category_id,symbol,storage_symbol,signal_strategy_id,
                 signal_strategy_name,timeframe,direction,score,strategy_strength,confluence_score,
                 score_basis_json,current_price,price_timeframe,price_bar_time,signal_bar_time,
                 data_source,data_provider,data_quality,evidence_status,evidence_source,last_updated_at";
     let query = format!(
-        "SELECT {columns},rowid
+        "SELECT {columns}
            FROM signals.signal_screener_rows WHERE 1=1{where_clause}
             AND {PINTU_FUTURES_REGISTRY_GUARD}
           ORDER BY {display_order}"
     );
-    let mut statement = connection.prepare(&query)?;
-    let row_mapper = |row: &rusqlite::Row<'_>, score_basis: Value| -> Result<Value, rusqlite::Error> {
-        let storage_symbol = row.get::<_, String>(4)?;
-        let price_timeframe = row.get::<_, String>(14)?;
-        let price_bar_time = row.get::<_, i64>(15)?;
-        let price_fresh_until_ms = price_bar_time
+    let mut statement = snapshot_connection.prepare(&query)?;
+    let row_mapper = |row: &SignalScreenerRowSnapshot, score_basis: Value| -> Value {
+        let price_fresh_until_ms = row.price_bar_time
             .div_euclid(quant_core::NANOS_PER_MILLISECOND)
             .saturating_add(
-                crate::freshness_threshold_seconds(&storage_symbol, &price_timeframe)
+                crate::freshness_threshold_seconds(&row.storage_symbol, &row.price_timeframe)
                     .max(0)
                     .saturating_mul(quant_core::MILLISECONDS_PER_SECOND),
             );
         let score_status = score_basis["status"].as_str().unwrap_or("stale");
         let score_bar_time = score_basis["score_bar_time"]
             .as_i64()
-            .unwrap_or(row.get::<_, i64>(15)?);
+            .unwrap_or(row.price_bar_time);
         let score_bar_is_forming = score_basis["score_bar_is_forming"]
             .as_bool()
             .unwrap_or(false);
-        let direction = row.get::<_, String>(8)?;
-        let setup_strength = row.get::<_, f64>(9)?;
+        let setup_strength = row.score;
         let setup_strength_scale_max = score_basis["score_scale_max"].clone();
         // Keep the saved sign on retained qualifying rows; the live net below
         // is reserved for fresh market entries.
         let last_direction_score = match score_status {
-            "qualifying" | "stale" => Some(if direction.eq_ignore_ascii_case("SHORT") { -setup_strength } else { setup_strength }),
+            "qualifying" | "stale" => Some(
+                if row.direction.eq_ignore_ascii_case("SHORT") {
+                    -setup_strength
+                } else {
+                    setup_strength
+                },
+            ),
             _ => None,
         };
-        Ok(json!({
-            "exchange_id": row.get::<_, String>(0)?,
-            "product_id": row.get::<_, String>(1)?,
-            "asset_category_id": row.get::<_, String>(2)?,
-            "symbol": row.get::<_, String>(3)?,
-            "storage_symbol": storage_symbol,
-            "signal_strategy_id": row.get::<_, String>(5)?,
-            "signal_strategy_name": row.get::<_, String>(6)?,
-            "timeframe": row.get::<_, String>(7)?,
-            "direction": direction,
+        json!({
+            "exchange_id": row.exchange_id,
+            "product_id": row.product_id,
+            "asset_category_id": row.asset_category_id,
+            "symbol": row.symbol,
+            "storage_symbol": row.storage_symbol,
+            "signal_strategy_id": row.signal_strategy_id,
+            "signal_strategy_name": row.signal_strategy_name,
+            "timeframe": row.timeframe,
+            "direction": row.direction,
             "last_direction_score": last_direction_score,
             // The persisted magnitude and sum-derived direction reconstruct the
             // signed indicator total without changing SQLite score constraints.
@@ -508,8 +567,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             "score_scale_max": setup_strength_scale_max,
             "setup_strength": setup_strength,
             "setup_strength_scale_max": setup_strength_scale_max,
-            "strategy_strength": row.get::<_, Option<f64>>(10)?,
-            "confluence_score": row.get::<_, Option<f64>>(11)?,
+            "strategy_strength": row.strategy_strength,
+            "confluence_score": row.confluence_score,
             "win_probability": score_basis["win_probability"].clone(),
             "risk_reward_plan": score_basis.get("risk_reward_plan").cloned().unwrap_or_else(|| json!({
                 "status": "UNAVAILABLE",
@@ -517,49 +576,91 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
                 "minimum_target_after_fee_r_multiple": quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
             })),
             "score_basis": score_basis,
-            "current_price": row.get::<_, f64>(13)?,
-            "price_timeframe": price_timeframe,
-            "price_bar_time": price_bar_time,
+            "current_price": row.current_price,
+            "price_timeframe": row.price_timeframe,
+            "price_bar_time": row.price_bar_time,
             "price_fresh_until_ms": price_fresh_until_ms,
-            "signal_bar_time": row.get::<_, i64>(16)?,
-            "data_source": row.get::<_, String>(17)?,
-            "data_provider": row.get::<_, String>(18)?,
-            "data_quality": row.get::<_, String>(19)?,
-            "evidence_status": row.get::<_, String>(20)?,
-            "evidence_source": row.get::<_, String>(21)?,
-            "last_updated_at": row.get::<_, i64>(22)?,
+            "signal_bar_time": row.signal_bar_time,
+            "data_source": row.data_source,
+            "data_provider": row.data_provider,
+            "data_quality": row.data_quality,
+            "evidence_status": row.evidence_status,
+            "evidence_source": row.evidence_source,
+            "last_updated_at": row.last_updated_at,
             "score_status": score_status,
             "score_bar_time": score_bar_time,
             "score_bar_is_forming": score_bar_is_forming,
-        }))
+        })
     };
     let mut query_rows = statement.query(rusqlite::params_from_iter(query_values.iter()))?;
+    let mut snapshot_rows = Vec::new();
+    while let Some(row) = query_rows.next()? {
+        snapshot_rows.push(SignalScreenerRowSnapshot::from_row(row)?);
+    }
+    drop(query_rows);
+    drop(statement);
+
+    let mut status = snapshot_connection
+        .query_row(
+            "SELECT last_attempt_at,last_success_at,last_attempt_status,last_error,signal_count,
+                    price_data_status,price_data_unavailable_count
+               FROM signals.signal_screener_status WHERE id=1",
+            [],
+            |row| {
+                Ok(json!({
+                    "last_attempt_at": row.get::<_, i64>(0)?,
+                    "last_success_at": row.get::<_, Option<i64>>(1)?,
+                    "last_attempt_status": row.get::<_, String>(2)?,
+                    "last_error": row.get::<_, String>(3)?,
+                    "signal_count": row.get::<_, i64>(4)?,
+                    "price_data_status": row.get::<_, String>(5)?,
+                    "price_data_unavailable_count": row.get::<_, i64>(6)?,
+                }))
+            },
+        )
+        .optional()?
+        .unwrap_or_else(|| {
+            json!({"last_attempt_status":"waiting","last_error":"","signal_count":0,
+                "price_data_status":"unknown","price_data_unavailable_count":0})
+        });
+    if let Some(exchange_id) = exchange_filter {
+        status =
+            super::app_signal_screener_status(snapshot_connection, exchange_id)?.unwrap_or(status);
+    }
+    let readiness = match status.get("readiness").filter(|value| !value.is_null()) {
+        Some(readiness) => readiness.clone(),
+        None => load_scan_readiness(snapshot_connection)?,
+    };
+    transaction.commit()?;
+
     let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
     let mut stale_price_signal_count = 0usize;
     let mut stale_score_signal_count = 0usize;
     let mut matches = ScreenerMatches::default();
     let mut direction_score_counts =
         std::collections::HashMap::<(String, String, String, String), (usize, usize, f64)>::new();
-    while let Some(row) = query_rows.next()? {
-        if is_unavailable_pintu_signal(row)? { continue; }
-        let strategy = row.get::<_, String>(5)?;
-        if crate::master_data::is_retired_entry_strategy(&strategy) {
+    for row in snapshot_rows {
+        if is_unavailable_pintu_signal(&row) {
             continue;
         }
-        let score = row.get::<_, f64>(9)?;
-        let timeframe = row.get::<_, String>(7)?;
-        let score_basis_json = row.get::<_, String>(12)?;
-        let score_basis = serde_json::from_str::<Value>(&score_basis_json).unwrap_or(Value::Null);
+        let strategy = row.signal_strategy_id.as_str();
+        if crate::master_data::is_retired_entry_strategy(strategy) {
+            continue;
+        }
+        let score = row.score;
+        let timeframe = row.timeframe.as_str();
+        let score_basis = serde_json::from_str::<Value>(&row.score_basis_json)
+            .unwrap_or(Value::Null);
         let is_stockbit_no_entry = is_stockbit_signal_score_row(
-            &row.get::<_, String>(0)?,
-            &row.get::<_, String>(1)?,
-            &row.get::<_, String>(2)?,
-            &strategy,
-            &timeframe,
+            &row.exchange_id,
+            &row.product_id,
+            &row.asset_category_id,
+            strategy,
+            timeframe,
         ) && score_basis["status"].as_str() == Some("not_qualifying");
         if !is_stockbit_no_entry
             && !score_meets_render_minimum(
-                &strategy,
+                strategy,
                 score,
                 &score_basis,
                 &score_model_by_strategy,
@@ -568,7 +669,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         {
             continue;
         }
-        let mut signal = row_mapper(row, score_basis)?;
+        let mut signal = row_mapper(&row, score_basis);
         let (is_current, is_stale_price, is_stale_score) = update_signal_market_entry_freshness(
             connection,
             &mut signal,
@@ -579,8 +680,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         );
         let is_crypto_timeframe_signal = is_crypto_combined_entry_score_row(
             signal["asset_category_id"].as_str().unwrap_or_default(),
-            &strategy,
-            &timeframe,
+            strategy,
+            timeframe,
         );
         let group_by_timeframe = signal["persistent_score"] == true || is_crypto_timeframe_signal;
         let is_current_market_entry = is_current
@@ -628,7 +729,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         if is_stale_score && !group_by_timeframe {
             stale_score_signal_count = stale_score_signal_count.saturating_add(1);
         }
-        let retain_stale_crypto_setup = is_stale_price && !is_stale_score && is_crypto_timeframe_signal;
+        let retain_stale_crypto_setup =
+            is_stale_price && !is_stale_score && is_crypto_timeframe_signal;
         let retain_stockbit_setup = signal["persistent_score"] == true
             && signal["score_basis"]["score_model_status"].as_str() != Some("legacy");
         if !is_current && !retain_stale_crypto_setup && !retain_stockbit_setup {
@@ -642,37 +744,21 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         }
         matches.push(
             ScreenerMatch {
-                rowid: row.get(23)?,
                 market_entry: is_current_market_entry,
                 stale_score: group_by_timeframe && is_stale_score,
                 stale_price: group_by_timeframe && is_stale_price,
+                signal,
             },
-            &signal,
             group_by_timeframe,
         );
     }
     let mut matching_rows = 0usize;
     let mut signals = Vec::with_capacity(page_size);
-    let mut page_statement = connection.prepare(&format!(
-        "SELECT {columns} FROM signals.signal_screener_rows WHERE rowid=?1"
-    ))?;
     for candidate in matches.into_ordered() {
         stale_price_signal_count += usize::from(candidate.stale_price);
         stale_score_signal_count += usize::from(candidate.stale_score);
         if matching_rows >= offset && signals.len() < page_size {
-            let mut signal = page_statement.query_row([candidate.rowid], |row| {
-                let basis: String = row.get(12)?;
-                row_mapper(row, serde_json::from_str(&basis).unwrap_or(Value::Null))
-            })?;
-            update_signal_market_entry_freshness(
-                connection,
-                &mut signal,
-                now,
-                now_ns,
-                scan_interval_seconds,
-                &score_model_by_strategy,
-            );
-            signals.push(signal);
+            signals.push(candidate.signal);
         }
         matching_rows = matching_rows.saturating_add(1);
     }
@@ -736,38 +822,6 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let page_offset = offset.min(matching_rows);
     let fetched_rows = signals.len();
     let signal_count = signals.len();
-    let status = connection
-        .query_row(
-            "SELECT last_attempt_at,last_success_at,last_attempt_status,last_error,signal_count,
-                    price_data_status,price_data_unavailable_count
-               FROM signals.signal_screener_status WHERE id=1",
-            [],
-            |row| {
-                Ok(json!({
-                    "last_attempt_at": row.get::<_, i64>(0)?,
-                    "last_success_at": row.get::<_, Option<i64>>(1)?,
-                    "last_attempt_status": row.get::<_, String>(2)?,
-                    "last_error": row.get::<_, String>(3)?,
-                    "signal_count": row.get::<_, i64>(4)?,
-                    "price_data_status": row.get::<_, String>(5)?,
-                    "price_data_unavailable_count": row.get::<_, i64>(6)?,
-                }))
-            },
-        )
-        .optional()?
-        .unwrap_or_else(|| {
-            json!({"last_attempt_status":"waiting","last_error":"","signal_count":0,
-                "price_data_status":"unknown","price_data_unavailable_count":0})
-        });
-    let status = if let Some(exchange_id) = exchange_filter {
-        super::app_signal_screener_status(connection, exchange_id)?.unwrap_or(status)
-    } else {
-        status
-    };
-    let readiness = match status.get("readiness").filter(|value| !value.is_null()) {
-        Some(readiness) => readiness.clone(),
-        None => load_scan_readiness(connection)?,
-    };
     let last_success = status["last_success_at"].as_i64();
     let stale =
         last_success.is_none_or(|timestamp| now.saturating_sub(timestamp) > scan_interval_seconds);
