@@ -459,3 +459,9 @@ lesson only when it will improve future tasks.
   unfamiliar. Indicator filters and contribution balances must use a numeric
   point and its valid weight together; an unavailable point must not become a
   zero or retain an orphaned weighted value.
+- Render a fee-aware signal bracket only when the chart timeframe matches the
+  signal and the plan meets its server-provided minimum R multiple. Show entry,
+  stop, and target together, shade target reward and stop risk separately, and
+  expose the reference-only distinction and color key in accessible text; keep
+  bracket prices sourced from the backend plan rather than recalculating them
+  in the chart.

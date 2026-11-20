@@ -208,7 +208,10 @@ export function installChartRenderer() {
                     : chartCandleContext.hasGap
                         ? 'Markov regime ribbon is suppressed because the selected crypto history has a long gap.'
                         : `Markov regime ribbon shows causal historical states; latest is ${latestMarkovState?.replaceAll('_', ' ') || 'warming up or unavailable'}.`;
-                canvas.setAttribute('aria-label', `${venue.label} · ${signal.asset || signal.symbol || 'Selected asset'} · ${activeTimeframe.toUpperCase()} chart. Signal timeframe ${signalTimeframe}. Signal price ${validCurrentPrice === null ? 'unavailable' : formatPrice(validCurrentPrice)}. ${volumeDeltaEnabled ? 'Volume delta estimate from chart-bar direction.' : 'Synchronized volume histogram.'} ${markovDescription} Plus/minus zoom, arrows pan, Home fits. Drag the bottom date axis horizontally to scale dates and the right price axis vertically to scale price.`);
+                const riskRewardDescription = riskRewardBracket
+                    ? `${riskRewardBracket.referenceOnly ? 'Reference-only' : 'Planned'} fee-aware 1:${riskRewardBracket.rMultiple.toFixed(2)} bracket: entry ${formatPrice(riskRewardBracket.entry)}, stop ${formatPrice(riskRewardBracket.stop)}, target ${formatPrice(riskRewardBracket.target)}. Target reward is shaded green, stop risk is shaded red, and the entry line is cyan.`
+                    : 'No 1:4 bracket overlay is shown unless this chart matches the signal timeframe and a fee-aware plan is available.';
+                canvas.setAttribute('aria-label', `${venue.label} · ${signal.asset || signal.symbol || 'Selected asset'} · ${activeTimeframe.toUpperCase()} chart. Signal timeframe ${signalTimeframe}. Signal price ${validCurrentPrice === null ? 'unavailable' : formatPrice(validCurrentPrice)}. ${volumeDeltaEnabled ? 'Volume delta estimate from chart-bar direction.' : 'Synchronized volume histogram.'} ${markovDescription} ${riskRewardDescription} Plus/minus zoom, arrows pan, Home fits. Drag the bottom date axis horizontally to scale dates and the right price axis vertically to scale price.`);
                 if (typeof updateChartDataWarning === 'function') updateChartDataWarning(signal);
 
                 const ctx = canvas.getContext('2d');
@@ -312,7 +315,7 @@ export function installChartRenderer() {
                 // the same glanceable participation cue traders expect in
                 // TradingView-style layouts.
                 const volumeBandH = Math.min(58, Math.max(34, height * 0.16));
-                const padding = { top: 20, bottom: 30 + volumeBandH, left: 15, right: 96 };
+                const padding = { top: 20, bottom: 30 + volumeBandH, left: 15, right: riskRewardBracket ? 132 : 96 };
                 const plotW = width - padding.left - padding.right;
                 const pricePanelH = Math.max(120, height - padding.top - padding.bottom);
                 const pricePlotBounds = {
@@ -548,7 +551,12 @@ export function installChartRenderer() {
                 const gridPrices = useLogScale
                     ? Array.from({ length: gridSteps + 1 }, (_, index) => Math.exp(logMinP + (index / gridSteps) * logRange))
                     : QuantChart.priceScale(minP, maxP, gridSteps).ticks;
-                const axisTagPrices = [signal.current_price, riskRewardBracket?.stop, riskRewardBracket?.target]
+                const axisTagPrices = [
+                    signal.current_price,
+                    riskRewardBracket?.entry,
+                    riskRewardBracket?.stop,
+                    riskRewardBracket?.target,
+                ]
                     .map(Number)
                     .filter(price => Number.isFinite(price) && price > 0 && price >= minP && price <= maxP);
                 for (const p of gridPrices) {
@@ -724,15 +732,39 @@ export function installChartRenderer() {
                 if (signal.current_price) queuePriceAxisTag(signal.current_price, '#f59e0b', '#000000', 'SIGNAL ', 10);
                 if (riskRewardBracket) {
                     const levels = [
-                        { price: riskRewardBracket.stop, color: '#fb7185', label: 'STOP ' },
-                        { price: riskRewardBracket.target, color: '#34d399', label: `1:${riskRewardBracket.rMultiple.toFixed(2)} ` },
+                        { price: riskRewardBracket.stop, color: '#fb7185', label: 'STOP ', priority: 8 },
+                        { price: riskRewardBracket.entry, color: '#67e8f9', label: 'ENTRY ', priority: 9 },
+                        {
+                            price: riskRewardBracket.target,
+                            color: '#34d399',
+                            label: `TP 1:${riskRewardBracket.rMultiple.toFixed(2)} `,
+                            priority: 8,
+                        },
                     ];
                     withChartPricePaneClip(ctx, pricePlotBounds, () => {
+                        const entryY = getY(riskRewardBracket.entry);
+                        const stopY = getY(riskRewardBracket.stop);
+                        const targetY = getY(riskRewardBracket.target);
+                        const opacity = riskRewardBracket.referenceOnly ? 0.045 : 0.095;
+                        ctx.fillStyle = `rgba(16, 185, 129, ${opacity})`;
+                        ctx.fillRect(
+                            padding.left,
+                            Math.min(entryY, targetY),
+                            plotW,
+                            Math.max(1, Math.abs(entryY - targetY)),
+                        );
+                        ctx.fillStyle = `rgba(251, 113, 133, ${opacity})`;
+                        ctx.fillRect(
+                            padding.left,
+                            Math.min(entryY, stopY),
+                            plotW,
+                            Math.max(1, Math.abs(entryY - stopY)),
+                        );
                         for (const level of levels) {
                             const y = getY(level.price);
                             ctx.strokeStyle = riskRewardBracket.referenceOnly ? `${level.color}99` : level.color;
-                            ctx.lineWidth = 1.1;
-                            ctx.setLineDash([5, 4]);
+                            ctx.lineWidth = level.price === riskRewardBracket.entry ? 1.4 : 1.1;
+                            ctx.setLineDash(riskRewardBracket.referenceOnly ? [2, 4] : [5, 4]);
                             ctx.beginPath();
                             ctx.moveTo(padding.left, y);
                             ctx.lineTo(width - padding.right, y);
@@ -741,7 +773,7 @@ export function installChartRenderer() {
                         ctx.setLineDash([]);
                     });
                     for (const level of levels) {
-                        queuePriceAxisTag(level.price, level.color, '#08110f', level.label, 8);
+                        queuePriceAxisTag(level.price, level.color, '#08110f', level.label, level.priority);
                     }
                 }
 
