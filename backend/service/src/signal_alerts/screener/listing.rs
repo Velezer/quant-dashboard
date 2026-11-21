@@ -754,7 +754,39 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     }
     let mut matching_rows = 0usize;
     let mut signals = Vec::with_capacity(page_size);
-    for candidate in matches.into_ordered() {
+    let score_models = &master_data["signal_score_models"];
+    let mut ordered_matches = matches.into_ordered().collect::<Vec<_>>();
+    ordered_matches.sort_by(|left, right| {
+        right
+            .market_entry
+            .cmp(&left.market_entry)
+            .then_with(|| {
+                let left_strength =
+                    normalized_total_score_out_of_ten(&left.signal, score_models).unwrap_or(-1.0);
+                let right_strength =
+                    normalized_total_score_out_of_ten(&right.signal, score_models).unwrap_or(-1.0);
+                right_strength.total_cmp(&left_strength)
+            })
+            .then_with(|| {
+                right.signal["last_updated_at"]
+                    .as_i64()
+                    .unwrap_or_default()
+                    .cmp(&left.signal["last_updated_at"].as_i64().unwrap_or_default())
+            })
+            .then_with(|| {
+                left.signal["symbol"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .cmp(right.signal["symbol"].as_str().unwrap_or_default())
+            })
+            .then_with(|| {
+                left.signal["timeframe"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .cmp(right.signal["timeframe"].as_str().unwrap_or_default())
+            })
+    });
+    for candidate in ordered_matches {
         stale_price_signal_count += usize::from(candidate.stale_price);
         stale_score_signal_count += usize::from(candidate.stale_score);
         if matching_rows >= offset && signals.len() < page_size {

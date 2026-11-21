@@ -15,6 +15,8 @@ import {
     signalScoreComponentWeights,
     signalScoreSummary,
     signalScoreWeightSummary,
+    compareSignalsByStrength,
+    normalizedSignalStrength,
     SIGNAL_LIST_PAGE_SIZE,
 } from './signal-screener.js';
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
@@ -313,6 +315,38 @@ test('score presentation keeps retained legacy rows on /10 and current models on
             indicatorComponentScoreScaleMax: 10,
             legacy: true,
         },
+    );
+});
+
+test('screener strength order normalizes different scales and keeps current entries first', () => {
+    const row = (symbol, strength, scale, status = 'qualifying') => ({
+        symbol,
+        signal_strategy_id: symbol,
+        timeframe: '4h',
+        direction: 'LONG',
+        persistent_score: true,
+        score_status: status,
+        market_entry_status: 'MARKET_ENTRY',
+        price_is_fresh: true,
+        price_fresh_until_ms: 2_000_000,
+        setup_strength: strength,
+        setup_strength_scale_max: scale,
+        score_scale_max: scale,
+        score_basis: { score_scale_max: scale },
+        last_updated_at: 1,
+    });
+    const rawLargerButWeaker = row('RAW-42-OF-60', 42, 60);
+    const strongerOnSmallerScale = row('STRONG-8-OF-10', 8, 10);
+    const staleStrongest = row('STALE-59-OF-60', 59, 60, 'stale');
+    const modelFor = signal => ({ score_scale_max: signal.setup_strength_scale_max });
+
+    assert.equal(normalizedSignalStrength(rawLargerButWeaker, modelFor(rawLargerButWeaker)), 7);
+    assert.equal(normalizedSignalStrength(strongerOnSmallerScale, modelFor(strongerOnSmallerScale)), 8);
+    assert.deepEqual(
+        [rawLargerButWeaker, staleStrongest, strongerOnSmallerScale]
+            .sort((left, right) => compareSignalsByStrength(left, right, modelFor, 1_000_000))
+            .map(signal => signal.symbol),
+        ['STRONG-8-OF-10', 'RAW-42-OF-60', 'STALE-59-OF-60'],
     );
 });
 
