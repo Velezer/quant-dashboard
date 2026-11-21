@@ -1,64 +1,89 @@
-use super::{parse_directory, validate_complete, Listing, MIN_LISTING_SYMBOLS};
+use super::{
+    parse_api_page, validate_complete, Listing, LISTED_COMPANY_DIRECTORY_URL, MAX_LISTING_SYMBOLS,
+    MIN_LISTING_SYMBOLS,
+};
 
 fn ticker(index: usize) -> String {
     format!("T{index:03}")
 }
 
-fn directory_page(symbols: &[String], declared_total: usize) -> Vec<u8> {
-    let mut html = String::from(
-        "<html><script>window.__NUXT__=(function(total){return {tableData:{recordsTotal:total,data:[",
+fn api_page(symbols: &[String], total: usize) -> Vec<u8> {
+    let rows = symbols
+        .iter()
+        .map(|symbol| {
+            serde_json::json!({
+                "EfekEmiten_Saham": true,
+                "KodeEmiten": symbol,
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_vec(&serde_json::json!({
+        "recordsTotal": total,
+        "data": rows,
+    }))
+    .unwrap()
+}
+
+#[test]
+fn stockbit_listings_use_the_official_paginated_json_endpoint() {
+    assert_eq!(
+        LISTED_COMPANY_DIRECTORY_URL,
+        "https://www.idx.id/primary/ListedCompany/GetCompanyProfiles"
     );
-    for (index, symbol) in symbols.iter().enumerate() {
-        if index != 0 {
-            html.push(',');
-        }
-        html.push_str(&format!("{{KodeEmiten:\"{symbol}\"}}"));
-    }
-    html.push_str(&format!("]}}}};}}({declared_total}));</script></html>"));
-    html.into_bytes()
 }
 
 #[test]
-fn complete_idx_company_directory_is_normalized_and_count_checked() {
-    let symbols: Vec<String> = (0..MIN_LISTING_SYMBOLS).map(ticker).collect();
-    let listings = parse_directory(&directory_page(&symbols, symbols.len())).unwrap();
+fn api_page_keeps_source_row_count_separate_from_usable_tickers() {
+    let mut symbols: Vec<String> = (0..MIN_LISTING_SYMBOLS).map(ticker).collect();
+    symbols.push("TEST-SHM".to_owned());
+    let body = api_page(&symbols, symbols.len());
 
-    assert_eq!(listings.len(), MIN_LISTING_SYMBOLS);
-    assert_eq!(listings[0].symbol, "T000");
-    assert_eq!(listings.last().unwrap().symbol, "T499");
+    let page = parse_api_page(&body).unwrap();
+
+    assert_eq!(page.record_count, MIN_LISTING_SYMBOLS + 1);
+    assert_eq!(page.listings.len(), MIN_LISTING_SYMBOLS);
+    validate_complete(&page.listings).unwrap();
 }
 
 #[test]
-fn malformed_non_trading_identifiers_do_not_reject_a_complete_idx_directory() {
-    let mut symbols: Vec<String> = (0..945).map(ticker).collect();
-    symbols.extend(
-        [
-            "TEST-SHM",
-            "TEST-SHM2",
-            "TEST-SHM3",
-            "TESTDWHPD2",
-            "TESTDWHSH2",
-            "TESTDWHSH3",
-            "TESTDWHSH4",
-            "TESTDWHSHM",
-            "TKS-KORSFU",
-        ]
-        .map(str::to_string),
-    );
+fn invalid_or_duplicate_listing_symbols_are_rejected_before_reconciliation() {
+    let mut listings: Vec<Listing> = (0..MIN_LISTING_SYMBOLS)
+        .map(|index| Listing {
+            symbol: ticker(index),
+        })
+        .collect();
+    listings[1].symbol = listings[0].symbol.clone();
+    let duplicate = validate_complete(&listings).unwrap_err();
+    assert!(duplicate.contains("repeats ticker T000"));
 
-    let listings = parse_directory(&directory_page(&symbols, symbols.len())).unwrap();
-
-    assert_eq!(listings.len(), 945);
-    assert!(listings.iter().all(|listing| {
-        listing
-            .symbol
-            .bytes()
-            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
-    }));
+    listings[1].symbol = "TEST-SHM".to_owned();
+    let invalid = validate_complete(&listings).unwrap_err();
+    assert!(invalid.contains("invalid symbol TEST-SHM"));
 }
 
 #[test]
-fn api_page_excludes_malformed_identifiers_without_losing_source_row_count() {
+fn too_small_or_too_large_universes_are_rejected() {
+    let too_small: Vec<Listing> = (0..MIN_LISTING_SYMBOLS - 1)
+        .map(|index| Listing {
+            symbol: ticker(index),
+        })
+        .collect();
+    assert!(validate_complete(&too_small)
+        .unwrap_err()
+        .contains("expected 500"));
+
+    let too_large: Vec<Listing> = (0..=MAX_LISTING_SYMBOLS)
+        .map(|index| Listing {
+            symbol: format!("T{index:04}"),
+        })
+        .collect();
+    assert!(validate_complete(&too_large)
+        .unwrap_err()
+        .contains("expected 500..=5000"));
+}
+
+#[test]
+fn api_response_with_a_non_string_stock_ticker_is_rejected() {
     let mut rows: Vec<serde_json::Value> = (0..MIN_LISTING_SYMBOLS)
         .map(|index| {
             serde_json::json!({
@@ -67,72 +92,17 @@ fn api_page_excludes_malformed_identifiers_without_losing_source_row_count() {
             })
         })
         .collect();
-    rows.push(serde_json::json!({
-        "EfekEmiten_Saham": true,
-        "KodeEmiten": "TEST-SHM",
-    }));
-    let source_row_count = rows.len();
+    rows[0]["KodeEmiten"] = serde_json::json!(123);
     let body = serde_json::to_vec(&serde_json::json!({
-        "recordsTotal": source_row_count,
+        "recordsTotal": MIN_LISTING_SYMBOLS,
         "data": rows,
     }))
     .unwrap();
 
-    let page = super::parse_api_page(&body).unwrap();
+    let error = match parse_api_page(&body) {
+        Ok(_) => panic!("a numeric ticker cannot be treated as a registered symbol"),
+        Err(error) => error,
+    };
 
-    assert_eq!(page.record_count, source_row_count);
-    assert_eq!(page.listings.len(), MIN_LISTING_SYMBOLS);
-}
-
-#[test]
-fn record_total_mismatch_cannot_be_used_to_delist_tickers() {
-    let symbols: Vec<String> = (0..MIN_LISTING_SYMBOLS - 1).map(ticker).collect();
-    let error = parse_directory(&directory_page(&symbols, MIN_LISTING_SYMBOLS)).unwrap_err();
-    assert!(error.contains("declared 500 records"));
-}
-
-#[test]
-fn a_small_complete_page_is_rejected_as_a_partial_registry_refresh() {
-    let symbols: Vec<String> = (0..MIN_LISTING_SYMBOLS - 1).map(ticker).collect();
-    let error = parse_directory(&directory_page(&symbols, symbols.len())).unwrap_err();
-    assert!(error.contains("expected 500"));
-}
-
-#[test]
-fn duplicate_tickers_in_the_directory_are_rejected() {
-    let mut symbols: Vec<String> = (0..MIN_LISTING_SYMBOLS).map(ticker).collect();
-    symbols[1] = symbols[0].clone();
-    let error = parse_directory(&directory_page(&symbols, symbols.len())).unwrap_err();
-    assert!(error.contains("repeats ticker T000"));
-}
-
-#[test]
-fn missing_page_terminator_cannot_be_treated_as_complete() {
-    let symbols: Vec<String> = (0..MIN_LISTING_SYMBOLS).map(ticker).collect();
-    let mut html = directory_page(&symbols, symbols.len());
-    let end = html
-        .windows(b"</html>".len())
-        .position(|bytes| bytes == b"</html>")
-        .unwrap();
-    html.truncate(end);
-    let error = parse_directory(&html).unwrap_err();
-    assert!(error.contains("truncated"));
-}
-
-#[test]
-fn reconciliation_guard_rejects_duplicate_or_invalid_direct_input() {
-    let mut listings: Vec<Listing> = (0..MIN_LISTING_SYMBOLS)
-        .map(|index| Listing {
-            symbol: ticker(index),
-        })
-        .collect();
-    listings[1].symbol = listings[0].symbol.clone();
-    let error = validate_complete(&listings).unwrap_err();
-    assert!(error.contains("repeats ticker T000"));
-}
-
-#[test]
-fn non_directory_html_is_rejected() {
-    let error = parse_directory(b"<html><body>Access denied</body></html>").unwrap_err();
-    assert!(error.contains("company-list page state"));
+    assert!(error.contains("omitted a string KodeEmiten"));
 }

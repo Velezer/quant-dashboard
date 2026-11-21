@@ -212,6 +212,72 @@ fn universe_is_frozen_at_first_attempt_and_reused_for_retries() {
 }
 
 #[test]
+fn empty_stockbit_universe_is_refreshed_after_registry_populates() {
+    let connection = schedule_database();
+    connection.execute_batch(
+        "CREATE TABLE app.instruments (
+             instrument_id TEXT,exchange_id TEXT,product_id TEXT,asset_category_id TEXT,
+             symbol TEXT,storage_symbol TEXT,venue_verified INTEGER,listing_status TEXT,
+             venue_symbol TEXT,quote_currency TEXT,underlying_symbol TEXT,price_source_policy TEXT,
+             execution_supported INTEGER,is_active INTEGER
+         );
+         CREATE TABLE instrument_exclusions (
+             exchange_id TEXT,asset_category_id TEXT,symbol TEXT,is_active INTEGER
+         );"
+    ).unwrap();
+    let scope = ForecastScope::StockbitIdx;
+    let now = 1_800_000_000;
+    let mut saved = schedule(scope, now, now, 1);
+    saved.universe_json = "[]".to_owned();
+
+    assert!(ensure_universe_snapshot(&connection, &mut saved, scope, now)
+        .unwrap()
+        .is_empty());
+    connection.execute(
+        "INSERT INTO app.instruments VALUES(
+            'stockbit.stockbit_regular.bbca','stockbit','stockbit_regular','idx_stock',
+            'BBCA','BBCA.JK',1,'public_listed_snapshot','BBCA.JK','IDR','BBCA',
+            'research_proxy',0,1
+         )",
+        [],
+    ).unwrap();
+
+    let refreshed = ensure_universe_snapshot(&connection, &mut saved, scope, now + 60).unwrap();
+
+    assert_eq!(refreshed.len(), 1);
+    assert_eq!(refreshed[0]["symbol"], "BBCA");
+}
+
+#[test]
+fn exhausted_empty_stockbit_universe_waits_for_listing_recovery() {
+    let connection = schedule_database();
+    let scope = ForecastScope::StockbitIdx;
+    let cutoff = local_day_start(6);
+    let now = cutoff + FORECAST_CLOSE_GRACE_SECONDS + 4 * COVERAGE_RETRY_SECONDS;
+    let mut saved = schedule(scope, cutoff, now, MAX_FORECAST_ATTEMPTS_PER_WINDOW);
+    saved.status = "complete".to_owned();
+    saved.last_attempt_at = now - 24 * 60 * 60;
+    saved.universe_json = "[]".to_owned();
+    saved.next_attempt_at = next_window_attempt_at(scope, cutoff);
+    save_schedule(&connection, &saved, now).unwrap();
+
+    let requeued = requeue_empty_stockbit_universe(&connection, scope, saved, now).unwrap();
+
+    assert_eq!(requeued.status, "scheduled");
+    assert_eq!(requeued.attempt_count, 0);
+    assert_eq!(requeued.next_attempt_at, now + FORECAST_ERROR_RETRY_SECONDS);
+
+    let mut after_coverage_refresh = requeued.clone();
+    refresh_waiting_coverage_retry(&connection, &mut after_coverage_refresh, now).unwrap();
+
+    assert_eq!(after_coverage_refresh.status, "scheduled");
+    assert_eq!(
+        after_coverage_refresh.next_attempt_at,
+        now + FORECAST_ERROR_RETRY_SECONDS
+    );
+}
+
+#[test]
 fn scan_error_is_saved_with_a_retry_and_a_utf8_safe_size_limit() {
     let connection = schedule_database();
     let scope = ForecastScope::TokocryptoSpot;
