@@ -151,6 +151,6 @@ test('macro page uses the API response when the browser cannot reach Treasury', 
 test('macro indicators stay discoverable when the desktop header is crowded', () => {
     assert.match(dashboardTemplate, /<a href="\/macro" aria-label="Open macroeconomic indicators" title="Macroeconomic indicators">\s*<span aria-hidden="true">◒<\/span> Macro indicators<\/a>/);
     assert.match(dashboardTemplate, /<nav id="macroQuickNavigation"[\s\S]*?<a href="\/macro">[\s\S]*?Macroeconomic indicators<\/a>/);
-    assert.match(macroNavigationStyles, /@media \(max-width: 1380px\)/);
-    assert.match(macroNavigationStyles, /@media \(min-width: 1181px\) and \(max-width: 1380px\)[\s\S]*?desktop-primary-nav a\[href="\/macro"\][\s\S]*?display: none;/);
+    assert.match(macroNavigationStyles, /@media \(max-width: 1536px\)/);
+    assert.match(macroNavigationStyles, /@media \(min-width: 1181px\) and \(max-width: 1536px\)[\s\S]*?desktop-primary-nav a\[href="\/macro"\][\s\S]*?display: none;/);
 });
