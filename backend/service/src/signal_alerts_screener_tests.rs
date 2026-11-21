@@ -664,7 +664,57 @@ fn screener_freshness_uses_the_exact_idx_storage_symbol() {
 }
 
 #[test]
-fn screener_read_prioritizes_15m_rows_when_response_is_capped() {
+fn screener_pages_order_current_rows_by_strength_before_timeframe() {
+    let connection = screener_connection();
+    let now_ns = i64::try_from(crate::now_secs())
+        .unwrap_or(i64::MAX)
+        .saturating_mul(crate::NANOS_PER_SECOND);
+    let stockbit_bar = now_ns
+        .saturating_sub(5 * quant_core::SECONDS_PER_HOUR * crate::NANOS_PER_SECOND);
+    let one_hour_bar = now_ns
+        .saturating_sub(quant_core::SECONDS_PER_HOUR * crate::NANOS_PER_SECOND);
+    let fifteen_minute_bar = now_ns
+        .saturating_sub(5 * quant_core::SECONDS_PER_MINUTE * crate::NANOS_PER_SECOND);
+
+    let stockbit_strong = signal_screener_row(&stockbit_combined_candidate(stockbit_bar, 36.0))
+        .expect("strong Stockbit combined-score row should qualify");
+    let medium_crypto =
+        signal_screener_row(&crypto_combined_candidate("1h", one_hour_bar, 5.0, 4.0))
+            .expect("medium 1h crypto row should qualify");
+    let mut fifteen_minute_crypto =
+        crypto_combined_candidate("15m", fifteen_minute_bar, 3.0, 2.0);
+    fifteen_minute_crypto["Exchange_ID"] = json!("pluang");
+    fifteen_minute_crypto["Product_ID"] = json!("pluang_spot");
+    fifteen_minute_crypto["Asset_Category_ID"] = json!("crypto_spot");
+    let fifteen_minute_weak = signal_screener_row(&fifteen_minute_crypto)
+        .expect("weaker 15m crypto row should qualify");
+
+    replace_signal_screener_snapshot(
+        &connection,
+        &[fifteen_minute_weak, stockbit_strong, medium_crypto],
+    )
+    .expect("mixed-timeframe signals should save");
+
+    let page = |offset| {
+        list_signal_screener_page(&connection, 900, None, None, None, None, offset, 1)
+            .expect("ranked screener page should load")
+    };
+    let strongest = page(0);
+    let second = page(1);
+    let third = page(2);
+
+    assert_eq!(strongest["summary"]["matching_rows"], 3);
+    assert_eq!(strongest["signals"][0]["symbol"], "AADI.JK");
+    assert_eq!(strongest["signals"][0]["timeframe"], "4h");
+    assert_eq!(strongest["signals"][0]["setup_strength"], 36.0);
+    assert_eq!(second["signals"][0]["timeframe"], "1h");
+    assert_eq!(second["signals"][0]["setup_strength"], 9.0);
+    assert_eq!(third["signals"][0]["timeframe"], "15m");
+    assert_eq!(third["signals"][0]["setup_strength"], 5.0);
+}
+
+#[test]
+fn screener_response_cap_keeps_strongest_scores_before_weaker_rows() {
     let connection = screener_connection();
     crate::master_data::initialize(&connection).expect("master-data catalog should initialize");
     let now_ns = i64::try_from(crate::now_secs())
@@ -701,8 +751,10 @@ fn screener_read_prioritizes_15m_rows_when_response_is_capped() {
         .expect("capped screener response should load");
     let signals = payload["signals"].as_array().unwrap();
     assert_eq!(signals.len(), 2_000);
-    assert_eq!(signals[0]["exchange_id"], "pluang");
-    assert_eq!(signals[0]["timeframe"], "15m");
+    assert_eq!(signals[0]["exchange_id"], "stockbit");
+    assert_eq!(signals[0]["timeframe"], "1d");
+    assert_eq!(signals[0]["symbol"], "CAP0000.JK");
+    assert!(signals.iter().all(|signal| signal["exchange_id"] == "stockbit"));
     assert_eq!(signals[0]["score"], signals[0]["setup_strength"]);
     assert!(signals[0]["setup_strength"].as_f64().unwrap_or_default() >= 1.0);
 }

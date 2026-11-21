@@ -30,6 +30,8 @@ import {
     signalScoreComponentWeights,
     signalScorePresentation,
     signalScoreWeightSummary,
+    compareSignalsByStrength,
+    normalizedSignalStrength,
     signalStrategyLabel,
     scoreWeightLabel,
 } from './signal-screener-model.js';
@@ -49,6 +51,8 @@ export {
     signalRowsForDisplay,
     signalScoreComponentWeights,
     signalScorePresentation,
+    compareSignalsByStrength,
+    normalizedSignalStrength,
     signalScoreSummary,
     signalScoreWeightSummary,
     signalStrategyLabel,
@@ -449,22 +453,11 @@ export function installSignalScreener() {
             return signal.symbol.toLowerCase().includes(query)
                 || signal.signal_strategy_name.toLowerCase().includes(query)
                 || signal.signal_strategy_id.toLowerCase().includes(query);
-        }).sort((left, right) => {
-            const leftIsCurrent = signalScoreState(left)?.current !== false;
-            const rightIsCurrent = signalScoreState(right)?.current !== false;
-            return Number(rightIsCurrent) - Number(leftIsCurrent)
-                || (signalDisplayScore(right) ?? -1) - (signalDisplayScore(left) ?? -1)
-                || right.last_updated_at - left.last_updated_at
-                || left.symbol.localeCompare(right.symbol);
-        });
+        }).sort((left, right) => compareSignalsByStrength(left, right, scoreModelFor));
     }
 
     function normalizedTotalScore(signal) {
-        const score = signalDisplayScore(signal);
-        const modelScale = signalScorePresentation(signal, scoreModelFor(signal)).scoreScaleMax;
-        const scale = Number.isFinite(modelScale) && modelScale > 0 ? modelScale : 10;
-        if (!Number.isFinite(score)) return null;
-        return Math.max(0, Math.min(10, score / scale * 10));
+        return normalizedSignalStrength(signal, scoreModelFor(signal));
     }
 
     function formatPrice(value) {

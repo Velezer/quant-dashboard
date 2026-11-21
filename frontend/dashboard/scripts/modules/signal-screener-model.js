@@ -377,6 +377,29 @@ export function signalDisplayScore(signal) {
     return Number.isFinite(score) ? score : null;
 }
 
+export function normalizedSignalStrength(signal, model) {
+    const score = signalDisplayScore(signal);
+    if (!Number.isFinite(score)) return null;
+    const modelScale = signalScorePresentation(signal, model).scoreScaleMax;
+    const scale = Number.isFinite(modelScale) && modelScale > 0 ? modelScale : 10;
+    return Math.max(0, Math.min(10, score / scale * 10));
+}
+
+export function compareSignalsByStrength(left, right, scoreModelFor = () => null, nowEpochMs = Date.now()) {
+    const leftIsCurrent = signalScoreState(left, nowEpochMs)?.current !== false;
+    const rightIsCurrent = signalScoreState(right, nowEpochMs)?.current !== false;
+    const leftStrength = normalizedSignalStrength(left, scoreModelFor(left)) ?? -1;
+    const rightStrength = normalizedSignalStrength(right, scoreModelFor(right)) ?? -1;
+    const leftUpdatedAt = Number(left.last_updated_at);
+    const rightUpdatedAt = Number(right.last_updated_at);
+    return Number(rightIsCurrent) - Number(leftIsCurrent)
+        || rightStrength - leftStrength
+        || (Number.isFinite(rightUpdatedAt) ? rightUpdatedAt : 0)
+            - (Number.isFinite(leftUpdatedAt) ? leftUpdatedAt : 0)
+        || String(left.symbol || '').localeCompare(String(right.symbol || ''))
+        || String(left.timeframe || '').localeCompare(String(right.timeframe || ''));
+}
+
 export function signalDirectionalScore(signal) {
     if (isPersistentNoEntryScore(signal)) return null;
     const raw = signal?.score;

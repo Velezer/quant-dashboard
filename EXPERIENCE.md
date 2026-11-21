@@ -9,6 +9,10 @@ lesson only when it will improve future tasks.
   timeframe. Select one before paginating the screener and use a stable
   instrument/timeframe selection key while retaining the selected model's
   evidence and its alert links.
+- For strongest-first screener pages, normalize setup strength to each model's
+  score scale and rank in the backend before applying page offsets. Keep the
+  browser comparator aligned; client-only sorting cannot recover stronger rows
+  from later pages.
 
 - A 4h chart bucket can exist even when one of its hourly candles is missing.
   For a cross-sectional forecast, require four consecutive native hourly bars
