@@ -2,7 +2,7 @@
     display: none;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1536px) {
     .tv-terminal .macro-quick-nav {
         display: flex;
         justify-content: flex-end;
@@ -31,5 +31,11 @@
         color: #fff;
         outline: 2px solid #67e8f9;
         outline-offset: 2px;
+    }
+}
+
+@media (min-width: 1181px) and (max-width: 1536px) {
+    .tv-terminal.signals-workspace-active .desktop-primary-nav a[href="/macro"] {
+        display: none;
     }
 }

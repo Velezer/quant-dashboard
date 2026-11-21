@@ -307,7 +307,9 @@ lesson only when it will improve future tasks.
 - Keep the wide-screen dashboard's app, product, timeframe, search, and score
   controls in the screener rail, with one scrollable signal list and a visible
   availability summary. Hide desktop navigation at phone widths and verify the
-  selected chart at both a 1600×857 view and a 1280×720 view. When reading
+  selected chart at both a 1600×857 view and a 1280×720 view. Check that centered
+  navigation links are not covered by right-side controls at crowded widths;
+  provide a clear responsive shortcut where the header has no room. When reading
   persisted `URLSearchParams`, treat a missing value as missing before numeric
   conversion: `Number(null)` is zero and can silently clamp a layout preference
   to its minimum.

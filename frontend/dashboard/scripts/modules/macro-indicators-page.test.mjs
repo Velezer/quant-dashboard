@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { TREASURY_XML_URL } from './macro-indicator-treasury.js';
+
+const dashboardTemplate = readFileSync(new URL('../../templates/dashboard.html', import.meta.url), 'utf8');
+const macroNavigationStyles = readFileSync(new URL('../../styles/macro-navigation.css', import.meta.url), 'utf8');
 
 const today = new Date().toISOString().slice(0, 10);
 const currentYear = Number(today.slice(0, 4));
@@ -142,4 +146,11 @@ test('macro page uses the API response when the browser cannot reach Treasury', 
     assert.match(elements.get('macro-chart').innerHTML, /<svg/);
     assert.equal(elements.get('macro-freshness').textContent, 'Current data');
     assert.match(elements.get('macro-stale-note').textContent, /direct Treasury feed could not be loaded/);
+});
+
+test('macro indicators stay discoverable when the desktop header is crowded', () => {
+    assert.match(dashboardTemplate, /<a href="\/macro" aria-label="Open macroeconomic indicators" title="Macroeconomic indicators">\s*<span aria-hidden="true">◒<\/span> Macro indicators<\/a>/);
+    assert.match(dashboardTemplate, /<nav id="macroQuickNavigation"[\s\S]*?<a href="\/macro">[\s\S]*?Macroeconomic indicators<\/a>/);
+    assert.match(macroNavigationStyles, /@media \(max-width: 1536px\)/);
+    assert.match(macroNavigationStyles, /@media \(min-width: 1181px\) and \(max-width: 1536px\)[\s\S]*?desktop-primary-nav a\[href="\/macro"\][\s\S]*?display: none;/);
 });
