@@ -321,8 +321,16 @@ fn finish_attempt(
 }
 
 fn scheduled_forecast_tick(state: &AppState, scope: ForecastScope) -> Result<u64, String> {
-    let connection = open_db_minimal(&state.market_database).map_err(|error| error.to_string())?;
     let now = now_secs().min(i64::MAX as u64) as i64;
+    scheduled_forecast_tick_at(state, scope, now)
+}
+
+fn scheduled_forecast_tick_at(
+    state: &AppState,
+    scope: ForecastScope,
+    now: i64,
+) -> Result<u64, String> {
+    let connection = open_db_minimal(&state.market_database).map_err(|error| error.to_string())?;
     let cutoff = window_cutoff(scope, now);
     let previous = load_schedule(&connection, scope).map_err(|error| error.to_string())?;
     let mut schedule = match previous {
@@ -353,14 +361,7 @@ fn scheduled_forecast_tick(state: &AppState, scope: ForecastScope) -> Result<u64
         save_schedule(&connection, &schedule, now).map_err(|error| error.to_string())?;
         return Ok((schedule.next_attempt_at - now).max(1) as u64);
     }
-    if state.is_scanning.load(Ordering::Relaxed) {
-        return Ok(FORECAST_CHECK_INTERVAL_SECONDS);
-    }
     let permit = match ENTRY_VALIDATION_WORK.try_lock() {
-        Ok(permit) if state.is_scanning.load(Ordering::Relaxed) => {
-            drop(permit);
-            return Ok(FORECAST_CHECK_INTERVAL_SECONDS);
-        }
         Ok(permit) => permit,
         Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
         Err(std::sync::TryLockError::WouldBlock) => {

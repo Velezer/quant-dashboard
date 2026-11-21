@@ -13,6 +13,9 @@ const STOCKBIT_TIMEFRAME: &str = "1d";
 const STOCKBIT_SOURCE: &str = "stockbit_regular_yfinance_fallback";
 const STOCKBIT_MAX_BAR_AGE_NS: i64 = 5 * NANOS_PER_DAY;
 const STOCKBIT_HISTORY_NS: i64 = 7 * NANOS_PER_DAY;
+const MAX_STOCKBIT_TARGET_CANDLES: i64 = 32;
+const STOCKBIT_SESSION_CLOSE_NS_AFTER_LOCAL_MIDNIGHT: i64 =
+    16 * 60 * 60 * NANOS_PER_SECOND + 15 * 60 * NANOS_PER_SECOND;
 const UNIVERSE_LIMIT: usize = 1_000;
 const MIN_COVERAGE_PCT: usize = 80;
 const MIN_COVERAGE_PAIRS: usize = 10;
@@ -307,35 +310,24 @@ fn next_stockbit_target_candle(
     let from_time = reference_bar_time
         .saturating_mul(NANOS_PER_SECOND)
         .saturating_add(1);
-    let to_time = now.saturating_mul(NANOS_PER_SECOND);
-    let offset = quant_core::JAKARTA_UTC_OFFSET_SECONDS * NANOS_PER_SECOND;
-    let target = market
-        .query_row(
-            "SELECT b.ts,b.open,b.high,b.low,b.close,b.volume FROM bars b
-             WHERE b.symbol=?1 AND b.interval=?2 AND b.source=?3
-               AND b.ts>?4 AND b.ts<?5 AND b.close>0
-               AND NOT EXISTS (
-                   SELECT 1 FROM bars newer
-                   WHERE newer.symbol=b.symbol AND newer.interval=b.interval
-                     AND newer.source=b.source AND newer.ts>b.ts
-                     AND newer.ts<((b.ts+?6)/?7+1)*?7-?6
-               )
-             ORDER BY b.ts LIMIT 1",
-            params![
-                symbol,
-                STOCKBIT_TIMEFRAME,
-                STOCKBIT_SOURCE,
-                from_time,
-                to_time,
-                offset,
-                NANOS_PER_DAY,
-            ],
-            candle_from_row,
-        )
-        .optional()?;
-    Ok(target
-        .filter(valid_candle)
-        .map(|bar| (bar.time, bar.close)))
+    let to_time = now
+        .saturating_mul(NANOS_PER_SECOND)
+        .min(from_time.saturating_add(MAX_STOCKBIT_TARGET_CANDLES * NANOS_PER_DAY));
+    let bars = load_series_candles_from_source_between_with_cap(
+        market,
+        symbol,
+        STOCKBIT_TIMEFRAME,
+        MAX_STOCKBIT_TARGET_CANDLES,
+        STOCKBIT_SOURCE,
+        MAX_AGGREGATION_SOURCE_CANDLES,
+        from_time,
+        to_time,
+    )?;
+    Ok(bars.into_iter().find_map(|bar| {
+        (valid_candle(&bar)
+            && bar.time.saturating_add(STOCKBIT_SESSION_CLOSE_NS_AFTER_LOCAL_MIDNIGHT) <= to_time)
+        .then_some((bar.time, bar.close))
+    }))
 }
 
 pub(super) fn settle_forecast_outcomes(
@@ -381,16 +373,11 @@ pub(super) fn settle_forecast_outcomes(
         let Some(market) = open_market_history_for_symbol(directory, &storage_symbol, false)? else {
             continue;
         };
-        let metadata_matches: bool = market.query_row(
-            "SELECT EXISTS(SELECT 1 FROM series
-             WHERE symbol=?1 AND interval=?2 AND source=?3 AND exchange_id=?4
-               AND product_id=?5 AND instrument_id=?6 AND data_provider=?7
-               AND price_basis=?8 AND timezone=?9)",
-            params![
-                storage_symbol, scope.history_interval(), scope.source(), scope.exchange_id(),
-                scope.product_id(), instrument_id, scope.provider(), scope.price_basis(), scope.timezone(),
-            ],
-            |row| row.get(0),
+        let metadata_matches = forecast_source_metadata_matches(
+            &market,
+            scope,
+            &storage_symbol,
+            &instrument_id,
         )?;
         if !metadata_matches {
             continue;
@@ -550,23 +537,11 @@ fn forecast_instrument(
         return Ok(InstrumentForecast::MissingOrStale);
     };
     let market = connection.unchecked_transaction()?;
-    let matches_instrument: bool = market.query_row(
-        "SELECT EXISTS(SELECT 1 FROM series
-         WHERE symbol=?1 AND interval=?2 AND source=?3 AND exchange_id=?4
-           AND product_id=?5 AND instrument_id=?6 AND data_provider=?7
-           AND price_basis=?8 AND timezone=?9)",
-        params![
-            symbol,
-            scope.history_interval(),
-            scope.source(),
-            scope.exchange_id(),
-            scope.product_id(),
-            text(instrument, "instrument_id"),
-            scope.provider(),
-            scope.price_basis(),
-            scope.timezone(),
-        ],
-        |row| row.get(0),
+    let matches_instrument = forecast_source_metadata_matches(
+        &market,
+        scope,
+        symbol,
+        text(instrument, "instrument_id"),
     )?;
     if !matches_instrument {
         return Ok(InstrumentForecast::MissingOrStale);
@@ -578,6 +553,42 @@ fn forecast_instrument(
     market.commit()?;
     drop(connection);
     result
+}
+
+fn forecast_source_metadata_matches(
+    market: &Connection,
+    scope: ForecastScope,
+    symbol: &str,
+    instrument_id: &str,
+) -> Result<bool, rusqlite::Error> {
+    let metadata_interval = if scope == ForecastScope::StockbitIdx {
+        preferred_storage_timeframe_from_source(
+            market,
+            symbol,
+            STOCKBIT_TIMEFRAME,
+            STOCKBIT_SOURCE,
+        )?
+    } else {
+        scope.history_interval().to_owned()
+    };
+    market.query_row(
+        "SELECT EXISTS(SELECT 1 FROM series
+         WHERE symbol=?1 AND interval=?2 AND source=?3 AND exchange_id=?4
+           AND product_id=?5 AND instrument_id=?6 AND data_provider=?7
+           AND price_basis=?8 AND timezone=?9)",
+        params![
+            symbol,
+            metadata_interval,
+            scope.source(),
+            scope.exchange_id(),
+            scope.product_id(),
+            instrument_id,
+            scope.provider(),
+            scope.price_basis(),
+            scope.timezone(),
+        ],
+        |row| row.get(0),
+    )
 }
 
 fn forecast_tokocrypto_history(
@@ -631,12 +642,13 @@ fn forecast_stockbit_history(
     symbol: &str,
     cutoff: i64,
 ) -> Result<InstrumentForecast, rusqlite::Error> {
-    let bars = load_candles_from_source_between(
+    let bars = load_series_candles_from_source_between_with_cap(
         market,
         symbol,
         STOCKBIT_TIMEFRAME,
         3,
         STOCKBIT_SOURCE,
+        MAX_AGGREGATION_SOURCE_CANDLES,
         cutoff - STOCKBIT_HISTORY_NS,
         cutoff,
     )?;
