@@ -73,6 +73,9 @@ jobs:
         run: |
           cargo test --locked --release -p rust_chart_api pintu_listing::tests -- --test-threads=1
           cargo test --locked --release -p rust_chart_api pintu_announced_delistings_apply_even_during_feed_failure -- --test-threads=1
+      - name: Verify Stockbit IDX listing source
+        run: |
+          cargo test --locked --release -p rust_chart_api stockbit_listing::tests -- --test-threads=1
       - name: Verify independent macro indicator data
         run: |
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
