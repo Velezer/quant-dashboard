@@ -38,6 +38,14 @@ lesson only when it will improve future tasks.
   series remains a labeled research proxy. Save frozen run snapshots and
   prospective outcomes in app SQLite so result history can be evaluated without
   blending markets or rewriting an earlier prediction.
+- Stockbit's Yahoo proxy may store only `1h` candles while the chart supplies
+  `1d` through its timezone-aware rollup. Forecasts must use the same capped,
+  series-aware history loader and validate provenance against its selected base
+  interval instead of requiring direct daily metadata. Use that same daily
+  series for outcome settlement and wait until the next session close before
+  settling. Scheduled forecast work must not wait for the long signal scan;
+  retain the shared validation lock for backtest serialization and test a due
+  tick with the scan active.
 
 - A Pintu ticker-feed entry is not proof that its Futures product offers it.
   Keep explicit product exclusions separate from official delisting notices,

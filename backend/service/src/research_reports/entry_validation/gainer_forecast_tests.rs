@@ -327,6 +327,56 @@ fn stockbit_momentum_uses_two_completed_daily_closes_and_rejects_stale_history()
 }
 
 #[test]
+fn stockbit_momentum_uses_chart_derived_daily_closes_from_hourly_history() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch(
+        "CREATE TABLE bars (
+            symbol TEXT NOT NULL,interval TEXT NOT NULL,source TEXT NOT NULL,ts INTEGER NOT NULL,
+            open REAL NOT NULL,high REAL NOT NULL,low REAL NOT NULL,close REAL NOT NULL,
+            volume REAL NOT NULL,PRIMARY KEY(symbol,interval,source,ts));
+         CREATE TABLE series (
+            symbol TEXT NOT NULL,interval TEXT NOT NULL,source TEXT NOT NULL,
+            timezone TEXT NOT NULL,exchange_id TEXT NOT NULL,product_id TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,data_provider TEXT NOT NULL,price_basis TEXT NOT NULL,
+            PRIMARY KEY(symbol,interval,source));
+         INSERT INTO series VALUES(
+            'BBCA.JK','1h','stockbit_regular_yfinance_fallback','Asia/Jakarta',
+            'stockbit','stockbit_regular','stockbit.stockbit_regular.bbca','yfinance','yahoo_unadjusted');"
+    ).unwrap();
+    let cutoff = 13 * NANOS_PER_DAY
+        - quant_core::JAKARTA_UTC_OFFSET_SECONDS * NANOS_PER_SECOND;
+    let jakarta_offset = quant_core::JAKARTA_UTC_OFFSET_SECONDS * NANOS_PER_SECOND;
+    let hour_ns = 3_600 * NANOS_PER_SECOND;
+    for (day, close) in [(10_i64, 100.0), (11_i64, 110.0)] {
+        for hour in [9_i64, 15_i64] {
+            let timestamp = day * NANOS_PER_DAY + hour * hour_ns - jakarta_offset;
+            connection.execute(
+                "INSERT INTO bars VALUES('BBCA.JK','1h',?1,?2,?3,?3,?3,?3,1000)",
+                params![STOCKBIT_SOURCE, timestamp, close],
+            ).unwrap();
+        }
+    }
+
+    let InstrumentForecast::Forecasted(forecast) =
+        forecast_stockbit_history(&connection, "BBCA.JK", cutoff).unwrap()
+    else {
+        panic!("hourly history should roll into two fresh daily closes");
+    };
+    assert!(forecast_source_metadata_matches(
+        &connection,
+        ForecastScope::StockbitIdx,
+        "BBCA.JK",
+        "stockbit.stockbit_regular.bbca",
+    ).unwrap());
+    assert!((forecast.return_pct - 10.0).abs() < 1e-9);
+    assert_eq!(
+        forecast.reference_bar_time,
+        11 * NANOS_PER_DAY - jakarta_offset
+    );
+    assert_eq!(forecast.reference_close, 110.0);
+}
+
+#[test]
 fn stockbit_outcome_uses_latest_version_of_next_observed_session_bar() {
     let connection = Connection::open_in_memory().unwrap();
     connection.execute_batch(
@@ -374,6 +424,57 @@ fn stockbit_outcome_uses_latest_version_of_next_observed_session_bar() {
             target_time - 1,
         ).unwrap(),
         None,
+    );
+}
+
+#[test]
+fn stockbit_outcomes_roll_up_hourly_history_and_wait_for_session_close() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch(
+        "CREATE TABLE bars (
+            symbol TEXT NOT NULL,interval TEXT NOT NULL,source TEXT NOT NULL,ts INTEGER NOT NULL,
+            open REAL NOT NULL,high REAL NOT NULL,low REAL NOT NULL,close REAL NOT NULL,
+            volume REAL NOT NULL,PRIMARY KEY(symbol,interval,source,ts));
+         CREATE TABLE series (
+            symbol TEXT NOT NULL,interval TEXT NOT NULL,source TEXT NOT NULL,
+            timezone TEXT NOT NULL,exchange_id TEXT NOT NULL,product_id TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,data_provider TEXT NOT NULL,price_basis TEXT NOT NULL,
+            PRIMARY KEY(symbol,interval,source));
+         INSERT INTO series VALUES(
+            'BBCA.JK','1h','stockbit_regular_yfinance_fallback','Asia/Jakarta',
+            'stockbit','stockbit_regular','stockbit.stockbit_regular.bbca','yfinance','yahoo_unadjusted');"
+    ).unwrap();
+    let jakarta_offset = quant_core::JAKARTA_UTC_OFFSET_SECONDS * NANOS_PER_SECOND;
+    let hour_ns = 3_600 * NANOS_PER_SECOND;
+    for (day, close) in [(10_i64, 100.0), (11_i64, 110.0)] {
+        for hour in [9_i64, 15_i64] {
+            let timestamp = day * NANOS_PER_DAY + hour * hour_ns - jakarta_offset;
+            connection.execute(
+                "INSERT INTO bars VALUES('BBCA.JK','1h',?1,?2,?3,?3,?3,?3,1000)",
+                params![STOCKBIT_SOURCE, timestamp, close],
+            ).unwrap();
+        }
+    }
+    let reference_time = (10 * NANOS_PER_DAY - jakarta_offset) / NANOS_PER_SECOND;
+    let target_time = 11 * NANOS_PER_DAY - jakarta_offset;
+
+    assert_eq!(
+        next_stockbit_target_candle(
+            &connection,
+            "BBCA.JK",
+            reference_time,
+            (target_time + 15 * 60 * 60 * NANOS_PER_SECOND) / NANOS_PER_SECOND,
+        ).unwrap(),
+        None,
+    );
+    assert_eq!(
+        next_stockbit_target_candle(
+            &connection,
+            "BBCA.JK",
+            reference_time,
+            (target_time + 17 * 60 * 60 * NANOS_PER_SECOND) / NANOS_PER_SECOND,
+        ).unwrap(),
+        Some((target_time, 110.0)),
     );
 }
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::main_test_support::{remove_temporary_database, temporary_database_path};
 
 fn schedule_database() -> Connection {
     let connection = Connection::open_in_memory().unwrap();
@@ -132,6 +133,32 @@ fn previously_persisted_coverage_wait_is_shortened_to_the_new_retry_cadence() {
     let refreshed = load_schedule(&connection, scope).unwrap().unwrap();
     assert_eq!(refreshed.next_attempt_at, now + 30);
     assert_eq!(refreshed.status, "waiting_for_coverage");
+}
+
+#[test]
+fn due_forecast_is_not_deferred_while_signal_scan_is_running() {
+    let path = temporary_database_path("forecast-during-signal-scan");
+    let scope = ForecastScope::TokocryptoSpot;
+    let now = now_secs().min(i64::MAX as u64) as i64;
+    let cutoff = window_cutoff(scope, now);
+    let connection = open_db_minimal(&path).unwrap();
+    let mut saved = schedule(scope, cutoff, 0, 0);
+    saved.status = "scheduled".to_owned();
+    saved.next_attempt_at = now;
+    save_schedule(&connection, &saved, now).unwrap();
+    drop(connection);
+
+    let state = AppState::new(path.clone(), DEFAULT_SCAN_INTERVAL_MINUTES * 60);
+    state.is_scanning.store(true, Ordering::Relaxed);
+    scheduled_forecast_tick_at(&state, scope, now).unwrap();
+
+    let connection = open_db_minimal(&path).unwrap();
+    let saved = load_schedule(&connection, scope).unwrap().unwrap();
+    assert_eq!(saved.attempt_count, 1);
+    assert_ne!(saved.status, "scheduled");
+    drop(connection);
+    remove_temporary_database(&path);
+    remove_temporary_database(&crate::database::app_database_path(&path));
 }
 
 #[test]
