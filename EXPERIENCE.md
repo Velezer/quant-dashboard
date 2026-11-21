@@ -350,7 +350,7 @@ lesson only when it will improve future tasks.
   after a failed, rolled-back provider write so temporary contention does not
   become a false missing-history result.
 - IDX Stockbit registration must use the paginated `GetCompanyProfiles` JSON
-  endpoint rather than assume the public HTML page embeds Nuxt state. Validate
+  endpoint on `www.idx.id` rather than scrape the public HTML page. Validate
   the declared total and each page before reconciliation. Count complete
   source rows separately from usable tickers: IDX includes malformed test or
   non-trading identifiers such as `TEST-SHM`, and rejecting one must not erase

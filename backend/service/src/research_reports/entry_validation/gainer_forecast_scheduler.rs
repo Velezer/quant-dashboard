@@ -224,13 +224,34 @@ fn ensure_universe_snapshot(
 ) -> Result<Vec<Value>, rusqlite::Error> {
     let saved = serde_json::from_str::<Option<Vec<Value>>>(&schedule.universe_json)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    if let Some(saved) = saved {
+    if let Some(saved) = saved.filter(|universe| !universe.is_empty()) {
         return Ok(saved);
     }
     let universe = forecast_universe(connection, scope)?;
     schedule.universe_json = encode_universe(&universe)?;
     save_schedule(connection, schedule, now)?;
     Ok(universe)
+}
+
+fn requeue_empty_stockbit_universe(
+    connection: &Connection,
+    scope: ForecastScope,
+    mut schedule: ForecastSchedule,
+    now: i64,
+) -> Result<ForecastSchedule, rusqlite::Error> {
+    if scope != ForecastScope::StockbitIdx
+        || schedule.status != "complete"
+        || schedule.universe_json != "[]"
+    {
+        return Ok(schedule);
+    }
+    // Keep this as a normal scheduled retry: the coverage retry refresher
+    // intentionally shortens `waiting_for_coverage` delays to one minute.
+    schedule.status = "scheduled".to_owned();
+    schedule.attempt_count = 0;
+    schedule.next_attempt_at = now + FORECAST_ERROR_RETRY_SECONDS;
+    save_schedule(connection, &schedule, now)?;
+    Ok(schedule)
 }
 
 fn recover_interrupted_schedule(
@@ -343,6 +364,8 @@ fn scheduled_forecast_tick_at(
             .map_err(|error| error.to_string())?,
     };
     schedule = recover_interrupted_schedule(&connection, scope, schedule, now)
+        .map_err(|error| error.to_string())?;
+    schedule = requeue_empty_stockbit_universe(&connection, scope, schedule, now)
         .map_err(|error| error.to_string())?;
     refresh_waiting_coverage_retry(&connection, &mut schedule, now)
         .map_err(|error| error.to_string())?;

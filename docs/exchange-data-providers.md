@@ -491,10 +491,11 @@ independently of Pro Spot. Pluang uses its dated saved app snapshot; no automate
 collection runs. Pintu and Pluang market data uses clearly labeled Binance,
 Coinbase, Bybit, OKX, or Yahoo research references as applicable.
 
-Stockbit refresh reads the full server-rendered table from the public [IDX
-Company Profiles directory](https://www.idx.co.id/en/listed-companies/company-profiles/).
-It checks the embedded record total against the extracted unique tickers and
-requires at least 500 validated symbols before reconciling SQLite. Failed,
+Stockbit refresh reads the paginated JSON from the official IDX [Company
+Profiles directory](https://www.idx.id/en/listed-companies/company-profiles/)
+using its `GetCompanyProfiles` endpoint. It checks the declared record total,
+each page length, ticker uniqueness, and requires at least 500 validated
+symbols before reconciling SQLite. It does not scrape the HTML page. Failed,
 truncated, or inconsistent responses retain the previous listing. The selected
 app identity remains `stockbit`; registration provenance records IDX. This
 registry source confirms IDX listing, not Stockbit product availability or
