@@ -99,9 +99,23 @@ fn monthly_exchange_rates_use_a_seventy_day_observation_window() {
 
 #[test]
 fn monthly_fred_periods_normalize_to_the_calendar_month_end() {
-    assert_eq!(super::fred::month_end_date("2024-02-01").unwrap(), "2024-02-29");
-    assert_eq!(super::fred::month_end_date("2026-02-01").unwrap(), "2026-02-28");
-    assert!(super::fred::month_end_date("2026-02-02").is_err());
+    let leap_year = super::fred::parse_fred_csv(
+        "observation_date,CCUSMA02IDM618N\n2024-02-01,16000",
+        MacroIndicatorId::UsdIdrMonthlyAverage,
+    )
+    .unwrap();
+    assert_eq!(leap_year[0].date, "2024-02-29");
+    let non_leap_year = super::fred::parse_fred_csv(
+        "observation_date,CCUSMA02IDM618N\n2026-02-01,16000",
+        MacroIndicatorId::UsdIdrMonthlyAverage,
+    )
+    .unwrap();
+    assert_eq!(non_leap_year[0].date, "2026-02-28");
+    assert!(super::fred::parse_fred_csv(
+        "observation_date,CCUSMA02IDM618N\n2026-02-02,16000",
+        MacroIndicatorId::UsdIdrMonthlyAverage,
+    )
+    .is_err());
 }
 
 #[test]
