@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { TREASURY_XML_URL } from './macro-indicator-treasury.js';
 
 const dashboardTemplate = readFileSync(new URL('../../templates/dashboard.html', import.meta.url), 'utf8');
+const macroTemplate = readFileSync(new URL('../../templates/macro-indicators.html', import.meta.url), 'utf8');
 const macroNavigationStyles = readFileSync(new URL('../../styles/macro-navigation.css', import.meta.url), 'utf8');
 
 const today = new Date().toISOString().slice(0, 10);
@@ -16,12 +17,37 @@ const observationRows = [
 ];
 const responseData = {
     id: 'ten_year_tips_real_yield', title: '10-Year TIPS real yield',
-    description: 'A daily US real yield.', unit: '% per year', frequency: 'Daily, business days',
+    description: 'A daily US real yield.', limitations: 'Not an inflation forecast.',
+    unit: '% per year', value_format: 'percent', frequency: 'Daily, business days',
     source: 'U.S. Department of the Treasury', source_series_id: 'TC_10YEAR',
     source_url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026',
     freshness: 'current', fetch_status: 'fresh', observation_date: today, latest_value: 2.88,
-    daily_change_basis_points: -1, retrieved_at_seconds: Math.floor(Date.now() / 1000),
+    observation_change: -0.01, change_period: 'from the prior business day', daily_change_basis_points: -1,
+    retrieved_at_seconds: Math.floor(Date.now() / 1000),
     status_note: null, refresh_error: null, observations: observationRows,
+};
+const responseTwoYear = {
+    ...responseData,
+    id: 'two_year_treasury_nominal_yield', title: '2-Year U.S. Treasury yield',
+    description: 'The daily nominal 2-year constant-maturity Treasury rate.',
+    source: 'Board of Governors of the Federal Reserve System via FRED (Federal Reserve Bank of St. Louis)',
+    source_series_id: 'DGS2', source_url: 'https://fred.stlouisfed.org/series/DGS2',
+    observation_change: 0.02, daily_change_basis_points: 2,
+};
+const responseFx = {
+    id: 'usd_idr_monthly_average', title: 'USD/IDR exchange rate',
+    description: 'Monthly average of daily rupiah-per-U.S.-dollar rates.',
+    limitations: 'Not the daily JISDOR fixing.', unit: 'IDR per USD', value_format: 'idr_per_usd',
+    frequency: 'Monthly average of daily rates', source: 'OECD via FRED (Federal Reserve Bank of St. Louis)',
+    source_series_id: 'CCUSMA02IDM618N', source_url: 'https://fred.stlouisfed.org/series/CCUSMA02IDM618N',
+    freshness: 'current', fetch_status: 'fresh', observation_date: `${currentYear}-10-31`, latest_value: 17983.82,
+    observation_change: 120.5, change_period: 'from the prior monthly average', daily_change_basis_points: null,
+    retrieved_at_seconds: Math.floor(Date.now() / 1000), status_note: null, refresh_error: null,
+    observations: [
+        { date: `${currentYear}-08-31`, value: 17844 },
+        { date: `${currentYear}-09-30`, value: 17743 },
+        { date: `${currentYear}-10-31`, value: 17983.82 },
+    ],
 };
 
 function xmlForYear(year) {
@@ -45,31 +71,57 @@ class FakeElement {
         this.children = [];
         this.className = '';
         this.innerHTML = '';
+        this.href = '';
+        this.roles = new Map();
+        this.actionButtons = new Map();
+        this.rangeButtons = [];
     }
     addEventListener(type, callback) { this.listeners.set(type, callback); }
     setAttribute(name, value) { this.attributes[name] = value; }
     append(...elements) { this.children.push(...elements); }
     replaceChildren(...elements) { this.children = elements; }
-    querySelectorAll() { return this.children; }
-    contains(element) { return this.children.includes(element); }
+    querySelector(selector) {
+        const roleMatch = selector.match(/^\[data-role="([^"]+)"\]$/);
+        if (roleMatch) return this.roles.get(roleMatch[1]);
+        const actionMatch = selector.match(/^\[data-action="([^"]+)"\]$/);
+        if (actionMatch) return this.actionButtons.get(actionMatch[1]);
+        return null;
+    }
+    querySelectorAll(selector) {
+        return selector === 'button[data-range]' ? this.rangeButtons : this.children;
+    }
+    contains(element) { return this.children.includes(element) || this.rangeButtons.includes(element); }
+    cloneNode() { return new FakeCard(); }
+}
+
+class FakeCard extends FakeElement {
+    constructor() {
+        super();
+        for (const name of [
+            'category', 'title', 'description', 'freshness', 'latest', 'observation-date', 'change',
+            'change-label', 'change-unit', 'retrieved-at', 'status', 'stale-note', 'chart-heading',
+            'chart-caption', 'range-controls', 'chart', 'source', 'source-series', 'frequency-unit',
+            'source-definition', 'limitations', 'source-link', 'observations-table', 'data-limits',
+        ]) this.roles.set(name, new FakeElement());
+        const retry = new FakeElement();
+        this.actionButtons.set('refresh', retry);
+        this.roles.get('range-controls').rangeButtons = ['6m', '1y', '5y', '10y'].map(range => {
+            const button = new FakeElement();
+            button.dataset.range = range;
+            return button;
+        });
+    }
 }
 
 function mockDocument() {
-    const ids = [
-        'macro-status', 'macro-refresh', 'macro-retry', 'macro-empty', 'macro-empty-message',
-        'macro-series-card', 'macro-freshness', 'macro-chart', 'macro-range-controls',
-        'macro-series-title', 'macro-description', 'macro-latest-value', 'macro-observation-date',
-        'macro-daily-change', 'macro-retrieved-at', 'macro-source', 'macro-source-series',
-        'macro-frequency-unit', 'macro-source-definition', 'macro-source-link', 'macro-stale-note',
-        'macro-chart-caption', 'macro-observations-table',
-    ];
-    const elements = new Map(ids.map(id => [id, new FakeElement()]));
-    const rangeControls = ['6m', '1y', '5y', '10y'].map(range => {
-        const button = new FakeElement();
-        button.dataset.range = range;
-        return button;
-    });
-    elements.get('macro-range-controls').children = rangeControls;
+    const elements = new Map([
+        ['macro-status', new FakeElement()],
+        ['macro-refresh', new FakeElement()],
+        ['macro-indicator-grid', new FakeElement()],
+    ]);
+    const template = new FakeElement();
+    template.content = { firstElementChild: { cloneNode: () => new FakeCard() } };
+    elements.set('macro-series-template', template);
     return {
         elements,
         document: {
@@ -80,59 +132,72 @@ function mockDocument() {
 }
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
+const cardFor = (elements, id) => elements.get('macro-indicator-grid').children.find(card => card.dataset.macroId === id);
+const roleFor = (card, name) => card.roles.get(name);
 
-test('macro page loads Treasury observations, changes chart range and retains values after refresh failure', async () => {
+test('macro page renders separate charts, source metadata and independent refresh controls', async () => {
     const { document, elements } = mockDocument();
     globalThis.document = document;
     let failTreasury = false;
     globalThis.fetch = async url => {
-        if (String(url).startsWith(TREASURY_XML_URL)) {
+        const address = String(url);
+        if (address.startsWith(TREASURY_XML_URL)) {
             if (failTreasury) return new Response('Treasury unavailable.', { status: 503 });
-            const year = Number(new URL(url).searchParams.get('field_tdr_date_value'));
+            const year = Number(new URL(address).searchParams.get('field_tdr_date_value'));
             return new Response(xmlForYear(year), { status: 200 });
         }
+        const parsedUrl = new URL(address, 'https://dashboard.example');
+        const id = parsedUrl.searchParams.get('id');
+        if (id === 'two_year_treasury_nominal_yield') return new Response(JSON.stringify(responseTwoYear), { status: 200 });
+        if (id === 'usd_idr_monthly_average') return new Response(JSON.stringify(responseFx), { status: 200 });
         return new Response(JSON.stringify({ error: 'Treasury request timed out.' }), { status: 502 });
     };
     await import(`./macro-indicators.js?success=${Date.now()}`);
     await settle();
 
-    assert.equal(elements.get('macro-series-card').hidden, false);
-    assert.equal(elements.get('macro-latest-value').textContent, '2.88%');
-    assert.match(elements.get('macro-status').textContent, /Treasury series retrieved at/);
-    assert.match(elements.get('macro-chart').innerHTML, /<svg/);
-    assert.equal(elements.get('macro-freshness').textContent, 'Current data');
-    assert.equal(elements.get('macro-source-series').textContent, 'TC_10YEAR');
+    const tips = cardFor(elements, 'ten_year_tips_real_yield');
+    const twoYear = cardFor(elements, 'two_year_treasury_nominal_yield');
+    const fx = cardFor(elements, 'usd_idr_monthly_average');
+    assert.equal(elements.get('macro-indicator-grid').children.length, 3);
+    assert.equal(roleFor(tips, 'latest').textContent, '2.88%');
+    assert.equal(roleFor(twoYear, 'latest').textContent, '2.88%');
+    assert.match(roleFor(fx, 'latest').textContent, /IDR 17,983\.82 \/ USD/);
+    assert.match(roleFor(fx, 'chart').innerHTML, /<svg/);
+    assert.match(roleFor(fx, 'chart').innerHTML, /17,983/);
+    assert.equal(roleFor(fx, 'source-series').textContent, 'CCUSMA02IDM618N');
+    assert.match(roleFor(fx, 'observation-date').textContent, /October/);
 
-    const rangeControls = elements.get('macro-range-controls');
-    const fiveYearButton = rangeControls.children.find(button => button.dataset.range === '5y');
+    const rangeControls = roleFor(tips, 'range-controls');
+    const fiveYearButton = rangeControls.rangeButtons.find(button => button.dataset.range === '5y');
     rangeControls.listeners.get('click')({ target: { closest: () => fiveYearButton } });
     assert.equal(fiveYearButton.attributes['aria-pressed'], 'true');
 
     failTreasury = true;
-    await elements.get('macro-refresh').listeners.get('click')();
-    assert.equal(elements.get('macro-latest-value').textContent, '2.88%');
-    assert.equal(elements.get('macro-freshness').textContent, 'Refresh failed');
-    assert.match(elements.get('macro-status').textContent, /previously loaded observation remains visible/);
-    assert.match(elements.get('macro-stale-note').textContent, /Treasury request timed out/);
-    assert.equal(elements.get('macro-refresh').disabled, false);
+    await tips.actionButtons.get('refresh').listeners.get('click')();
+    assert.equal(roleFor(tips, 'latest').textContent, '2.88%');
+    assert.equal(roleFor(tips, 'freshness').textContent, 'Refresh failed');
+    assert.match(roleFor(tips, 'status').textContent, /previously loaded observation remains visible/);
+    assert.match(roleFor(tips, 'stale-note').textContent, /Treasury request timed out/);
+    assert.equal(tips.actionButtons.get('refresh').disabled, false);
 });
 
-test('macro page exposes retry after the Treasury feed and API are unavailable', async () => {
+test('macro cards retain retry states when a provider is unavailable', async () => {
     const { document, elements } = mockDocument();
     globalThis.document = document;
     globalThis.fetch = async url => String(url).startsWith(TREASURY_XML_URL)
         ? new Response('Treasury unavailable.', { status: 503 })
-        : new Response(JSON.stringify({ error: 'Treasury is unavailable.' }), { status: 502 });
+        : new Response(JSON.stringify({ error: 'Data source unavailable.' }), { status: 502 });
     await import(`./macro-indicators.js?error=${Date.now()}`);
     await settle();
 
-    assert.equal(elements.get('macro-empty').hidden, false);
-    assert.match(elements.get('macro-empty-message').textContent, /Treasury is unavailable/);
-    assert.match(elements.get('macro-status').textContent, /Retry to try again/);
-    assert.equal(elements.get('macro-retry').disabled, false);
+    const fx = cardFor(elements, 'usd_idr_monthly_average');
+    assert.equal(roleFor(fx, 'latest').textContent, 'Unavailable');
+    assert.match(roleFor(fx, 'status').textContent, /Data source unavailable/);
+    assert.equal(fx.actionButtons.get('refresh').disabled, false);
+    assert.match(elements.get('macro-status').textContent, /unavailable/);
 });
 
-test('macro page uses the API response when the browser cannot reach Treasury', async () => {
+test('macro page uses its API response when the browser cannot reach Treasury', async () => {
     const { document, elements } = mockDocument();
     globalThis.document = document;
     globalThis.fetch = async url => String(url).startsWith(TREASURY_XML_URL)
@@ -141,16 +206,23 @@ test('macro page uses the API response when the browser cannot reach Treasury', 
     await import(`./macro-indicators.js?fallback=${Date.now()}`);
     await settle();
 
-    assert.equal(elements.get('macro-series-card').hidden, false);
-    assert.equal(elements.get('macro-latest-value').textContent, '2.88%');
-    assert.match(elements.get('macro-chart').innerHTML, /<svg/);
-    assert.equal(elements.get('macro-freshness').textContent, 'Current data');
-    assert.match(elements.get('macro-stale-note').textContent, /direct Treasury feed could not be loaded/);
+    const tips = cardFor(elements, 'ten_year_tips_real_yield');
+    assert.equal(roleFor(tips, 'latest').textContent, '2.88%');
+    assert.match(roleFor(tips, 'chart').innerHTML, /<svg/);
+    assert.equal(roleFor(tips, 'freshness').textContent, 'Current data');
+    assert.match(roleFor(tips, 'stale-note').textContent, /direct Treasury feed could not be loaded/);
 });
 
-test('macro indicators stay discoverable when the desktop header is crowded', () => {
+test('macro indicators remain discoverable from the screener and their page includes per-series status and provenance', () => {
     assert.match(dashboardTemplate, /<a href="\/macro" aria-label="Open macroeconomic indicators" title="Macroeconomic indicators">\s*<span aria-hidden="true">◒<\/span> Macro indicators<\/a>/);
     assert.match(dashboardTemplate, /<nav id="macroQuickNavigation"[\s\S]*?<a href="\/macro">[\s\S]*?Macroeconomic indicators<\/a>/);
-    assert.match(macroNavigationStyles, /@media \(max-width: 1536px\)/);
+    assert.match(macroNavigationStyles, /\.tv-terminal \.macro-quick-nav\s*\{\s*display: flex;/);
+    assert.match(macroNavigationStyles, /@media \(min-width: 1537px\)[\s\S]*?signals-workspace-active \.macro-quick-nav[\s\S]*?display: none;/);
     assert.match(macroNavigationStyles, /@media \(min-width: 1181px\) and \(max-width: 1536px\)[\s\S]*?desktop-primary-nav a\[href="\/macro"\][\s\S]*?display: none;/);
+    assert.match(macroTemplate, /<template id="macro-series-template">/);
+    assert.match(macroTemplate, /data-role="status" role="status"/);
+    assert.match(macroTemplate, /data-role="source"/);
+    assert.match(macroTemplate, /data-role="limitations"/);
+    assert.match(macroTemplate, /data-role="chart"/);
+    assert.match(macroTemplate, /NWE\/DSS calculations, the combined ticker score, or signal direction/);
 });

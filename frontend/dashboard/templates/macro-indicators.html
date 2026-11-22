@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="View standalone macroeconomic indicators, starting with the 10-year TIPS real yield.">
+    <meta name="description" content="View macroeconomic charts for real yields, Treasury rates and USD/IDR.">
     <meta name="color-scheme" content="dark">
     <title>Macroeconomic indicators · Quant Desk</title>
     <link rel="stylesheet" href="/web/styles/entry-validation.css">
@@ -22,61 +22,65 @@
             <div class="section-heading macro-heading">
                 <div>
                     <h1 id="macro-title">Macroeconomic indicators</h1>
-                    <p class="small-text">A dedicated view for rates, inflation and other market-wide context. These indicators are shown separately and do not change ticker scores or create signals. Treasury publishes this real-yield series on business days.</p>
+                    <p class="small-text">Track real yields, U.S. rates and the rupiah in one place. These charts are separate from ticker scores and signals.</p>
                 </div>
-                <button id="macro-refresh" class="macro-refresh" type="button" title="Load the latest published Treasury observations">Refresh data</button>
+                <button id="macro-refresh" class="macro-refresh" type="button" title="Refresh every macro indicator">Refresh all</button>
             </div>
-            <p id="macro-status" class="status-message" role="status" aria-live="polite">Loading the latest available 10-year TIPS real yield…</p>
-            <div id="macro-empty" class="macro-empty" hidden>
-                <p id="macro-empty-message">Macroeconomic data is unavailable right now.</p>
-                <button id="macro-retry" class="macro-refresh" type="button">Retry</button>
-            </div>
-            <article id="macro-series-card" class="macro-series-card" aria-labelledby="macro-series-title" hidden>
-                <div class="macro-card-heading">
-                    <div>
-                        <p class="macro-kicker">REAL INTEREST RATE · UNITED STATES</p>
-                        <h2 id="macro-series-title">10-Year TIPS real yield</h2>
-                        <p id="macro-description" class="small-text"></p>
-                    </div>
-                    <span id="macro-freshness" class="state-badge pending">Loading</span>
-                </div>
-                <div class="macro-metrics" aria-label="Latest indicator values">
-                    <div class="macro-metric macro-primary-metric"><span>Latest observation</span><strong id="macro-latest-value">—</strong><small id="macro-observation-date">Date unavailable</small></div>
-                    <div class="macro-metric"><span>Change from prior published day</span><strong id="macro-daily-change">—</strong><small>Basis points</small></div>
-                    <div class="macro-metric"><span>Source checked</span><strong id="macro-retrieved-at">—</strong><small>Last successful retrieval</small></div>
-                </div>
-                <div id="macro-stale-note" class="macro-stale-note" role="note" hidden></div>
-                <div class="macro-chart-panel">
-                    <div class="macro-chart-heading">
-                        <div><h3>Yield history</h3><p id="macro-chart-caption" class="small-text">Daily observations, in percent per year.</p></div>
-                        <div id="macro-range-controls" class="macro-range-controls" role="group" aria-label="Chart history range">
-                            <button type="button" data-range="6m" aria-pressed="false">6M</button>
-                            <button type="button" data-range="1y" aria-pressed="true">1Y</button>
-                            <button type="button" data-range="5y" aria-pressed="false">5Y</button>
-                            <button type="button" data-range="10y" aria-pressed="false">10Y</button>
-                        </div>
-                    </div>
-                    <div id="macro-chart" class="macro-chart" role="group" aria-label="10-Year TIPS real yield chart loading"></div>
-                </div>
-                <details class="macro-source-details">
-                    <summary>Source and methodology</summary>
-                    <dl class="macro-source-list">
-                        <div><dt>Provider</dt><dd id="macro-source"></dd></div>
-                        <div><dt>Treasury series</dt><dd id="macro-source-series"></dd></div>
-                        <div><dt>Frequency and unit</dt><dd id="macro-frequency-unit"></dd></div>
-                        <div><dt>Definition</dt><dd id="macro-source-definition"></dd></div>
-                        <div><dt>Signal relationship</dt><dd>Independent macro context. This value does not enter NWE/DSS calculations, the combined ticker score, or signal direction.</dd></div>
-                    </dl>
-                    <a id="macro-source-link" class="macro-source-link" href="https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve" target="_blank" rel="noreferrer">Open the series at Treasury</a>
-                </details>
-                <details class="macro-observations-details">
-                    <summary>Recent observations</summary>
-                    <div class="table-scroll"><table><thead><tr><th scope="col">Observation date</th><th scope="col">Real yield</th></tr></thead><tbody id="macro-observations-table"></tbody></table></div>
-                </details>
-                <p class="macro-limits">Treasury publishes this series on business days and may revise observations. The observation date is shown separately from the time this dashboard last checked the source. Real yields describe market pricing; they are not a guaranteed forecast of future inflation or returns.</p>
-            </article>
+            <p id="macro-status" class="status-message" role="status" aria-live="polite">Loading macroeconomic indicators…</p>
+            <div id="macro-indicator-grid" class="macro-indicator-grid" aria-label="Macroeconomic indicator charts"></div>
         </section>
         <footer class="page-footer"><span>Macroeconomic context · Independent from ticker signals</span><a href="/">Back to screener</a></footer>
     </main>
+    <template id="macro-series-template">
+        <article class="macro-series-card" aria-label="Macroeconomic indicator">
+            <div class="macro-card-heading">
+                <div>
+                    <p class="macro-kicker" data-role="category">MARKET INDICATOR</p>
+                    <h2 data-role="title">Loading indicator…</h2>
+                    <p class="small-text" data-role="description"></p>
+                </div>
+                <div class="macro-card-actions">
+                    <span class="state-badge pending" data-role="freshness">Loading</span>
+                    <button class="macro-card-refresh" data-action="refresh" type="button">Refresh</button>
+                </div>
+            </div>
+            <div class="macro-metrics" aria-label="Latest indicator values">
+                <div class="macro-metric macro-primary-metric"><span>Latest observation</span><strong data-role="latest">—</strong><small data-role="observation-date">Date unavailable</small></div>
+                <div class="macro-metric"><span data-role="change-label">Change from prior observation</span><strong data-role="change">—</strong><small data-role="change-unit">—</small></div>
+                <div class="macro-metric"><span>Source checked</span><strong data-role="retrieved-at">—</strong><small>Last successful retrieval</small></div>
+            </div>
+            <p class="macro-card-status" data-role="status" role="status" aria-live="polite">Loading observations…</p>
+            <div class="macro-stale-note" data-role="stale-note" role="note" hidden></div>
+            <div class="macro-chart-panel">
+                <div class="macro-chart-heading">
+                    <div><h3 data-role="chart-heading">History</h3><p class="small-text" data-role="chart-caption">Observations are loading.</p></div>
+                    <div class="macro-range-controls" data-role="range-controls" role="group" aria-label="Chart history range">
+                        <button type="button" data-range="6m" aria-pressed="false">6M</button>
+                        <button type="button" data-range="1y" aria-pressed="true">1Y</button>
+                        <button type="button" data-range="5y" aria-pressed="false">5Y</button>
+                        <button type="button" data-range="10y" aria-pressed="false">10Y</button>
+                    </div>
+                </div>
+                <div class="macro-chart" data-role="chart" role="group" aria-label="Indicator chart loading"></div>
+            </div>
+            <details class="macro-source-details">
+                <summary>Source and methodology</summary>
+                <dl class="macro-source-list">
+                    <div><dt>Provider</dt><dd data-role="source"></dd></div>
+                    <div><dt>Source series</dt><dd data-role="source-series"></dd></div>
+                    <div><dt>Frequency and unit</dt><dd data-role="frequency-unit"></dd></div>
+                    <div><dt>Definition</dt><dd data-role="source-definition"></dd></div>
+                    <div><dt>Limitations</dt><dd data-role="limitations"></dd></div>
+                    <div><dt>Signal relationship</dt><dd>Independent macro context. This value does not enter NWE/DSS calculations, the combined ticker score, or signal direction.</dd></div>
+                </dl>
+                <a class="macro-source-link" data-role="source-link" href="#" target="_blank" rel="noreferrer">Open source series</a>
+            </details>
+            <details class="macro-observations-details">
+                <summary>Recent observations</summary>
+                <div class="table-scroll"><table><thead><tr><th scope="col">Observation period</th><th scope="col">Value</th></tr></thead><tbody data-role="observations-table"></tbody></table></div>
+            </details>
+            <p class="macro-limits" data-role="data-limits"></p>
+        </article>
+    </template>
 </body>
 </html>
