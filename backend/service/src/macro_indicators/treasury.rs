@@ -1,4 +1,4 @@
-//! U.S. Treasury daily real-yield-curve provider for the 10-year TIPS series.
+//! U.S. Treasury daily real- and nominal-yield provider.
 
 use super::{FetchStatus, MacroIndicatorId, MacroObservation, MacroSeriesProvider, ProviderSeriesSnapshot};
 use crate::public_http::{get_bounded, RequestOptions};
@@ -24,9 +24,12 @@ impl MacroSeriesProvider for TreasuryProvider {
         force_refresh: bool,
     ) -> Result<ProviderSeriesSnapshot, String> {
         match id {
-            MacroIndicatorId::TenYearTipsRealYield => load_series(id, force_refresh),
-            MacroIndicatorId::TwoYearTreasuryNominalYield | MacroIndicatorId::UsdIdrMonthlyAverage =>
-                Err("Treasury does not provide the requested macro series.".to_string()),
+            MacroIndicatorId::TenYearTipsRealYield | MacroIndicatorId::TwoYearTreasuryNominalYield => {
+                load_series(id, force_refresh)
+            }
+            MacroIndicatorId::UsdIdrReferenceRate => {
+                Err("Treasury does not provide the requested macro series.".to_string())
+            }
         }
     }
 }
@@ -248,7 +251,12 @@ fn series_config(id: MacroIndicatorId) -> Option<TreasurySeriesConfig> {
             field: "TC_10YEAR",
             value_label: "10-year real-yield",
         }),
-        MacroIndicatorId::TwoYearTreasuryNominalYield | MacroIndicatorId::UsdIdrMonthlyAverage => None,
+        MacroIndicatorId::TwoYearTreasuryNominalYield => Some(TreasurySeriesConfig {
+            dataset: "daily_treasury_yield_curve",
+            field: "BC_2YEAR",
+            value_label: "2-year nominal-yield",
+        }),
+        MacroIndicatorId::UsdIdrReferenceRate => None,
     }
 }
 

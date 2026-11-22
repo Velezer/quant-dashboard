@@ -504,6 +504,10 @@ lesson only when it will improve future tasks.
   egress. Keep the provider adapter bounded and validated, cache successful
   observations, preserve the last good series on refresh failure, and show
   the observation date separately from the retrieval time.
+- A provider that works from the development workspace may still time out from
+  the deployed service. After release, request every newly registered series
+  from the live API and check the returned ID, source, freshness, and data rows;
+  page HTML or a healthy `/api/health` endpoint alone does not verify the feed.
 - When a macro view mixes rates and exchange rates, carry the value format,
   observation cadence, and comparison period with each series. Render rates
   as percent/basis points and FX as currency per unit; choose freshness rules
