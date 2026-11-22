@@ -30,23 +30,22 @@ const responseTwoYear = {
     ...responseData,
     id: 'two_year_treasury_nominal_yield', title: '2-Year U.S. Treasury yield',
     description: 'The daily nominal 2-year constant-maturity Treasury rate.',
-    source: 'Board of Governors of the Federal Reserve System via FRED (Federal Reserve Bank of St. Louis)',
-    source_series_id: 'DGS2', source_url: 'https://fred.stlouisfed.org/series/DGS2',
+    source: 'U.S. Department of the Treasury',
+    source_series_id: 'BC_2YEAR', source_url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve',
     observation_change: 0.02, daily_change_basis_points: 2,
 };
 const responseFx = {
-    id: 'usd_idr_monthly_average', title: 'USD/IDR exchange rate',
-    description: 'Monthly average of daily rupiah-per-U.S.-dollar rates.',
-    limitations: 'Not the daily JISDOR fixing.', unit: 'IDR per USD', value_format: 'idr_per_usd',
-    frequency: 'Monthly average of daily rates', source: 'OECD via FRED (Federal Reserve Bank of St. Louis)',
-    source_series_id: 'CCUSMA02IDM618N', source_url: 'https://fred.stlouisfed.org/series/CCUSMA02IDM618N',
-    freshness: 'current', fetch_status: 'fresh', observation_date: `${currentYear}-10-31`, latest_value: 17983.82,
-    observation_change: 120.5, change_period: 'from the prior monthly average', daily_change_basis_points: null,
+    id: 'usd_idr_daily_reference', title: 'USD/IDR exchange rate',
+    description: 'Daily USD/IDR cross-rate calculated from the ECB euro reference rates.',
+    limitations: 'Calculated from IDR/EUR divided by USD/EUR; not an intraday quote or the daily JISDOR fixing.', unit: 'IDR per USD', value_format: 'idr_per_usd',
+    frequency: 'Daily, business days', source: 'European Central Bank',
+    source_series_id: 'D.IDR.EUR.SP00.A / D.USD.EUR.SP00.A', source_url: 'https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html',
+    freshness: 'current', fetch_status: 'fresh', observation_date: today, latest_value: 17983.82,
+    observation_change: 120.5, change_period: 'from the prior business day', daily_change_basis_points: null,
     retrieved_at_seconds: Math.floor(Date.now() / 1000), status_note: null, refresh_error: null,
     observations: [
-        { date: `${currentYear}-08-31`, value: 17844 },
-        { date: `${currentYear}-09-30`, value: 17743 },
-        { date: `${currentYear}-10-31`, value: 17983.82 },
+        { date: previousDay, value: 17844 },
+        { date: today, value: 17983.82 },
     ],
 };
 
@@ -149,7 +148,7 @@ test('macro page renders separate charts, source metadata and independent refres
         const parsedUrl = new URL(address, 'https://dashboard.example');
         const id = parsedUrl.searchParams.get('id');
         if (id === 'two_year_treasury_nominal_yield') return new Response(JSON.stringify(responseTwoYear), { status: 200 });
-        if (id === 'usd_idr_monthly_average') return new Response(JSON.stringify(responseFx), { status: 200 });
+        if (id === 'usd_idr_daily_reference') return new Response(JSON.stringify(responseFx), { status: 200 });
         return new Response(JSON.stringify({ error: 'Treasury request timed out.' }), { status: 502 });
     };
     await import(`./macro-indicators.js?success=${Date.now()}`);
@@ -157,15 +156,15 @@ test('macro page renders separate charts, source metadata and independent refres
 
     const tips = cardFor(elements, 'ten_year_tips_real_yield');
     const twoYear = cardFor(elements, 'two_year_treasury_nominal_yield');
-    const fx = cardFor(elements, 'usd_idr_monthly_average');
+    const fx = cardFor(elements, 'usd_idr_daily_reference');
     assert.equal(elements.get('macro-indicator-grid').children.length, 3);
     assert.equal(roleFor(tips, 'latest').textContent, '2.88%');
     assert.equal(roleFor(twoYear, 'latest').textContent, '2.88%');
     assert.match(roleFor(fx, 'latest').textContent, /IDR 17,983\.82 \/ USD/);
     assert.match(roleFor(fx, 'chart').innerHTML, /<svg/);
     assert.match(roleFor(fx, 'chart').innerHTML, /17,983/);
-    assert.equal(roleFor(fx, 'source-series').textContent, 'CCUSMA02IDM618N');
-    assert.match(roleFor(fx, 'observation-date').textContent, /October/);
+    assert.equal(roleFor(fx, 'source-series').textContent, 'D.IDR.EUR.SP00.A / D.USD.EUR.SP00.A');
+    assert.match(roleFor(fx, 'observation-date').textContent, new RegExp(today));
 
     const rangeControls = roleFor(tips, 'range-controls');
     const fiveYearButton = rangeControls.rangeButtons.find(button => button.dataset.range === '5y');
@@ -190,7 +189,7 @@ test('macro cards retain retry states when a provider is unavailable', async () 
     await import(`./macro-indicators.js?error=${Date.now()}`);
     await settle();
 
-    const fx = cardFor(elements, 'usd_idr_monthly_average');
+    const fx = cardFor(elements, 'usd_idr_daily_reference');
     assert.equal(roleFor(fx, 'latest').textContent, 'Unavailable');
     assert.match(roleFor(fx, 'status').textContent, /Data source unavailable/);
     assert.equal(fx.actionButtons.get('refresh').disabled, false);

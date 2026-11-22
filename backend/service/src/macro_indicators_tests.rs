@@ -47,38 +47,48 @@ fn treasury_parser_rejects_missing_feed_bad_dates_values_and_ordering() {
 }
 
 #[test]
-fn fred_csv_parser_keeps_valid_monthly_rates_and_rejects_bad_rows() {
-    let parsed = super::fred::parse_fred_csv(
-        "observation_date,CCUSMA02IDM618N\r\n2026-08-01,17844\r\n2026-09-01,17743.0454545455\r\n2026-10-01,17983.8181818182\r\n",
-        MacroIndicatorId::UsdIdrMonthlyAverage,
-    )
-    .unwrap();
-    assert_eq!(parsed.len(), 3);
-    assert_eq!(parsed[0].date, "2026-08-31");
-    assert_eq!(parsed[2].date, "2026-10-31");
-    assert!((parsed[2].value - 17_983.8181818182).abs() < 1e-8);
-    assert!(super::fred::parse_fred_csv(
-        "observation_date,wrong_series\n2026-10-01,17983.8\n",
-        MacroIndicatorId::UsdIdrMonthlyAverage,
-    )
-    .is_err());
-    assert!(super::fred::parse_fred_csv(
-        "observation_date,CCUSMA02IDM618N\n2026-10-01,0\n",
-        MacroIndicatorId::UsdIdrMonthlyAverage,
-    )
-    .is_err());
-}
-
-#[test]
-fn fred_parser_keeps_the_daily_two_year_treasury_series() {
-    let parsed = super::fred::parse_fred_csv(
-        "observation_date,DGS2\n2026-11-18,4.73\n2026-11-19,4.76\n",
+fn treasury_parser_reads_the_daily_two_year_nominal_series() {
+    let parsed = super::treasury::parse_treasury_year_xml(
+        "<feed><entry><d:NEW_DATE>2026-11-18T00:00:00</d:NEW_DATE><d:BC_2YEAR>3.91</d:BC_2YEAR></entry><entry><d:NEW_DATE>2026-11-19T00:00:00</d:NEW_DATE><d:BC_2YEAR>3.88</d:BC_2YEAR></entry></feed>",
+        2026,
         MacroIndicatorId::TwoYearTreasuryNominalYield,
     )
     .unwrap();
     assert_eq!(parsed.len(), 2);
     assert_eq!(parsed[1].date, "2026-11-19");
-    assert_eq!(parsed[1].value, 4.76);
+    assert_eq!(parsed[1].value, 3.88);
+}
+
+#[test]
+fn ecb_parser_builds_daily_usd_idr_cross_rates_and_rejects_bad_data() {
+    const HEADER: &str = "KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE";
+    let idr = format!(
+        "{HEADER}\r\nEXR.D.IDR.EUR.SP00.A,D,IDR,EUR,SP00,A,2026-11-18,20079.46\r\nEXR.D.IDR.EUR.SP00.A,D,IDR,EUR,SP00,A,2026-11-19,20070.25\r\n"
+    );
+    let usd = format!(
+        "{HEADER}\r\nEXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2026-11-18,1.0942\r\nEXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2026-11-19,1.099\r\n"
+    );
+    let parsed = super::ecb::parse_cross_rate(&idr, &usd).unwrap();
+    assert_eq!(parsed.len(), 2);
+    assert_eq!(parsed[0].date, "2026-11-18");
+    assert!((parsed[0].value - (20_079.46 / 1.0942)).abs() < 1e-8);
+    assert_eq!(parsed[1].date, "2026-11-19");
+    assert!((parsed[1].value - (20_070.25 / 1.099)).abs() < 1e-8);
+    assert!(super::ecb::parse_cross_rate(
+        &idr.replace("TIME_PERIOD,OBS_VALUE", "WRONG,HEADER"),
+        &usd,
+    )
+    .is_err());
+    assert!(super::ecb::parse_cross_rate(
+        &idr.replace("2026-11-18,20079.46", "2026-13-18,20079.46"),
+        &usd,
+    )
+    .is_err());
+    assert!(super::ecb::parse_cross_rate(
+        &idr.replace("20079.46", "NaN"),
+        &usd,
+    )
+    .is_err());
 }
 
 #[test]
@@ -91,31 +101,10 @@ fn observation_freshness_allows_a_week_of_weekends_and_publish_lag() {
 }
 
 #[test]
-fn monthly_exchange_rates_use_a_seventy_day_observation_window() {
+fn daily_exchange_rates_use_the_same_freshness_window_as_daily_yields() {
     let now = 1_704_844_800; // 2024-01-10 00:00:00 UTC
-    assert!(!observation_is_stale_after_days("2023-11-30", now, 70));
-    assert!(observation_is_stale_after_days("2023-10-31", now, 70));
-}
-
-#[test]
-fn monthly_fred_periods_normalize_to_the_calendar_month_end() {
-    let leap_year = super::fred::parse_fred_csv(
-        "observation_date,CCUSMA02IDM618N\n2024-02-01,16000",
-        MacroIndicatorId::UsdIdrMonthlyAverage,
-    )
-    .unwrap();
-    assert_eq!(leap_year[0].date, "2024-02-29");
-    let non_leap_year = super::fred::parse_fred_csv(
-        "observation_date,CCUSMA02IDM618N\n2026-02-01,16000",
-        MacroIndicatorId::UsdIdrMonthlyAverage,
-    )
-    .unwrap();
-    assert_eq!(non_leap_year[0].date, "2026-02-28");
-    assert!(super::fred::parse_fred_csv(
-        "observation_date,CCUSMA02IDM618N\n2026-02-02,16000",
-        MacroIndicatorId::UsdIdrMonthlyAverage,
-    )
-    .is_err());
+    assert!(!observation_is_stale_after_days("2024-01-03", now, 7));
+    assert!(observation_is_stale_after_days("2024-01-02", now, 7));
 }
 
 #[test]
@@ -147,12 +136,16 @@ fn the_supported_indicator_has_a_stable_application_identity() {
         "two_year_treasury_nominal_yield"
     );
     assert_eq!(
-        MacroIndicatorId::UsdIdrMonthlyAverage.application_id(),
-        "usd_idr_monthly_average"
+        MacroIndicatorId::UsdIdrReferenceRate.application_id(),
+        "usd_idr_daily_reference"
+    );
+    assert_eq!(
+        MacroIndicatorId::from_application_id("usd_idr_daily_reference"),
+        Some(MacroIndicatorId::UsdIdrReferenceRate)
     );
     assert_eq!(
         MacroIndicatorId::from_application_id("usd_idr_monthly_average"),
-        Some(MacroIndicatorId::UsdIdrMonthlyAverage)
+        Some(MacroIndicatorId::UsdIdrReferenceRate)
     );
     assert_eq!(MacroIndicatorId::from_application_id("unknown"), None);
 }

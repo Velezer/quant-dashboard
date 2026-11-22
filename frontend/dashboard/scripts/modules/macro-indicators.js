@@ -6,7 +6,7 @@ const TIPS_ID = 'ten_year_tips_real_yield';
 const INDICATORS = Object.freeze([
     { id: TIPS_ID, category: 'REAL INTEREST RATE · UNITED STATES', fallbackTitle: '10-Year TIPS real yield', chartHeading: 'Yield history' },
     { id: 'two_year_treasury_nominal_yield', category: 'NOMINAL INTEREST RATE · UNITED STATES', fallbackTitle: '2-Year U.S. Treasury yield', chartHeading: 'Yield history' },
-    { id: 'usd_idr_monthly_average', category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', chartHeading: 'Exchange-rate history' },
+    { id: 'usd_idr_daily_reference', category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', chartHeading: 'Exchange-rate history' },
 ]);
 
 const statusElement = document.getElementById('macro-status');

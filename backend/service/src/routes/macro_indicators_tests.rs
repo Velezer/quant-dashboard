@@ -12,8 +12,12 @@ fn macro_route_defaults_to_tips_and_accepts_each_registered_indicator() {
         (MacroIndicatorId::TwoYearTreasuryNominalYield, false)
     );
     assert_eq!(
-        requested_indicator("/api/macro/indicators?id=usd_idr_monthly_average&refresh=TRUE").unwrap(),
-        (MacroIndicatorId::UsdIdrMonthlyAverage, true)
+        requested_indicator("/api/macro/indicators?id=usd_idr_daily_reference&refresh=TRUE").unwrap(),
+        (MacroIndicatorId::UsdIdrReferenceRate, true)
+    );
+    assert_eq!(
+        requested_indicator("/api/macro/indicators?id=usd_idr_monthly_average").unwrap(),
+        (MacroIndicatorId::UsdIdrReferenceRate, false)
     );
 }
 
