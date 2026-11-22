@@ -144,7 +144,7 @@ fn fetch_csv(series_id: &str, start_date: &str) -> Result<String, String> {
         .map_err(|_| format!("The ECB returned CSV that was not valid UTF-8 for {series_id}."))
 }
 
-fn parse_cross_rate(
+pub(super) fn parse_cross_rate(
     idr_csv: &str,
     usd_csv: &str,
 ) -> Result<Vec<MacroObservation>, String> {
