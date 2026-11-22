@@ -7,6 +7,8 @@ const INDICATORS = Object.freeze([
     { id: TIPS_ID, category: 'REAL INTEREST RATE · UNITED STATES', fallbackTitle: '10-Year TIPS real yield', chartHeading: 'Yield history' },
     { id: 'two_year_treasury_nominal_yield', category: 'NOMINAL INTEREST RATE · UNITED STATES', fallbackTitle: '2-Year U.S. Treasury yield', chartHeading: 'Yield history' },
     { id: 'usd_idr_daily_reference', category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', chartHeading: 'Exchange-rate history' },
+    { id: 'bitcoin_spot_etf_net_flows', category: 'CRYPTO FUND FLOWS · UNITED STATES', fallbackTitle: 'U.S. spot Bitcoin ETF net flows', chartHeading: 'Daily net flow history', source: 'The Commoner Bitcoin ETF Tracker by TFTC', sourceUrl: 'https://www.tftc.io/bitcoin-etf-flows' },
+    { id: 'bitcoin_fear_greed_index', category: 'CRYPTO MARKET SENTIMENT', fallbackTitle: 'Bitcoin Fear & Greed Index', chartHeading: 'Sentiment history', source: 'Alternative.me', sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/' },
 ]);
 
 const statusElement = document.getElementById('macro-status');
@@ -46,7 +48,8 @@ function renderObservationsTable(record, observations) {
         const dateCell = document.createElement('td');
         const valueCell = document.createElement('td');
         dateCell.textContent = formatObservationDate(row.date, record.snapshot.frequency);
-        valueCell.textContent = formatValue(row.value, record.snapshot.value_format);
+        const classification = row.classification ? ` · ${row.classification}` : '';
+        valueCell.textContent = `${formatValue(row.value, record.snapshot.value_format)}${classification}`;
         tableRow.append(dateCell, valueCell);
         return tableRow;
     }));
@@ -62,6 +65,10 @@ function renderSnapshot(record, data) {
     role(card, 'title').textContent = data.title;
     role(card, 'description').textContent = data.description;
     role(card, 'latest').textContent = formatValue(data.latest_value, valueFormat);
+    const latestClassification = data.latest_classification || data.observations?.at(-1)?.classification;
+    const classificationElement = role(card, 'latest-classification');
+    classificationElement.textContent = latestClassification || '';
+    classificationElement.hidden = !latestClassification;
     role(card, 'observation-date').textContent = `Observation period: ${observationDate}`;
     role(card, 'change').textContent = formatObservationChange(
         data.observation_change ?? (data.daily_change_basis_points == null ? null : data.daily_change_basis_points / 100),
@@ -69,7 +76,7 @@ function renderSnapshot(record, data) {
         valueFormat,
         data.change_period || 'from prior observation',
     );
-    role(card, 'change-unit').textContent = valueFormat === 'idr_per_usd' ? 'IDR per USD · percentage shown' : 'Basis points';
+    role(card, 'change-unit').textContent = changeUnit(valueFormat);
     role(card, 'retrieved-at').textContent = formatRetrievedAt(data.retrieved_at_seconds);
     role(card, 'source').textContent = data.source;
     role(card, 'source-series').textContent = data.source_series_id;
@@ -80,6 +87,9 @@ function renderSnapshot(record, data) {
     const sourceLink = role(card, 'source-link');
     sourceLink.href = data.source_url;
     sourceLink.textContent = `Open ${data.source} series`;
+    const attributionLink = role(card, 'attribution-link');
+    attributionLink.href = data.source_url;
+    attributionLink.textContent = data.source;
 
     const freshness = role(card, 'freshness');
     freshness.textContent = data.freshness === 'stale' ? 'Stale data' : 'Current data';
@@ -108,6 +118,13 @@ function renderSnapshot(record, data) {
     }
 }
 
+function changeUnit(valueFormat) {
+    if (valueFormat === 'idr_per_usd') return 'IDR per USD · percentage shown';
+    if (valueFormat === 'usd_flow') return 'USD net flow';
+    if (valueFormat === 'index_0_100') return 'Index points';
+    return 'Basis points';
+}
+
 function renderChart(record) {
     const data = record.snapshot;
     if (!data) return;
@@ -123,6 +140,8 @@ function renderChart(record) {
 
 function renderUnavailable(record, message) {
     role(record.card, 'latest').textContent = 'Unavailable';
+    role(record.card, 'latest-classification').textContent = '';
+    role(record.card, 'latest-classification').hidden = true;
     role(record.card, 'observation-date').textContent = 'No observation loaded';
     role(record.card, 'change').textContent = 'Unavailable';
     role(record.card, 'change-unit').textContent = 'No prior observation';
@@ -209,6 +228,11 @@ function initializeCard(config) {
     role(card, 'category').textContent = config.category;
     role(card, 'title').textContent = config.fallbackTitle;
     role(card, 'chart-heading').textContent = config.chartHeading;
+    if (config.source) {
+        const attributionLink = role(card, 'attribution-link');
+        attributionLink.href = config.sourceUrl;
+        attributionLink.textContent = config.source;
+    }
     const record = { config, card, snapshot: null, failed: false, selectedRange: '1y' };
     const refreshButton = card.querySelector('[data-action="refresh"]');
     const rangeControls = role(card, 'range-controls');

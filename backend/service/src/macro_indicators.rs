@@ -3,6 +3,7 @@
 
 mod treasury;
 mod ecb;
+mod bitcoin;
 
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,6 +20,8 @@ pub(crate) enum MacroIndicatorId {
     TenYearTipsRealYield,
     TwoYearTreasuryNominalYield,
     UsdIdrReferenceRate,
+    BitcoinSpotEtfNetFlows,
+    BitcoinFearGreedIndex,
 }
 
 impl MacroIndicatorId {
@@ -27,6 +30,8 @@ impl MacroIndicatorId {
             Self::TenYearTipsRealYield => "ten_year_tips_real_yield",
             Self::TwoYearTreasuryNominalYield => "two_year_treasury_nominal_yield",
             Self::UsdIdrReferenceRate => "usd_idr_daily_reference",
+            Self::BitcoinSpotEtfNetFlows => "bitcoin_spot_etf_net_flows",
+            Self::BitcoinFearGreedIndex => "bitcoin_fear_greed_index",
         }
     }
 
@@ -35,6 +40,8 @@ impl MacroIndicatorId {
             "ten_year_tips_real_yield" => Some(Self::TenYearTipsRealYield),
             "two_year_treasury_nominal_yield" => Some(Self::TwoYearTreasuryNominalYield),
             "usd_idr_daily_reference" | "usd_idr_monthly_average" => Some(Self::UsdIdrReferenceRate),
+            "bitcoin_spot_etf_net_flows" => Some(Self::BitcoinSpotEtfNetFlows),
+            "bitcoin_fear_greed_index" => Some(Self::BitcoinFearGreedIndex),
             _ => None,
         }
     }
@@ -44,6 +51,8 @@ impl MacroIndicatorId {
 pub(crate) struct MacroObservation {
     pub date: String,
     pub value: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub classification: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -77,6 +86,7 @@ pub(crate) struct MacroIndicatorData {
     pub fetch_status: FetchStatus,
     pub observation_date: String,
     pub latest_value: f64,
+    pub latest_classification: Option<String>,
     pub observation_change: Option<f64>,
     pub change_period: &'static str,
     pub daily_change_basis_points: Option<f64>,
@@ -110,6 +120,9 @@ fn provider_for(id: MacroIndicatorId) -> &'static dyn MacroSeriesProvider {
             &treasury::TREASURY_PROVIDER
         }
         MacroIndicatorId::UsdIdrReferenceRate => &ecb::ECB_PROVIDER,
+        MacroIndicatorId::BitcoinSpotEtfNetFlows | MacroIndicatorId::BitcoinFearGreedIndex => {
+            &bitcoin::BITCOIN_PROVIDER
+        }
     }
 }
 
@@ -125,7 +138,9 @@ pub(crate) fn read(
         .ok_or_else(|| "The macro data provider returned no observations.".to_string())?;
     let observation_change = observation_change(&snapshot.observations);
     let daily_change_basis_points = match id {
-        MacroIndicatorId::UsdIdrReferenceRate => None,
+        MacroIndicatorId::UsdIdrReferenceRate
+        | MacroIndicatorId::BitcoinSpotEtfNetFlows
+        | MacroIndicatorId::BitcoinFearGreedIndex => None,
         MacroIndicatorId::TenYearTipsRealYield | MacroIndicatorId::TwoYearTreasuryNominalYield => {
             observation_change.map(|change| change * 100.0)
         }
@@ -151,6 +166,10 @@ pub(crate) fn read(
                 "The latest Treasury observation is more than seven days old. Check the Treasury series again later.".to_string(),
             MacroIndicatorId::UsdIdrReferenceRate =>
                 "The latest daily USD/IDR reference rate is more than seven days old. Check the ECB reference series again later.".to_string(),
+            MacroIndicatorId::BitcoinSpotEtfNetFlows =>
+                "The latest U.S. spot Bitcoin ETF flow observation is more than seven days old. Check the flow tracker again later.".to_string(),
+            MacroIndicatorId::BitcoinFearGreedIndex =>
+                "The latest Bitcoin Fear & Greed observation is more than seven days old. Check Alternative.me again later.".to_string(),
         })
     } else {
         None
@@ -192,6 +211,30 @@ pub(crate) fn read(
             "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html",
             "from the prior business day",
         ),
+        MacroIndicatorId::BitcoinSpotEtfNetFlows => (
+            "U.S. spot Bitcoin ETF net flows",
+            "Daily net creations and redemptions across U.S. spot Bitcoin ETFs. Positive values indicate net inflows; negative values indicate net outflows.",
+            "The tracker aggregates all U.S. spot Bitcoin ETFs and may revise recent sessions. Published flows generally lag the U.S. market close; totals may differ from other trackers because data sources and revision methods vary.",
+            "USD per reported date",
+            "usd_flow",
+            "Daily, as reported",
+            "The Commoner Bitcoin ETF Tracker by TFTC",
+            "netFlowUsd · all U.S. spot Bitcoin ETFs",
+            "https://www.tftc.io/bitcoin-etf-flows",
+            "from the prior reported date",
+        ),
+        MacroIndicatorId::BitcoinFearGreedIndex => (
+            "Bitcoin Fear & Greed Index",
+            "A daily 0–100 reading of crypto-market sentiment, from Extreme Fear to Extreme Greed.",
+            "This is Alternative.me's broad crypto-market sentiment index, not a Bitcoin price forecast or a validated trading signal. The source may revise or update the latest daily value.",
+            "Index points (0–100)",
+            "index_0_100",
+            "Daily",
+            "Alternative.me",
+            "Crypto Fear & Greed Index",
+            "https://alternative.me/crypto/fear-and-greed-index/",
+            "from the prior daily reading",
+        ),
     };
     Ok(MacroIndicatorData {
         id: id.application_id(),
@@ -208,6 +251,7 @@ pub(crate) fn read(
         fetch_status,
         observation_date: latest.date.clone(),
         latest_value: latest.value,
+        latest_classification: latest.classification.clone(),
         observation_change,
         change_period,
         daily_change_basis_points,

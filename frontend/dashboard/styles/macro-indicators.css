@@ -25,6 +25,8 @@
 .macro-metric > span,.macro-metric > small { display:block; color:#9fb2c9; font-size:.875rem; line-height:1.45; }
 .macro-metric > strong { display:block; margin:7px 0 2px; color:#e8f2f7; font:600 1rem/1.45 ui-monospace,monospace; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .macro-primary-metric > strong { color:#b8eee4; font-size:clamp(1.65rem,3.8vw,2.4rem); }
+.macro-primary-metric > .macro-latest-classification { color:#f1c77c; font-size:1rem; font-weight:650; }
+.macro-attribution-link { color:#9fced1; text-decoration:underline; text-underline-offset:2px; }
 .macro-card-status { margin:0 0 12px; color:#aebfd0; font-size:.9rem; line-height:1.55; }
 .macro-card-status[data-tone="error"] { color:#edcaa3; }
 .macro-card-status[data-tone="ready"] { color:#b4e4d9; }
@@ -42,6 +44,7 @@
 .macro-chart-line { fill:none; stroke:#68d4c9; stroke-width:2.7; stroke-linecap:round; stroke-linejoin:round; }
 .macro-chart-point { fill:#0c1823; stroke:#8ce8d8; stroke-width:2.5; }
 .macro-chart-label { fill:#91a6bc; font:14px ui-monospace,monospace; }
+.macro-chart-zero { stroke:#62758a; stroke-width:1.5; stroke-dasharray:6 5; }
 .macro-chart-empty { padding:50px 12px; color:#9fb2c9; font-size:.9rem; text-align:center; }
 .macro-source-details,.macro-observations-details { margin-top:12px; border:1px solid #293b4d; border-radius:7px; background:#0e1925; }
 .macro-source-details summary,.macro-observations-details summary { min-height:44px; padding:11px 14px; color:#c4d3e5; font-size:.9rem; }

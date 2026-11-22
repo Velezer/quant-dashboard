@@ -48,6 +48,44 @@ const responseFx = {
         { date: today, value: 17983.82 },
     ],
 };
+const responseBitcoinFlows = {
+    id: 'bitcoin_spot_etf_net_flows', title: 'U.S. spot Bitcoin ETF net flows',
+    description: 'Daily net creations and redemptions across U.S. spot Bitcoin ETFs.',
+    limitations: 'The latest flow can lag the U.S. market close and may be revised.',
+    unit: 'USD per reported date', value_format: 'usd_flow', frequency: 'Daily, as reported',
+    source: 'The Commoner Bitcoin ETF Tracker by TFTC', source_series_id: 'netFlowUsd · all U.S. spot Bitcoin ETFs',
+    source_url: 'https://www.tftc.io/bitcoin-etf-flows', freshness: 'current', fetch_status: 'fresh',
+    observation_date: today, latest_value: -125_500_000, latest_classification: null,
+    observation_change: -155_500_000, change_period: 'from the prior reported date', daily_change_basis_points: null,
+    retrieved_at_seconds: Math.floor(Date.now() / 1000), status_note: null, refresh_error: null,
+    observations: [
+        { date: previousDay, value: 30_000_000 },
+        { date: today, value: -125_500_000 },
+    ],
+};
+const responseFearGreed = {
+    id: 'bitcoin_fear_greed_index', title: 'Bitcoin Fear & Greed Index',
+    description: 'A daily 0–100 reading of crypto-market sentiment.',
+    limitations: 'Broad crypto sentiment, not a Bitcoin price forecast.',
+    unit: 'Index points (0–100)', value_format: 'index_0_100', frequency: 'Daily',
+    source: 'Alternative.me', source_series_id: 'Crypto Fear & Greed Index',
+    source_url: 'https://alternative.me/crypto/fear-and-greed-index/', freshness: 'current', fetch_status: 'fresh',
+    observation_date: today, latest_value: 11, latest_classification: 'Extreme Fear',
+    observation_change: -17, change_period: 'from the prior daily reading', daily_change_basis_points: null,
+    retrieved_at_seconds: Math.floor(Date.now() / 1000), status_note: null, refresh_error: null,
+    observations: [
+        { date: previousDay, value: 28, classification: 'Fear' },
+        { date: today, value: 11, classification: 'Extreme Fear' },
+    ],
+};
+
+function apiDataFor(id) {
+    if (id === 'two_year_treasury_nominal_yield') return responseTwoYear;
+    if (id === 'usd_idr_daily_reference') return responseFx;
+    if (id === 'bitcoin_spot_etf_net_flows') return responseBitcoinFlows;
+    if (id === 'bitcoin_fear_greed_index') return responseFearGreed;
+    return responseData;
+}
 
 function xmlForYear(year) {
     const rows = year === currentYear
@@ -98,7 +136,8 @@ class FakeCard extends FakeElement {
         super();
         for (const name of [
             'category', 'title', 'description', 'freshness', 'latest', 'observation-date', 'change',
-            'change-label', 'change-unit', 'retrieved-at', 'status', 'stale-note', 'chart-heading',
+            'change-label', 'change-unit', 'retrieved-at', 'latest-classification', 'attribution-link',
+            'status', 'stale-note', 'chart-heading',
             'chart-caption', 'range-controls', 'chart', 'source', 'source-series', 'frequency-unit',
             'source-definition', 'limitations', 'source-link', 'observations-table', 'data-limits',
         ]) this.roles.set(name, new FakeElement());
@@ -147,8 +186,8 @@ test('macro page renders separate charts, source metadata and independent refres
         }
         const parsedUrl = new URL(address, 'https://dashboard.example');
         const id = parsedUrl.searchParams.get('id');
-        if (id === 'two_year_treasury_nominal_yield') return new Response(JSON.stringify(responseTwoYear), { status: 200 });
-        if (id === 'usd_idr_daily_reference') return new Response(JSON.stringify(responseFx), { status: 200 });
+        if (id === 'ten_year_tips_real_yield') return new Response(JSON.stringify({ error: 'Treasury request timed out.' }), { status: 502 });
+        if (id) return new Response(JSON.stringify(apiDataFor(id)), { status: 200 });
         return new Response(JSON.stringify({ error: 'Treasury request timed out.' }), { status: 502 });
     };
     await import(`./macro-indicators.js?success=${Date.now()}`);
@@ -157,7 +196,9 @@ test('macro page renders separate charts, source metadata and independent refres
     const tips = cardFor(elements, 'ten_year_tips_real_yield');
     const twoYear = cardFor(elements, 'two_year_treasury_nominal_yield');
     const fx = cardFor(elements, 'usd_idr_daily_reference');
-    assert.equal(elements.get('macro-indicator-grid').children.length, 3);
+    const etfFlows = cardFor(elements, 'bitcoin_spot_etf_net_flows');
+    const fearGreed = cardFor(elements, 'bitcoin_fear_greed_index');
+    assert.equal(elements.get('macro-indicator-grid').children.length, 5);
     assert.equal(roleFor(tips, 'latest').textContent, '2.88%');
     assert.equal(roleFor(twoYear, 'latest').textContent, '2.88%');
     assert.match(roleFor(fx, 'latest').textContent, /IDR 17,983\.82 \/ USD/);
@@ -165,6 +206,14 @@ test('macro page renders separate charts, source metadata and independent refres
     assert.match(roleFor(fx, 'chart').innerHTML, /17,983/);
     assert.equal(roleFor(fx, 'source-series').textContent, 'D.IDR.EUR.SP00.A / D.USD.EUR.SP00.A');
     assert.match(roleFor(fx, 'observation-date').textContent, new RegExp(today));
+    assert.equal(roleFor(etfFlows, 'latest').textContent, '−$125.5M');
+    assert.match(roleFor(etfFlows, 'chart').innerHTML, /macro-chart-zero/);
+    assert.equal(roleFor(etfFlows, 'attribution-link').textContent, responseBitcoinFlows.source);
+    assert.equal(roleFor(fearGreed, 'latest').textContent, '11 / 100');
+    assert.equal(roleFor(fearGreed, 'latest-classification').textContent, 'Extreme Fear');
+    assert.equal(roleFor(fearGreed, 'change-unit').textContent, 'Index points');
+    assert.match(roleFor(fearGreed, 'chart').innerHTML, />100<\/text>/);
+    assert.equal(roleFor(fearGreed, 'attribution-link').href, responseFearGreed.source_url);
 
     const rangeControls = roleFor(tips, 'range-controls');
     const fiveYearButton = rangeControls.rangeButtons.find(button => button.dataset.range === '5y');
@@ -199,9 +248,11 @@ test('macro cards retain retry states when a provider is unavailable', async () 
 test('macro page uses its API response when the browser cannot reach Treasury', async () => {
     const { document, elements } = mockDocument();
     globalThis.document = document;
-    globalThis.fetch = async url => String(url).startsWith(TREASURY_XML_URL)
-        ? new Response('Treasury unavailable.', { status: 503 })
-        : new Response(JSON.stringify(responseData), { status: 200 });
+    globalThis.fetch = async url => {
+        if (String(url).startsWith(TREASURY_XML_URL)) return new Response('Treasury unavailable.', { status: 503 });
+        const id = new URL(String(url), 'https://dashboard.example').searchParams.get('id');
+        return new Response(JSON.stringify(apiDataFor(id)), { status: 200 });
+    };
     await import(`./macro-indicators.js?fallback=${Date.now()}`);
     await settle();
 

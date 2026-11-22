@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
     formatBasisPoints,
     formatCurrency,
+    formatIndex,
     formatObservationChange,
+    formatUsdFlow,
     formatValue,
     formatYield,
     observationsForRange,
@@ -28,13 +30,21 @@ test('macro value and change presenters preserve each indicator unit', () => {
     assert.equal(formatYield(null), 'Unavailable');
     assert.equal(formatCurrency(17983.818), 'IDR 17,983.82 / USD');
     assert.equal(formatCurrency(null), 'Unavailable');
+    assert.equal(formatIndex(11), '11 / 100');
+    assert.equal(formatIndex(null), 'Unavailable');
+    assert.equal(formatUsdFlow(-125_500_000), '−$125.5M');
+    assert.equal(formatUsdFlow(1_250_000_000), '+$1.25B');
     assert.equal(formatValue(2.88, 'percent'), '2.88%');
     assert.equal(formatValue(17983.818, 'idr_per_usd'), 'IDR 17,983.82 / USD');
+    assert.equal(formatValue(11, 'index_0_100'), '11 / 100');
+    assert.equal(formatValue(-125_500_000, 'usd_flow'), '−$125.5M');
     assert.equal(formatBasisPoints(2.88), '+3 bp');
     assert.equal(formatBasisPoints(-4.6), '-5 bp');
     assert.equal(formatBasisPoints(null), 'Unavailable');
     assert.equal(formatObservationChange(0.01, 2.88, 'percent', 'from prior day'), '+1 bp from prior day');
     assert.equal(formatObservationChange(25, 17983, 'idr_per_usd', 'from prior month'), '+25.00 IDR/USD (+0.14%) from prior month');
+    assert.equal(formatObservationChange(-4, 11, 'index_0_100', 'from prior day'), '−4 points from prior day');
+    assert.equal(formatObservationChange(1_250_000_000, 2_000_000_000, 'usd_flow', 'from prior session'), '+$1.25B from prior session');
     assert.equal(formatObservationChange(null, 2.88), 'Unavailable');
 });
 
@@ -51,4 +61,21 @@ test('generic macro chart formats both yield and exchange-rate axes', () => {
     assert.match(fxChart, /IDR 17,983\.80 \/ USD/);
     assert.match(renderMacroChart([]), /No observations are available/);
     assert.deepEqual(observationsForRange([{ date: 'bad', value: 'NaN' }], '10y'), []);
+});
+
+test('macro charts use fixed bounds for sentiment and show a zero line for flows', () => {
+    const fearGreedChart = renderMacroChart([
+        { date: '2026-11-21', value: 28 },
+        { date: '2026-11-22', value: 11 },
+    ], 'Bitcoin Fear & Greed Index', 'index_0_100');
+    assert.match(fearGreedChart, />100<\/text>/);
+    assert.match(fearGreedChart, />0<\/text>/);
+
+    const flowChart = renderMacroChart([
+        { date: '2026-11-18', value: 75_000_000 },
+        { date: '2026-11-19', value: -125_500_000 },
+    ], 'U.S. spot Bitcoin ETF net flows', 'usd_flow');
+    assert.match(flowChart, /macro-chart-zero/);
+    assert.match(flowChart, /\+\$\d+\.\d+M/);
+    assert.match(flowChart, /−\$\d+\.\d+M/);
 });

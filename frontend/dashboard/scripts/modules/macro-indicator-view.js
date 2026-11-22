@@ -25,8 +25,28 @@ export function formatCurrency(value) {
         : `IDR ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / USD`;
 }
 
+export function formatIndex(value) {
+    if (value == null || value === '' || !Number.isFinite(Number(value))) return 'Unavailable';
+    const index = Number(value);
+    return `${Number.isInteger(index) ? index : index.toFixed(1)} / 100`;
+}
+
+export function formatUsdFlow(value) {
+    if (value == null || value === '' || !Number.isFinite(Number(value))) return 'Unavailable';
+    const amount = Number(value);
+    const absolute = Math.abs(amount);
+    const scaled = absolute >= 1_000_000_000
+        ? `${(absolute / 1_000_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 })}B`
+        : `${(absolute / 1_000_000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
+    const sign = amount > 0 ? '+' : amount < 0 ? '−' : '';
+    return `${sign}$${scaled}`;
+}
+
 export function formatValue(value, valueFormat = 'percent') {
-    return valueFormat === 'idr_per_usd' ? formatCurrency(value) : formatYield(value);
+    if (valueFormat === 'idr_per_usd') return formatCurrency(value);
+    if (valueFormat === 'usd_flow') return formatUsdFlow(value);
+    if (valueFormat === 'index_0_100') return formatIndex(value);
+    return formatYield(value);
 }
 
 export function formatBasisPoints(value) {
@@ -37,6 +57,16 @@ export function formatBasisPoints(value) {
 
 export function formatObservationChange(change, latestValue, valueFormat = 'percent', period = '') {
     if (change == null || !Number.isFinite(Number(change))) return 'Unavailable';
+    if (valueFormat === 'index_0_100') {
+        const amount = Number(change);
+        const signed = amount > 0 ? '+' : amount < 0 ? '−' : '';
+        const formatted = `${signed}${Math.abs(amount).toFixed(Number.isInteger(amount) ? 0 : 1)} points`;
+        return period ? `${formatted} ${period}` : formatted;
+    }
+    if (valueFormat === 'usd_flow') {
+        const formatted = formatUsdFlow(Number(change));
+        return period ? `${formatted} ${period}` : formatted;
+    }
     if (valueFormat !== 'idr_per_usd') {
         const formatted = formatBasisPoints(Number(change) * 100);
         return period ? `${formatted} ${period}` : formatted;
@@ -57,6 +87,8 @@ function axisValue(value, valueFormat) {
     if (valueFormat === 'idr_per_usd') {
         return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
     }
+    if (valueFormat === 'usd_flow') return formatUsdFlow(value);
+    if (valueFormat === 'index_0_100') return `${Math.round(Number(value))}`;
     return `${Number(value).toFixed(2)}%`;
 }
 
@@ -77,8 +109,16 @@ export function renderMacroChart(observations, title, valueFormat = 'percent') {
     const values = validRows.map(row => Number(row.value));
     const valueMin = Math.min(...values), valueMax = Math.max(...values);
     const spread = valueMax - valueMin;
-    const padding = Math.max(spread * 0.08, valueFormat === 'idr_per_usd' ? 1 : 0.1);
-    const lower = valueMin - padding, upper = valueMax + padding;
+    const padding = Math.max(
+        spread * 0.08,
+        valueFormat === 'idr_per_usd' ? 1 : valueFormat === 'usd_flow' ? 1_000_000 : 0.1,
+    );
+    const lower = valueFormat === 'index_0_100'
+        ? 0
+        : valueFormat === 'usd_flow' ? Math.min(0, valueMin - padding) : valueMin - padding;
+    const upper = valueFormat === 'index_0_100'
+        ? 100
+        : valueFormat === 'usd_flow' ? Math.max(0, valueMax + padding) : valueMax + padding;
     const yAt = value => top + ((upper - value) / (upper - lower)) * plotHeight;
     const xAt = index => left + (validRows.length === 1 ? plotWidth / 2 : (index / (validRows.length - 1)) * plotWidth);
     const points = validRows.map((row, index) => `${xAt(index).toFixed(2)},${yAt(Number(row.value)).toFixed(2)}`).join(' ');
@@ -92,8 +132,11 @@ export function renderMacroChart(observations, title, valueFormat = 'percent') {
     const point = validRows.length === 1
         ? `<circle class="macro-chart-point" cx="${xAt(0).toFixed(2)}" cy="${yAt(values[0]).toFixed(2)}" r="4"></circle>`
         : '';
+    const zeroLine = valueFormat === 'usd_flow'
+        ? `<line class="macro-chart-zero" x1="${left}" y1="${yAt(0).toFixed(2)}" x2="${width - right}" y2="${yAt(0).toFixed(2)}"></line>`
+        : '';
     const safeTitle = escapeSvg(title || 'Macroeconomic indicator');
     const svgLabel = `${safeTitle}, from ${startDate} through ${endDate}. Latest value ${formatValue(values.at(-1), valueFormat)}.`;
     const safeLabel = escapeSvg(svgLabel);
-    return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${safeLabel}" xmlns="http://www.w3.org/2000/svg"><title>${safeLabel}</title>${ticks}<polyline class="macro-chart-line" points="${points}"></polyline>${point}<text class="macro-chart-label" x="${left}" y="${height - 10}" text-anchor="start">${startDate}</text><text class="macro-chart-label" x="${width - right}" y="${height - 10}" text-anchor="end">${endDate}</text></svg>`;
+    return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${safeLabel}" xmlns="http://www.w3.org/2000/svg"><title>${safeLabel}</title>${ticks}${zeroLine}<polyline class="macro-chart-line" points="${points}"></polyline>${point}<text class="macro-chart-label" x="${left}" y="${height - 10}" text-anchor="start">${startDate}</text><text class="macro-chart-label" x="${width - right}" y="${height - 10}" text-anchor="end">${endDate}</text></svg>`;
 }
