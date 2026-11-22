@@ -30,6 +30,9 @@ impl MacroSeriesProvider for EcbProvider {
             MacroIndicatorId::TenYearTipsRealYield | MacroIndicatorId::TwoYearTreasuryNominalYield => {
                 Err("The ECB does not provide the requested macro series.".to_string())
             }
+            MacroIndicatorId::BitcoinSpotEtfNetFlows | MacroIndicatorId::BitcoinFearGreedIndex => {
+                Err("The ECB does not provide the requested macro series.".to_string())
+            }
         }
     }
 }
@@ -162,6 +165,7 @@ pub(super) fn parse_cross_rate(
         observations.push(MacroObservation {
             date,
             value: idr_per_usd,
+            classification: None,
         });
     }
     if observations.is_empty() {

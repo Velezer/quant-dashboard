@@ -19,6 +19,14 @@ fn macro_route_defaults_to_tips_and_accepts_each_registered_indicator() {
         requested_indicator("/api/macro/indicators?id=usd_idr_monthly_average").unwrap(),
         (MacroIndicatorId::UsdIdrReferenceRate, false)
     );
+    assert_eq!(
+        requested_indicator("/api/macro/indicators?id=bitcoin_spot_etf_net_flows&refresh=1").unwrap(),
+        (MacroIndicatorId::BitcoinSpotEtfNetFlows, true)
+    );
+    assert_eq!(
+        requested_indicator("/api/macro/indicators?id=bitcoin_fear_greed_index").unwrap(),
+        (MacroIndicatorId::BitcoinFearGreedIndex, false)
+    );
 }
 
 #[test]

@@ -514,6 +514,12 @@ lesson only when it will improve future tasks.
   as percent/basis points and FX as currency per unit; choose freshness rules
   for the series cadence, and verify the provider's latest publication before
   treating a feed as current.
+- Keep crypto context on the dedicated macro view with its native meaning:
+  source-classified Fear & Greed values stay on a fixed 0–100 chart, and ETF
+  flows retain signed USD units with zero visible. Check attribution and
+  redistribution terms at the data endpoint; treat missing or incomplete
+  provider sessions as unavailable rather than inferring zero flow. Neither
+  series enters ticker scores without separately validated rules.
 - For responsive navigation, check each route at breakpoint edges and with the
   page's dynamic layout classes both active and inactive. A shortcut must remain
   visible whenever the primary navigation is not rendered.

@@ -30,6 +30,9 @@ impl MacroSeriesProvider for TreasuryProvider {
             MacroIndicatorId::UsdIdrReferenceRate => {
                 Err("Treasury does not provide the requested macro series.".to_string())
             }
+            MacroIndicatorId::BitcoinSpotEtfNetFlows | MacroIndicatorId::BitcoinFearGreedIndex => {
+                Err("Treasury does not provide the requested macro series.".to_string())
+            }
         }
     }
 }
@@ -214,6 +217,7 @@ pub(super) fn parse_treasury_year_xml(
                 observations.push(MacroObservation {
                     date: date.to_string(),
                     value,
+                    classification: None,
                 });
             }
         }
@@ -256,7 +260,9 @@ fn series_config(id: MacroIndicatorId) -> Option<TreasurySeriesConfig> {
             field: "BC_2YEAR",
             value_label: "2-year nominal-yield",
         }),
-        MacroIndicatorId::UsdIdrReferenceRate => None,
+        MacroIndicatorId::UsdIdrReferenceRate
+        | MacroIndicatorId::BitcoinSpotEtfNetFlows
+        | MacroIndicatorId::BitcoinFearGreedIndex => None,
     }
 }
 

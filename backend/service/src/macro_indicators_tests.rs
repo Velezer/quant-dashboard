@@ -3,6 +3,8 @@ use super::{
     snapshot_is_stale, MacroIndicatorId, MacroObservation,
 };
 
+const TEST_NOW: u64 = 1_800_000_000;
+
 #[test]
 fn treasury_parser_skips_missing_values_and_keeps_negative_real_yields() {
     let parsed = super::treasury::parse_treasury_year_xml(
@@ -101,6 +103,83 @@ fn observation_freshness_allows_a_week_of_weekends_and_publish_lag() {
 }
 
 #[test]
+fn bitcoin_etf_flow_parser_sorts_totals_and_checks_attribution_license_and_dates() {
+    let payload = serde_json::json!({
+        "license": "https://creativecommons.org/licenses/by/4.0/",
+        "attribution": "The Commoner Bitcoin ETF Tracker by TFTC",
+        "days": [
+            {"date": "2026-11-19", "netFlowUsd": -125_500_000.0},
+            {"date": "2026-11-18", "netFlowUsd": 75_000_000.0}
+        ]
+    });
+    let parsed = super::bitcoin::parse_etf_flows(&payload, TEST_NOW).unwrap();
+    assert_eq!(parsed.len(), 2);
+    assert_eq!(parsed[0].date, "2026-11-18");
+    assert_eq!(parsed[0].value, 75_000_000.0);
+    assert_eq!(parsed[1].date, "2026-11-19");
+    assert_eq!(parsed[1].value, -125_500_000.0);
+    assert!(parsed.iter().all(|row| row.classification.is_none()));
+
+    let changed_license = serde_json::json!({
+        "license": "all-rights-reserved",
+        "attribution": "The Commoner Bitcoin ETF Tracker by TFTC",
+        "days": [{"date": "2026-11-19", "netFlowUsd": 0}]
+    });
+    assert!(super::bitcoin::parse_etf_flows(&changed_license, TEST_NOW).is_err());
+    let invalid_value = serde_json::json!({
+        "license": "https://creativecommons.org/licenses/by/4.0/",
+        "attribution": "The Commoner Bitcoin ETF Tracker by TFTC",
+        "days": [{"date": "2026-11-19", "netFlowUsd": "pending"}]
+    });
+    assert!(super::bitcoin::parse_etf_flows(&invalid_value, TEST_NOW).is_err());
+    let duplicate_date = serde_json::json!({
+        "license": "https://creativecommons.org/licenses/by/4.0/",
+        "attribution": "The Commoner Bitcoin ETF Tracker by TFTC",
+        "days": [
+            {"date": "2026-11-19", "netFlowUsd": 1},
+            {"date": "2026-11-19", "netFlowUsd": 2}
+        ]
+    });
+    assert!(super::bitcoin::parse_etf_flows(&duplicate_date, TEST_NOW).is_err());
+    let future_date = serde_json::json!({
+        "license": "https://creativecommons.org/licenses/by/4.0/",
+        "attribution": "The Commoner Bitcoin ETF Tracker by TFTC",
+        "days": [{"date": "2027-02-01", "netFlowUsd": 1}]
+    });
+    assert!(super::bitcoin::parse_etf_flows(&future_date, TEST_NOW).is_err());
+}
+
+#[test]
+fn fear_greed_parser_sorts_daily_index_rows_and_keeps_source_classification() {
+    let payload = serde_json::json!({
+        "name": "Fear and Greed Index",
+        "data": [
+            {"timestamp": "1795305600", "value": "11", "value_classification": "Extreme Fear"},
+            {"timestamp": "1795219200", "value": "28", "value_classification": "Fear"}
+        ]
+    });
+    let parsed = super::bitcoin::parse_fear_greed(&payload, TEST_NOW).unwrap();
+    assert_eq!(parsed.len(), 2);
+    assert_eq!(parsed[0].date, "2026-11-21");
+    assert_eq!(parsed[0].value, 28.0);
+    assert_eq!(parsed[0].classification.as_deref(), Some("Fear"));
+    assert_eq!(parsed[1].date, "2026-11-22");
+    assert_eq!(parsed[1].value, 11.0);
+    assert_eq!(parsed[1].classification.as_deref(), Some("Extreme Fear"));
+
+    let invalid_value = serde_json::json!({
+        "name": "Fear and Greed Index",
+        "data": [{"timestamp": "1795305600", "value": "101", "value_classification": "Greed"}]
+    });
+    assert!(super::bitcoin::parse_fear_greed(&invalid_value, TEST_NOW).is_err());
+    let invalid_classification = serde_json::json!({
+        "name": "Fear and Greed Index",
+        "data": [{"timestamp": "1795305600", "value": "75", "value_classification": "Bullish"}]
+    });
+    assert!(super::bitcoin::parse_fear_greed(&invalid_classification, TEST_NOW).is_err());
+}
+
+#[test]
 fn daily_exchange_rates_use_the_same_freshness_window_as_daily_yields() {
     let now = 1_704_844_800; // 2024-01-10 00:00:00 UTC
     assert!(!observation_is_stale_after_days("2024-01-03", now, 7));
@@ -112,6 +191,7 @@ fn daily_change_requires_a_prior_published_observation() {
     let one_row = [MacroObservation {
         date: "2026-11-18".to_string(),
         value: 2.88,
+        classification: None,
     }];
     assert_eq!(daily_change_basis_points(&[]), None);
     assert_eq!(daily_change_basis_points(&one_row), None);
@@ -119,6 +199,7 @@ fn daily_change_requires_a_prior_published_observation() {
         MacroObservation {
             date: "2026-11-17".to_string(),
             value: 2.89,
+            classification: None,
         },
         one_row[0].clone(),
     ];
@@ -140,12 +221,28 @@ fn the_supported_indicator_has_a_stable_application_identity() {
         "usd_idr_daily_reference"
     );
     assert_eq!(
+        MacroIndicatorId::BitcoinSpotEtfNetFlows.application_id(),
+        "bitcoin_spot_etf_net_flows"
+    );
+    assert_eq!(
+        MacroIndicatorId::BitcoinFearGreedIndex.application_id(),
+        "bitcoin_fear_greed_index"
+    );
+    assert_eq!(
         MacroIndicatorId::from_application_id("usd_idr_daily_reference"),
         Some(MacroIndicatorId::UsdIdrReferenceRate)
     );
     assert_eq!(
         MacroIndicatorId::from_application_id("usd_idr_monthly_average"),
         Some(MacroIndicatorId::UsdIdrReferenceRate)
+    );
+    assert_eq!(
+        MacroIndicatorId::from_application_id("bitcoin_spot_etf_net_flows"),
+        Some(MacroIndicatorId::BitcoinSpotEtfNetFlows)
+    );
+    assert_eq!(
+        MacroIndicatorId::from_application_id("bitcoin_fear_greed_index"),
+        Some(MacroIndicatorId::BitcoinFearGreedIndex)
     );
     assert_eq!(MacroIndicatorId::from_application_id("unknown"), None);
 }

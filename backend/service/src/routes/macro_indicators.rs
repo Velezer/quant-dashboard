@@ -45,7 +45,7 @@ fn requested_indicator(path: &str) -> Result<(MacroIndicatorId, bool), String> {
     let values = query_values(path);
     let id = match values.get("id") {
         Some(value) => MacroIndicatorId::from_application_id(value).ok_or_else(|| {
-            "Unknown macro indicator. Supported ids: ten_year_tips_real_yield, two_year_treasury_nominal_yield, usd_idr_daily_reference.".to_string()
+            "Unknown macro indicator. Supported ids: ten_year_tips_real_yield, two_year_treasury_nominal_yield, usd_idr_daily_reference, bitcoin_spot_etf_net_flows, bitcoin_fear_greed_index.".to_string()
         })?,
         None => MacroIndicatorId::TenYearTipsRealYield,
     };

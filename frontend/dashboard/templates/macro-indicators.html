@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="View macroeconomic charts for real yields, Treasury rates and USD/IDR.">
+    <meta name="description" content="View macroeconomic charts for real yields, Treasury rates, USD/IDR, Bitcoin ETF flows and crypto sentiment.">
     <meta name="color-scheme" content="dark">
     <title>Macroeconomic indicators · Quant Desk</title>
     <link rel="stylesheet" href="/web/styles/entry-validation.css">
@@ -22,7 +22,7 @@
             <div class="section-heading macro-heading">
                 <div>
                     <h1 id="macro-title">Macroeconomic indicators</h1>
-                    <p class="small-text">Track real yields, U.S. rates and the rupiah in one place. These charts are separate from ticker scores and signals.</p>
+                    <p class="small-text">Track interest rates, currency, U.S. Bitcoin ETF flows and crypto sentiment. These charts are separate from ticker scores and signals.</p>
                 </div>
                 <button id="macro-refresh" class="macro-refresh" type="button" title="Refresh every macro indicator">Refresh all</button>
             </div>
@@ -45,7 +45,7 @@
                 </div>
             </div>
             <div class="macro-metrics" aria-label="Latest indicator values">
-                <div class="macro-metric macro-primary-metric"><span>Latest observation</span><strong data-role="latest">—</strong><small data-role="observation-date">Date unavailable</small></div>
+                <div class="macro-metric macro-primary-metric"><span>Latest observation</span><strong data-role="latest">—</strong><small class="macro-latest-classification" data-role="latest-classification" hidden></small><small data-role="observation-date">Date unavailable</small><small>Source: <a class="macro-attribution-link" data-role="attribution-link" href="#" target="_blank" rel="noreferrer">Loading source…</a></small></div>
                 <div class="macro-metric"><span data-role="change-label">Change from prior observation</span><strong data-role="change">—</strong><small data-role="change-unit">—</small></div>
                 <div class="macro-metric"><span>Source checked</span><strong data-role="retrieved-at">—</strong><small>Last successful retrieval</small></div>
             </div>
