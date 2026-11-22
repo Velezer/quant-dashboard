@@ -501,7 +501,8 @@ lesson only when it will improve future tasks.
   context out of ticker scores unless a separately validated rule is requested.
 - For a production macro series, prefer an official provider endpoint that the
   dashboard can reach directly when the application host has restricted
-  egress. Keep the provider adapter bounded and validated, cache successful
+  egress. Keep the provider adapter bounded and validated, request data-only
+  history where available to stay inside response limits, cache successful
   observations, preserve the last good series on refresh failure, and show
   the observation date separately from the retrieval time.
 - A provider that works from the development workspace may still time out from

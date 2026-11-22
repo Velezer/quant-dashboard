@@ -123,7 +123,7 @@ fn fetch_series(now: u64) -> Result<Vec<MacroObservation>, String> {
 }
 
 fn fetch_csv(series_id: &str, start_date: &str) -> Result<String, String> {
-    let url = format!("{ECB_CSV_URL}/{series_id}?startPeriod={start_date}&format=csvdata");
+    let url = format!("{ECB_CSV_URL}/{series_id}?startPeriod={start_date}&detail=dataonly&format=csvdata");
     let response = get_bounded(
         &url,
         RequestOptions {
