@@ -509,3 +509,6 @@ lesson only when it will improve future tasks.
   as percent/basis points and FX as currency per unit; choose freshness rules
   for the series cadence, and verify the provider's latest publication before
   treating a feed as current.
+- For responsive navigation, check each route at breakpoint edges and with the
+  page's dynamic layout classes both active and inactive. A shortcut must remain
+  visible whenever the primary navigation is not rendered.
