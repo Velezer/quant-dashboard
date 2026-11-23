@@ -46,7 +46,8 @@ pub(crate) fn app_source_prefix<'a>(exchange: &'a str, product: &'a str) -> Opti
         ("stockbit", "stockbit_regular")
         | ("tokocrypto", "tokocrypto_spot" | "tokocrypto_tokenized_stock")
         | ("pintu", "pintu_retail_spot" | "pintu_pro_spot")
-        | ("pluang", "pluang_spot" | "pluang_perpetual") => Some(product),
+        | ("pluang", "pluang_spot" | "pluang_perpetual")
+        | ("pluang", crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID) => Some(product),
         ("pintu", "pintu_pro_futures") => Some("pintu_futures"),
         _ => None,
     }
@@ -59,6 +60,9 @@ pub(crate) fn category_for_product(exchange: &str, product: &str) -> Option<&'st
             Some("crypto_spot")
         }
         "pintu_pro_futures" | "pluang_perpetual" => Some("crypto_perpetual"),
+        crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID => {
+            Some(crate::instrument_registry::PLUANG_COMMODITIES_ASSET_CATEGORY_ID)
+        }
         _ => None,
     }
 }

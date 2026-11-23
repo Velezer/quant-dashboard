@@ -113,12 +113,31 @@ pub(crate) fn signal_screener_master_data_from_catalog(catalog: &Value) -> Value
                                 .is_some_and(|category| category.starts_with("crypto_"))
                         })
                     });
+                let is_pluang_commodities_scope = catalog_array_contains(
+                    model,
+                    "exchange_ids",
+                    "pluang",
+                ) && catalog_array_contains(
+                    model,
+                    "product_ids",
+                    crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID,
+                ) && catalog_array_contains(
+                    model,
+                    "asset_category_ids",
+                    crate::instrument_registry::PLUANG_COMMODITIES_ASSET_CATEGORY_ID,
+                );
                 let timeframe = catalog_string(model, "timeframe");
-                let supported_scope = (is_stockbit_scope || is_crypto_scope)
-                    && timeframe.is_some_and(|timeframe| {
-                        model["id"].as_str()
-                            == super::combined_entry_strategy_id(timeframe, is_stockbit_scope).as_deref()
-                    });
+                let supported_scope = timeframe.is_some_and(|timeframe| {
+                    let expected_strategy_id = if is_pluang_commodities_scope {
+                        super::pluang_commodities_combined_entry_strategy_id(timeframe)
+                    } else if is_stockbit_scope || is_crypto_scope {
+                        super::combined_entry_strategy_id(timeframe, is_stockbit_scope)
+                    } else {
+                        None
+                    };
+                    (is_stockbit_scope || is_crypto_scope || is_pluang_commodities_scope)
+                        && model["id"].as_str() == expected_strategy_id.as_deref()
+                });
                 is_current_model && supported_scope
                     && catalog_string(model, "score_model_id") == Some(quant_core::ENTRY_SCORE_MODEL_ID)
             })

@@ -145,6 +145,7 @@ pub(crate) fn register_manual(conn: &Connection, body: &Value) -> Result<Value, 
             ("stockbit", "idx_stock") => "stockbit_regular".to_string(),
             ("tokocrypto", "crypto_spot") => "tokocrypto_spot".to_string(),
             ("tokocrypto", "tokenized_stock") => "tokocrypto_tokenized_stock".to_string(),
+            ("pluang", "commodity_derivative") => super::PLUANG_COMMODITIES_PRODUCT_ID.to_string(),
             _ => requested_product_id,
         }
     } else {
@@ -161,7 +162,9 @@ pub(crate) fn register_manual(conn: &Connection, body: &Value) -> Result<Value, 
     }
 
     let allowed_category = super::REGISTERED_APP_PRODUCT_CATEGORIES.contains(&(
-        exchange_id.as_str(), product_id.as_str(), category_id.as_str(),
+        exchange_id.as_str(),
+        product_id.as_str(),
+        category_id.as_str(),
     ));
     if !allowed_category {
         return Err("choose a supported venue and asset category".to_string());
@@ -186,6 +189,11 @@ pub(crate) fn register_manual(conn: &Connection, body: &Value) -> Result<Value, 
             .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
     {
         return Err("ticker must contain only letters and numbers (optional .JK, USDT-PERP, or /IDR suffix accepted)".to_string());
+    }
+    if category_id == super::PLUANG_COMMODITIES_ASSET_CATEGORY_ID
+        && !matches!(normalized, "XAUUSD" | "XAGUSD" | "UKOUSD")
+    {
+        return Err("Pluang Commodities supports XAUUSD, XAGUSD, and UKOUSD only".to_string());
     }
 
     let (symbol, venue_symbol, underlying, storage_symbol, quote_currency) =
@@ -225,6 +233,13 @@ pub(crate) fn register_manual(conn: &Connection, body: &Value) -> Result<Value, 
                 normalized.to_string(),
                 normalized.to_string(),
                 normalized.to_string(),
+                "USD",
+            ),
+            ("pluang", "commodity_derivative") => (
+                normalized.to_string(),
+                normalized.to_string(),
+                normalized.to_string(),
+                format!("{normalized}-USD"),
                 "USD",
             ),
             _ => return Err("venue and asset category do not match".to_string()),

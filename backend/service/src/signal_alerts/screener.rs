@@ -5,8 +5,9 @@ const MAX_SIGNAL_SCREENER_ROWS: usize = 2_000;
 const MAX_SIGNAL_SCREENER_PAGE_SIZE: usize = MAX_SIGNAL_SCREENER_ROWS;
 
 fn stockbit_signal_score_model_id(strategy_id: &str, timeframe: &str) -> Option<&'static str> {
-    (crate::master_data::combined_entry_strategy_id(timeframe, true).as_deref() == Some(strategy_id))
-        .then_some(quant_core::ENTRY_SCORE_MODEL_ID)
+    (crate::master_data::combined_entry_strategy_id(timeframe, true).as_deref()
+        == Some(strategy_id))
+    .then_some(quant_core::ENTRY_SCORE_MODEL_ID)
 }
 
 fn stockbit_signal_score_row_scope_sql() -> String {
@@ -15,7 +16,9 @@ fn stockbit_signal_score_row_scope_sql() -> String {
         .copied()
         .filter_map(|timeframe| {
             let strategy_id = crate::master_data::combined_entry_strategy_id(timeframe, true)?;
-            Some(format!("(timeframe='{timeframe}' AND signal_strategy_id='{strategy_id}')"))
+            Some(format!(
+                "(timeframe='{timeframe}' AND signal_strategy_id='{strategy_id}')"
+            ))
         })
         .collect::<Vec<_>>()
         .join(" OR ");
@@ -58,6 +61,21 @@ fn is_crypto_combined_entry_score_row(
     asset_category_id.starts_with("crypto_")
         && crate::master_data::combined_entry_strategy_id(timeframe, false).as_deref()
             == Some(strategy_id)
+}
+
+pub(super) fn is_pluang_commodities_combined_entry_score_row(
+    exchange_id: &str,
+    product_id: &str,
+    asset_category_id: &str,
+    strategy_id: &str,
+    timeframe: &str,
+) -> bool {
+    crate::instrument_registry::is_pluang_commodities_scope(
+        exchange_id,
+        product_id,
+        asset_category_id,
+    ) && crate::master_data::pluang_commodities_combined_entry_strategy_id(timeframe).as_deref()
+        == Some(strategy_id)
 }
 
 pub(crate) fn stockbit_signal_score_rows_for_symbol(
@@ -184,7 +202,11 @@ pub(crate) fn create_signal_screener_rows_table(
 ) -> Result<(), rusqlite::Error> {
     if !matches!(
         table_name,
-        "signal_screener_rows" | "signal_screener_rows_v2" | "signal_screener_rows_v3" | "signal_screener_rows_v4" | "signal_screener_rows_v5"
+        "signal_screener_rows"
+            | "signal_screener_rows_v2"
+            | "signal_screener_rows_v3"
+            | "signal_screener_rows_v4"
+            | "signal_screener_rows_v5"
     ) || !score_scale_max.is_finite()
         || score_scale_max <= 0.0
         || score_scale_max > quant_core::SIX_INDICATOR_SCORE_SCALE_MAX
@@ -567,6 +589,10 @@ mod freshness_tests;
 #[path = "../signal_alerts_screener_filter_tests.rs"]
 mod filter_tests;
 
+#[cfg(test)]
+#[path = "screener/pluang_commodities_tests.rs"]
+mod pluang_commodities_tests;
+
 #[path = "screener/snapshot.rs"]
 mod snapshot;
 pub(crate) use snapshot::{
@@ -591,8 +617,6 @@ mod ticker_holdout;
 mod listing;
 #[cfg(test)]
 use listing::list_signal_screener;
-pub(crate) use listing::{
-    list_signal_screener_page_with_minimum_total_score,
-};
 #[cfg(test)]
 pub(crate) use listing::list_signal_screener_page;
+pub(crate) use listing::list_signal_screener_page_with_minimum_total_score;

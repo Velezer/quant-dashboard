@@ -65,6 +65,8 @@ jobs:
           cargo test --locked --release -p quant_core evidence::entry_score::tests
           cargo test --locked --release -p quant_core evidence::entry_score::risk_reward::tests
           cargo test --locked --release -p rust_chart_api combined_ -- --test-threads=1
+      - name: Verify Pluang Commodities 15m score signals
+        run: cargo test --locked --release -p rust_chart_api pluang_commodities -- --test-threads=1
       - name: Verify Stockbit score references
         run: |
           cargo test --locked --release -p rust_chart_api stockbit_4h_scores_without_a_15m_price -- --test-threads=1

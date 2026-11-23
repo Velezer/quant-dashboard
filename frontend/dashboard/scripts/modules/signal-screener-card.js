@@ -174,7 +174,9 @@ export function createSignalScreenerCard({
         const scoreAccessibleLabel = `${rank ? `Entry ${rank}, ` : ''}${signal.symbol}, ${directionLabel}, ${signal.timeframe}, ${entryStatus}, ${sixIndicators ? 'indicator scores' : scoreLabel.toLowerCase()} ${accessibleScore}${scoreStateLabel}. Setup-strength weights: ${signalScoreWeightSummary(signal, scoreModel)}. ${componentSummary}. ${autocorrelationScore ? `${autocorrelationExplanation} ` : ''}${totalStrength ? `${totalStrength.label}. ${totalStrength.description} ` : ''}${afterFeeAccessibleText ? `${afterFeeAccessibleText}. ` : ''}${winProbabilityAccessibleText} Setup strength is separate from the signed direction score; win-rate evidence is historical, not a guarantee or execution probability. ${exitText ? `${exitText}. ${exitExplanation} ` : ''}Select to inspect chart.`;
         const productLabel = signal.product_id === 'stockbit_regular'
             ? ''
-            : String(signal.product_id || '').replaceAll('_', ' ');
+            : signal.product_id === 'pluang_commodities'
+                ? 'Commodities'
+                : String(signal.product_id || '').replaceAll('_', ' ');
         const strategyLabel = scoreModel?.short_label || signal.signal_strategy_name;
         const rowContext = [appLabel(signal.exchange_id), productLabel, strategyLabel]
             .filter(Boolean)

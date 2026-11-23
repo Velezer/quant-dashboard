@@ -442,6 +442,10 @@ pub(super) fn candle_product_scope(scope: &str) -> Option<(&'static str, &'stati
         "pintu_futures" | "pintu_pro_futures" => Some(("pintu", "pintu_pro_futures")),
         "pluang_spot" => Some(("pluang", "pluang_spot")),
         "pluang_perpetual" => Some(("pluang", "pluang_perpetual")),
+        crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID => Some((
+            "pluang",
+            crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID,
+        )),
         "tokocrypto_spot" => Some(("tokocrypto", "tokocrypto_spot")),
         "tokocrypto_tokenized_stock" => Some(("tokocrypto", "tokocrypto_tokenized_stock")),
         _ => None,

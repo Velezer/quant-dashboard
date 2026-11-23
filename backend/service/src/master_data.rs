@@ -14,7 +14,10 @@ mod combined_entry_catalog;
 mod crypto_signal_products;
 mod tokocrypto_catalog;
 use combined_entry_catalog::ensure_combined_entry_catalog;
-pub(crate) use combined_entry_catalog::{combined_entry_strategy_id, is_retired_entry_strategy};
+pub(crate) use combined_entry_catalog::{
+    combined_entry_strategy_id, is_retired_entry_strategy,
+    pluang_commodities_combined_entry_strategy_id,
+};
 pub(super) use crypto_signal_products::signal_screener_master_data_for_connection;
 #[cfg(test)]
 pub(super) use crypto_signal_products::{
@@ -82,12 +85,11 @@ pub(super) fn initialize(conn: &Connection) -> Result<(), rusqlite::Error> {
 }
 
 mod upgrades;
+use upgrades::{
+    augment_app_products, ensure_required_signal_confirmation_models, upsert_catalog_record,
+};
 #[cfg(test)]
 use upgrades::{retire_stockbit_nwe_4h_legacy_strategies, upgrade_pintu_golden_cross_profile};
-use upgrades::{
-    augment_app_products, ensure_required_signal_confirmation_models,
-    upsert_catalog_record,
-};
 
 pub(super) fn master_data_catalog() -> &'static Value {
     MASTER_DATA

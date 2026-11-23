@@ -118,8 +118,8 @@ pub fn validate_master_data_catalog(catalog: &Value) -> Result<(), String> {
             || !signal_ids.contains(signal_id)
         {
             return Err(format!(
-                "plan profile '{}' contains an unknown relationship",
-                catalog_string(profile, "id").unwrap_or("<missing>")
+                "plan profile '{}' contains an unknown relationship (exchange='{app_id}', category='{category_id}', style='{style_id}', signal='{signal_id}')",
+                catalog_string(profile, "id").unwrap_or("<missing>"),
             ));
         }
         let app_supports_category = master_data_records_from(catalog, "asset_categories")?

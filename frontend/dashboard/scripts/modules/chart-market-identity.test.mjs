@@ -15,6 +15,7 @@ test('market symbols preserve venue-specific symbol forms', () => {
     assert.equal(marketSymbolForSignal({ exchange: 'Tokocrypto', asset: 'BTC', class: 'crypto' }), 'BTC-USD');
     assert.equal(marketSymbolForSignal({ exchange: 'Tokocrypto', asset: 'BBCA-USD', class: 'tokenized_stock' }), 'BBCA');
     assert.equal(marketSymbolForSignal({ exchange: 'Pluang', asset: 'AAPL' }), 'AAPL-USD');
+    assert.equal(marketSymbolForSignal({ exchange_id: 'pluang', product_id: 'pluang_commodities', asset: 'XAUUSD' }), 'XAUUSD-USD');
     assert.equal(marketSymbolForSignal({ exchange: 'Pluang', asset: 'BBCA', class: 'IDX stock' }), 'BBCA.JK');
     assert.equal(marketSymbolForSignal({ exchange: 'app', asset: 'ETH_SPOT' }), 'ETH-USD');
 });

@@ -1,5 +1,7 @@
 use super::*;
 
+pub(super) const PLUANG_COMMODITIES_JSON: &str = r#"{"snapshot_date":"2026-11-23","source_url":"https://pluang.com/en/faq/commodities/commodities-features/instrumen-commodities-yang-tersedia-di-pluang","instruments":[{"symbol":"XAUUSD","underlying":"Gold","contract_unit":"1 troy ounce","published_max_leverage":"100x","reference_symbol":"GC=F"},{"symbol":"XAGUSD","underlying":"Silver","contract_unit":"10 troy ounces","published_max_leverage":"20x","reference_symbol":"SI=F"},{"symbol":"UKOUSD","underlying":"Brent crude oil","contract_unit":"10 barrels","published_max_leverage":"50x","reference_symbol":"BZ=F"}]}"#;
+
 pub(crate) fn research_eligibility(
     exchange: &str,
     listing_status: &str,
@@ -35,7 +37,9 @@ pub(crate) fn seed_pintu(conn: &Connection) -> Result<(), rusqlite::Error> {
     for contract in contracts {
         let field = |name: &str| contract.get(name).and_then(Value::as_str).unwrap_or("");
         let venue_symbol = field("venue_symbol");
-        if crate::pintu_listing::is_unavailable_pintu_future(venue_symbol) { continue; }
+        if crate::pintu_listing::is_unavailable_pintu_future(venue_symbol) {
+            continue;
+        }
         let Some(base) = venue_symbol.strip_suffix("USDT-PERP") else {
             continue;
         };
@@ -145,6 +149,62 @@ pub(crate) fn seed_pluang(conn: &Connection) -> Result<(), rusqlite::Error> {
             "<value kind=\"object\"></value>",
         )?;
     }
+    seed_pluang_commodities(conn)?;
+    Ok(())
+}
+
+fn seed_pluang_commodities(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let encoded = conn.query_row(
+        "SELECT payload_json FROM reference_catalogs
+          WHERE catalog_id='pluang_commodities'",
+        [],
+        |row| row.get::<_, String>(0),
+    )?;
+    let seed: Value = crate::wire::decode(&encoded)
+        .expect("SQLite Pluang commodities catalog must be valid JSON");
+    let source_url = seed
+        .get("source_url")
+        .and_then(Value::as_str)
+        .unwrap_or("https://pluang.com/en/faq/commodities/commodities-features/instrumen-commodities-yang-tersedia-di-pluang");
+    let snapshot_at = seed
+        .get("snapshot_date")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    for instrument in seed
+        .get("instruments")
+        .and_then(Value::as_array)
+        .expect("SQLite Pluang commodities catalog must contain instruments")
+    {
+        let field = |name: &str| instrument.get(name).and_then(Value::as_str).unwrap_or("");
+        let symbol = field("symbol");
+        let metadata = crate::wire::encode(&json!({
+            "underlying": field("underlying"),
+            "contract_unit": field("contract_unit"),
+            "published_max_leverage": field("published_max_leverage"),
+            "reference_provider": "Yahoo Finance research proxy",
+            "reference_symbol": field("reference_symbol"),
+            "native_price_feed": false,
+            "execution_supported": false
+        }))
+        .unwrap_or_default();
+        insert_seed(
+            conn,
+            &format!("pluang.pluang_commodities.{}", symbol.to_ascii_lowercase()),
+            "pluang",
+            "commodity_derivative",
+            symbol,
+            symbol,
+            symbol,
+            &format!("{symbol}-USD"),
+            "USD",
+            "public_listed_snapshot",
+            true,
+            "pluang_official_commodities_catalog",
+            source_url,
+            snapshot_at,
+            &metadata,
+        )?;
+    }
     Ok(())
 }
 
@@ -177,6 +237,7 @@ pub(crate) fn insert_seed(
            ) VALUES (
                ?1, ?2, CASE WHEN ?2='pintu' THEN 'pintu_pro_futures'
                             WHEN ?2='pluang' AND ?3='crypto_spot' THEN 'pluang_spot'
+                            WHEN ?2='pluang' AND ?3='commodity_derivative' THEN 'pluang_commodities'
                             WHEN ?2='pluang' THEN 'pluang_perpetual' ELSE '' END,
                ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?11, ?12,
                ?13, 'yfinance_research_proxy', ?14, unixepoch(), unixepoch(), 1

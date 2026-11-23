@@ -29,6 +29,7 @@ export function installInstrumentRegistry() {
                 crypto_perpetual: 'Crypto Perpetual',
                 crypto_spot: 'Crypto Spot',
                 tokenized_stock: 'Tokenized Stock',
+                commodity_derivative: 'Commodity Derivative',
             };
             const instrumentRegistryStatusLabels = {
                 regulator_approved: 'Regulator approved · venue status unknown',
@@ -44,7 +45,7 @@ export function installInstrumentRegistry() {
                 stockbit: [['stockbit_regular', 'IDX Listed Stocks']],
                 pintu: [['pintu_retail_spot', 'Retail Spot'], ['pintu_pro_spot', 'Pro Spot'], ['pintu_pro_futures', 'Pro Futures']],
                 tokocrypto: [['tokocrypto_spot', 'Spot'], ['tokocrypto_tokenized_stock', 'Tokenized Stock']],
-                pluang: [['pluang_spot', 'Spot'], ['pluang_perpetual', 'Perpetual']],
+                pluang: [['pluang_spot', 'Spot'], ['pluang_perpetual', 'Perpetual'], ['pluang_commodities', 'Commodities']],
             };
             const instrumentRegistrySourceDocs = {
                 idx_listed_company_directory: ['IDX listed-company directory', 'Imported from the public IDX listed-company directory.'],
@@ -57,6 +58,7 @@ export function installInstrumentRegistry() {
                 tokocrypto_live_symbols_api: ['Tokocrypto public symbols API', 'Imported from Tokocrypto’s public symbols API.'],
                 pluang_public_spot_market_snapshot: ['Pluang public Spot snapshot', 'Imported from the saved public Pluang Spot listing snapshot.'],
                 pluang_public_futures_market_snapshot: ['Pluang public Perpetual snapshot', 'Imported from the saved public Pluang futures listing snapshot.'],
+                pluang_official_commodities_catalog: ['Pluang Commodities catalog', 'Listed in Pluang’s official Commodities catalog; market history is a separate Yahoo futures research reference.'],
                 dashboard_manual_registration: ['Manual dashboard entry', 'Entered manually in the dashboard. No venue listing source was supplied; venue verification is pending.'],
                 local_market_history: ['Legacy local-history import', 'Imported from local market history; the original venue-listing source was not retained.'],
             };

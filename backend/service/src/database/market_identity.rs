@@ -49,6 +49,7 @@ pub(super) fn migrate_normalized_market_model(
                 WHEN source LIKE 'pintu_futures%' OR source LIKE 'pintu_pro_futures%' THEN 'pintu_pro_futures'
                 WHEN source LIKE 'pluang_spot%' THEN 'pluang_spot'
                 WHEN source LIKE 'pluang_perpetual%' THEN 'pluang_perpetual'
+                WHEN source LIKE 'pluang_commodities%' THEN 'pluang_commodities'
                 ELSE product_id END WHERE product_id=''",
             [],
         )?;
@@ -59,6 +60,7 @@ pub(super) fn migrate_normalized_market_model(
                 WHEN source LIKE 'daily_scheduler_pintu_pro_futures%' OR source LIKE 'daily_scheduler_pintu_futures%' THEN 'pintu_pro_futures'
                 WHEN source LIKE 'daily_scheduler_pluang_spot%' THEN 'pluang_spot'
                 WHEN source LIKE 'daily_scheduler_pluang_perpetual%' THEN 'pluang_perpetual'
+                WHEN source LIKE 'daily_scheduler_pluang_commodities%' THEN 'pluang_commodities'
                 ELSE COALESCE((SELECT s.product_id FROM series s
                     WHERE s.symbol=ingestion_runs.symbol AND s.source=ingestion_runs.source
                     ORDER BY s.last_success DESC LIMIT 1),product_id) END

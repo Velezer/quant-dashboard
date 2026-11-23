@@ -1,7 +1,9 @@
 /** Resolves the app market venue for a signal using its registered identity metadata. */
 export function marketVenueForSignal(signal) {
     if (!signal) return 'app';
-    const exchange = String(signal.exchange || signal.Exchange || signal.venue || signal.Venue || '').toLowerCase();
+    const exchange = String(
+        signal.exchange_id || signal.exchange || signal.Exchange || signal.venue || signal.Venue || '',
+    ).toLowerCase();
     const declared = String(signal.class || signal.asset_class || signal.Class || '').toLowerCase();
     if (exchange.includes('stockbit') || exchange === 'idx') return 'idx';
     if (exchange.includes('tokocrypto')) return 'tokocrypto';

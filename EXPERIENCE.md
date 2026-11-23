@@ -544,3 +544,28 @@ lesson only when it will improve future tasks.
   collapse release-source lists, and show full definitions only in methodology
   details. Avoid repeating current-status and signal caveats under every chart;
   keep stale and unavailable recovery messages visible.
+
+## Pluang Commodities 15m score and CME FedWatch — 2026-11-23
+
+1. Register Pluang's app-listed XAUUSD, XAGUSD, and UKOUSD under one distinct
+   commodities product while keeping venue verification, listing provenance,
+   and execution support separate fields.
+2. Use product-scoped Yahoo Finance references only: `GC=F`, `SI=F`, and
+   `BZ=F`; report them as research proxies, never as Pluang quotes.
+3. Preserve independent product/source identities so Pluang crypto, equity,
+   and commodity histories cannot overwrite one another.
+4. Score completed 15m bars with the existing six-factor combined model and
+   return one row for each instrument/timeframe.
+5. Do not create a second standalone NWE or DSS plan row for the same
+   commodity candle; NWE and DSS remain score components.
+6. Retain standard history, source, and freshness checks; a stale reference is
+   a setup only and cannot be shown as a current market entry.
+7. Keep fee-aware execution plans unavailable until Pluang's native quote,
+   contract, spread, and fee rules are supported.
+8. Show `Commodities` in the Pluang screener filter and preserve the registered
+   storage symbol when opening its chart.
+9. Link the Macro page to CME's official FedWatch tool for implied FOMC rates;
+   do not scrape or reconstruct data without an authorized feed.
+10. Verify each registered instrument and source on the live API after release;
+    a healthy page load alone does not prove fresh 15m candles or a qualifying
+    score. A qualifying signal appears only when the score clears its floor.

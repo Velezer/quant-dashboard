@@ -185,9 +185,7 @@ fn live_risk_reward_plan(
             "minimum_target_after_fee_r_multiple": quant_core::ENTRY_SCORE_MINIMUM_TARGET_AFTER_FEE_R_MULTIPLE,
         });
     };
-    let fee_policy = if input.exchange_id == "tokocrypto"
-        && input.product_id == "tokocrypto_spot"
-    {
+    let fee_policy = if input.exchange_id == "tokocrypto" && input.product_id == "tokocrypto_spot" {
         quant_core::venue_rules::tokocrypto_spot_published_fee_policy(input.quote_currency)
     } else {
         quant_core::venue_fee_policy(input.exchange_id, input.product_id)
@@ -261,6 +259,7 @@ fn live_risk_reward_plan(
 pub(super) fn append_combined_entry(
     input: &TimeframeScanInput<'_>,
     is_stockbit: bool,
+    is_pluang_commodities: bool,
     timeframe: &str,
     source_metadata: Option<&(String, String)>,
     bars: &[StrategyBar],
@@ -269,7 +268,11 @@ pub(super) fn append_combined_entry(
     score_updates: &mut Vec<Value>,
 ) -> Option<ReadinessIssue> {
     let (source, provider) = source_metadata?;
-    let strategy_id = crate::master_data::combined_entry_strategy_id(timeframe, is_stockbit)?;
+    let strategy_id = if is_pluang_commodities {
+        crate::master_data::pluang_commodities_combined_entry_strategy_id(timeframe)?
+    } else {
+        crate::master_data::combined_entry_strategy_id(timeframe, is_stockbit)?
+    };
     let bar = bars
         .last()
         .filter(|bar| bar.close.is_finite() && bar.close > 0.0)?;
