@@ -88,7 +88,7 @@ function apiDataFor(id) {
     if (id === 'brent_crude_spot') return {
         ...responseData, id, title: 'Brent crude spot price', value_format: 'usd_per_barrel',
         unit: 'USD per barrel', latest_value: 92.94, observation_change: 0.5,
-        source_series_id: 'DCOILBRENTEU', source_url: 'https://fred.stlouisfed.org/series/DCOILBRENTEU',
+        source_series_id: 'RBRTE', source_url: 'https://www.eia.gov/dnav/pet/hist/RBRTEd.htm',
         observations: [{ date: previousDay, value: 92.44 }, { date: today, value: 92.94 }],
     };
     if (id === 'us_commercial_crude_stocks') return {
@@ -100,27 +100,27 @@ function apiDataFor(id) {
     if (id === 'us_equity_volatility_index') return {
         ...responseData, id, title: 'Cboe VIX volatility index', value_format: 'index_points',
         unit: 'Index points', latest_value: 28.44, observation_change: 1.25,
-        source_series_id: 'VIXCLS', source_url: 'https://fred.stlouisfed.org/series/VIXCLS',
+        source_series_id: 'VIX', source_url: 'https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv',
         observations: [{ date: previousDay, value: 27.19 }, { date: today, value: 28.44 }],
     };
     if (id === 'broad_us_dollar_index') return {
         ...responseData, id, title: 'Broad U.S. dollar index', value_format: 'index_points',
         unit: 'Index points', latest_value: 122.6503, observation_change: -0.1,
-        source_series_id: 'DTWEXBGS', source_url: 'https://fred.stlouisfed.org/series/DTWEXBGS',
+        source_series_id: 'JRXWTFB_N.B', source_url: 'https://www.federalreserve.gov/releases/h10/current/',
         observations: [{ date: previousDay, value: 122.7503 }, { date: today, value: 122.6503 }],
     };
     if (id === 'ten_year_treasury_nominal_yield') return {
-        ...responseData, id, title: '10-Year U.S. Treasury yield', source_series_id: 'DGS10',
-        source_url: 'https://fred.stlouisfed.org/series/DGS10',
+        ...responseData, id, title: '10-Year U.S. Treasury yield', source_series_id: 'BC_10YEAR',
+        source_url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve',
     };
     if (id === 'ten_year_breakeven_inflation') return {
-        ...responseData, id, title: '10-Year breakeven inflation rate', source_series_id: 'T10YIE',
-        source_url: 'https://fred.stlouisfed.org/series/T10YIE',
+        ...responseData, id, title: '10-Year breakeven inflation rate', source_series_id: 'BC_10YEAR − TC_10YEAR, matched by date',
+        source_url: 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve',
     };
     if (id === 'us_manufacturing_industrial_production') return {
         ...responseData, id, title: 'U.S. manufacturing industrial production', value_format: 'index_points',
-        unit: 'Index points (2017 = 100)', latest_value: 99.7246, source_series_id: 'IPMAN',
-        source_url: 'https://fred.stlouisfed.org/series/IPMAN',
+        unit: 'Index points', latest_value: 99.7246, source_series_id: 'GMF',
+        source_url: 'https://www.federalreserve.gov/releases/g17/download.htm',
     };
     if (id === 'china_manufacturing_pmi') return {
         ...responseData, id, title: 'China official manufacturing PMI', value_format: 'index_points',
@@ -130,13 +130,13 @@ function apiDataFor(id) {
     };
     if (id === 'wti_crude_spot') return {
         ...responseData, id, title: 'WTI crude spot price', value_format: 'usd_per_barrel',
-        unit: 'USD per barrel', latest_value: 89.53, source_series_id: 'DCOILWTICO',
-        source_url: 'https://fred.stlouisfed.org/series/DCOILWTICO',
+        unit: 'USD per barrel', latest_value: 89.53, source_series_id: 'RWTC',
+        source_url: 'https://www.eia.gov/dnav/pet/hist/RWTCd.htm',
     };
     if (id === 'crude_oil_volatility_index') return {
         ...responseData, id, title: 'Cboe crude oil volatility index', value_format: 'index_points',
-        unit: 'Index points', latest_value: 50.67, source_series_id: 'OVXCLS',
-        source_url: 'https://fred.stlouisfed.org/series/OVXCLS',
+        unit: 'Index points', latest_value: 50.67, source_series_id: 'OVX',
+        source_url: 'https://cdn.cboe.com/api/global/us_indices/daily_prices/OVX_History.csv',
     };
     return responseData;
 }

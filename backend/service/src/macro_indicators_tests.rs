@@ -198,6 +198,10 @@ fn weekly_and_monthly_observations_get_cadence_appropriate_freshness_windows() {
         observation_age_limit_days(MacroIndicatorId::ChinaManufacturingPmi),
         62
     );
+    assert_eq!(
+        observation_age_limit_days(MacroIndicatorId::BroadUsDollarIndex),
+        10
+    );
     assert!(!observation_is_stale_after_days(
         "2023-12-01",
         now,

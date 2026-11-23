@@ -533,8 +533,10 @@ lesson only when it will improve future tasks.
   industrial-production charts labeled as hard-data proxies, not PMI.
 - FRED's graph CSV request should contain one series ID: multiple IDs can
   return a ZIP archive rather than a CSV. Keep each request bounded to the
-  chart's history window. EIA's public demonstration key is rate-limited, so
-  cache successful weekly inventory snapshots and retain them on refresh errors.
+  chart's history window. EIA's public demonstration key is rate-limited across
+  crude inventory and spot-price requests, so cache successful snapshots,
+  preserve them on refresh errors, and check all EIA-backed cards after a
+  deployment.
 - For responsive navigation, check each route at breakpoint edges and with the
   page's dynamic layout classes both active and inactive. A shortcut must remain
   visible whenever the primary navigation is not rendered.

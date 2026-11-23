@@ -5,7 +5,7 @@ use super::{
 };
 use crate::public_http::{get_bounded, RequestOptions};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 const TREASURY_XML_URL: &str =
@@ -28,9 +28,29 @@ impl MacroSeriesProvider for TreasuryProvider {
     ) -> Result<ProviderSeriesSnapshot, String> {
         match id {
             MacroIndicatorId::TenYearTipsRealYield
-            | MacroIndicatorId::TwoYearTreasuryNominalYield => load_series(id, force_refresh),
+            | MacroIndicatorId::TwoYearTreasuryNominalYield
+            | MacroIndicatorId::TenYearTreasuryNominalYield => load_series(id, force_refresh),
+            MacroIndicatorId::TenYearBreakevenInflation => load_breakeven(force_refresh),
             _ => Err("Treasury does not provide the requested macro series.".to_string()),
         }
+    }
+}
+
+pub(super) fn source_series_id(id: MacroIndicatorId) -> Option<&'static str> {
+    match id {
+        MacroIndicatorId::TenYearBreakevenInflation => {
+            Some("BC_10YEAR − TC_10YEAR, matched by date")
+        }
+        _ => series_config(id).map(|config| config.field),
+    }
+}
+
+pub(super) fn source_url(id: MacroIndicatorId) -> Option<&'static str> {
+    match id {
+        MacroIndicatorId::TenYearBreakevenInflation => Some(
+            "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve",
+        ),
+        _ => series_config(id).map(|config| config.source_url),
     }
 }
 
@@ -43,18 +63,29 @@ struct CachedSeries {
 }
 
 static CACHE: OnceLock<Mutex<HashMap<MacroIndicatorId, CachedSeries>>> = OnceLock::new();
+static REFRESH_LOCKS: OnceLock<Mutex<HashMap<MacroIndicatorId, Arc<Mutex<()>>>>> = OnceLock::new();
 
 fn cache() -> &'static Mutex<HashMap<MacroIndicatorId, CachedSeries>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn refresh_lock(id: MacroIndicatorId) -> Arc<Mutex<()>> {
+    let locks = REFRESH_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks.lock().unwrap_or_else(|error| error.into_inner());
+    Arc::clone(locks.entry(id).or_insert_with(|| Arc::new(Mutex::new(()))))
 }
 
 fn load_series(
     id: MacroIndicatorId,
     force_refresh: bool,
 ) -> Result<ProviderSeriesSnapshot, String> {
+    let refresh_lock = refresh_lock(id);
+    let _refresh_guard = refresh_lock
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let now = now_secs();
-    let mut cache = cache().lock().unwrap_or_else(|error| error.into_inner());
-    if let Some(current) = cache.get(&id) {
+    let mut cache_guard = cache().lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(current) = cache_guard.get(&id) {
         let recently_retrieved =
             now.saturating_sub(current.retrieved_at_seconds) < CACHE_TTL_SECONDS;
         let retry_too_soon =
@@ -66,9 +97,10 @@ fn load_series(
             ));
         }
     }
-    if let Some(current) = cache.get_mut(&id) {
+    if let Some(current) = cache_guard.get_mut(&id) {
         current.last_attempt_seconds = now;
     }
+    drop(cache_guard);
 
     match fetch_series(id) {
         Ok(observations) => {
@@ -84,11 +116,13 @@ fn load_series(
                 fetch_status: FetchStatus::Fresh,
                 refresh_error: None,
             };
-            cache.insert(id, refreshed);
+            let mut cache_guard = cache().lock().unwrap_or_else(|error| error.into_inner());
+            cache_guard.insert(id, refreshed);
             Ok(snapshot)
         }
         Err(error) => {
-            if let Some(current) = cache.get_mut(&id) {
+            let mut cache_guard = cache().lock().unwrap_or_else(|error| error.into_inner());
+            if let Some(current) = cache_guard.get_mut(&id) {
                 current.last_attempt_seconds = now;
                 current.refresh_error = Some(truncate_error(&error));
                 Ok(snapshot_from_cache(current, true))
@@ -97,6 +131,65 @@ fn load_series(
             }
         }
     }
+}
+
+fn load_breakeven(force_refresh: bool) -> Result<ProviderSeriesSnapshot, String> {
+    let nominal = load_series(MacroIndicatorId::TenYearTreasuryNominalYield, force_refresh)?;
+    let real = load_series(MacroIndicatorId::TenYearTipsRealYield, force_refresh)?;
+    let observations = derive_breakeven(&nominal.observations, &real.observations)?;
+    let refresh_error = match (&nominal.refresh_error, &real.refresh_error) {
+        (None, None) => None,
+        (Some(error), None) | (None, Some(error)) => Some(error.clone()),
+        (Some(nominal_error), Some(real_error)) => Some(format!(
+            "Nominal yield refresh: {nominal_error}; TIPS refresh: {real_error}"
+        )),
+    };
+    let fetch_status = if refresh_error.is_some()
+        || matches!(nominal.fetch_status, FetchStatus::Stale)
+        || matches!(real.fetch_status, FetchStatus::Stale)
+    {
+        FetchStatus::Stale
+    } else if matches!(nominal.fetch_status, FetchStatus::Fresh)
+        || matches!(real.fetch_status, FetchStatus::Fresh)
+    {
+        FetchStatus::Fresh
+    } else {
+        FetchStatus::Cached
+    };
+    Ok(ProviderSeriesSnapshot {
+        observations,
+        retrieved_at_seconds: nominal.retrieved_at_seconds.min(real.retrieved_at_seconds),
+        fetch_status,
+        refresh_error,
+    })
+}
+
+fn derive_breakeven(
+    nominal: &[MacroObservation],
+    real: &[MacroObservation],
+) -> Result<Vec<MacroObservation>, String> {
+    let real_by_date: HashMap<&str, f64> = real
+        .iter()
+        .map(|observation| (observation.date.as_str(), observation.value))
+        .collect();
+    let observations: Vec<MacroObservation> = nominal
+        .iter()
+        .filter_map(|nominal_observation| {
+            real_by_date
+                .get(nominal_observation.date.as_str())
+                .map(|real_value| MacroObservation {
+                    date: nominal_observation.date.clone(),
+                    value: nominal_observation.value - real_value,
+                    classification: None,
+                })
+        })
+        .collect();
+    if observations.is_empty() {
+        return Err(
+            "Treasury has no same-date 10-year nominal and TIPS yields to compare.".to_string(),
+        );
+    }
+    Ok(observations)
 }
 
 fn snapshot_from_cache(cached: &CachedSeries, stale: bool) -> ProviderSeriesSnapshot {
@@ -271,6 +364,7 @@ struct TreasurySeriesConfig {
     dataset: &'static str,
     field: &'static str,
     value_label: &'static str,
+    source_url: &'static str,
 }
 
 fn series_config(id: MacroIndicatorId) -> Option<TreasurySeriesConfig> {
@@ -279,11 +373,19 @@ fn series_config(id: MacroIndicatorId) -> Option<TreasurySeriesConfig> {
             dataset: "daily_treasury_real_yield_curve",
             field: "TC_10YEAR",
             value_label: "10-year real-yield",
+            source_url: "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve",
         }),
         MacroIndicatorId::TwoYearTreasuryNominalYield => Some(TreasurySeriesConfig {
             dataset: "daily_treasury_yield_curve",
             field: "BC_2YEAR",
             value_label: "2-year nominal-yield",
+            source_url: "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve",
+        }),
+        MacroIndicatorId::TenYearTreasuryNominalYield => Some(TreasurySeriesConfig {
+            dataset: "daily_treasury_yield_curve",
+            field: "BC_10YEAR",
+            value_label: "10-year nominal-yield",
+            source_url: "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve",
         }),
         _ => None,
     }
@@ -328,3 +430,7 @@ fn now_secs() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
+
+#[cfg(test)]
+#[path = "treasury_tests.rs"]
+mod tests;
