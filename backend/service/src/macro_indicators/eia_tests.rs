@@ -3,7 +3,7 @@ use crate::macro_indicators::MacroIndicatorId;
 
 const TEST_NOW: u64 = 1_800_000_000;
 
-fn row(date: &str, value: &str) -> serde_json::Value {
+fn stock_row(date: &str, value: &str) -> serde_json::Value {
     serde_json::json!({
         "period": date,
         "series": "WCESTUS1",
@@ -16,11 +16,16 @@ fn row(date: &str, value: &str) -> serde_json::Value {
 fn eia_parser_sorts_weekly_rows_and_converts_thousand_barrels_to_millions() {
     let payload = serde_json::json!({
         "response": {"data": [
-            row("2026-11-13", "417797"),
-            row("2026-11-06", "414417")
+            stock_row("2026-11-13", "417797"),
+            stock_row("2026-11-06", "414417")
         ]}
     });
-    let parsed = parse_series(&payload, TEST_NOW).unwrap();
+    let parsed = parse_series(
+        &payload,
+        TEST_NOW,
+        MacroIndicatorId::UsCommercialCrudeStocks,
+    )
+    .unwrap();
     assert_eq!(parsed.len(), 2);
     assert_eq!(parsed[0].date, "2026-11-06");
     assert!((parsed[0].value - 414.417).abs() < 1e-9);
@@ -29,40 +34,101 @@ fn eia_parser_sorts_weekly_rows_and_converts_thousand_barrels_to_millions() {
 }
 
 #[test]
+fn eia_parser_reads_brent_and_wti_daily_prices_without_inventory_conversion() {
+    let brent_payload = serde_json::json!({"response":{"data":[
+        {"period":"2026-11-17","series":"RBRTE","units":"$/BBL","value":"92.94"},
+        {"period":"2026-11-16","series":"RBRTE","units":"$/BBL","value":"92.90"}
+    ]}});
+    let brent = parse_series(&brent_payload, TEST_NOW, MacroIndicatorId::BrentCrudeSpot).unwrap();
+    assert_eq!(brent[0].date, "2026-11-16");
+    assert_eq!(brent[0].value, 92.90);
+
+    let wti_payload = serde_json::json!({"response":{"data":[
+        {"period":"2026-11-17","series":"RWTC","units":"$/BBL","value":"88.10"}
+    ]}});
+    let wti = parse_series(&wti_payload, TEST_NOW, MacroIndicatorId::WtiCrudeSpot).unwrap();
+    assert_eq!(wti[0].date, "2026-11-17");
+    assert_eq!(wti[0].value, 88.10);
+
+    let negative_wti = serde_json::json!({"response":{"data":[
+        {"period":"2020-04-20","series":"RWTC","units":"$/BBL","value":"-36.98"}
+    ]}});
+    let negative = parse_series(&negative_wti, TEST_NOW, MacroIndicatorId::WtiCrudeSpot).unwrap();
+    assert_eq!(negative[0].date, "2020-04-20");
+    assert_eq!(negative[0].value, -36.98);
+
+    let wrong_units = serde_json::json!({"response":{"data":[
+        {"period":"2026-11-17","series":"RBRTE","units":"MBBL","value":"92.94"}
+    ]}});
+    assert!(parse_series(&wrong_units, TEST_NOW, MacroIndicatorId::BrentCrudeSpot).is_err());
+}
+
+#[test]
 fn eia_parser_rejects_changed_series_units_bad_values_and_dates() {
-    let valid = serde_json::json!({"response":{"data":[row("2026-11-13", "417797")]}});
-    assert!(parse_series(&serde_json::json!({"error":"rate limited"}), TEST_NOW).is_err());
-    assert!(parse_series(&serde_json::json!({"response":{"data":[]}}), TEST_NOW).is_err());
+    let valid = serde_json::json!({"response":{"data":[stock_row("2026-11-13", "417797")]}});
+    assert!(parse_series(
+        &serde_json::json!({"error":"rate limited"}),
+        TEST_NOW,
+        MacroIndicatorId::UsCommercialCrudeStocks,
+    )
+    .is_err());
+    assert!(parse_series(
+        &serde_json::json!({"response":{"data":[]}}),
+        TEST_NOW,
+        MacroIndicatorId::UsCommercialCrudeStocks,
+    )
+    .is_err());
     assert!(parse_series(
         &serde_json::json!({"response":{"data":[{
             "period":"2026-11-13","series":"OTHER","units":"MBBL","value":"417797"
         }]}}),
-        TEST_NOW
+        TEST_NOW,
+        MacroIndicatorId::UsCommercialCrudeStocks,
     )
     .is_err());
     assert!(parse_series(
         &serde_json::json!({"response":{"data":[{
             "period":"2026-11-13","series":"WCESTUS1","units":"BBL","value":"417797"
         }]}}),
-        TEST_NOW
+        TEST_NOW,
+        MacroIndicatorId::UsCommercialCrudeStocks,
     )
     .is_err());
-    let invalid_value = serde_json::json!({"response":{"data":[row("2026-11-13", "NaN")]}});
-    assert!(parse_series(&invalid_value, TEST_NOW).is_err());
-    let future_date = serde_json::json!({"response":{"data":[row("2027-02-01", "417797")]}});
-    assert!(parse_series(&future_date, TEST_NOW).is_err());
-    let duplicate_date = serde_json::json!({"response":{"data":[
-        row("2026-11-13", "417797"),row("2026-11-13", "418000")
-    ]}});
-    assert!(parse_series(&duplicate_date, TEST_NOW).is_err());
-    assert!(parse_series(&valid, TEST_NOW).is_ok());
+    assert!(parse_series(
+        &serde_json::json!({"response":{"data":[stock_row("2026-11-13", "NaN")]}}),
+        TEST_NOW,
+        MacroIndicatorId::UsCommercialCrudeStocks,
+    )
+    .is_err());
+    assert!(parse_series(
+        &serde_json::json!({"response":{"data":[stock_row("2027-02-01", "417797")]}}),
+        TEST_NOW,
+        MacroIndicatorId::UsCommercialCrudeStocks,
+    )
+    .is_err());
+    assert!(parse_series(
+        &serde_json::json!({"response":{"data":[
+            stock_row("2026-11-13", "417797"),stock_row("2026-11-13", "418000")
+        ]}}),
+        TEST_NOW,
+        MacroIndicatorId::UsCommercialCrudeStocks,
+    )
+    .is_err());
+    assert!(parse_series(&valid, TEST_NOW, MacroIndicatorId::UsCommercialCrudeStocks,).is_ok());
 }
 
 #[test]
-fn eia_provider_has_one_stable_commercial_inventory_series() {
+fn eia_provider_registers_inventory_and_benchmark_spot_series() {
     assert_eq!(
         source_series_id(MacroIndicatorId::UsCommercialCrudeStocks),
         Some("WCESTUS1")
     );
-    assert_eq!(source_series_id(MacroIndicatorId::BrentCrudeSpot), None);
+    assert_eq!(
+        source_series_id(MacroIndicatorId::BrentCrudeSpot),
+        Some("RBRTE")
+    );
+    assert_eq!(
+        source_series_id(MacroIndicatorId::WtiCrudeSpot),
+        Some("RWTC")
+    );
 }

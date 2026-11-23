@@ -1,4 +1,4 @@
-//! Bounded, cached access to one-series FRED CSV endpoints.
+//! Cboe daily historical volatility index files.
 
 use super::{
     treasury::valid_date, FetchStatus, MacroIndicatorId, MacroObservation, MacroSeriesProvider,
@@ -9,76 +9,44 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-const FRED_CSV_URL: &str = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=";
-const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+const VIX_CSV_URL: &str = "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv";
+const OVX_CSV_URL: &str = "https://cdn.cboe.com/api/global/us_indices/daily_prices/OVX_History.csv";
+const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SERIES_OBSERVATIONS: usize = 3_000;
+const MAX_CSV_ROWS: usize = 20_000;
 const HISTORY_DAYS: u64 = 3_653;
 const CACHE_TTL_SECONDS: u64 = 6 * 60 * 60;
 const MINIMUM_RETRY_INTERVAL_SECONDS: u64 = 60;
 const MAX_REFRESH_ERROR_CHARS: usize = 240;
 
-pub(super) static FRED_PROVIDER: FredProvider = FredProvider;
+pub(super) static CBOE_PROVIDER: CboeProvider = CboeProvider;
 
-pub(super) struct FredProvider;
+pub(super) struct CboeProvider;
 
-#[derive(Clone, Copy)]
-struct FredSeriesConfig {
-    series_id: &'static str,
-    source_url: &'static str,
-}
-
-fn config(id: MacroIndicatorId) -> Option<FredSeriesConfig> {
-    let (series_id, source_url) = match id {
-        MacroIndicatorId::BroadUsDollarIndex => {
-            ("DTWEXBGS", "https://fred.stlouisfed.org/series/DTWEXBGS")
-        }
-        MacroIndicatorId::TenYearTreasuryNominalYield => {
-            ("DGS10", "https://fred.stlouisfed.org/series/DGS10")
-        }
-        MacroIndicatorId::TenYearBreakevenInflation => {
-            ("T10YIE", "https://fred.stlouisfed.org/series/T10YIE")
-        }
-        MacroIndicatorId::UsEquityVolatilityIndex => {
-            ("VIXCLS", "https://fred.stlouisfed.org/series/VIXCLS")
-        }
-        MacroIndicatorId::UsManufacturingIndustrialProduction => {
-            ("IPMAN", "https://fred.stlouisfed.org/series/IPMAN")
-        }
-        MacroIndicatorId::BrentCrudeSpot => (
-            "DCOILBRENTEU",
-            "https://fred.stlouisfed.org/series/DCOILBRENTEU",
-        ),
-        MacroIndicatorId::WtiCrudeSpot => (
-            "DCOILWTICO",
-            "https://fred.stlouisfed.org/series/DCOILWTICO",
-        ),
-        MacroIndicatorId::CrudeOilVolatilityIndex => {
-            ("OVXCLS", "https://fred.stlouisfed.org/series/OVXCLS")
-        }
-        _ => return None,
-    };
-    Some(FredSeriesConfig {
-        series_id,
-        source_url,
-    })
+fn config(id: MacroIndicatorId) -> Option<(&'static str, &'static str, &'static str)> {
+    match id {
+        MacroIndicatorId::UsEquityVolatilityIndex => Some((VIX_CSV_URL, "CLOSE", "VIX")),
+        MacroIndicatorId::CrudeOilVolatilityIndex => Some((OVX_CSV_URL, "OVX", "OVX")),
+        _ => None,
+    }
 }
 
 pub(super) fn source_series_id(id: MacroIndicatorId) -> Option<&'static str> {
-    config(id).map(|series| series.series_id)
+    config(id).map(|(_, _, series_id)| series_id)
 }
 
 pub(super) fn source_url(id: MacroIndicatorId) -> Option<&'static str> {
-    config(id).map(|series| series.source_url)
+    config(id).map(|(url, _, _)| url)
 }
 
-impl MacroSeriesProvider for FredProvider {
+impl MacroSeriesProvider for CboeProvider {
     fn read_series(
         &self,
         id: MacroIndicatorId,
         force_refresh: bool,
     ) -> Result<ProviderSeriesSnapshot, String> {
         if config(id).is_none() {
-            return Err("FRED does not provide the requested macro series.".to_string());
+            return Err("Cboe does not provide the requested volatility series.".to_string());
         }
         load_series(id, force_refresh)
     }
@@ -177,15 +145,13 @@ fn snapshot_from_cache(cached: &CachedSeries, stale: bool) -> ProviderSeriesSnap
 }
 
 fn fetch_series(id: MacroIndicatorId, now: u64) -> Result<Vec<MacroObservation>, String> {
-    let series = config(id)
-        .ok_or_else(|| "FRED does not provide the requested macro series.".to_string())?;
-    let start = history_start_date(now);
-    let url = format!("{FRED_CSV_URL}{}&cosd={start}", series.series_id);
+    let (url, column, series_id) = config(id)
+        .ok_or_else(|| "Cboe does not provide the requested volatility series.".to_string())?;
     let response = get_bounded(
-        &url,
+        url,
         RequestOptions {
             connect_timeout: Duration::from_secs(3),
-            total_timeout: Duration::from_secs(8),
+            total_timeout: Duration::from_secs(10),
             max_body_bytes: MAX_RESPONSE_BYTES,
             max_redirects: 2,
             accept: "text/csv",
@@ -196,71 +162,104 @@ fn fetch_series(id: MacroIndicatorId, now: u64) -> Result<Vec<MacroObservation>,
     )?;
     if response.status >= 400 {
         return Err(format!(
-            "FRED returned HTTP {} for {}.",
-            response.status, series.series_id
+            "Cboe returned HTTP {} for {series_id}.",
+            response.status
         ));
     }
     let csv = std::str::from_utf8(&response.body)
-        .map_err(|_| format!("FRED returned invalid UTF-8 for {}.", series.series_id))?;
-    parse_csv(csv, series.series_id, now)
+        .map_err(|_| format!("Cboe returned invalid UTF-8 for {series_id}."))?;
+    parse_csv(csv, column, series_id, now)
 }
 
-fn parse_csv(csv: &str, series_id: &str, now: u64) -> Result<Vec<MacroObservation>, String> {
+fn parse_csv(
+    csv: &str,
+    value_column: &str,
+    series_id: &str,
+    now: u64,
+) -> Result<Vec<MacroObservation>, String> {
     let mut lines = csv.lines();
     let header = lines
         .next()
         .unwrap_or_default()
         .trim_start_matches('\u{feff}')
         .trim();
-    if header != format!("observation_date,{series_id}") {
+    let columns: Vec<&str> = header.split(',').map(str::trim).collect();
+    let date_index = columns.iter().position(|column| *column == "DATE");
+    let value_index = columns.iter().position(|column| *column == value_column);
+    let (Some(date_index), Some(value_index)) = (date_index, value_index) else {
         return Err(format!(
-            "FRED returned an unexpected CSV header for {series_id}."
+            "Cboe returned an unexpected CSV header for {series_id}."
         ));
-    }
+    };
+    let start = history_start_date(now);
     let latest_allowed_date = current_date(now);
+    let mut previous_date: Option<String> = None;
     let mut observations = Vec::new();
     for (index, line) in lines.enumerate() {
-        if index >= MAX_SERIES_OBSERVATIONS {
+        if index >= MAX_CSV_ROWS {
+            return Err(format!("Cboe returned too many CSV rows for {series_id}."));
+        }
+        let fields: Vec<&str> = line.split(',').map(str::trim).collect();
+        let raw_date = fields
+            .get(date_index)
+            .copied()
+            .ok_or_else(|| format!("Cboe returned a malformed row for {series_id}."))?;
+        let date = parse_us_date(raw_date)
+            .ok_or_else(|| format!("Cboe returned an invalid date for {series_id}."))?;
+        if date > latest_allowed_date
+            || previous_date
+                .as_deref()
+                .is_some_and(|previous| previous >= date.as_str())
+        {
             return Err(format!(
-                "FRED returned too many observations for {series_id}."
+                "Cboe returned unordered or future data for {series_id}."
             ));
         }
-        let Some((date, raw_value)) = line.trim().split_once(',') else {
-            return Err(format!("FRED returned a malformed row for {series_id}."));
-        };
-        let date = date.trim();
-        let raw_value = raw_value.trim();
-        if !valid_date(date) || date > latest_allowed_date.as_str() {
-            return Err(format!(
-                "FRED returned an invalid or future date for {series_id}."
-            ));
+        previous_date = Some(date.clone());
+        if date < start {
+            continue;
         }
-        if raw_value.is_empty() || raw_value == "." {
+        let raw_value = fields
+            .get(value_index)
+            .copied()
+            .ok_or_else(|| format!("Cboe returned a malformed value for {series_id}."))?;
+        if raw_value.is_empty() || raw_value == "." || raw_value == "-" {
             continue;
         }
         let value = raw_value
             .parse::<f64>()
             .ok()
-            .filter(|value| value.is_finite())
-            .ok_or_else(|| format!("FRED returned a nonnumeric value for {series_id}."))?;
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .ok_or_else(|| format!("Cboe returned an invalid value for {series_id}."))?;
         observations.push(MacroObservation {
-            date: date.to_string(),
+            date,
             value,
             classification: None,
         });
+        if observations.len() > MAX_SERIES_OBSERVATIONS {
+            return Err(format!(
+                "Cboe returned too many recent observations for {series_id}."
+            ));
+        }
     }
     if observations.is_empty() {
-        return Err(format!("FRED returned no observations for {series_id}."));
-    }
-    if observations
-        .windows(2)
-        .any(|pair| pair[0].date >= pair[1].date)
-    {
         return Err(format!(
-            "FRED returned unordered or duplicate dates for {series_id}."
+            "Cboe returned no recent observations for {series_id}."
         ));
     }
     Ok(observations)
+}
+
+fn parse_us_date(value: &str) -> Option<String> {
+    let mut parts = value.split('/');
+    let month = parts.next()?.parse::<u32>().ok()?;
+    let day = parts.next()?.parse::<u32>().ok()?;
+    let year = parts.next()?.parse::<i32>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let date = format!("{year:04}-{month:02}-{day:02}");
+    valid_date(&date).then_some(date)
 }
 
 fn history_start_date(now: u64) -> String {
@@ -288,5 +287,5 @@ fn now_secs() -> u64 {
 }
 
 #[cfg(test)]
-#[path = "fred_tests.rs"]
+#[path = "cboe_tests.rs"]
 mod tests;

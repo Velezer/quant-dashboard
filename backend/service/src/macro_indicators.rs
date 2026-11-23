@@ -2,9 +2,10 @@
 //! Macro observations are descriptive context and do not enter ticker scores.
 
 mod bitcoin;
+mod cboe;
 mod ecb;
 mod eia;
-mod fred;
+mod federal_reserve;
 mod nbs;
 mod treasury;
 
@@ -153,23 +154,25 @@ pub(crate) trait MacroSeriesProvider: Sync {
 
 fn provider_for(id: MacroIndicatorId) -> &'static dyn MacroSeriesProvider {
     match id {
-        MacroIndicatorId::TenYearTipsRealYield | MacroIndicatorId::TwoYearTreasuryNominalYield => {
-            &treasury::TREASURY_PROVIDER
-        }
+        MacroIndicatorId::TenYearTipsRealYield
+        | MacroIndicatorId::TwoYearTreasuryNominalYield
+        | MacroIndicatorId::TenYearTreasuryNominalYield
+        | MacroIndicatorId::TenYearBreakevenInflation => &treasury::TREASURY_PROVIDER,
         MacroIndicatorId::UsdIdrReferenceRate => &ecb::ECB_PROVIDER,
         MacroIndicatorId::BitcoinSpotEtfNetFlows | MacroIndicatorId::BitcoinFearGreedIndex => {
             &bitcoin::BITCOIN_PROVIDER
         }
-        MacroIndicatorId::UsCommercialCrudeStocks => &eia::EIA_PROVIDER,
+        MacroIndicatorId::UsCommercialCrudeStocks
+        | MacroIndicatorId::BrentCrudeSpot
+        | MacroIndicatorId::WtiCrudeSpot => &eia::EIA_PROVIDER,
         MacroIndicatorId::ChinaManufacturingPmi => &nbs::NBS_PROVIDER,
         MacroIndicatorId::BroadUsDollarIndex
-        | MacroIndicatorId::TenYearTreasuryNominalYield
-        | MacroIndicatorId::TenYearBreakevenInflation
-        | MacroIndicatorId::UsEquityVolatilityIndex
-        | MacroIndicatorId::UsManufacturingIndustrialProduction
-        | MacroIndicatorId::BrentCrudeSpot
-        | MacroIndicatorId::WtiCrudeSpot
-        | MacroIndicatorId::CrudeOilVolatilityIndex => &fred::FRED_PROVIDER,
+        | MacroIndicatorId::UsManufacturingIndustrialProduction => {
+            &federal_reserve::FEDERAL_RESERVE_PROVIDER
+        }
+        MacroIndicatorId::UsEquityVolatilityIndex | MacroIndicatorId::CrudeOilVolatilityIndex => {
+            &cboe::CBOE_PROVIDER
+        }
     }
 }
 
@@ -226,6 +229,8 @@ pub(crate) fn read(
         Some(match id {
             MacroIndicatorId::TenYearTipsRealYield | MacroIndicatorId::TwoYearTreasuryNominalYield =>
                 "The latest Treasury observation is more than seven days old. Check the Treasury series again later.".to_string(),
+            MacroIndicatorId::BroadUsDollarIndex =>
+                "The latest Federal Reserve H.10 broad dollar observation is more than ten days old. Check the H.10 release again later.".to_string(),
             MacroIndicatorId::UsdIdrReferenceRate =>
                 "The latest daily USD/IDR reference rate is more than seven days old. Check the ECB reference series again later.".to_string(),
             MacroIndicatorId::BitcoinSpotEtfNetFlows =>
@@ -308,12 +313,12 @@ pub(crate) fn read(
             "Broad U.S. dollar index",
             "A Federal Reserve trade-weighted measure of the dollar against a broad group of U.S. trading partners. Dollar strength can weigh on dollar-priced metals and crude, although relationships can diverge during risk events.",
             "A trade-weighted index, not the ICE DXY or a tradable currency quote. The index is published on business days and can revise.",
-            "Index points (Jan 2006 = 100)",
+            "Index points (Jan 1997 = 100)",
             "index_points",
-            "Daily, business days",
-            "Board of Governors of the Federal Reserve System, retrieved from FRED",
-            "FRED series",
-            "FRED source series",
+            "Daily observations; H.10 release is weekly",
+            "Board of Governors of the Federal Reserve System",
+            "H.10 Nominal Broad Dollar Index",
+            "https://www.federalreserve.gov/releases/h10/current/",
             "from the prior business day",
         ),
         MacroIndicatorId::TenYearTreasuryNominalYield => (
@@ -323,9 +328,9 @@ pub(crate) fn read(
             "% per year",
             "percent",
             "Daily, business days",
-            "Board of Governors of the Federal Reserve System, retrieved from FRED",
-            "FRED series",
-            "FRED source series",
+            "U.S. Department of the Treasury",
+            "BC_10YEAR",
+            "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve",
             "from the prior business day",
         ),
         MacroIndicatorId::TenYearBreakevenInflation => (
@@ -335,9 +340,9 @@ pub(crate) fn read(
             "% per year",
             "percent",
             "Daily, business days",
-            "Board of Governors of the Federal Reserve System, retrieved from FRED",
-            "FRED series",
-            "FRED source series",
+            "U.S. Department of the Treasury (nominal 10-year yield minus 10-year TIPS real yield)",
+            "BC_10YEAR − TC_10YEAR, matched by date",
+            "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve",
             "from the prior business day",
         ),
         MacroIndicatorId::UsEquityVolatilityIndex => (
@@ -347,21 +352,21 @@ pub(crate) fn read(
             "Index points",
             "index_points",
             "Daily, business days",
-            "Cboe Global Markets, retrieved from FRED",
-            "FRED series",
-            "FRED source series",
+            "Cboe Global Markets",
+            "VIX",
+            "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
             "from the prior business day",
         ),
         MacroIndicatorId::UsManufacturingIndustrialProduction => (
             "U.S. manufacturing industrial production",
             "A monthly Federal Reserve index of U.S. manufacturing output. It is a cyclical activity proxy for industrial metals, including silver, rather than a direct measure of global demand.",
-            "U.S.-only monthly output index (2017 = 100); it does not measure global PMI, photovoltaic demand, inventories, or silver use directly. Recent values may be revised.",
-            "Index points (2017 = 100)",
+            "U.S.-only monthly output index; its reference year may change in annual revisions. It does not measure global PMI, photovoltaic demand, inventories, or silver use directly. Recent values may be revised.",
+            "Index points",
             "index_points",
             "Monthly",
-            "Board of Governors of the Federal Reserve System, retrieved from FRED",
-            "FRED series",
-            "FRED source series",
+            "Board of Governors of the Federal Reserve System, G.17",
+            "GMF · Manufacturing (NAICS)",
+            "https://www.federalreserve.gov/releases/g17/download.htm",
             "from the prior monthly observation",
         ),
         MacroIndicatorId::ChinaManufacturingPmi => (
@@ -383,9 +388,9 @@ pub(crate) fn read(
             "USD per barrel",
             "usd_per_barrel",
             "Daily, as reported",
-            "U.S. Energy Information Administration, retrieved from FRED",
-            "FRED series",
-            "FRED source series",
+            "U.S. Energy Information Administration",
+            "RBRTE · Europe Brent Spot Price FOB",
+            "https://www.eia.gov/dnav/pet/hist/RBRTEd.htm",
             "from the prior published observation",
         ),
         MacroIndicatorId::WtiCrudeSpot => (
@@ -395,9 +400,9 @@ pub(crate) fn read(
             "USD per barrel",
             "usd_per_barrel",
             "Daily, as reported",
-            "U.S. Energy Information Administration, retrieved from FRED",
-            "FRED series",
-            "FRED source series",
+            "U.S. Energy Information Administration",
+            "RWTC · WTI Cushing Spot Price FOB",
+            "https://www.eia.gov/dnav/pet/hist/RWTCd.htm",
             "from the prior published observation",
         ),
         MacroIndicatorId::CrudeOilVolatilityIndex => (
@@ -407,9 +412,9 @@ pub(crate) fn read(
             "Index points",
             "index_points",
             "Daily, business days",
-            "Cboe Global Markets, retrieved from FRED",
-            "FRED series",
-            "FRED source series",
+            "Cboe Global Markets",
+            "OVX · Cboe Crude Oil ETF Volatility Index",
+            "https://cdn.cboe.com/api/global/us_indices/daily_prices/OVX_History.csv",
             "from the prior business day",
         ),
         MacroIndicatorId::UsCommercialCrudeStocks => (
@@ -425,11 +430,15 @@ pub(crate) fn read(
             "from the prior weekly observation",
         ),
     };
-    let source_series_id = fred::source_series_id(id)
+    let source_series_id = federal_reserve::source_series_id(id)
+        .or_else(|| cboe::source_series_id(id))
+        .or_else(|| treasury::source_series_id(id))
         .or_else(|| eia::source_series_id(id))
         .or_else(|| nbs::source_series_id(id))
         .unwrap_or(source_series_id);
-    let source_url = fred::source_url(id)
+    let source_url = federal_reserve::source_url(id)
+        .or_else(|| cboe::source_url(id))
+        .or_else(|| treasury::source_url(id))
         .or_else(|| eia::source_url(id))
         .or_else(|| nbs::source_url(id))
         .unwrap_or(source_url);
@@ -464,6 +473,7 @@ fn observation_age_limit_days(id: MacroIndicatorId) -> i64 {
         MacroIndicatorId::UsManufacturingIndustrialProduction => 62,
         MacroIndicatorId::ChinaManufacturingPmi => 62,
         MacroIndicatorId::UsCommercialCrudeStocks => 21,
+        MacroIndicatorId::BroadUsDollarIndex => 10,
         _ => MAX_OBSERVATION_AGE_DAYS,
     }
 }
