@@ -5,6 +5,7 @@ import { TREASURY_XML_URL } from './macro-indicator-treasury.js';
 
 const dashboardTemplate = readFileSync(new URL('../../templates/dashboard.html', import.meta.url), 'utf8');
 const macroTemplate = readFileSync(new URL('../../templates/macro-indicators.html', import.meta.url), 'utf8');
+const macroScript = readFileSync(new URL('./macro-indicators.js', import.meta.url), 'utf8');
 const macroNavigationStyles = readFileSync(new URL('../../styles/macro-navigation.css', import.meta.url), 'utf8');
 
 const today = new Date().toISOString().slice(0, 10);
@@ -84,6 +85,59 @@ function apiDataFor(id) {
     if (id === 'usd_idr_daily_reference') return responseFx;
     if (id === 'bitcoin_spot_etf_net_flows') return responseBitcoinFlows;
     if (id === 'bitcoin_fear_greed_index') return responseFearGreed;
+    if (id === 'brent_crude_spot') return {
+        ...responseData, id, title: 'Brent crude spot price', value_format: 'usd_per_barrel',
+        unit: 'USD per barrel', latest_value: 92.94, observation_change: 0.5,
+        source_series_id: 'DCOILBRENTEU', source_url: 'https://fred.stlouisfed.org/series/DCOILBRENTEU',
+        observations: [{ date: previousDay, value: 92.44 }, { date: today, value: 92.94 }],
+    };
+    if (id === 'us_commercial_crude_stocks') return {
+        ...responseData, id, title: 'U.S. commercial crude oil stocks', value_format: 'million_barrels',
+        unit: 'Million barrels', latest_value: 417.797, observation_change: 3.38,
+        source_series_id: 'WCESTUS1', source_url: 'https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=WCESTUS1',
+        observations: [{ date: previousDay, value: 414.417 }, { date: today, value: 417.797 }],
+    };
+    if (id === 'us_equity_volatility_index') return {
+        ...responseData, id, title: 'Cboe VIX volatility index', value_format: 'index_points',
+        unit: 'Index points', latest_value: 28.44, observation_change: 1.25,
+        source_series_id: 'VIXCLS', source_url: 'https://fred.stlouisfed.org/series/VIXCLS',
+        observations: [{ date: previousDay, value: 27.19 }, { date: today, value: 28.44 }],
+    };
+    if (id === 'broad_us_dollar_index') return {
+        ...responseData, id, title: 'Broad U.S. dollar index', value_format: 'index_points',
+        unit: 'Index points', latest_value: 122.6503, observation_change: -0.1,
+        source_series_id: 'DTWEXBGS', source_url: 'https://fred.stlouisfed.org/series/DTWEXBGS',
+        observations: [{ date: previousDay, value: 122.7503 }, { date: today, value: 122.6503 }],
+    };
+    if (id === 'ten_year_treasury_nominal_yield') return {
+        ...responseData, id, title: '10-Year U.S. Treasury yield', source_series_id: 'DGS10',
+        source_url: 'https://fred.stlouisfed.org/series/DGS10',
+    };
+    if (id === 'ten_year_breakeven_inflation') return {
+        ...responseData, id, title: '10-Year breakeven inflation rate', source_series_id: 'T10YIE',
+        source_url: 'https://fred.stlouisfed.org/series/T10YIE',
+    };
+    if (id === 'us_manufacturing_industrial_production') return {
+        ...responseData, id, title: 'U.S. manufacturing industrial production', value_format: 'index_points',
+        unit: 'Index points (2017 = 100)', latest_value: 99.7246, source_series_id: 'IPMAN',
+        source_url: 'https://fred.stlouisfed.org/series/IPMAN',
+    };
+    if (id === 'china_manufacturing_pmi') return {
+        ...responseData, id, title: 'China official manufacturing PMI', value_format: 'index_points',
+        unit: 'Index points', latest_value: 49.3, source: 'National Bureau of Statistics of China',
+        source_series_id: 'NBS nationwide manufacturing PMI',
+        source_url: 'https://data.stats.gov.cn/dg/website/publicrelease/web/external/query?search=PMI&pagenum=1&pageSize=10',
+    };
+    if (id === 'wti_crude_spot') return {
+        ...responseData, id, title: 'WTI crude spot price', value_format: 'usd_per_barrel',
+        unit: 'USD per barrel', latest_value: 89.53, source_series_id: 'DCOILWTICO',
+        source_url: 'https://fred.stlouisfed.org/series/DCOILWTICO',
+    };
+    if (id === 'crude_oil_volatility_index') return {
+        ...responseData, id, title: 'Cboe crude oil volatility index', value_format: 'index_points',
+        unit: 'Index points', latest_value: 50.67, source_series_id: 'OVXCLS',
+        source_url: 'https://fred.stlouisfed.org/series/OVXCLS',
+    };
     return responseData;
 }
 
@@ -198,7 +252,12 @@ test('macro page renders separate charts, source metadata and independent refres
     const fx = cardFor(elements, 'usd_idr_daily_reference');
     const etfFlows = cardFor(elements, 'bitcoin_spot_etf_net_flows');
     const fearGreed = cardFor(elements, 'bitcoin_fear_greed_index');
-    assert.equal(elements.get('macro-indicator-grid').children.length, 5);
+    const chinaPmi = cardFor(elements, 'china_manufacturing_pmi');
+    assert.equal(elements.get('macro-indicator-grid').children.length, 15);
+    assert.equal(roleFor(chinaPmi, 'latest').textContent, '49.3 points');
+    assert.match(roleFor(chinaPmi, 'chart').innerHTML, /<svg/);
+    assert.match(roleFor(chinaPmi, 'chart').innerHTML, /macro-chart-reference/);
+    assert.equal(roleFor(chinaPmi, 'attribution-link').href, apiDataFor('china_manufacturing_pmi').source_url);
     assert.equal(roleFor(tips, 'latest').textContent, '2.88%');
     assert.equal(roleFor(twoYear, 'latest').textContent, '2.88%');
     assert.match(roleFor(fx, 'latest').textContent, /IDR 17,983\.82 \/ USD/);
@@ -214,6 +273,9 @@ test('macro page renders separate charts, source metadata and independent refres
     assert.equal(roleFor(fearGreed, 'change-unit').textContent, 'Index points');
     assert.match(roleFor(fearGreed, 'chart').innerHTML, />100<\/text>/);
     assert.equal(roleFor(fearGreed, 'attribution-link').href, responseFearGreed.source_url);
+    assert.equal(roleFor(cardFor(elements, 'brent_crude_spot'), 'latest').textContent, '$92.94 / bbl');
+    assert.match(roleFor(cardFor(elements, 'us_commercial_crude_stocks'), 'latest').textContent, /417\.8 million bbl/);
+    assert.equal(roleFor(cardFor(elements, 'us_equity_volatility_index'), 'latest').textContent, '28.44 points');
 
     const rangeControls = roleFor(tips, 'range-controls');
     const fiveYearButton = rangeControls.rangeButtons.find(button => button.dataset.range === '5y');
@@ -275,4 +337,13 @@ test('macro indicators remain discoverable from the screener and their page incl
     assert.match(macroTemplate, /data-role="limitations"/);
     assert.match(macroTemplate, /data-role="chart"/);
     assert.match(macroTemplate, /NWE\/DSS calculations, the combined ticker score, or signal direction/);
+    assert.match(macroTemplate, /XAUUSD · Gold \/ U\.S\. dollar/);
+    assert.match(macroTemplate, /XAGUSD · Silver \/ U\.S\. dollar/);
+    assert.match(macroTemplate, /UKOUSD · Brent crude/);
+    assert.match(macroTemplate, /ISM Manufacturing PMI/);
+    assert.match(macroTemplate, /China official manufacturing PMI/);
+    assert.match(macroTemplate, /#macro-indicator-china_manufacturing_pmi/);
+    assert.match(macroTemplate, /macro-pmi-note/);
+    assert.match(macroTemplate, /href="#macro-indicator-us_manufacturing_industrial_production">Federal Reserve production chart/);
+    assert.match(macroScript, /card\.id = `macro-indicator-\$\{config\.id\}`/);
 });

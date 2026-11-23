@@ -70,6 +70,53 @@ pub(crate) fn get_bounded(
     })
 }
 
+pub(crate) fn post_bounded(
+    url: &str,
+    payload: &str,
+    options: RequestOptions<'_>,
+) -> Result<BoundedResponse, String> {
+    let tls = TlsConfig::builder()
+        .root_certs(RootCerts::PlatformVerifier)
+        .build();
+    let config = Config::builder()
+        .https_only(true)
+        .http_status_as_error(false)
+        .max_redirects(options.max_redirects)
+        .max_response_header_size(MAX_RESPONSE_HEADER_BYTES)
+        .timeout_connect(Some(options.connect_timeout))
+        .timeout_global(Some(options.total_timeout))
+        .tls_config(tls)
+        .build();
+    let agent = Agent::new_with_config(config);
+    let mut request = agent
+        .post(url)
+        .header("Accept", options.accept)
+        .header("Content-Type", "application/json");
+    if let Some(user_agent) = options.user_agent {
+        request = request.header("User-Agent", user_agent);
+    }
+    if let Some(accept_encoding) = options.accept_encoding {
+        request = request.header("Accept-Encoding", accept_encoding);
+    }
+    if let Some(referer) = options.referer {
+        request = request.header("Referer", referer);
+    }
+    let mut response = request
+        .send(payload)
+        .map_err(|error| format!("public HTTP request failed: {error}"))?;
+    let retry_after_seconds = response
+        .headers()
+        .get("Retry-After")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok());
+    let body = read_bounded(response.body_mut().as_reader(), options.max_body_bytes)?;
+    Ok(BoundedResponse {
+        status: response.status().as_u16(),
+        retry_after_seconds,
+        body,
+    })
+}
+
 fn read_bounded(reader: impl Read, maximum: usize) -> Result<Vec<u8>, String> {
     let mut body = Vec::with_capacity(maximum.min(16 * 1024));
     let read_result = reader

@@ -1,12 +1,15 @@
 //! U.S. Treasury daily real- and nominal-yield provider.
 
-use super::{FetchStatus, MacroIndicatorId, MacroObservation, MacroSeriesProvider, ProviderSeriesSnapshot};
+use super::{
+    FetchStatus, MacroIndicatorId, MacroObservation, MacroSeriesProvider, ProviderSeriesSnapshot,
+};
 use crate::public_http::{get_bounded, RequestOptions};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-const TREASURY_XML_URL: &str = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=";
+const TREASURY_XML_URL: &str =
+    "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=";
 const MAX_RESPONSE_BYTES_PER_YEAR: usize = 512 * 1024;
 const MAX_SERIES_OBSERVATIONS: usize = 3_000;
 const CACHE_TTL_SECONDS: u64 = 6 * 60 * 60;
@@ -24,15 +27,9 @@ impl MacroSeriesProvider for TreasuryProvider {
         force_refresh: bool,
     ) -> Result<ProviderSeriesSnapshot, String> {
         match id {
-            MacroIndicatorId::TenYearTipsRealYield | MacroIndicatorId::TwoYearTreasuryNominalYield => {
-                load_series(id, force_refresh)
-            }
-            MacroIndicatorId::UsdIdrReferenceRate => {
-                Err("Treasury does not provide the requested macro series.".to_string())
-            }
-            MacroIndicatorId::BitcoinSpotEtfNetFlows | MacroIndicatorId::BitcoinFearGreedIndex => {
-                Err("Treasury does not provide the requested macro series.".to_string())
-            }
+            MacroIndicatorId::TenYearTipsRealYield
+            | MacroIndicatorId::TwoYearTreasuryNominalYield => load_series(id, force_refresh),
+            _ => Err("Treasury does not provide the requested macro series.".to_string()),
         }
     }
 }
@@ -58,11 +55,15 @@ fn load_series(
     let now = now_secs();
     let mut cache = cache().lock().unwrap_or_else(|error| error.into_inner());
     if let Some(current) = cache.get(&id) {
-        let recently_retrieved = now.saturating_sub(current.retrieved_at_seconds) < CACHE_TTL_SECONDS;
-        let retry_too_soon = now.saturating_sub(current.last_attempt_seconds)
-            < MINIMUM_RETRY_INTERVAL_SECONDS;
+        let recently_retrieved =
+            now.saturating_sub(current.retrieved_at_seconds) < CACHE_TTL_SECONDS;
+        let retry_too_soon =
+            now.saturating_sub(current.last_attempt_seconds) < MINIMUM_RETRY_INTERVAL_SECONDS;
         if (recently_retrieved && !force_refresh) || retry_too_soon {
-            return Ok(snapshot_from_cache(current, current.refresh_error.is_some()));
+            return Ok(snapshot_from_cache(
+                current,
+                current.refresh_error.is_some(),
+            ));
         }
     }
     if let Some(current) = cache.get_mut(&id) {
@@ -134,9 +135,13 @@ fn fetch_series(id: MacroIndicatorId) -> Result<Vec<MacroObservation>, String> {
                 .collect()
         });
 
-    let mut observations: Vec<MacroObservation> = yearly_observations?.into_iter().flatten().collect();
+    let mut observations: Vec<MacroObservation> =
+        yearly_observations?.into_iter().flatten().collect();
     observations.sort_by(|left, right| left.date.cmp(&right.date));
-    if observations.windows(2).any(|pair| pair[0].date >= pair[1].date) {
+    if observations
+        .windows(2)
+        .any(|pair| pair[0].date >= pair[1].date)
+    {
         return Err("Treasury returned unordered or duplicate yield observations.".to_string());
     }
     if observations.len() > MAX_SERIES_OBSERVATIONS {
@@ -148,7 +153,10 @@ fn fetch_series(id: MacroIndicatorId) -> Result<Vec<MacroObservation>, String> {
 fn fetch_year(year: i32, id: MacroIndicatorId) -> Result<Vec<MacroObservation>, String> {
     let config = series_config(id)
         .ok_or_else(|| "Treasury does not provide the requested macro series.".to_string())?;
-    let url = format!("{TREASURY_XML_URL}{}&field_tdr_date_value={year}", config.dataset);
+    let url = format!(
+        "{TREASURY_XML_URL}{}&field_tdr_date_value={year}",
+        config.dataset
+    );
     let response = get_bounded(
         &url,
         RequestOptions {
@@ -163,7 +171,10 @@ fn fetch_year(year: i32, id: MacroIndicatorId) -> Result<Vec<MacroObservation>, 
         },
     )?;
     if response.status >= 400 {
-        return Err(format!("Treasury returned HTTP {} for {year}.", response.status));
+        return Err(format!(
+            "Treasury returned HTTP {} for {year}.",
+            response.status
+        ));
     }
     let xml = std::str::from_utf8(&response.body)
         .map_err(|_| format!("Treasury returned XML that was not valid UTF-8 for {year}."))?;
@@ -176,7 +187,9 @@ pub(super) fn parse_treasury_year_xml(
     id: MacroIndicatorId,
 ) -> Result<Vec<MacroObservation>, String> {
     if !xml.contains("<feed") {
-        return Err(format!("Treasury returned an unexpected XML feed for {expected_year}."));
+        return Err(format!(
+            "Treasury returned an unexpected XML feed for {expected_year}."
+        ));
     }
     let config = series_config(id)
         .ok_or_else(|| "Treasury does not provide the requested macro series.".to_string())?;
@@ -204,7 +217,9 @@ pub(super) fn parse_treasury_year_xml(
             .parse::<i32>()
             .map_err(|_| "Treasury returned an invalid yield observation year.".to_string())?;
         if date_year != expected_year {
-            return Err(format!("Treasury returned an observation outside {expected_year}."));
+            return Err(format!(
+                "Treasury returned an observation outside {expected_year}."
+            ));
         }
         if let Some(raw_value) = xml_property(entry, config.field) {
             let raw_value = raw_value.trim();
@@ -213,7 +228,9 @@ pub(super) fn parse_treasury_year_xml(
                     .parse::<f64>()
                     .ok()
                     .filter(|value| value.is_finite())
-                    .ok_or_else(|| format!("Treasury returned an invalid {}.", config.value_label))?;
+                    .ok_or_else(|| {
+                        format!("Treasury returned an invalid {}.", config.value_label)
+                    })?;
                 observations.push(MacroObservation {
                     date: date.to_string(),
                     value,
@@ -224,10 +241,18 @@ pub(super) fn parse_treasury_year_xml(
         remaining = &remaining[entry_end + "</entry>".len()..];
     }
     if observations.is_empty() {
-        return Err(format!("Treasury returned no {} observations for {expected_year}.", config.value_label));
+        return Err(format!(
+            "Treasury returned no {} observations for {expected_year}.",
+            config.value_label
+        ));
     }
-    if observations.windows(2).any(|pair| pair[0].date >= pair[1].date) {
-        return Err(format!("Treasury returned unordered or duplicate observations for {expected_year}."));
+    if observations
+        .windows(2)
+        .any(|pair| pair[0].date >= pair[1].date)
+    {
+        return Err(format!(
+            "Treasury returned unordered or duplicate observations for {expected_year}."
+        ));
     }
     Ok(observations)
 }
@@ -260,9 +285,7 @@ fn series_config(id: MacroIndicatorId) -> Option<TreasurySeriesConfig> {
             field: "BC_2YEAR",
             value_label: "2-year nominal-yield",
         }),
-        MacroIndicatorId::UsdIdrReferenceRate
-        | MacroIndicatorId::BitcoinSpotEtfNetFlows
-        | MacroIndicatorId::BitcoinFearGreedIndex => None,
+        _ => None,
     }
 }
 

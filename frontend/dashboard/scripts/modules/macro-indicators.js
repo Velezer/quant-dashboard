@@ -4,11 +4,24 @@ import { loadTreasurySnapshot } from './macro-indicator-treasury.js';
 
 const TIPS_ID = 'ten_year_tips_real_yield';
 const INDICATORS = Object.freeze([
-    { id: TIPS_ID, category: 'REAL INTEREST RATE · UNITED STATES', fallbackTitle: '10-Year TIPS real yield', chartHeading: 'Yield history' },
-    { id: 'two_year_treasury_nominal_yield', category: 'NOMINAL INTEREST RATE · UNITED STATES', fallbackTitle: '2-Year U.S. Treasury yield', chartHeading: 'Yield history' },
+    { id: TIPS_ID, category: 'GOLD & SILVER · REAL RATE', fallbackTitle: '10-Year TIPS real yield', chartHeading: 'Yield history' },
+    { id: 'two_year_treasury_nominal_yield', category: 'GOLD & SILVER · FED PATH', fallbackTitle: '2-Year U.S. Treasury yield', chartHeading: 'Yield history' },
     { id: 'usd_idr_daily_reference', category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', chartHeading: 'Exchange-rate history' },
     { id: 'bitcoin_spot_etf_net_flows', category: 'CRYPTO FUND FLOWS · UNITED STATES', fallbackTitle: 'U.S. spot Bitcoin ETF net flows', chartHeading: 'Daily net flow history', source: 'The Commoner Bitcoin ETF Tracker by TFTC', sourceUrl: 'https://www.tftc.io/bitcoin-etf-flows' },
     { id: 'bitcoin_fear_greed_index', category: 'CRYPTO MARKET SENTIMENT', fallbackTitle: 'Bitcoin Fear & Greed Index', chartHeading: 'Sentiment history', source: 'Alternative.me', sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/' },
+    { id: 'broad_us_dollar_index', category: 'GOLD · SILVER · OIL · USD', fallbackTitle: 'Broad U.S. dollar index', chartHeading: 'Dollar history' },
+    { id: 'ten_year_treasury_nominal_yield', category: 'GOLD & SILVER · NOMINAL RATE', fallbackTitle: '10-Year U.S. Treasury yield', chartHeading: 'Yield history' },
+    { id: 'ten_year_breakeven_inflation', category: 'GOLD · INFLATION PRICING', fallbackTitle: '10-Year breakeven inflation rate', chartHeading: 'Inflation-compensation history' },
+    { id: 'us_equity_volatility_index', category: 'GOLD · RISK APPETITE PROXY', fallbackTitle: 'Cboe VIX volatility index', chartHeading: 'Volatility history' },
+    { id: 'us_manufacturing_industrial_production', category: 'SILVER · MONTHLY ACTIVITY PROXY', fallbackTitle: 'U.S. manufacturing industrial production', chartHeading: 'Industrial production history' },
+    {
+        id: 'china_manufacturing_pmi', category: 'SILVER & OIL · CHINA ACTIVITY',
+        fallbackTitle: 'China official manufacturing PMI', chartHeading: 'Manufacturing PMI history', referenceLine: 50,
+    },
+    { id: 'brent_crude_spot', category: 'UKOUSD · BRENT BENCHMARK', fallbackTitle: 'Brent crude spot price', chartHeading: 'Brent spot history' },
+    { id: 'wti_crude_spot', category: 'UKOUSD · REGIONAL BENCHMARK', fallbackTitle: 'WTI crude spot price', chartHeading: 'WTI spot history' },
+    { id: 'crude_oil_volatility_index', category: 'UKOUSD · OIL RISK PRICING', fallbackTitle: 'Cboe crude oil volatility index', chartHeading: 'Oil volatility history' },
+    { id: 'us_commercial_crude_stocks', category: 'UKOUSD · WEEKLY SUPPLY BALANCE', fallbackTitle: 'U.S. commercial crude oil stocks', chartHeading: 'Inventory history' },
 ]);
 
 const statusElement = document.getElementById('macro-status');
@@ -122,6 +135,9 @@ function changeUnit(valueFormat) {
     if (valueFormat === 'idr_per_usd') return 'IDR per USD · percentage shown';
     if (valueFormat === 'usd_flow') return 'USD net flow';
     if (valueFormat === 'index_0_100') return 'Index points';
+    if (valueFormat === 'index_points') return 'Index points';
+    if (valueFormat === 'usd_per_barrel') return 'USD per barrel';
+    if (valueFormat === 'million_barrels') return 'Million barrels';
     return 'Basis points';
 }
 
@@ -131,7 +147,12 @@ function renderChart(record) {
     const rangeControls = role(record.card, 'range-controls');
     const observations = observationsForRange(data.observations, record.selectedRange);
     const chart = role(record.card, 'chart');
-    chart.innerHTML = renderMacroChart(observations, data.title, data.value_format || 'percent');
+    chart.innerHTML = renderMacroChart(
+        observations,
+        data.title,
+        data.value_format || 'percent',
+        record.config.referenceLine,
+    );
     chart.setAttribute('aria-label', `${data.title} history, ${record.selectedRange} range`);
     rangeControls.querySelectorAll('button[data-range]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.range === record.selectedRange));
@@ -224,6 +245,7 @@ async function loadData(record, { refresh = false } = {}) {
 
 function initializeCard(config) {
     const card = cardTemplate.content.firstElementChild.cloneNode(true);
+    card.id = `macro-indicator-${config.id}`;
     card.dataset.macroId = config.id;
     role(card, 'category').textContent = config.category;
     role(card, 'title').textContent = config.fallbackTitle;

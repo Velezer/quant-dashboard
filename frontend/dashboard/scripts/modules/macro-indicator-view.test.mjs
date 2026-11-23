@@ -4,7 +4,10 @@ import {
     formatBasisPoints,
     formatCurrency,
     formatIndex,
+    formatIndexPoints,
+    formatMillionBarrels,
     formatObservationChange,
+    formatUsdPerBarrel,
     formatUsdFlow,
     formatValue,
     formatYield,
@@ -32,11 +35,17 @@ test('macro value and change presenters preserve each indicator unit', () => {
     assert.equal(formatCurrency(null), 'Unavailable');
     assert.equal(formatIndex(11), '11 / 100');
     assert.equal(formatIndex(null), 'Unavailable');
+    assert.equal(formatIndexPoints(122.6503), '122.65 points');
+    assert.equal(formatMillionBarrels(417.797), '417.8 million bbl');
+    assert.equal(formatUsdPerBarrel(92.94), '$92.94 / bbl');
     assert.equal(formatUsdFlow(-125_500_000), '−$125.5M');
     assert.equal(formatUsdFlow(1_250_000_000), '+$1.25B');
     assert.equal(formatValue(2.88, 'percent'), '2.88%');
     assert.equal(formatValue(17983.818, 'idr_per_usd'), 'IDR 17,983.82 / USD');
     assert.equal(formatValue(11, 'index_0_100'), '11 / 100');
+    assert.equal(formatValue(28.44, 'index_points'), '28.44 points');
+    assert.equal(formatValue(92.94, 'usd_per_barrel'), '$92.94 / bbl');
+    assert.equal(formatValue(417.797, 'million_barrels'), '417.8 million bbl');
     assert.equal(formatValue(-125_500_000, 'usd_flow'), '−$125.5M');
     assert.equal(formatBasisPoints(2.88), '+3 bp');
     assert.equal(formatBasisPoints(-4.6), '-5 bp');
@@ -44,6 +53,9 @@ test('macro value and change presenters preserve each indicator unit', () => {
     assert.equal(formatObservationChange(0.01, 2.88, 'percent', 'from prior day'), '+1 bp from prior day');
     assert.equal(formatObservationChange(25, 17983, 'idr_per_usd', 'from prior month'), '+25.00 IDR/USD (+0.14%) from prior month');
     assert.equal(formatObservationChange(-4, 11, 'index_0_100', 'from prior day'), '−4 points from prior day');
+    assert.equal(formatObservationChange(0.5, 28.44, 'index_points', 'from prior day'), '+0.50 points from prior day');
+    assert.equal(formatObservationChange(-1.25, 92.94, 'usd_per_barrel', 'from prior observation'), '−$1.25 / bbl from prior observation');
+    assert.equal(formatObservationChange(3.38, 417.797, 'million_barrels', 'from prior week'), '+3.4 million bbl from prior week');
     assert.equal(formatObservationChange(1_250_000_000, 2_000_000_000, 'usd_flow', 'from prior session'), '+$1.25B from prior session');
     assert.equal(formatObservationChange(null, 2.88), 'Unavailable');
 });
@@ -78,4 +90,12 @@ test('macro charts use fixed bounds for sentiment and show a zero line for flows
     assert.match(flowChart, /macro-chart-zero/);
     assert.match(flowChart, /\+\$\d+\.\d+M/);
     assert.match(flowChart, /−\$\d+\.\d+M/);
+
+    const pmiChart = renderMacroChart([
+        { date: '2026-09-01', value: 50.1 },
+        { date: '2026-10-01', value: 49.3 },
+    ], 'China official manufacturing PMI', 'index_points', 50);
+    assert.match(pmiChart, /macro-chart-reference/);
+    assert.match(pmiChart, />50 · reference<\/text>/);
+    assert.match(pmiChart, /Reference line at 50/);
 });

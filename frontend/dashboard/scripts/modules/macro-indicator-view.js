@@ -31,6 +31,21 @@ export function formatIndex(value) {
     return `${Number.isInteger(index) ? index : index.toFixed(1)} / 100`;
 }
 
+export function formatIndexPoints(value) {
+    if (value == null || value === '' || !Number.isFinite(Number(value))) return 'Unavailable';
+    return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} points`;
+}
+
+export function formatUsdPerBarrel(value) {
+    if (value == null || value === '' || !Number.isFinite(Number(value))) return 'Unavailable';
+    return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / bbl`;
+}
+
+export function formatMillionBarrels(value) {
+    if (value == null || value === '' || !Number.isFinite(Number(value))) return 'Unavailable';
+    return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} million bbl`;
+}
+
 export function formatUsdFlow(value) {
     if (value == null || value === '' || !Number.isFinite(Number(value))) return 'Unavailable';
     const amount = Number(value);
@@ -46,6 +61,9 @@ export function formatValue(value, valueFormat = 'percent') {
     if (valueFormat === 'idr_per_usd') return formatCurrency(value);
     if (valueFormat === 'usd_flow') return formatUsdFlow(value);
     if (valueFormat === 'index_0_100') return formatIndex(value);
+    if (valueFormat === 'index_points') return formatIndexPoints(value);
+    if (valueFormat === 'usd_per_barrel') return formatUsdPerBarrel(value);
+    if (valueFormat === 'million_barrels') return formatMillionBarrels(value);
     return formatYield(value);
 }
 
@@ -65,6 +83,24 @@ export function formatObservationChange(change, latestValue, valueFormat = 'perc
     }
     if (valueFormat === 'usd_flow') {
         const formatted = formatUsdFlow(Number(change));
+        return period ? `${formatted} ${period}` : formatted;
+    }
+    if (valueFormat === 'index_points') {
+        const amount = Number(change);
+        const signed = amount > 0 ? '+' : amount < 0 ? '−' : '';
+        const formatted = `${signed}${Math.abs(amount).toFixed(Number.isInteger(amount) ? 0 : 2)} points`;
+        return period ? `${formatted} ${period}` : formatted;
+    }
+    if (valueFormat === 'usd_per_barrel') {
+        const amount = Number(change);
+        const signed = amount > 0 ? '+' : amount < 0 ? '−' : '';
+        const formatted = `${signed}$${Math.abs(amount).toFixed(2)} / bbl`;
+        return period ? `${formatted} ${period}` : formatted;
+    }
+    if (valueFormat === 'million_barrels') {
+        const amount = Number(change);
+        const signed = amount > 0 ? '+' : amount < 0 ? '−' : '';
+        const formatted = `${signed}${Math.abs(amount).toFixed(1)} million bbl`;
         return period ? `${formatted} ${period}` : formatted;
     }
     if (valueFormat !== 'idr_per_usd') {
@@ -89,6 +125,9 @@ function axisValue(value, valueFormat) {
     }
     if (valueFormat === 'usd_flow') return formatUsdFlow(value);
     if (valueFormat === 'index_0_100') return `${Math.round(Number(value))}`;
+    if (valueFormat === 'index_points') return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (valueFormat === 'usd_per_barrel') return `$${Number(value).toFixed(2)}`;
+    if (valueFormat === 'million_barrels') return Number(value).toFixed(1);
     return `${Number(value).toFixed(2)}%`;
 }
 
@@ -98,7 +137,7 @@ function escapeSvg(value) {
     })[character]);
 }
 
-export function renderMacroChart(observations, title, valueFormat = 'percent') {
+export function renderMacroChart(observations, title, valueFormat = 'percent', referenceLine = null) {
     const validRows = (Array.isArray(observations) ? observations : []).filter(row =>
         /^\d{4}-\d{2}-\d{2}$/.test(row?.date || '') && Number.isFinite(Number(row?.value)));
     if (!validRows.length) return '<p class="macro-chart-empty">No observations are available for this range.</p>';
@@ -108,6 +147,9 @@ export function renderMacroChart(observations, title, valueFormat = 'percent') {
     const plotWidth = width - left - right, plotHeight = height - top - bottom;
     const values = validRows.map(row => Number(row.value));
     const valueMin = Math.min(...values), valueMax = Math.max(...values);
+    const referenceValue = referenceLine != null && referenceLine !== '' && Number.isFinite(Number(referenceLine))
+        ? Number(referenceLine)
+        : null;
     const spread = valueMax - valueMin;
     const padding = Math.max(
         spread * 0.08,
@@ -115,10 +157,14 @@ export function renderMacroChart(observations, title, valueFormat = 'percent') {
     );
     const lower = valueFormat === 'index_0_100'
         ? 0
-        : valueFormat === 'usd_flow' ? Math.min(0, valueMin - padding) : valueMin - padding;
+        : valueFormat === 'usd_flow'
+            ? Math.min(0, valueMin - padding)
+            : referenceValue == null ? valueMin - padding : Math.min(valueMin - padding, referenceValue - padding);
     const upper = valueFormat === 'index_0_100'
         ? 100
-        : valueFormat === 'usd_flow' ? Math.max(0, valueMax + padding) : valueMax + padding;
+        : valueFormat === 'usd_flow'
+            ? Math.max(0, valueMax + padding)
+            : referenceValue == null ? valueMax + padding : Math.max(valueMax + padding, referenceValue + padding);
     const yAt = value => top + ((upper - value) / (upper - lower)) * plotHeight;
     const xAt = index => left + (validRows.length === 1 ? plotWidth / 2 : (index / (validRows.length - 1)) * plotWidth);
     const points = validRows.map((row, index) => `${xAt(index).toFixed(2)},${yAt(Number(row.value)).toFixed(2)}`).join(' ');
@@ -135,8 +181,16 @@ export function renderMacroChart(observations, title, valueFormat = 'percent') {
     const zeroLine = valueFormat === 'usd_flow'
         ? `<line class="macro-chart-zero" x1="${left}" y1="${yAt(0).toFixed(2)}" x2="${width - right}" y2="${yAt(0).toFixed(2)}"></line>`
         : '';
+    const referenceLineSvg = referenceValue != null
+        ? `<line class="macro-chart-reference" x1="${left}" y1="${yAt(referenceValue).toFixed(2)}" x2="${width - right}" y2="${yAt(referenceValue).toFixed(2)}"></line><text class="macro-chart-reference-label" x="${width - right - 4}" y="${(yAt(referenceValue) - 6).toFixed(2)}" text-anchor="end">${axisValue(referenceValue, valueFormat)} · reference</text>`
+        : '';
     const safeTitle = escapeSvg(title || 'Macroeconomic indicator');
-    const svgLabel = `${safeTitle}, from ${startDate} through ${endDate}. Latest value ${formatValue(values.at(-1), valueFormat)}.`;
+    const referenceDescription = referenceValue == null
+        ? ''
+        : ` Reference line at ${axisValue(referenceValue, valueFormat)}.`;
+    const latestDescription = formatValue(values.at(-1), valueFormat);
+    const svgLabel = `${safeTitle}, from ${startDate} through ${endDate}.`
+        + ` Latest value ${latestDescription}.${referenceDescription}`;
     const safeLabel = escapeSvg(svgLabel);
-    return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${safeLabel}" xmlns="http://www.w3.org/2000/svg"><title>${safeLabel}</title>${ticks}${zeroLine}<polyline class="macro-chart-line" points="${points}"></polyline>${point}<text class="macro-chart-label" x="${left}" y="${height - 10}" text-anchor="start">${startDate}</text><text class="macro-chart-label" x="${width - right}" y="${height - 10}" text-anchor="end">${endDate}</text></svg>`;
+    return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${safeLabel}" xmlns="http://www.w3.org/2000/svg"><title>${safeLabel}</title>${ticks}${zeroLine}${referenceLineSvg}<polyline class="macro-chart-line" points="${points}"></polyline>${point}<text class="macro-chart-label" x="${left}" y="${height - 10}" text-anchor="start">${startDate}</text><text class="macro-chart-label" x="${width - right}" y="${height - 10}" text-anchor="end">${endDate}</text></svg>`;
 }
