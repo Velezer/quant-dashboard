@@ -4,24 +4,24 @@ import { loadTreasurySnapshot } from './macro-indicator-treasury.js';
 
 const TIPS_ID = 'ten_year_tips_real_yield';
 const INDICATORS = Object.freeze([
-    { id: TIPS_ID, category: 'GOLD & SILVER · REAL RATE', fallbackTitle: '10-Year TIPS real yield', chartHeading: 'Yield history' },
-    { id: 'two_year_treasury_nominal_yield', category: 'GOLD & SILVER · FED PATH', fallbackTitle: '2-Year U.S. Treasury yield', chartHeading: 'Yield history' },
-    { id: 'usd_idr_daily_reference', category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', chartHeading: 'Exchange-rate history' },
-    { id: 'bitcoin_spot_etf_net_flows', category: 'CRYPTO FUND FLOWS · UNITED STATES', fallbackTitle: 'U.S. spot Bitcoin ETF net flows', chartHeading: 'Daily net flow history', source: 'The Commoner Bitcoin ETF Tracker by TFTC', sourceUrl: 'https://www.tftc.io/bitcoin-etf-flows' },
-    { id: 'bitcoin_fear_greed_index', category: 'CRYPTO MARKET SENTIMENT', fallbackTitle: 'Bitcoin Fear & Greed Index', chartHeading: 'Sentiment history', source: 'Alternative.me', sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/' },
-    { id: 'broad_us_dollar_index', category: 'GOLD · SILVER · OIL · USD', fallbackTitle: 'Broad U.S. dollar index', chartHeading: 'Dollar history' },
-    { id: 'ten_year_treasury_nominal_yield', category: 'GOLD & SILVER · NOMINAL RATE', fallbackTitle: '10-Year U.S. Treasury yield', chartHeading: 'Yield history' },
-    { id: 'ten_year_breakeven_inflation', category: 'GOLD · INFLATION PRICING', fallbackTitle: '10-Year breakeven inflation rate', chartHeading: 'Inflation-compensation history' },
-    { id: 'us_equity_volatility_index', category: 'GOLD · RISK APPETITE PROXY', fallbackTitle: 'Cboe VIX volatility index', chartHeading: 'Volatility history' },
-    { id: 'us_manufacturing_industrial_production', category: 'SILVER · MONTHLY ACTIVITY PROXY', fallbackTitle: 'U.S. manufacturing industrial production', chartHeading: 'Industrial production history' },
+    { id: TIPS_ID, category: 'GOLD & SILVER · REAL RATE', fallbackTitle: '10-Year TIPS real yield', summary: 'Daily inflation-adjusted 10-year U.S. yield.', chartHeading: 'Yield history' },
+    { id: 'two_year_treasury_nominal_yield', category: 'GOLD & SILVER · FED PATH', fallbackTitle: '2-Year U.S. Treasury yield', summary: 'Daily market rate for the expected Fed path.', chartHeading: 'Yield history' },
+    { id: 'usd_idr_daily_reference', category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', summary: 'ECB reference USD/IDR cross-rate.', chartHeading: 'Exchange-rate history' },
+    { id: 'bitcoin_spot_etf_net_flows', category: 'CRYPTO FUND FLOWS · UNITED STATES', fallbackTitle: 'U.S. spot Bitcoin ETF net flows', summary: 'Net ETF creations and redemptions.', chartHeading: 'Daily net flow history', source: 'The Commoner Bitcoin ETF Tracker by TFTC', sourceUrl: 'https://www.tftc.io/bitcoin-etf-flows' },
+    { id: 'bitcoin_fear_greed_index', category: 'CRYPTO MARKET SENTIMENT', fallbackTitle: 'Bitcoin Fear & Greed Index', summary: 'Daily crypto sentiment · 0–100.', chartHeading: 'Sentiment history', source: 'Alternative.me', sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/' },
+    { id: 'broad_us_dollar_index', category: 'GOLD · SILVER · OIL · USD', fallbackTitle: 'Broad U.S. dollar index', summary: 'Fed trade-weighted dollar index.', chartHeading: 'Dollar history' },
+    { id: 'ten_year_treasury_nominal_yield', category: 'GOLD & SILVER · NOMINAL RATE', fallbackTitle: '10-Year U.S. Treasury yield', summary: 'Daily nominal 10-year U.S. yield.', chartHeading: 'Yield history' },
+    { id: 'ten_year_breakeven_inflation', category: 'GOLD · INFLATION PRICING', fallbackTitle: '10-Year breakeven inflation rate', summary: '10-year nominal yield minus TIPS yield.', chartHeading: 'Inflation-compensation history' },
+    { id: 'us_equity_volatility_index', category: 'GOLD · RISK APPETITE PROXY', fallbackTitle: 'Cboe VIX volatility index', summary: 'U.S. equity-volatility proxy.', chartHeading: 'Volatility history' },
+    { id: 'us_manufacturing_industrial_production', category: 'SILVER · MONTHLY ACTIVITY PROXY', fallbackTitle: 'U.S. manufacturing industrial production', summary: 'Monthly U.S. manufacturing output.', chartHeading: 'Industrial production history' },
     {
         id: 'china_manufacturing_pmi', category: 'SILVER & OIL · CHINA ACTIVITY',
-        fallbackTitle: 'China official manufacturing PMI', chartHeading: 'Manufacturing PMI history', referenceLine: 50,
+        fallbackTitle: 'China official manufacturing PMI', summary: 'Monthly factory activity · 50 marks expansion.', chartHeading: 'Manufacturing PMI history', referenceLine: 50,
     },
-    { id: 'brent_crude_spot', category: 'UKOUSD · BRENT BENCHMARK', fallbackTitle: 'Brent crude spot price', chartHeading: 'Brent spot history' },
-    { id: 'wti_crude_spot', category: 'UKOUSD · REGIONAL BENCHMARK', fallbackTitle: 'WTI crude spot price', chartHeading: 'WTI spot history' },
-    { id: 'crude_oil_volatility_index', category: 'UKOUSD · OIL RISK PRICING', fallbackTitle: 'Cboe crude oil volatility index', chartHeading: 'Oil volatility history' },
-    { id: 'us_commercial_crude_stocks', category: 'UKOUSD · WEEKLY SUPPLY BALANCE', fallbackTitle: 'U.S. commercial crude oil stocks', chartHeading: 'Inventory history' },
+    { id: 'brent_crude_spot', category: 'UKOUSD · BRENT BENCHMARK', fallbackTitle: 'Brent crude spot price', summary: 'Daily EIA Brent spot benchmark.', chartHeading: 'Brent spot history' },
+    { id: 'wti_crude_spot', category: 'UKOUSD · REGIONAL BENCHMARK', fallbackTitle: 'WTI crude spot price', summary: 'Daily EIA WTI spot benchmark.', chartHeading: 'WTI spot history' },
+    { id: 'crude_oil_volatility_index', category: 'UKOUSD · OIL RISK PRICING', fallbackTitle: 'Cboe crude oil volatility index', summary: 'Options volatility for crude oil ETFs.', chartHeading: 'Oil volatility history' },
+    { id: 'us_commercial_crude_stocks', category: 'UKOUSD · WEEKLY SUPPLY BALANCE', fallbackTitle: 'U.S. commercial crude oil stocks', summary: 'Weekly U.S. commercial crude inventory.', chartHeading: 'Inventory history' },
 ]);
 
 const statusElement = document.getElementById('macro-status');
@@ -76,7 +76,7 @@ function renderSnapshot(record, data) {
 
     card.setAttribute('aria-label', data.title);
     role(card, 'title').textContent = data.title;
-    role(card, 'description').textContent = data.description;
+    role(card, 'description').textContent = record.config.summary || data.description;
     role(card, 'latest').textContent = formatValue(data.latest_value, valueFormat);
     const latestClassification = data.latest_classification || data.observations?.at(-1)?.classification;
     const classificationElement = role(card, 'latest-classification');
@@ -111,22 +111,17 @@ function renderSnapshot(record, data) {
     staleNote.hidden = !data.status_note && !data.refresh_error;
     staleNote.textContent = [data.status_note, data.refresh_error].filter(Boolean).join(' ');
     role(card, 'chart-heading').textContent = record.config.chartHeading;
-    role(card, 'chart-caption').textContent = `${data.frequency} · ${data.unit} · latest observation ${observationDate}`;
-    role(card, 'data-limits').textContent = 'The observation period is shown separately from the source check time. Macro values are descriptive context and are not a prediction or an execution signal.';
+    role(card, 'chart-caption').textContent = `${data.frequency} · ${data.unit}`;
     renderChart(record);
     renderObservationsTable(record, data.observations);
 
     const status = role(card, 'status');
+    status.hidden = data.freshness !== 'stale';
     if (data.freshness === 'stale') {
-        status.textContent = `Loaded ${data.title}; the latest observation is ${observationDate}. Review the stale-data note before relying on it.`;
+        status.textContent = `Stale · latest observation ${observationDate}.`;
         status.dataset.tone = 'error';
     } else {
-        const retrievalText = data.fetch_status === 'cached'
-            ? `Last retrieved at ${formatRetrievedAt(data.retrieved_at_seconds)}.`
-            : data.fetch_status === 'stale'
-                ? `Showing the last available observations from ${formatRetrievedAt(data.retrieved_at_seconds)}.`
-                : `Retrieved at ${formatRetrievedAt(data.retrieved_at_seconds)}.`;
-        status.textContent = `Loaded ${data.title}; latest observation ${observationDate}. ${retrievalText}`;
+        status.textContent = '';
         status.dataset.tone = 'ready';
     }
 }
@@ -173,6 +168,7 @@ function renderUnavailable(record, message) {
     role(record.card, 'stale-note').hidden = true;
     role(record.card, 'status').textContent = `${message} Retry this indicator or use Refresh all.`;
     role(record.card, 'status').dataset.tone = 'error';
+    role(record.card, 'status').hidden = false;
 }
 
 function updatePageStatus() {
@@ -182,7 +178,7 @@ function updatePageStatus() {
     const refreshFailures = [...records.values()].filter(record => record.failed && record.snapshot).length;
     const total = records.size;
     if (loaded === total && stale === 0 && unavailable === 0 && refreshFailures === 0) {
-        statusElement.textContent = `All ${total} macro indicators are current. Each card shows its source and observation period.`;
+        statusElement.textContent = `All ${total} indicators current.`;
         statusElement.dataset.tone = 'ready';
     } else {
         const notes = [];
@@ -190,7 +186,7 @@ function updatePageStatus() {
         if (stale) notes.push(`${stale} stale`);
         if (unavailable) notes.push(`${unavailable} unavailable`);
         if (refreshFailures) notes.push(`${refreshFailures} refresh failed`);
-        statusElement.textContent = `Macro indicators: ${notes.join(', ')}. Each available chart remains independent and can be refreshed separately.`;
+        statusElement.textContent = `Macro data: ${notes.join(' · ')}.`;
         statusElement.dataset.tone = 'error';
     }
 }
@@ -217,8 +213,9 @@ function apiUrl(id, refresh) {
 async function loadData(record, { refresh = false } = {}) {
     const refreshButton = record.card.querySelector('[data-action="refresh"]');
     refreshButton.disabled = true;
-    role(record.card, 'status').textContent = refresh ? 'Checking the latest published observation…' : 'Loading observations…';
+    role(record.card, 'status').textContent = refresh ? 'Checking latest data…' : 'Loading…';
     role(record.card, 'status').dataset.tone = 'loading';
+    role(record.card, 'status').hidden = !refresh;
     record.failed = false;
     try {
         const data = await loadLatestSnapshot(record.config.id, refresh);
@@ -231,9 +228,10 @@ async function loadData(record, { refresh = false } = {}) {
             freshness.textContent = 'Refresh failed';
             freshness.className = 'state-badge error';
             role(record.card, 'stale-note').hidden = false;
-            role(record.card, 'stale-note').textContent = `The update failed. Showing the last loaded observation (${formatObservationDate(record.snapshot.observation_date, record.snapshot.frequency)}). ${message}`;
-            role(record.card, 'status').textContent = 'The latest macro data could not be refreshed. The previously loaded observation remains visible.';
+            role(record.card, 'stale-note').textContent = `Refresh failed. Showing prior data from ${formatObservationDate(record.snapshot.observation_date, record.snapshot.frequency)}. ${message}`;
+            role(record.card, 'status').textContent = 'Refresh failed · showing prior data.';
             role(record.card, 'status').dataset.tone = 'error';
+            role(record.card, 'status').hidden = false;
         } else {
             renderUnavailable(record, message);
         }

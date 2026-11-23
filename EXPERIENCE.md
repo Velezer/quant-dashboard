@@ -540,3 +540,7 @@ lesson only when it will improve future tasks.
 - For responsive navigation, check each route at breakpoint edges and with the
   page's dynamic layout classes both active and inactive. A shortcut must remain
   visible whenever the primary navigation is not rendered.
+- Keep macro overviews compact: use short catalyst labels and series summaries,
+  collapse release-source lists, and show full definitions only in methodology
+  details. Avoid repeating current-status and signal caveats under every chart;
+  keep stale and unavailable recovery messages visible.
