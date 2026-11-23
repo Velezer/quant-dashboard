@@ -1,6 +1,6 @@
 use super::{
-    daily_change_basis_points, observation_is_stale, observation_is_stale_after_days,
-    snapshot_is_stale, MacroIndicatorId, MacroObservation,
+    daily_change_basis_points, observation_age_limit_days, observation_is_stale,
+    observation_is_stale_after_days, snapshot_is_stale, MacroIndicatorId, MacroObservation,
 };
 
 const TEST_NOW: u64 = 1_800_000_000;
@@ -63,7 +63,8 @@ fn treasury_parser_reads_the_daily_two_year_nominal_series() {
 
 #[test]
 fn ecb_parser_builds_daily_usd_idr_cross_rates_and_rejects_bad_data() {
-    const HEADER: &str = "KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE";
+    const HEADER: &str =
+        "KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE";
     let idr = format!(
         "{HEADER}\r\nEXR.D.IDR.EUR.SP00.A,D,IDR,EUR,SP00,A,2026-11-18,20079.46\r\nEXR.D.IDR.EUR.SP00.A,D,IDR,EUR,SP00,A,2026-11-19,20070.25\r\n"
     );
@@ -86,11 +87,7 @@ fn ecb_parser_builds_daily_usd_idr_cross_rates_and_rejects_bad_data() {
         &usd,
     )
     .is_err());
-    assert!(super::ecb::parse_cross_rate(
-        &idr.replace("20079.46", "NaN"),
-        &usd,
-    )
-    .is_err());
+    assert!(super::ecb::parse_cross_rate(&idr.replace("20079.46", "NaN"), &usd,).is_err());
 }
 
 #[test]
@@ -187,6 +184,33 @@ fn daily_exchange_rates_use_the_same_freshness_window_as_daily_yields() {
 }
 
 #[test]
+fn weekly_and_monthly_observations_get_cadence_appropriate_freshness_windows() {
+    let now = 1_704_844_800; // 2024-01-10 00:00:00 UTC
+    assert_eq!(
+        observation_age_limit_days(MacroIndicatorId::UsCommercialCrudeStocks),
+        21
+    );
+    assert_eq!(
+        observation_age_limit_days(MacroIndicatorId::UsManufacturingIndustrialProduction),
+        62
+    );
+    assert_eq!(
+        observation_age_limit_days(MacroIndicatorId::ChinaManufacturingPmi),
+        62
+    );
+    assert!(!observation_is_stale_after_days(
+        "2023-12-01",
+        now,
+        observation_age_limit_days(MacroIndicatorId::UsManufacturingIndustrialProduction),
+    ));
+    assert!(observation_is_stale_after_days(
+        "2023-12-01",
+        now,
+        observation_age_limit_days(MacroIndicatorId::UsCommercialCrudeStocks),
+    ));
+}
+
+#[test]
 fn daily_change_requires_a_prior_published_observation() {
     let one_row = [MacroObservation {
         date: "2026-11-18".to_string(),
@@ -228,6 +252,48 @@ fn the_supported_indicator_has_a_stable_application_identity() {
         MacroIndicatorId::BitcoinFearGreedIndex.application_id(),
         "bitcoin_fear_greed_index"
     );
+    for (id, application_id) in [
+        (
+            MacroIndicatorId::BroadUsDollarIndex,
+            "broad_us_dollar_index",
+        ),
+        (
+            MacroIndicatorId::TenYearTreasuryNominalYield,
+            "ten_year_treasury_nominal_yield",
+        ),
+        (
+            MacroIndicatorId::TenYearBreakevenInflation,
+            "ten_year_breakeven_inflation",
+        ),
+        (
+            MacroIndicatorId::UsEquityVolatilityIndex,
+            "us_equity_volatility_index",
+        ),
+        (
+            MacroIndicatorId::UsManufacturingIndustrialProduction,
+            "us_manufacturing_industrial_production",
+        ),
+        (
+            MacroIndicatorId::ChinaManufacturingPmi,
+            "china_manufacturing_pmi",
+        ),
+        (MacroIndicatorId::BrentCrudeSpot, "brent_crude_spot"),
+        (MacroIndicatorId::WtiCrudeSpot, "wti_crude_spot"),
+        (
+            MacroIndicatorId::CrudeOilVolatilityIndex,
+            "crude_oil_volatility_index",
+        ),
+        (
+            MacroIndicatorId::UsCommercialCrudeStocks,
+            "us_commercial_crude_stocks",
+        ),
+    ] {
+        assert_eq!(id.application_id(), application_id);
+        assert_eq!(
+            MacroIndicatorId::from_application_id(application_id),
+            Some(id)
+        );
+    }
     assert_eq!(
         MacroIndicatorId::from_application_id("usd_idr_daily_reference"),
         Some(MacroIndicatorId::UsdIdrReferenceRate)

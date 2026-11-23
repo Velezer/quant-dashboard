@@ -1,6 +1,8 @@
 //! Daily USD/IDR cross-rates calculated from European Central Bank reference data.
 
-use super::{FetchStatus, MacroIndicatorId, MacroObservation, MacroSeriesProvider, ProviderSeriesSnapshot};
+use super::{
+    FetchStatus, MacroIndicatorId, MacroObservation, MacroSeriesProvider, ProviderSeriesSnapshot,
+};
 use crate::public_http::{get_bounded, RequestOptions};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, OnceLock};
@@ -27,12 +29,7 @@ impl MacroSeriesProvider for EcbProvider {
     ) -> Result<ProviderSeriesSnapshot, String> {
         match id {
             MacroIndicatorId::UsdIdrReferenceRate => load_series(force_refresh),
-            MacroIndicatorId::TenYearTipsRealYield | MacroIndicatorId::TwoYearTreasuryNominalYield => {
-                Err("The ECB does not provide the requested macro series.".to_string())
-            }
-            MacroIndicatorId::BitcoinSpotEtfNetFlows | MacroIndicatorId::BitcoinFearGreedIndex => {
-                Err("The ECB does not provide the requested macro series.".to_string())
-            }
+            _ => Err("The ECB does not provide the requested macro series.".to_string()),
         }
     }
 }
@@ -56,11 +53,15 @@ fn load_series(force_refresh: bool) -> Result<ProviderSeriesSnapshot, String> {
     let now = now_secs();
     let mut cache = cache().lock().unwrap_or_else(|error| error.into_inner());
     if let Some(current) = cache.get(&id) {
-        let recently_retrieved = now.saturating_sub(current.retrieved_at_seconds) < CACHE_TTL_SECONDS;
-        let retry_too_soon = now.saturating_sub(current.last_attempt_seconds)
-            < MINIMUM_RETRY_INTERVAL_SECONDS;
+        let recently_retrieved =
+            now.saturating_sub(current.retrieved_at_seconds) < CACHE_TTL_SECONDS;
+        let retry_too_soon =
+            now.saturating_sub(current.last_attempt_seconds) < MINIMUM_RETRY_INTERVAL_SECONDS;
         if (recently_retrieved && !force_refresh) || retry_too_soon {
-            return Ok(snapshot_from_cache(current, current.refresh_error.is_some()));
+            return Ok(snapshot_from_cache(
+                current,
+                current.refresh_error.is_some(),
+            ));
         }
     }
     if let Some(current) = cache.get_mut(&id) {
@@ -126,7 +127,9 @@ fn fetch_series(now: u64) -> Result<Vec<MacroObservation>, String> {
 }
 
 fn fetch_csv(series_id: &str, start_date: &str) -> Result<String, String> {
-    let url = format!("{ECB_CSV_URL}/{series_id}?startPeriod={start_date}&detail=dataonly&format=csvdata");
+    let url = format!(
+        "{ECB_CSV_URL}/{series_id}?startPeriod={start_date}&detail=dataonly&format=csvdata"
+    );
     let response = get_bounded(
         &url,
         RequestOptions {
@@ -141,7 +144,10 @@ fn fetch_csv(series_id: &str, start_date: &str) -> Result<String, String> {
         },
     )?;
     if response.status >= 400 {
-        return Err(format!("The ECB returned HTTP {} for {series_id}.", response.status));
+        return Err(format!(
+            "The ECB returned HTTP {} for {series_id}.",
+            response.status
+        ));
     }
     String::from_utf8(response.body)
         .map_err(|_| format!("The ECB returned CSV that was not valid UTF-8 for {series_id}."))

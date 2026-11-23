@@ -1,9 +1,12 @@
 //! Application-owned macro indicator data contract and provider selection.
 //! Macro observations are descriptive context and do not enter ticker scores.
 
-mod treasury;
-mod ecb;
 mod bitcoin;
+mod ecb;
+mod eia;
+mod fred;
+mod nbs;
+mod treasury;
 
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -22,6 +25,16 @@ pub(crate) enum MacroIndicatorId {
     UsdIdrReferenceRate,
     BitcoinSpotEtfNetFlows,
     BitcoinFearGreedIndex,
+    BroadUsDollarIndex,
+    TenYearTreasuryNominalYield,
+    TenYearBreakevenInflation,
+    UsEquityVolatilityIndex,
+    UsManufacturingIndustrialProduction,
+    ChinaManufacturingPmi,
+    BrentCrudeSpot,
+    WtiCrudeSpot,
+    CrudeOilVolatilityIndex,
+    UsCommercialCrudeStocks,
 }
 
 impl MacroIndicatorId {
@@ -32,6 +45,16 @@ impl MacroIndicatorId {
             Self::UsdIdrReferenceRate => "usd_idr_daily_reference",
             Self::BitcoinSpotEtfNetFlows => "bitcoin_spot_etf_net_flows",
             Self::BitcoinFearGreedIndex => "bitcoin_fear_greed_index",
+            Self::BroadUsDollarIndex => "broad_us_dollar_index",
+            Self::TenYearTreasuryNominalYield => "ten_year_treasury_nominal_yield",
+            Self::TenYearBreakevenInflation => "ten_year_breakeven_inflation",
+            Self::UsEquityVolatilityIndex => "us_equity_volatility_index",
+            Self::UsManufacturingIndustrialProduction => "us_manufacturing_industrial_production",
+            Self::ChinaManufacturingPmi => "china_manufacturing_pmi",
+            Self::BrentCrudeSpot => "brent_crude_spot",
+            Self::WtiCrudeSpot => "wti_crude_spot",
+            Self::CrudeOilVolatilityIndex => "crude_oil_volatility_index",
+            Self::UsCommercialCrudeStocks => "us_commercial_crude_stocks",
         }
     }
 
@@ -39,9 +62,23 @@ impl MacroIndicatorId {
         match value {
             "ten_year_tips_real_yield" => Some(Self::TenYearTipsRealYield),
             "two_year_treasury_nominal_yield" => Some(Self::TwoYearTreasuryNominalYield),
-            "usd_idr_daily_reference" | "usd_idr_monthly_average" => Some(Self::UsdIdrReferenceRate),
+            "usd_idr_daily_reference" | "usd_idr_monthly_average" => {
+                Some(Self::UsdIdrReferenceRate)
+            }
             "bitcoin_spot_etf_net_flows" => Some(Self::BitcoinSpotEtfNetFlows),
             "bitcoin_fear_greed_index" => Some(Self::BitcoinFearGreedIndex),
+            "broad_us_dollar_index" => Some(Self::BroadUsDollarIndex),
+            "ten_year_treasury_nominal_yield" => Some(Self::TenYearTreasuryNominalYield),
+            "ten_year_breakeven_inflation" => Some(Self::TenYearBreakevenInflation),
+            "us_equity_volatility_index" => Some(Self::UsEquityVolatilityIndex),
+            "us_manufacturing_industrial_production" => {
+                Some(Self::UsManufacturingIndustrialProduction)
+            }
+            "china_manufacturing_pmi" => Some(Self::ChinaManufacturingPmi),
+            "brent_crude_spot" => Some(Self::BrentCrudeSpot),
+            "wti_crude_spot" => Some(Self::WtiCrudeSpot),
+            "crude_oil_volatility_index" => Some(Self::CrudeOilVolatilityIndex),
+            "us_commercial_crude_stocks" => Some(Self::UsCommercialCrudeStocks),
             _ => None,
         }
     }
@@ -123,6 +160,16 @@ fn provider_for(id: MacroIndicatorId) -> &'static dyn MacroSeriesProvider {
         MacroIndicatorId::BitcoinSpotEtfNetFlows | MacroIndicatorId::BitcoinFearGreedIndex => {
             &bitcoin::BITCOIN_PROVIDER
         }
+        MacroIndicatorId::UsCommercialCrudeStocks => &eia::EIA_PROVIDER,
+        MacroIndicatorId::ChinaManufacturingPmi => &nbs::NBS_PROVIDER,
+        MacroIndicatorId::BroadUsDollarIndex
+        | MacroIndicatorId::TenYearTreasuryNominalYield
+        | MacroIndicatorId::TenYearBreakevenInflation
+        | MacroIndicatorId::UsEquityVolatilityIndex
+        | MacroIndicatorId::UsManufacturingIndustrialProduction
+        | MacroIndicatorId::BrentCrudeSpot
+        | MacroIndicatorId::WtiCrudeSpot
+        | MacroIndicatorId::CrudeOilVolatilityIndex => &fred::FRED_PROVIDER,
     }
 }
 
@@ -140,14 +187,26 @@ pub(crate) fn read(
     let daily_change_basis_points = match id {
         MacroIndicatorId::UsdIdrReferenceRate
         | MacroIndicatorId::BitcoinSpotEtfNetFlows
-        | MacroIndicatorId::BitcoinFearGreedIndex => None,
-        MacroIndicatorId::TenYearTipsRealYield | MacroIndicatorId::TwoYearTreasuryNominalYield => {
+        | MacroIndicatorId::BitcoinFearGreedIndex
+        | MacroIndicatorId::BroadUsDollarIndex
+        | MacroIndicatorId::UsEquityVolatilityIndex
+        | MacroIndicatorId::UsManufacturingIndustrialProduction
+        | MacroIndicatorId::ChinaManufacturingPmi
+        | MacroIndicatorId::BrentCrudeSpot
+        | MacroIndicatorId::WtiCrudeSpot
+        | MacroIndicatorId::CrudeOilVolatilityIndex
+        | MacroIndicatorId::UsCommercialCrudeStocks => None,
+        MacroIndicatorId::TenYearTipsRealYield
+        | MacroIndicatorId::TwoYearTreasuryNominalYield
+        | MacroIndicatorId::TenYearTreasuryNominalYield
+        | MacroIndicatorId::TenYearBreakevenInflation => {
             observation_change.map(|change| change * 100.0)
         }
     };
     let now = now_secs();
-    let too_old = observation_is_stale_after_days(&latest.date, now, MAX_OBSERVATION_AGE_DAYS)
-        || snapshot_is_stale(snapshot.retrieved_at_seconds, now);
+    let too_old =
+        observation_is_stale_after_days(&latest.date, now, observation_age_limit_days(id))
+            || snapshot_is_stale(snapshot.retrieved_at_seconds, now);
     let freshness = if too_old || snapshot.refresh_error.is_some() {
         DataFreshness::Stale
     } else {
@@ -159,7 +218,10 @@ pub(crate) fn read(
         snapshot.fetch_status
     };
     let status_note = if snapshot.refresh_error.is_some() {
-        Some("The latest refresh failed; showing the last successfully retrieved observations.".to_string())
+        Some(
+            "The latest refresh failed; showing the last successfully retrieved observations."
+                .to_string(),
+        )
     } else if too_old {
         Some(match id {
             MacroIndicatorId::TenYearTipsRealYield | MacroIndicatorId::TwoYearTreasuryNominalYield =>
@@ -170,6 +232,13 @@ pub(crate) fn read(
                 "The latest U.S. spot Bitcoin ETF flow observation is more than seven days old. Check the flow tracker again later.".to_string(),
             MacroIndicatorId::BitcoinFearGreedIndex =>
                 "The latest Bitcoin Fear & Greed observation is more than seven days old. Check Alternative.me again later.".to_string(),
+            MacroIndicatorId::UsManufacturingIndustrialProduction =>
+                "The latest monthly manufacturing production observation is more than 62 days old. Check the Federal Reserve release again later.".to_string(),
+            MacroIndicatorId::ChinaManufacturingPmi =>
+                "The latest monthly China manufacturing PMI observation is more than 62 days old. Check the National Bureau of Statistics release again later.".to_string(),
+            MacroIndicatorId::UsCommercialCrudeStocks =>
+                "The latest weekly U.S. crude stock observation is more than 21 days old. Check the EIA Weekly Petroleum Status Report again later.".to_string(),
+            _ => "The latest daily market observation is more than seven days old. Check the linked source again later.".to_string(),
         })
     } else {
         None
@@ -235,7 +304,135 @@ pub(crate) fn read(
             "https://alternative.me/crypto/fear-and-greed-index/",
             "from the prior daily reading",
         ),
+        MacroIndicatorId::BroadUsDollarIndex => (
+            "Broad U.S. dollar index",
+            "A Federal Reserve trade-weighted measure of the dollar against a broad group of U.S. trading partners. Dollar strength can weigh on dollar-priced metals and crude, although relationships can diverge during risk events.",
+            "A trade-weighted index, not the ICE DXY or a tradable currency quote. The index is published on business days and can revise.",
+            "Index points (Jan 2006 = 100)",
+            "index_points",
+            "Daily, business days",
+            "Board of Governors of the Federal Reserve System, retrieved from FRED",
+            "FRED series",
+            "FRED source series",
+            "from the prior business day",
+        ),
+        MacroIndicatorId::TenYearTreasuryNominalYield => (
+            "10-Year U.S. Treasury yield",
+            "The nominal 10-year constant-maturity Treasury rate. Compare it with the 10-year TIPS real yield and breakeven inflation to separate real-rate and inflation-compensation moves.",
+            "A daily market-yield series, not the yield on one specific Treasury note. Treasury release timing may differ from intraday trading.",
+            "% per year",
+            "percent",
+            "Daily, business days",
+            "Board of Governors of the Federal Reserve System, retrieved from FRED",
+            "FRED series",
+            "FRED source series",
+            "from the prior business day",
+        ),
+        MacroIndicatorId::TenYearBreakevenInflation => (
+            "10-Year breakeven inflation rate",
+            "The spread between 10-year nominal Treasury yields and 10-year TIPS real yields. It is a market-based measure of inflation compensation, not a pure survey forecast.",
+            "Breakevens include inflation-risk and relative-liquidity premiums; they can move for reasons other than expected consumer-price inflation.",
+            "% per year",
+            "percent",
+            "Daily, business days",
+            "Board of Governors of the Federal Reserve System, retrieved from FRED",
+            "FRED series",
+            "FRED source series",
+            "from the prior business day",
+        ),
+        MacroIndicatorId::UsEquityVolatilityIndex => (
+            "Cboe VIX volatility index",
+            "The Cboe options-implied measure of expected near-term U.S. equity-market volatility. A sharp rise can mark a risk event that also changes haven demand for gold.",
+            "VIX measures S&P 500 option-implied volatility, not gold volatility or a direct geopolitical-risk score.",
+            "Index points",
+            "index_points",
+            "Daily, business days",
+            "Cboe Global Markets, retrieved from FRED",
+            "FRED series",
+            "FRED source series",
+            "from the prior business day",
+        ),
+        MacroIndicatorId::UsManufacturingIndustrialProduction => (
+            "U.S. manufacturing industrial production",
+            "A monthly Federal Reserve index of U.S. manufacturing output. It is a cyclical activity proxy for industrial metals, including silver, rather than a direct measure of global demand.",
+            "U.S.-only monthly output index (2017 = 100); it does not measure global PMI, photovoltaic demand, inventories, or silver use directly. Recent values may be revised.",
+            "Index points (2017 = 100)",
+            "index_points",
+            "Monthly",
+            "Board of Governors of the Federal Reserve System, retrieved from FRED",
+            "FRED series",
+            "FRED source series",
+            "from the prior monthly observation",
+        ),
+        MacroIndicatorId::ChinaManufacturingPmi => (
+            "China official manufacturing PMI",
+            "The National Bureau of Statistics' monthly manufacturing purchasing managers' diffusion index. Readings above 50 indicate expansion and readings below 50 indicate contraction; new orders, production and other survey components can help track demand expectations for metals and oil.",
+            "This is China's official NBS survey, not the separate Caixin, U.S. ISM, or global S&P Global PMI. It is a monthly diffusion index and does not measure output volume or confirm the direction of a specific asset.",
+            "Index points",
+            "index_points",
+            "Monthly",
+            "National Bureau of Statistics of China",
+            "NBS nationwide manufacturing PMI",
+            "https://data.stats.gov.cn/dg/website/publicrelease/web/external/query?search=PMI&pagenum=1&pageSize=10",
+            "from the prior monthly observation",
+        ),
+        MacroIndicatorId::BrentCrudeSpot => (
+            "Brent crude spot price",
+            "The EIA Europe Brent spot-price benchmark in U.S. dollars per barrel. It is broad oil-market context for UKOUSD; a broker's CFD quote can differ by venue, contract, spread, and trading hours.",
+            "Daily benchmark spot data is not an intraday UKOUSD CFD quote. EIA reporting and market holidays create publication gaps.",
+            "USD per barrel",
+            "usd_per_barrel",
+            "Daily, as reported",
+            "U.S. Energy Information Administration, retrieved from FRED",
+            "FRED series",
+            "FRED source series",
+            "from the prior published observation",
+        ),
+        MacroIndicatorId::WtiCrudeSpot => (
+            "WTI crude spot price",
+            "The EIA Cushing, Oklahoma WTI spot-price benchmark. Comparing it with Brent helps track regional oil-market dislocations and changes in the U.S. supply picture.",
+            "Daily benchmark spot data is not a Brent futures price or an intraday UKOUSD CFD quote. The Brent–WTI spread is calculated from separate same-date observations only when both are available.",
+            "USD per barrel",
+            "usd_per_barrel",
+            "Daily, as reported",
+            "U.S. Energy Information Administration, retrieved from FRED",
+            "FRED series",
+            "FRED source series",
+            "from the prior published observation",
+        ),
+        MacroIndicatorId::CrudeOilVolatilityIndex => (
+            "Cboe crude oil volatility index",
+            "The Cboe OVX index tracks option-implied volatility tied to U.S. Oil Fund options. It can highlight rising uncertainty around oil supply, demand, or geopolitical events.",
+            "An options-implied volatility measure based on a U.S. oil fund, not a directional forecast, physical inventory, or direct Brent volatility measure.",
+            "Index points",
+            "index_points",
+            "Daily, business days",
+            "Cboe Global Markets, retrieved from FRED",
+            "FRED series",
+            "FRED source series",
+            "from the prior business day",
+        ),
+        MacroIndicatorId::UsCommercialCrudeStocks => (
+            "U.S. commercial crude oil stocks",
+            "Weekly U.S. crude oil ending stocks excluding the Strategic Petroleum Reserve. Builds can indicate looser balances and draws can indicate tighter balances, but prices also respond to expectations and global supply.",
+            "EIA weekly U.S. inventory is not global oil inventory and excludes the SPR. It is published with a lag and can be revised. The public demonstration API key is rate-limited; successful history is cached and kept visible if a refresh fails.",
+            "Million barrels",
+            "million_barrels",
+            "Weekly",
+            "U.S. Energy Information Administration",
+            "EIA series",
+            "EIA source series",
+            "from the prior weekly observation",
+        ),
     };
+    let source_series_id = fred::source_series_id(id)
+        .or_else(|| eia::source_series_id(id))
+        .or_else(|| nbs::source_series_id(id))
+        .unwrap_or(source_series_id);
+    let source_url = fred::source_url(id)
+        .or_else(|| eia::source_url(id))
+        .or_else(|| nbs::source_url(id))
+        .unwrap_or(source_url);
     Ok(MacroIndicatorData {
         id: id.application_id(),
         title,
@@ -262,6 +459,16 @@ pub(crate) fn read(
     })
 }
 
+fn observation_age_limit_days(id: MacroIndicatorId) -> i64 {
+    match id {
+        MacroIndicatorId::UsManufacturingIndustrialProduction => 62,
+        MacroIndicatorId::ChinaManufacturingPmi => 62,
+        MacroIndicatorId::UsCommercialCrudeStocks => 21,
+        _ => MAX_OBSERVATION_AGE_DAYS,
+    }
+}
+
+#[cfg(test)]
 fn daily_change_basis_points(observations: &[MacroObservation]) -> Option<f64> {
     observation_change(observations).map(|change| change * 100.0)
 }
@@ -273,6 +480,7 @@ fn observation_change(observations: &[MacroObservation]) -> Option<f64> {
     Some(latest.value - previous.value)
 }
 
+#[cfg(test)]
 fn observation_is_stale(date: &str, now_seconds: u64) -> bool {
     observation_is_stale_after_days(date, now_seconds, MAX_OBSERVATION_AGE_DAYS)
 }
@@ -295,4 +503,3 @@ fn now_secs() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
-

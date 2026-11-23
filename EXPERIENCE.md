@@ -520,6 +520,21 @@ lesson only when it will improve future tasks.
   redistribution terms at the data endpoint; treat missing or incomplete
   provider sessions as unavailable rather than inferring zero flow. Neither
   series enters ticker scores without separately validated rules.
+- For multi-asset catalyst context, group each instrument's rates, currency,
+  supply/demand, positioning and event risks, then link chartable drivers to
+  their source-labeled observations. Keep conditional price relationships and
+  distinguish an activity proxy from the survey it does not measure. Use
+  freshness windows that match weekly and monthly publication cadence. ISM PMI
+  was removed from FRED at ISM's request; link its official releases rather
+  than reconstructing that series without reuse rights. The China NBS publishes
+  a separate official manufacturing PMI history through its public UUID-based
+  data endpoint. Its response may include an empty current-month row before the
+  release, so skip unpublished values and retain the last published month. Keep
+  industrial-production charts labeled as hard-data proxies, not PMI.
+- FRED's graph CSV request should contain one series ID: multiple IDs can
+  return a ZIP archive rather than a CSV. Keep each request bounded to the
+  chart's history window. EIA's public demonstration key is rate-limited, so
+  cache successful weekly inventory snapshots and retain them on refresh errors.
 - For responsive navigation, check each route at breakpoint edges and with the
   page's dynamic layout classes both active and inactive. A shortcut must remain
   visible whenever the primary navigation is not rendered.
