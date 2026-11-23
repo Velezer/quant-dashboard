@@ -193,7 +193,7 @@ class FakeCard extends FakeElement {
             'change-label', 'change-unit', 'retrieved-at', 'latest-classification', 'attribution-link',
             'status', 'stale-note', 'chart-heading',
             'chart-caption', 'range-controls', 'chart', 'source', 'source-series', 'frequency-unit',
-            'source-definition', 'limitations', 'source-link', 'observations-table', 'data-limits',
+            'source-definition', 'limitations', 'source-link', 'observations-table',
         ]) this.roles.set(name, new FakeElement());
         const retry = new FakeElement();
         this.actionButtons.set('refresh', retry);
@@ -255,10 +255,13 @@ test('macro page renders separate charts, source metadata and independent refres
     const chinaPmi = cardFor(elements, 'china_manufacturing_pmi');
     assert.equal(elements.get('macro-indicator-grid').children.length, 15);
     assert.equal(roleFor(chinaPmi, 'latest').textContent, '49.3 points');
+    assert.equal(roleFor(chinaPmi, 'description').textContent, 'Monthly factory activity · 50 marks expansion.');
     assert.match(roleFor(chinaPmi, 'chart').innerHTML, /<svg/);
     assert.match(roleFor(chinaPmi, 'chart').innerHTML, /macro-chart-reference/);
     assert.equal(roleFor(chinaPmi, 'attribution-link').href, apiDataFor('china_manufacturing_pmi').source_url);
     assert.equal(roleFor(tips, 'latest').textContent, '2.88%');
+    assert.equal(roleFor(tips, 'description').textContent, 'Daily inflation-adjusted 10-year U.S. yield.');
+    assert.equal(roleFor(tips, 'status').hidden, true);
     assert.equal(roleFor(twoYear, 'latest').textContent, '2.88%');
     assert.match(roleFor(fx, 'latest').textContent, /IDR 17,983\.82 \/ USD/);
     assert.match(roleFor(fx, 'chart').innerHTML, /<svg/);
@@ -286,7 +289,8 @@ test('macro page renders separate charts, source metadata and independent refres
     await tips.actionButtons.get('refresh').listeners.get('click')();
     assert.equal(roleFor(tips, 'latest').textContent, '2.88%');
     assert.equal(roleFor(tips, 'freshness').textContent, 'Refresh failed');
-    assert.match(roleFor(tips, 'status').textContent, /previously loaded observation remains visible/);
+    assert.equal(roleFor(tips, 'status').hidden, false);
+    assert.match(roleFor(tips, 'status').textContent, /showing prior data/);
     assert.match(roleFor(tips, 'stale-note').textContent, /Treasury request timed out/);
     assert.equal(tips.actionButtons.get('refresh').disabled, false);
 });
@@ -336,14 +340,21 @@ test('macro indicators remain discoverable from the screener and their page incl
     assert.match(macroTemplate, /data-role="source"/);
     assert.match(macroTemplate, /data-role="limitations"/);
     assert.match(macroTemplate, /data-role="chart"/);
+    assert.match(macroTemplate, /data-role="status" role="status" aria-live="polite" hidden/);
     assert.match(macroTemplate, /NWE\/DSS calculations, the combined ticker score, or signal direction/);
-    assert.match(macroTemplate, /XAUUSD · Gold \/ U\.S\. dollar/);
-    assert.match(macroTemplate, /XAGUSD · Silver \/ U\.S\. dollar/);
-    assert.match(macroTemplate, /UKOUSD · Brent crude/);
+    assert.match(macroTemplate, /<details class="macro-catalyst-section">/);
+    assert.doesNotMatch(macroTemplate, /<details class="macro-catalyst-section"[^>]*open/);
+    assert.match(macroTemplate, /<details class="macro-event-watch">/);
+    assert.doesNotMatch(macroTemplate, /data-role="data-limits"/);
+    assert.match(macroTemplate, /XAUUSD · Gold/);
+    assert.match(macroTemplate, /XAGUSD · Silver/);
+    assert.match(macroTemplate, /UKOUSD · Brent/);
     assert.match(macroTemplate, /ISM Manufacturing PMI/);
-    assert.match(macroTemplate, /China official manufacturing PMI/);
+    assert.match(macroScript, /fallbackTitle: 'China official manufacturing PMI'/);
     assert.match(macroTemplate, /#macro-indicator-china_manufacturing_pmi/);
     assert.match(macroTemplate, /macro-pmi-note/);
-    assert.match(macroTemplate, /href="#macro-indicator-us_manufacturing_industrial_production">Federal Reserve production chart/);
+    assert.match(macroTemplate, /href="#macro-indicator-us_manufacturing_industrial_production">U\.S\. output/);
+    assert.match(macroScript, /summary: 'Daily inflation-adjusted 10-year U\.S\. yield\.'/);
+    assert.match(macroScript, /All \$\{total\} indicators current/);
     assert.match(macroScript, /card\.id = `macro-indicator-\$\{config\.id\}`/);
 });

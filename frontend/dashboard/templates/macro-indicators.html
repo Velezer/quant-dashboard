@@ -22,75 +22,68 @@
             <div class="section-heading macro-heading">
                 <div>
                     <h1 id="macro-title">Macroeconomic indicators</h1>
-                    <p class="small-text">Track the macro drivers and scheduled catalysts for XAUUSD gold, XAGUSD silver and UKOUSD Brent, plus Bitcoin flows and sentiment. These charts are separate from ticker scores and signals.</p>
+                    <p class="small-text">Charts for XAUUSD, XAGUSD, UKOUSD and Bitcoin. Separate from ticker signals.</p>
                 </div>
                 <button id="macro-refresh" class="macro-refresh" type="button" title="Refresh every macro indicator">Refresh all</button>
             </div>
             <p id="macro-status" class="status-message" role="status" aria-live="polite">Loading macroeconomic indicators…</p>
-            <section class="macro-catalyst-section" aria-labelledby="macro-catalyst-title">
-                <div class="macro-catalyst-heading">
-                    <div>
-                        <p class="macro-kicker">WHAT CAN MOVE THE MARKETS</p>
-                        <h2 id="macro-catalyst-title">Catalyst watch</h2>
-                        <p class="small-text">Key drivers and release events for each instrument. Relationships are conditional and can reverse during fast markets.</p>
+            <details class="macro-catalyst-section">
+                <summary class="macro-catalyst-summary" id="macro-catalyst-title"><span><strong>Catalysts</strong><small>XAUUSD · XAGUSD · UKOUSD</small></span></summary>
+                <div class="macro-catalyst-content">
+                    <div class="macro-catalyst-grid">
+                        <article class="macro-catalyst-card" aria-labelledby="macro-gold-catalysts">
+                            <p class="macro-kicker">PRECIOUS METAL</p>
+                            <h3 id="macro-gold-catalysts">XAUUSD · Gold</h3>
+                            <dl class="macro-catalyst-list">
+                                <div><dt>Rates</dt><dd><a href="#macro-indicator-ten_year_tips_real_yield">Real yield</a> · <a href="#macro-indicator-two_year_treasury_nominal_yield">2Y</a> · <a href="#macro-indicator-ten_year_treasury_nominal_yield">10Y</a></dd></div>
+                                <div><dt>USD / inflation</dt><dd><a href="#macro-indicator-broad_us_dollar_index">Dollar</a> · <a href="#macro-indicator-ten_year_breakeven_inflation">breakeven</a></dd></div>
+                                <div><dt>Risk</dt><dd><a href="#macro-indicator-us_equity_volatility_index">VIX</a> · geopolitics · fiscal stress</dd></div>
+                                <div><dt>Flows / physical</dt><dd>Central banks · ETFs · CFTC · China/India demand · supply</dd></div>
+                            </dl>
+                        </article>
+                        <article class="macro-catalyst-card" aria-labelledby="macro-silver-catalysts">
+                            <p class="macro-kicker">PRECIOUS & INDUSTRIAL METAL</p>
+                            <h3 id="macro-silver-catalysts">XAGUSD · Silver</h3>
+                            <dl class="macro-catalyst-list">
+                                <div><dt>Macro</dt><dd><a href="#macro-indicator-ten_year_tips_real_yield">Real yield</a> · <a href="#macro-indicator-broad_us_dollar_index">dollar</a></dd></div>
+                                <div><dt>Activity</dt><dd><a href="#macro-indicator-china_manufacturing_pmi">China PMI</a> · <a href="#macro-indicator-us_manufacturing_industrial_production">U.S. output</a> · <a href="https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/" target="_blank" rel="noreferrer">ISM PMI</a></dd></div>
+                                <div><dt>Industry</dt><dd>Solar · electronics · EVs · grid demand</dd></div>
+                                <div><dt>Supply / flows</dt><dd>Mines · recycling · stocks · ETFs · CFTC</dd></div>
+                            </dl>
+                        </article>
+                        <article class="macro-catalyst-card" aria-labelledby="macro-oil-catalysts">
+                            <p class="macro-kicker">ENERGY · GLOBAL SUPPLY & DEMAND</p>
+                            <h3 id="macro-oil-catalysts">UKOUSD · Brent</h3>
+                            <dl class="macro-catalyst-list">
+                                <div><dt>Supply</dt><dd>OPEC+ · output · outages</dd></div>
+                                <div><dt>Geopolitics</dt><dd>Conflict · sanctions · shipping</dd></div>
+                                <div><dt>Balance</dt><dd><a href="#macro-indicator-us_commercial_crude_stocks">EIA stocks</a> · refinery runs</dd></div>
+                                <div><dt>Demand</dt><dd><a href="#macro-indicator-china_manufacturing_pmi">China PMI</a> · growth · transport</dd></div>
+                                <div><dt>Market</dt><dd><a href="#macro-indicator-brent_crude_spot">Brent</a> · <a href="#macro-indicator-wti_crude_spot">WTI</a> · <a href="#macro-indicator-crude_oil_volatility_index">OVX</a> · futures curve</dd></div>
+                            </dl>
+                        </article>
                     </div>
+                    <details class="macro-event-watch">
+                        <summary id="macro-event-watch-title">Release calendars & primary sources</summary>
+                        <div class="macro-event-links">
+                            <a href="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" target="_blank" rel="noreferrer">FOMC calendar</a>
+                            <a href="https://www.bls.gov/schedule/news_release/cpi.htm" target="_blank" rel="noreferrer">U.S. CPI</a>
+                            <a href="https://www.bls.gov/schedule/news_release/empsit.htm" target="_blank" rel="noreferrer">U.S. jobs report</a>
+                            <a href="https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/" target="_blank" rel="noreferrer">ISM Manufacturing PMI</a>
+                            <a href="https://data.stats.gov.cn/dg/website/publicrelease/web/external/query?search=PMI&amp;pagenum=1&amp;pageSize=10" target="_blank" rel="noreferrer">China NBS PMI</a>
+                            <a href="https://www.stats.gov.cn/english/" target="_blank" rel="noreferrer">China NBS</a>
+                            <a href="https://www.eia.gov/petroleum/supply/weekly/" target="_blank" rel="noreferrer">EIA weekly report</a>
+                            <a href="https://www.eia.gov/outlooks/steo/" target="_blank" rel="noreferrer">EIA oil outlook</a>
+                            <a href="https://www.iea.org/data-and-statistics/data-product/oil-market-report-omr" target="_blank" rel="noreferrer">IEA oil report</a>
+                            <a href="https://www.opec.org/press-releases.html" target="_blank" rel="noreferrer">OPEC releases</a>
+                            <a href="https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm" target="_blank" rel="noreferrer">CFTC positioning</a>
+                            <a href="https://www.gold.org/goldhub/data" target="_blank" rel="noreferrer">Gold data</a>
+                            <a href="https://silverinstitute.org/silver-supply-demand/" target="_blank" rel="noreferrer">Silver supply & demand</a>
+                        </div>
+                        <p class="macro-pmi-note">PMI &gt;50: expansion · &lt;50: contraction. U.S. ISM history is linked to official releases.</p>
+                    </details>
                 </div>
-                <div class="macro-catalyst-grid">
-                    <article class="macro-catalyst-card" aria-labelledby="macro-gold-catalysts">
-                        <p class="macro-kicker">PRECIOUS METAL · SAFE HAVEN & RATES</p>
-                        <h3 id="macro-gold-catalysts">XAUUSD · Gold / U.S. dollar</h3>
-                        <ul>
-                            <li><strong>Real yields and the Fed path.</strong> Rate repricing changes the opportunity cost of holding non-yielding gold. Compare <a href="#macro-indicator-ten_year_tips_real_yield">10-year TIPS</a>, the <a href="#macro-indicator-two_year_treasury_nominal_yield">2-year</a> and <a href="#macro-indicator-ten_year_treasury_nominal_yield">10-year Treasury yields</a>.</li>
-                            <li><strong>U.S. dollar and inflation pricing.</strong> A stronger dollar can weigh on dollar-priced gold; shifts in inflation compensation can change the real-rate picture. Track the <a href="#macro-indicator-broad_us_dollar_index">broad dollar</a> and <a href="#macro-indicator-ten_year_breakeven_inflation">10-year breakeven</a>.</li>
-                            <li><strong>Haven demand and liquidity.</strong> Wars, sanctions, trade shocks, banking/fiscal stress and sharp risk repricing can lift haven demand. <a href="#macro-indicator-us_equity_volatility_index">VIX</a> is only an equity-volatility proxy, not a direct gold-risk measure.</li>
-                            <li><strong>Official and investor flows.</strong> Central-bank reserve purchases, gold ETF creations/redemptions, and CFTC futures positioning can amplify or offset rate moves.</li>
-                            <li><strong>Physical market.</strong> China and India buying, jewelry demand, mine supply, recycling and seasonal demand can shift the balance.</li>
-                        </ul>
-                    </article>
-                    <article class="macro-catalyst-card" aria-labelledby="macro-silver-catalysts">
-                        <p class="macro-kicker">PRECIOUS & INDUSTRIAL METAL</p>
-                        <h3 id="macro-silver-catalysts">XAGUSD · Silver / U.S. dollar</h3>
-                        <ul>
-                            <li><strong>Gold, rates and the dollar.</strong> Silver often follows gold and can react more sharply to shifts in real yields and the dollar. Compare the <a href="#macro-indicator-ten_year_tips_real_yield">TIPS yield</a>, <a href="#macro-indicator-broad_us_dollar_index">broad dollar</a> and gold market context.</li>
-                            <li><strong>Manufacturing cycle and PMI.</strong> New orders, production and prices in U.S. ISM, China NBS/Caixin, and global manufacturing surveys can change demand expectations. Follow the charted <a href="#macro-indicator-china_manufacturing_pmi">China official manufacturing PMI</a> and the <a href="https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/" target="_blank" rel="noreferrer">official ISM Manufacturing PMI reports</a>; the <a href="#macro-indicator-us_manufacturing_industrial_production">Federal Reserve production chart</a> is a separate output series, not PMI.</li>
-                            <li><strong>Technology and industry.</strong> Solar photovoltaic cells, electronics, data centers, EVs and grid investment affect industrial demand; silver thrifting or substitution in solar can offset higher installation volumes.</li>
-                            <li><strong>Mine supply and available metal.</strong> Much silver is produced as a byproduct of other metals. Mine disruptions, recycling, inventories, lease rates and physical-market tightness can move supply expectations.</li>
-                            <li><strong>Flows and positioning.</strong> Silver ETF flows, COMEX stocks, futures positioning and the gold/silver ratio can magnify trend changes.</li>
-                        </ul>
-                    </article>
-                    <article class="macro-catalyst-card" aria-labelledby="macro-oil-catalysts">
-                        <p class="macro-kicker">ENERGY · GLOBAL SUPPLY & DEMAND</p>
-                        <h3 id="macro-oil-catalysts">UKOUSD · Brent crude</h3>
-                        <ul>
-                            <li><strong>OPEC+ decisions.</strong> Production quotas, compliance, voluntary cuts, spare capacity and official guidance reset expected supply.</li>
-                            <li><strong>Geopolitics and transport.</strong> Sanctions, conflict, outages, weather and shipping risk near Hormuz, the Red Sea/Suez or other routes can add or remove a risk premium.</li>
-                            <li><strong>Weekly balances.</strong> EIA U.S. crude and product stocks, production, imports/exports and refinery runs can signal a tighter or looser balance. The <a href="#macro-indicator-us_commercial_crude_stocks">weekly crude stocks chart</a> excludes the Strategic Petroleum Reserve.</li>
-                            <li><strong>Demand and growth.</strong> China activity, global manufacturing PMI, transport demand and refinery margins can change the demand outlook. Compare the charted <a href="#macro-indicator-china_manufacturing_pmi">China NBS Manufacturing PMI</a>, <a href="#macro-indicator-us_manufacturing_industrial_production">U.S. manufacturing output</a>, and official <a href="https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/" target="_blank" rel="noreferrer">ISM PMI releases</a>.</li>
-                            <li><strong>Benchmark and market stress.</strong> Compare <a href="#macro-indicator-brent_crude_spot">Brent</a> with <a href="#macro-indicator-wti_crude_spot">WTI</a>; monitor <a href="#macro-indicator-crude_oil_volatility_index">oil volatility</a>, futures-curve spreads and CFTC positioning. Spot benchmarks are context, not an intraday broker CFD quote.</li>
-                            <li><strong>Macro overlay.</strong> Dollar strength, rates and recession risk can move demand expectations and USD-priced crude. Track the <a href="#macro-indicator-broad_us_dollar_index">broad dollar</a>.</li>
-                        </ul>
-                    </article>
-                </div>
-                <div class="macro-event-watch" aria-labelledby="macro-event-watch-title">
-                    <h3 id="macro-event-watch-title">Official release and event sources</h3>
-                    <div class="macro-event-links">
-                        <a href="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" target="_blank" rel="noreferrer">Federal Reserve · FOMC calendar</a>
-                        <a href="https://www.bls.gov/schedule/news_release/cpi.htm" target="_blank" rel="noreferrer">BLS · CPI releases</a>
-                        <a href="https://www.bls.gov/schedule/news_release/empsit.htm" target="_blank" rel="noreferrer">BLS · Employment report</a>
-                        <a href="https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/" target="_blank" rel="noreferrer">ISM · Manufacturing PMI releases</a>
-                        <a href="https://data.stats.gov.cn/dg/website/publicrelease/web/external/query?search=PMI&amp;pagenum=1&amp;pageSize=10" target="_blank" rel="noreferrer">China NBS · Official PMI data</a>
-                        <a href="https://www.stats.gov.cn/english/" target="_blank" rel="noreferrer">China · National Bureau of Statistics</a>
-                        <a href="https://www.eia.gov/petroleum/supply/weekly/" target="_blank" rel="noreferrer">EIA · Weekly Petroleum Status Report</a>
-                        <a href="https://www.eia.gov/outlooks/steo/" target="_blank" rel="noreferrer">EIA · Short-Term Energy Outlook</a>
-                        <a href="https://www.iea.org/data-and-statistics/data-product/oil-market-report-omr" target="_blank" rel="noreferrer">IEA · Oil Market Report</a>
-                        <a href="https://www.opec.org/press-releases.html" target="_blank" rel="noreferrer">OPEC · Press releases</a>
-                        <a href="https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm" target="_blank" rel="noreferrer">CFTC · Commitments of Traders</a>
-                        <a href="https://www.gold.org/goldhub/data" target="_blank" rel="noreferrer">World Gold Council · Gold data</a>
-                        <a href="https://silverinstitute.org/silver-supply-demand/" target="_blank" rel="noreferrer">Silver Institute · Supply and demand</a>
-                    </div>
-                    <p class="macro-pmi-note">The China NBS manufacturing PMI chart uses the official nationwide monthly series; readings above 50 indicate expansion and below 50 contraction. U.S. ISM PMI is linked to its official release because the historical series is licensed. Federal Reserve manufacturing output is a separate hard-data series, not PMI.</p>
-                </div>
-            </section>
+            </details>
             <div id="macro-indicator-grid" class="macro-indicator-grid" aria-label="Macroeconomic indicator charts"></div>
         </section>
         <footer class="page-footer"><span>Macroeconomic context · Independent from ticker signals</span><a href="/">Back to screener</a></footer>
@@ -111,9 +104,9 @@
             <div class="macro-metrics" aria-label="Latest indicator values">
                 <div class="macro-metric macro-primary-metric"><span>Latest observation</span><strong data-role="latest">—</strong><small class="macro-latest-classification" data-role="latest-classification" hidden></small><small data-role="observation-date">Date unavailable</small><small>Source: <a class="macro-attribution-link" data-role="attribution-link" href="#" target="_blank" rel="noreferrer">Loading source…</a></small></div>
                 <div class="macro-metric"><span data-role="change-label">Change from prior observation</span><strong data-role="change">—</strong><small data-role="change-unit">—</small></div>
-                <div class="macro-metric"><span>Source checked</span><strong data-role="retrieved-at">—</strong><small>Last successful retrieval</small></div>
+                <div class="macro-metric"><span>Source checked</span><strong data-role="retrieved-at">—</strong></div>
             </div>
-            <p class="macro-card-status" data-role="status" role="status" aria-live="polite">Loading observations…</p>
+            <p class="macro-card-status" data-role="status" role="status" aria-live="polite" hidden>Loading observations…</p>
             <div class="macro-stale-note" data-role="stale-note" role="note" hidden></div>
             <div class="macro-chart-panel">
                 <div class="macro-chart-heading">
@@ -143,7 +136,6 @@
                 <summary>Recent observations</summary>
                 <div class="table-scroll"><table><thead><tr><th scope="col">Observation period</th><th scope="col">Value</th></tr></thead><tbody data-role="observations-table"></tbody></table></div>
             </details>
-            <p class="macro-limits" data-role="data-limits"></p>
         </article>
     </template>
 </body>
