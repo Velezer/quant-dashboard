@@ -27,8 +27,7 @@ pub(super) struct TimeframeScanInput<'a> {
     pub(super) is_tokenized: bool,
     pub(super) is_multibagger: bool,
     pub(super) retained_stockbit_signal_rows: &'a std::collections::BTreeSet<(String, String)>,
-    pub(super) active_scoring_profiles:
-        Option<&'a crate::research_reports::ActiveScoringProfiles>,
+    pub(super) active_scoring_profiles: Option<&'a crate::research_reports::ActiveScoringProfiles>,
 }
 
 #[cfg(test)]
@@ -92,6 +91,12 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
     let is_stockbit_signal_scope = input.exchange_id == quant_core::STOCKBIT_NWE_4H_EXCHANGE_ID
         && input.product_id == quant_core::STOCKBIT_NWE_4H_PRODUCT_ID
         && input.category_id == quant_core::STOCKBIT_NWE_4H_ASSET_CATEGORY_ID;
+    let is_pluang_commodities_signal_scope =
+        crate::instrument_registry::is_pluang_commodities_scope(
+            input.exchange_id,
+            input.product_id,
+            input.category_id,
+        );
     let is_crypto_signal_scope = input.category_id.starts_with("crypto_");
     let intraday_result = product_candle_scan_state_at(
         input.market_connection,
@@ -105,21 +110,18 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
     let stockbit_intraday_state = intraday_state.filter(|_| is_stockbit_signal_scope);
     let current_price =
         intraday_state.and_then(|state| fresh_current_price(&input, Some(state), now_ns));
-    let stockbit_closed_reference_price = if is_stockbit_signal_scope
-        && allow_stockbit_reference_price
-        && current_price.is_none()
-    {
-        intraday_state.and_then(|state| {
-            latest_current_price_reference(&input, Some(state), now_ns)
-        })
-    } else {
-        None
-    };
+    let stockbit_closed_reference_price =
+        if is_stockbit_signal_scope && allow_stockbit_reference_price && current_price.is_none() {
+            intraday_state
+                .and_then(|state| latest_current_price_reference(&input, Some(state), now_ns))
+        } else {
+            None
+        };
     let has_stockbit_reference_price = stockbit_closed_reference_price.is_some();
-    let stale_reference_price = if current_price.is_none() && is_crypto_signal_scope {
-        intraday_state.and_then(|state| {
-            latest_current_price_reference(&input, Some(state), now_ns)
-        })
+    let stale_reference_price = if current_price.is_none()
+        && (is_crypto_signal_scope || is_pluang_commodities_signal_scope)
+    {
+        intraday_state.and_then(|state| latest_current_price_reference(&input, Some(state), now_ns))
     } else {
         None
     };
@@ -172,11 +174,16 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         stockbit_intraday_state.is_some_and(|metadata| !metadata.is_stale);
     for timeframe in SIGNAL_SCREENER_TIMEFRAMES.iter().copied() {
         let diagnosis_index = readiness.timeframes.len();
-        let is_combined_entry_scope = is_stockbit_signal_scope || is_crypto_signal_scope;
+        let is_combined_entry_scope = is_stockbit_signal_scope
+            || is_crypto_signal_scope
+            || is_pluang_commodities_signal_scope;
         readiness.timeframes.push(TimeframeReadiness {
             timeframe: timeframe.into(),
             ..TimeframeReadiness::default()
         });
+        if is_pluang_commodities_signal_scope && timeframe != "15m" {
+            continue;
+        }
         let timeframe_required_history_bars = if is_combined_entry_scope {
             quant_core::ENTRY_SCORE_MINIMUM_HISTORY_BARS
         } else {
@@ -236,7 +243,10 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         }
         let duration_ns = timeframe_duration_ns(timeframe).unwrap_or_default();
         let use_stockbit_timeframe_history = is_stockbit_signal_scope && !stale;
-        if (stale && !is_stockbit_signal_scope && !stockbit_intraday_is_fresh && !has_stockbit_reference_price)
+        if (stale
+            && !is_stockbit_signal_scope
+            && !stockbit_intraday_is_fresh
+            && !has_stockbit_reference_price)
             || duration_ns <= 0
         {
             let missing = timeframe_state
@@ -300,12 +310,11 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                 .as_ref()
                 .map(|metadata| (metadata.source.clone(), metadata.data_provider.clone()))
         };
-        let use_15m_rollup = is_stockbit_signal_scope
-            || (is_crypto_signal_scope && timeframe != "15m");
+        let use_15m_rollup =
+            is_stockbit_signal_scope || (is_crypto_signal_scope && timeframe != "15m");
         let candles = if let Some((source, _)) = source_metadata.as_ref() {
             if use_15m_rollup {
-                if let Some(price) = signal_reference_price
-                    .filter(|price| price.source == *source)
+                if let Some(price) = signal_reference_price.filter(|price| price.source == *source)
                 {
                     load_15m_rolled_signal_candles(
                         &input,
@@ -364,8 +373,8 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
             Vec::new()
         };
         let completed_strategy_bars = completed_bars(&candles, duration_ns, now_ns);
-        let use_forming_rollup = is_stockbit_signal_scope
-            || (is_crypto_signal_scope && timeframe != "15m");
+        let use_forming_rollup =
+            is_stockbit_signal_scope || (is_crypto_signal_scope && timeframe != "15m");
         let forming_strategy_bars = use_forming_rollup.then(|| {
             candles
                 .iter()
@@ -406,10 +415,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
         let same_price_source = signal_reference_price
             .zip(source_metadata.as_ref())
             .is_some_and(|(price, (source, _))| price.source == *source);
-        if is_combined_entry_scope
-            && signal_reference_price.is_some()
-            && !same_price_source
-        {
+        if is_combined_entry_scope && signal_reference_price.is_some() && !same_price_source {
             readiness.timeframes[diagnosis_index].source_mismatch_count += 1;
             readiness.issue(ReadinessIssue {
                 symbol: input.asset.into(),
@@ -436,6 +442,7 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
             let after_fee_issue = append_combined_entry(
                 &input,
                 is_stockbit_signal_scope,
+                is_pluang_commodities_signal_scope,
                 timeframe,
                 source_metadata.as_ref(),
                 &bars,
@@ -458,6 +465,12 @@ pub(super) fn append_timeframe_signal_plans_with_closed_market_reference(
                     _ => {}
                 }
             }
+        }
+
+        // Pluang Commodities gets one score-driven 15m signal. Do not also
+        // create the legacy NWE/DSS directional plan row for the same candle.
+        if is_pluang_commodities_signal_scope {
+            continue;
         }
 
         if completed_strategy_bars.len() < timeframe_required_history_bars {
@@ -679,6 +692,10 @@ mod tests;
 #[cfg(test)]
 #[path = "scan_timeframe_crypto_4h_tests.rs"]
 mod crypto_4h_tests;
+
+#[cfg(test)]
+#[path = "scan_timeframes/pluang_commodities_tests.rs"]
+mod pluang_commodities_tests;
 
 #[cfg(test)]
 #[path = "scan_readiness_tests.rs"]

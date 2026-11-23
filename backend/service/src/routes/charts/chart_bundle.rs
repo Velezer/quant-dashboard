@@ -39,9 +39,10 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
     let requested_timeframe = values
         .get("timeframe")
         .map(|value| value.trim().to_ascii_lowercase());
-    if requested_timeframe.as_deref().is_some_and(|timeframe| {
-        !SIGNAL_SCREENER_TIMEFRAMES.contains(&timeframe)
-    }) {
+    if requested_timeframe
+        .as_deref()
+        .is_some_and(|timeframe| !SIGNAL_SCREENER_TIMEFRAMES.contains(&timeframe))
+    {
         api_error(stream, "400 Bad Request", "unsupported chart timeframe");
         return Ok(());
     }
@@ -55,7 +56,8 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
     let source_exchange = match (exchange.as_str(), product_id) {
         ("pintu", "pintu_pro_futures") => "pintu_futures",
         ("pintu", "pintu_retail_spot" | "pintu_pro_spot") => product_id,
-        ("pluang", "pluang_spot" | "pluang_perpetual") => product_id,
+        ("pluang", "pluang_spot" | "pluang_perpetual")
+        | ("pluang", crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID) => product_id,
         ("tokocrypto", "tokocrypto_spot" | "tokocrypto_tokenized_stock") => product_id,
         (_, "") => exchange.as_str(),
         _ => {
@@ -237,7 +239,13 @@ pub(super) fn handle<'a>(request: RequestContext<'a>) -> Result<(), RequestConte
             );
         }
         let candle_result = if let Some(source) = shared_chart_source.as_deref() {
-            load_series_candles_from_source(market_connection, &storage_symbol, timeframe, calculation_limit, source)
+            load_series_candles_from_source(
+                market_connection,
+                &storage_symbol,
+                timeframe,
+                calculation_limit,
+                source,
+            )
         } else if exchange.is_empty() {
             load_series_candles(
                 market_connection,

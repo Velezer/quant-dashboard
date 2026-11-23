@@ -5,10 +5,10 @@ use crate::{Candle, NANOS_PER_SECOND};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
-#[path = "research_proxy/interval.rs"]
-mod interval;
 #[path = "research_proxy/binance_stream.rs"]
 mod binance_stream;
+#[path = "research_proxy/interval.rs"]
+mod interval;
 #[path = "research_proxy_parsing.rs"]
 mod parsing;
 #[path = "research_proxy/providers.rs"]
@@ -165,8 +165,8 @@ fn chart_window_needs_repair(
     }) {
         return true;
     }
-    let freshness_ns = crate::freshness_threshold_seconds(symbol, timeframe)
-        .saturating_mul(NANOS_PER_SECOND);
+    let freshness_ns =
+        crate::freshness_threshold_seconds(symbol, timeframe).saturating_mul(NANOS_PER_SECOND);
     candles
         .last()
         .is_none_or(|candle| now_ns.saturating_sub(candle.time) > freshness_ns)
@@ -547,13 +547,9 @@ fn sync_with_binance(
             )
             .map_err(|error| error.to_string())?;
     }
-    let history_complete = provider_history_backfill_complete(
-        connection,
-        storage_symbol,
-        interval,
-        source,
-    )
-    .unwrap_or(false);
+    let history_complete =
+        provider_history_backfill_complete(connection, storage_symbol, interval, source)
+            .unwrap_or(false);
     if let Some(earliest_ts) = earliest_ts.filter(|_| !history_complete) {
         match fetch_binance_history_page(
             pair,
@@ -902,6 +898,7 @@ fn app_product_from_source(source: &str) -> Option<&'static str> {
         "pintu_futures",
         "pluang_spot",
         "pluang_perpetual",
+        crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID,
     ]
     .into_iter()
     .find(|product| source == *product || source.starts_with(&format!("{product}_")))

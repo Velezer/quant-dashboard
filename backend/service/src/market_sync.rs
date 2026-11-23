@@ -153,7 +153,9 @@ fn sync_hourly_chart_targets(
     let mut stockbit_refreshed = 0usize;
     let mut worker_count = 0usize;
     while !pending_targets.is_empty() {
-        let wave_limit = pending_targets.len().min(MAX_REGISTERED_CANDLE_TARGETS_PER_TICK);
+        let wave_limit = pending_targets
+            .len()
+            .min(MAX_REGISTERED_CANDLE_TARGETS_PER_TICK);
         let target_rows = pending_targets.drain(..wave_limit).collect::<Vec<_>>();
         let target_rows = targets::rank_intraday_targets_by_recent_volume(
             target_rows,
@@ -338,13 +340,14 @@ fn sync_daily_chart_targets(
             &underlying_symbol,
             &asset_category_id,
         )?;
-        let owns_shared_history_backfill = history_owner.as_ref().is_some_and(
-            |(owner_exchange, owner_product, owner_symbol)| {
-                owner_exchange == &exchange_id
-                    && owner_product == &product_id
-                    && owner_symbol == &storage_symbol
-            },
-        );
+        let owns_shared_history_backfill =
+            history_owner
+                .as_ref()
+                .is_some_and(|(owner_exchange, owner_product, owner_symbol)| {
+                    owner_exchange == &exchange_id
+                        && owner_product == &product_id
+                        && owner_symbol == &storage_symbol
+                });
         let reusable_shared_intervals = targets::fresh_shared_reference_intervals(
             market_database,
             instrument,
@@ -713,6 +716,14 @@ pub(super) fn yahoo_fallback_symbol(
                 symbol.push_str("-USD");
             }
         }
+        ("pluang", "commodity_derivative") => {
+            return match symbol.as_str() {
+                "XAUUSD" => Some("GC=F".to_string()),
+                "XAGUSD" => Some("SI=F".to_string()),
+                "UKOUSD" => Some("BZ=F".to_string()),
+                _ => None,
+            };
+        }
         _ => return None,
     }
     Some(symbol)
@@ -728,3 +739,7 @@ pub(super) fn background_market_sync_loop(state: Arc<AppState>) {
 #[cfg(test)]
 #[path = "market_sync_provider_tests.rs"]
 mod provider_chain_tests;
+
+#[cfg(test)]
+#[path = "market_sync/pluang_commodities_tests.rs"]
+mod pluang_commodities_tests;

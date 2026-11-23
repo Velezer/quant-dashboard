@@ -1,7 +1,23 @@
 use super::*;
+use serde_json::json;
 
 pub(super) fn augment_app_products(catalog: &mut Value, is_embedded_seed: bool) -> bool {
     let mut changed = upgrade_pintu_golden_cross_profile(catalog);
+    changed |= upsert_catalog_record(
+        catalog,
+        "asset_categories",
+        json!({
+            "id": crate::instrument_registry::PLUANG_COMMODITIES_ASSET_CATEGORY_ID,
+            "code": "COMMODITY_DERIVATIVE",
+            "label": "Commodity Derivative",
+            "instrument_type": "commodity_derivative",
+            "research_aliases": ["commodity_derivative"],
+            "quote_currency": "USD",
+            "direction_policy": "long_and_short",
+            "exchange_ids": ["pluang"],
+            "price_proxy_policy": "Yahoo COMEX gold and silver futures and Brent futures are research references, not Pluang commodity quotes or execution evidence."
+        }),
+    );
     let Some(exchanges) = catalog.get_mut("exchanges").and_then(Value::as_array_mut) else {
         return false;
     };
@@ -44,7 +60,11 @@ pub(super) fn augment_app_products(catalog: &mut Value, is_embedded_seed: bool) 
                 .get_mut("asset_category_ids")
                 .and_then(Value::as_array_mut)
             {
-                for category in ["crypto_spot", "crypto_perpetual"] {
+                for category in [
+                    "crypto_spot",
+                    "crypto_perpetual",
+                    crate::instrument_registry::PLUANG_COMMODITIES_ASSET_CATEGORY_ID,
+                ] {
                     if !ids.iter().any(|id| id.as_str() == Some(category)) {
                         ids.push(Value::from(category));
                         changed = true;
@@ -79,6 +99,12 @@ pub(super) fn augment_app_products(catalog: &mut Value, is_embedded_seed: bool) 
                 changed = true;
             }
             if matches!(category_id.as_str(), "crypto_spot" | "crypto_perpetual")
+                && !ids.iter().any(|id| id.as_str() == Some("pluang"))
+            {
+                ids.push(Value::from("pluang"));
+                changed = true;
+            }
+            if category_id == crate::instrument_registry::PLUANG_COMMODITIES_ASSET_CATEGORY_ID
                 && !ids.iter().any(|id| id.as_str() == Some("pluang"))
             {
                 ids.push(Value::from("pluang"));
@@ -122,6 +148,12 @@ pub(super) fn augment_app_products(catalog: &mut Value, is_embedded_seed: bool) 
         ("pintu_pro_spot", "pintu_pro_spot", "pintu", &spot),
         ("pluang_spot", "pluang_spot", "pluang", &spot),
         ("pluang_perpetual", "pluang_perpetual", "pluang", &futures),
+        (
+            crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID,
+            crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID,
+            "pluang",
+            &spot,
+        ),
     ] {
         if profiles
             .iter()
@@ -144,8 +176,28 @@ pub(super) fn augment_app_products(catalog: &mut Value, is_embedded_seed: bool) 
                 profile["research_label"] =
                     Value::from("EMA + RSI + Breakout Volume · Research only");
             }
-            profile["time_window"] =
-                Value::from(format!("{product} research · venue validation pending"));
+            if id == crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID {
+                let strategy_id = super::pluang_commodities_combined_entry_strategy_id("15m")
+                    .expect("Pluang Commodities defines a 15m score model");
+                profile["asset_category_id"] =
+                    Value::from(crate::instrument_registry::PLUANG_COMMODITIES_ASSET_CATEGORY_ID);
+                profile["label"] =
+                    Value::from("Pluang · Commodities 15m Combined Score (Research)");
+                profile["signal_strategy_id"] = Value::from(strategy_id.clone());
+                profile["engine_strategy_id"] = Value::from(strategy_id.clone());
+                profile["evidence_strategy_id"] = Value::from(strategy_id);
+                profile["evidence_class"] = Value::from("commodity_derivative");
+                profile["timeframe"] = Value::from("15m");
+                profile["asset_class_code"] = Value::from("COMMODITY");
+                profile["research_label"] = Value::from("Combined Score · Research proxy");
+                profile["validation_status"] = Value::from("UNVALIDATED");
+                profile["time_window"] = Value::from(
+                    "Completed 15m bars · Yahoo futures references · no native Pluang feed",
+                );
+            } else {
+                profile["time_window"] =
+                    Value::from(format!("{product} research · venue validation pending"));
+            }
             profiles.push(profile);
             changed = true;
         }
@@ -336,6 +388,11 @@ pub(super) fn ensure_required_signal_confirmation_models(catalog: &mut Value) ->
                         "tokenized_stock_day_trade"
                     )
             );
+            if profile_id == crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID {
+                // The 15m combined score is already the complete signal model;
+                // the separate NWE/DSS confirmation variants do not apply.
+                return None;
+            }
             if is_legacy_tokocrypto_profile && signal_id.starts_with("ema_rsi_breakout_volume") {
                 return None;
             }

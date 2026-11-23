@@ -161,6 +161,7 @@ static RESEARCH_PROXY_CAPABILITIES: CandleProviderCapabilities = CandleProviderC
         "pintu_pro_futures",
         "pluang_spot",
         "pluang_perpetual",
+        crate::instrument_registry::PLUANG_COMMODITIES_PRODUCT_ID,
     ],
     asset_categories: &[
         "idx_stock",
@@ -168,6 +169,7 @@ static RESEARCH_PROXY_CAPABILITIES: CandleProviderCapabilities = CandleProviderC
         "crypto_perpetual",
         "crypto_futures",
         "tokenized_stock",
+        crate::instrument_registry::PLUANG_COMMODITIES_ASSET_CATEGORY_ID,
     ],
     intervals: &["15m", "1h", "1d"],
 };
@@ -224,8 +226,9 @@ impl CandleSyncAdapter for ResearchProxyAdapter {
                         instrument.product_id,
                         &yahoo_symbol,
                         interval,
-                        request.chart_history_rows
-                            .unwrap_or_else(|| research_proxy::chart_priority_history_rows(interval)),
+                        request.chart_history_rows.unwrap_or_else(|| {
+                            research_proxy::chart_priority_history_rows(interval)
+                        }),
                     )
                 }
                 "15m" => research_proxy::sync_15m_for_exchange(

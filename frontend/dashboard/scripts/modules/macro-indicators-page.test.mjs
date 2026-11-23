@@ -350,6 +350,7 @@ test('macro indicators remain discoverable from the screener and their page incl
     assert.match(macroTemplate, /XAGUSD · Silver/);
     assert.match(macroTemplate, /UKOUSD · Brent/);
     assert.match(macroTemplate, /ISM Manufacturing PMI/);
+    assert.match(macroTemplate, /href="https:\/\/www\.cmegroup\.com\/markets\/interest-rates\/cme-fedwatch-tool"[^>]*>CME FedWatch/);
     assert.match(macroScript, /fallbackTitle: 'China official manufacturing PMI'/);
     assert.match(macroTemplate, /#macro-indicator-china_manufacturing_pmi/);
     assert.match(macroTemplate, /macro-pmi-note/);

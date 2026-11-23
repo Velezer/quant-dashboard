@@ -7,14 +7,14 @@ mod shared_market_history_tests;
 mod stockbit_close;
 mod types;
 
+use stockbit_close::expected_stockbit_closed_session_day;
+#[cfg(test)]
+use stockbit_close::is_final_stockbit_close_bar;
 #[cfg(not(test))]
 use stockbit_close::{
     ensure_stockbit_close_checkpoint_schema, save_stockbit_close_scan_checkpoint,
     stockbit_close_checkpoint_is_saved, stockbit_closed_session_checkpoint,
 };
-#[cfg(test)]
-use stockbit_close::is_final_stockbit_close_bar;
-use stockbit_close::expected_stockbit_closed_session_day;
 use types::{AppScanResult, RegisteredInstrument, ScanCycleOutput};
 
 const SIGNAL_SCAN_APP_ORDER: [&str; 4] = ["pintu", "pluang", "tokocrypto", "stockbit"];
@@ -206,12 +206,7 @@ pub(super) fn run_rust_scan_inner(
         }
         let mut app_scan_results = app_instrument_counts
             .keys()
-            .map(|exchange_id| {
-                (
-                    exchange_id.clone(),
-                    (AppScanResult::default(), None, None),
-                )
-            })
+            .map(|exchange_id| (exchange_id.clone(), (AppScanResult::default(), None, None)))
             .collect::<std::collections::BTreeMap<String, AppScanMetrics>>();
         if selected_signal_scope.is_none() {
             for exchange_id in app_instrument_counts.keys() {
@@ -347,15 +342,20 @@ pub(super) fn run_rust_scan_inner(
                             aggregate.0.unavailable_price_count += result.unavailable_price_count;
                             aggregate.0.generated_plan_count += result.generated_plan_count;
                             aggregate.0.signal_row_count += result.signal_row_count;
-                            aggregate.0.paused_market_closed_count += result.paused_market_closed_count;
+                            aggregate.0.paused_market_closed_count +=
+                                result.paused_market_closed_count;
                             if let Some(started_at) = started_at {
                                 aggregate.1 = Some(
-                                    aggregate.1.map_or(started_at, |first| first.min(started_at)),
+                                    aggregate
+                                        .1
+                                        .map_or(started_at, |first| first.min(started_at)),
                                 );
                             }
                             if let Some(finished_at) = finished_at {
                                 aggregate.2 = Some(
-                                    aggregate.2.map_or(finished_at, |last| last.max(finished_at)),
+                                    aggregate
+                                        .2
+                                        .map_or(finished_at, |last| last.max(finished_at)),
                                 );
                             }
                         }
@@ -371,9 +371,8 @@ pub(super) fn run_rust_scan_inner(
             Ok(())
         })?;
         for (exchange_id, registered_instruments) in app_instrument_counts {
-            let (result, started_at, finished_at) = app_scan_results
-                .remove(&exchange_id)
-                .unwrap_or_default();
+            let (result, started_at, finished_at) =
+                app_scan_results.remove(&exchange_id).unwrap_or_default();
             let elapsed = match (started_at, finished_at) {
                 (Some(started_at), Some(finished_at)) => finished_at.saturating_sub(started_at),
                 _ => std::time::Duration::ZERO,
@@ -660,8 +659,10 @@ fn open_scan_market_history_once(
         Err(error) => own_open_error = Some(error),
     }
 
-    if matches!(category, "crypto_spot" | "crypto_perpetual" | "crypto_futures")
-        && !underlying_symbol.trim().is_empty()
+    if matches!(
+        category,
+        "crypto_spot" | "crypto_perpetual" | "crypto_futures"
+    ) && !underlying_symbol.trim().is_empty()
     {
         let candidates = {
             let mut statement = app_connection.prepare(
@@ -708,12 +709,13 @@ fn open_scan_market_history_once(
             ) {
                 Ok(state)
                     if scan_state_has_fresh_price(
-                    &state,
-                    &candidate_symbol,
-                    category,
-                    now_ns,
-                    true,
-                ) => {
+                        &state,
+                        &candidate_symbol,
+                        category,
+                        now_ns,
+                        true,
+                    ) =>
+                {
                     return Ok(Some((connection, candidate_symbol)));
                 }
                 Ok(_) => {}
@@ -729,8 +731,9 @@ fn open_scan_market_history_once(
         if let Some(error) = own_open_error {
             return Err(error);
         }
-        return open_market_history_for_signal_scan(market_database, storage_symbol, false)
-            .map(|connection| connection.map(|connection| (connection, storage_symbol.to_string())));
+        return open_market_history_for_signal_scan(market_database, storage_symbol, false).map(
+            |connection| connection.map(|connection| (connection, storage_symbol.to_string())),
+        );
     }
     if let Some(error) = own_open_error {
         return Err(error);
@@ -751,9 +754,9 @@ fn scan_state_has_fresh_price(
     !state.is_stale
         && (!require_shared_reference
             || research_proxy::shared::is_shared_source_for_category(&state.source, category))
-        && state.latest_bar_time.is_some_and(|bar_time| {
-            completed_bar_is_fresh_at(symbol, "15m", bar_time, now_ns)
-        })
+        && state
+            .latest_bar_time
+            .is_some_and(|bar_time| completed_bar_is_fresh_at(symbol, "15m", bar_time, now_ns))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -776,15 +779,15 @@ fn scan_registered_app(
         signal_row_count: 0,
         paused_market_closed_count: 0,
     };
-    for (instrument_exchange, product_id, category_id, sym, asset, underlying, quote_currency) in instruments {
+    for (instrument_exchange, product_id, category_id, sym, asset, underlying, quote_currency) in
+        instruments
+    {
         if instrument_exchange != exchange_id {
             continue;
         }
-        output.scanned_instruments.push((
-            product_id.clone(),
-            category_id.clone(),
-            asset.clone(),
-        ));
+        output
+            .scanned_instruments
+            .push((product_id.clone(), category_id.clone(), asset.clone()));
         let instrument_started = std::time::Instant::now();
         let scan_label = format!("{exchange_id} · {product_id} · {sym}");
         if let Some(state) = sync_state {
@@ -859,10 +862,8 @@ fn scan_registered_app(
         // After the IDX session closes, keep evaluating the latest completed
         // close when the provider's final intraday price is stale or missing.
         let allow_stockbit_reference_price = is_idx
-            && expected_stockbit_closed_session_day(
-                now_secs().min(i64::MAX as u64) as i64,
-            )
-            .is_some();
+            && expected_stockbit_closed_session_day(now_secs().min(i64::MAX as u64) as i64)
+                .is_some();
         #[cfg(not(test))]
         if is_idx {
             match stockbit_closed_session_checkpoint(
@@ -875,7 +876,10 @@ fn scan_registered_app(
                 now_secs().min(i64::MAX as u64) as i64,
             ) {
                 Ok(Some(checkpoint)) => {
-                    let already_scanned = match stockbit_close_checkpoint_is_saved(app_connection, &checkpoint) {
+                    let already_scanned = match stockbit_close_checkpoint_is_saved(
+                        app_connection,
+                        &checkpoint,
+                    ) {
                         Ok(saved) => saved,
                         Err(error) => {
                             eprintln!("[ScanWorker] Could not read closed-market checkpoint for {sym}: {error}");
@@ -896,7 +900,9 @@ fn scan_registered_app(
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    eprintln!("[ScanWorker] Could not verify final Stockbit candle for {sym}: {error}");
+                    eprintln!(
+                        "[ScanWorker] Could not verify final Stockbit candle for {sym}: {error}"
+                    );
                 }
             }
         }
@@ -919,6 +925,7 @@ fn scan_registered_app(
             ("pintu", "pintu_pro_futures", "crypto_perpetual") => "pintu_futures_confluence",
             ("pluang", "pluang_spot", "crypto_spot") => "pluang_spot",
             ("pluang", "pluang_perpetual", "crypto_perpetual") => "pluang_perpetual",
+            ("pluang", "pluang_commodities", "commodity_derivative") => "pluang_commodities",
             ("tokocrypto", _, "crypto_spot") => "tokocrypto_spot_day_trade",
             ("tokocrypto", _, "tokenized_stock") => "tokocrypto_tokenized_stock_day_trade",
             _ => continue,
@@ -939,37 +946,38 @@ fn scan_registered_app(
         let running_start = running_plans.len();
         let potential_start = potential_plans.len();
         let mut instrument_readiness = signal_alerts::InstrumentReadiness::default();
-        let has_fresh_price = scan_timeframes::append_timeframe_signal_plans_with_closed_market_reference(
-            scan_timeframes::TimeframeScanInput {
-                app_connection,
-                market_connection: connection,
-                sync_state,
-                exchange_id: &instrument_exchange,
-                product_id: &product_id,
-                category_id: &category_id,
-                quote_currency: &quote_currency,
-                symbol: &market_symbol,
-                asset: &asset,
-                strategy,
-                evidence_class,
-                class,
-                exchange,
-                time_window,
-                base_timeframe: scan_interval,
-                is_tokenized,
-                is_multibagger,
-                retained_stockbit_signal_rows: &retained_stockbit_signal_rows,
-                active_scoring_profiles: Some(active_scoring_profiles),
-            },
-            &mut running_plans,
-            &mut potential_plans,
-            &mut cagr_stats,
-            &mut symbol_indicator_alerts,
-            &mut standalone_screener_signals,
-            &mut symbol_score_updates,
-            &mut instrument_readiness,
-            allow_stockbit_reference_price,
-        )?;
+        let has_fresh_price =
+            scan_timeframes::append_timeframe_signal_plans_with_closed_market_reference(
+                scan_timeframes::TimeframeScanInput {
+                    app_connection,
+                    market_connection: connection,
+                    sync_state,
+                    exchange_id: &instrument_exchange,
+                    product_id: &product_id,
+                    category_id: &category_id,
+                    quote_currency: &quote_currency,
+                    symbol: &market_symbol,
+                    asset: &asset,
+                    strategy,
+                    evidence_class,
+                    class,
+                    exchange,
+                    time_window,
+                    base_timeframe: scan_interval,
+                    is_tokenized,
+                    is_multibagger,
+                    retained_stockbit_signal_rows: &retained_stockbit_signal_rows,
+                    active_scoring_profiles: Some(active_scoring_profiles),
+                },
+                &mut running_plans,
+                &mut potential_plans,
+                &mut cagr_stats,
+                &mut symbol_indicator_alerts,
+                &mut standalone_screener_signals,
+                &mut symbol_score_updates,
+                &mut instrument_readiness,
+                allow_stockbit_reference_price,
+            )?;
         if has_fresh_price {
             app_result.fresh_price_count += 1;
         } else {

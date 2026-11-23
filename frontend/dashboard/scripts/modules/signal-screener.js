@@ -16,6 +16,7 @@ import {
     cryptoSignalModelsForSelection,
     stockbitSignalModelsForSelection,
     signalIdentity,
+    isPluangCommoditiesCombinedScore,
     normalizeSignalRecord,
     signalIndicatorScoreForFilter,
     isPersistentNoEntryScore,
@@ -430,8 +431,9 @@ export function installSignalScreener() {
             const state = signalScoreState(signal);
             const retainStaleCryptoSetup = String(signal.asset_category_id || '').startsWith('crypto_')
                 && cryptoStrategyIds.has(String(signal.signal_strategy_id || ''));
+            const retainStalePluangCommoditiesSetup = isPluangCommoditiesCombinedScore(signal);
             if (!retainStockbitScoreReference(signal)
-                && ((state?.tone === 'stale' && !retainStaleCryptoSetup)
+                && ((state?.tone === 'stale' && !retainStaleCryptoSetup && !retainStalePluangCommoditiesSetup)
                     || signal.score_status === 'stale')) return false;
             if (!signalMeetsRenderMinimum(signal, scoreModelFor(signal))) return false;
             if (signal.exchange_id !== exchange) return false;

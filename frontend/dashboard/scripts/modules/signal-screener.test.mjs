@@ -20,7 +20,7 @@ import {
     SIGNAL_LIST_PAGE_SIZE,
 } from './signal-screener.js';
 import { getDashboardBinding, publishDashboardBindings } from './runtime-context.js';
-import { normalizeSignalRecord, signalScoreState } from './signal-screener-model.js';
+import { isPluangCommoditiesCombinedScore, normalizeSignalRecord, PRODUCTS_BY_APP, signalScoreState } from './signal-screener-model.js';
 
 test('screener row normalization preserves app identity and product category', () => {
     const strategies = [{ id: 'nwe', short_label: 'NWE' }];
@@ -45,6 +45,23 @@ test('screener row normalization preserves app identity and product category', (
         exchange_id: 'pintu', product_id: 'pintu_pro_futures',
         asset_category_id: 'crypto_futures', symbol: 'BTC-USD',
     }, []).class, 'crypto_futures');
+});
+
+test('Pluang Commodities is available as a separate screener product filter', () => {
+    assert.ok(PRODUCTS_BY_APP.pluang.includes('pluang_commodities'));
+    const signal = normalizeSignalRecord({
+        exchange_id: 'pluang', product_id: 'pluang_commodities',
+        asset_category_id: 'commodity_derivative', symbol: 'XAUUSD',
+    }, []);
+    assert.equal(signal.exchange, 'pluang');
+    assert.equal(signal.class, 'commodity_derivative');
+    assert.equal(isPluangCommoditiesCombinedScore({
+        exchange_id: signal.exchange,
+        product_id: signal.product_id,
+        asset_category_id: signal.asset_category_id,
+        timeframe: '15m',
+        signal_strategy_id: 'pluang_commodities_combined_entry_15m_v1',
+    }), true);
 });
 
 test('screener signal identity keeps each timeframe independent', () => {

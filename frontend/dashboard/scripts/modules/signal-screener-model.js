@@ -9,7 +9,7 @@ export const APP_LABELS = {
 export const PRODUCTS_BY_APP = {
     stockbit: ['stockbit_regular'],
     pintu: ['pintu_retail_spot', 'pintu_pro_spot', 'pintu_pro_futures'],
-    pluang: ['pluang_spot', 'pluang_perpetual'],
+    pluang: ['pluang_spot', 'pluang_perpetual', 'pluang_commodities'],
     tokocrypto: ['tokocrypto_spot', 'tokocrypto_tokenized_stock'],
 };
 const SIGNAL_BAR_TIME_NANOSECONDS_PER_SECOND = 1_000_000_000;
@@ -18,6 +18,14 @@ export function signalIdentity(signal) {
     const strategy = Array.isArray(signal.timeframe_strategy_ids) ? '' : signal.signal_strategy_id;
     return [signal.exchange_id, signal.product_id, signal.asset_category_id,
         signal.symbol, strategy, signal.timeframe].join('|');
+}
+
+export function isPluangCommoditiesCombinedScore(signal) {
+    return String(signal?.exchange_id || signal?.exchange || '').toLowerCase() === 'pluang'
+        && String(signal?.product_id || '').toLowerCase() === 'pluang_commodities'
+        && String(signal?.asset_category_id || '').toLowerCase() === 'commodity_derivative'
+        && String(signal?.timeframe || '').toLowerCase() === '15m'
+        && String(signal?.signal_strategy_id || '') === 'pluang_commodities_combined_entry_15m_v1';
 }
 
 export function signalScoreState(signal, nowEpochMs = Date.now()) {
@@ -115,6 +123,8 @@ export function normalizeSignalRecord(raw, strategies) {
             ? 'idx'
             : category === 'tokenized_stock'
                 ? 'tokenized_stock'
+                : category === 'commodity_derivative'
+                    ? 'commodity_derivative'
                 : product.endsWith('futures')
                     ? 'crypto_futures'
                     : 'crypto',

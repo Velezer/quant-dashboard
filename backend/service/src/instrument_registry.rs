@@ -25,20 +25,38 @@ pub(super) use sync::{
 #[cfg(test)]
 pub(super) use sync::{reconcile_pintu, reconcile_stockbit, reconcile_tokocrypto};
 
-pub(crate) const REGISTERED_APP_PRODUCT_CATEGORIES: [(&str, &str, &str); 8] = [
-        ("stockbit", "stockbit_regular", "idx_stock"),
-        ("tokocrypto", "tokocrypto_spot", "crypto_spot"),
-        (
-            "tokocrypto",
-            "tokocrypto_tokenized_stock",
-            "tokenized_stock",
-        ),
-        ("pintu", "pintu_retail_spot", "crypto_spot"),
-        ("pintu", "pintu_pro_spot", "crypto_spot"),
-        ("pintu", "pintu_pro_futures", "crypto_perpetual"),
-        ("pluang", "pluang_spot", "crypto_spot"),
-        ("pluang", "pluang_perpetual", "crypto_perpetual"),
-    ];
+pub(crate) const PLUANG_COMMODITIES_PRODUCT_ID: &str = "pluang_commodities";
+pub(crate) const PLUANG_COMMODITIES_ASSET_CATEGORY_ID: &str = "commodity_derivative";
+
+pub(crate) fn is_pluang_commodities_scope(
+    exchange_id: &str,
+    product_id: &str,
+    asset_category_id: &str,
+) -> bool {
+    exchange_id == "pluang"
+        && product_id == PLUANG_COMMODITIES_PRODUCT_ID
+        && asset_category_id == PLUANG_COMMODITIES_ASSET_CATEGORY_ID
+}
+
+pub(crate) const REGISTERED_APP_PRODUCT_CATEGORIES: [(&str, &str, &str); 9] = [
+    ("stockbit", "stockbit_regular", "idx_stock"),
+    ("tokocrypto", "tokocrypto_spot", "crypto_spot"),
+    (
+        "tokocrypto",
+        "tokocrypto_tokenized_stock",
+        "tokenized_stock",
+    ),
+    ("pintu", "pintu_retail_spot", "crypto_spot"),
+    ("pintu", "pintu_pro_spot", "crypto_spot"),
+    ("pintu", "pintu_pro_futures", "crypto_perpetual"),
+    ("pluang", "pluang_spot", "crypto_spot"),
+    ("pluang", "pluang_perpetual", "crypto_perpetual"),
+    (
+        "pluang",
+        PLUANG_COMMODITIES_PRODUCT_ID,
+        PLUANG_COMMODITIES_ASSET_CATEGORY_ID,
+    ),
+];
 
 /// Result of a daily registry sync for a single exchange.
 #[derive(Debug)]
@@ -68,3 +86,7 @@ mod listing_status_tests;
 #[cfg(test)]
 #[path = "instrument_registry_storage_symbol_tests.rs"]
 mod storage_symbol_tests;
+
+#[cfg(test)]
+#[path = "instrument_registry/pluang_commodities_tests.rs"]
+mod pluang_commodities_tests;

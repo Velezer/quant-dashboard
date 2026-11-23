@@ -160,7 +160,7 @@ export function installNweExcursionReport({ status: reportStatus, ensureWorker, 
             ? 'pintu_futures'
             : exchange === 'pintu' && ['pintu_retail_spot', 'pintu_pro_spot'].includes(product)
                 ? product
-                : exchange === 'pluang' && ['pluang_spot', 'pluang_perpetual'].includes(product)
+                    : exchange === 'pluang' && ['pluang_spot', 'pluang_perpetual', 'pluang_commodities'].includes(product)
                     ? product
                     : exchange;
         const query = new URLSearchParams({

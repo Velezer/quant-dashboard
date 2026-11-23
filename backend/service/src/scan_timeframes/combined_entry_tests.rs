@@ -79,6 +79,7 @@ fn combined_score_publishes_one_signal_and_uses_signed_total_without_warmed_nwe(
     append_combined_entry(
         &input,
         false,
+        false,
         timeframe,
         Some(&source),
         &bars,
@@ -131,6 +132,7 @@ fn stockbit_4h_scores_without_a_15m_price_as_a_reference_only() {
     append_combined_entry(
         &input,
         true,
+        false,
         timeframe,
         Some(&source),
         &bars,
@@ -162,6 +164,7 @@ fn neutral_stockbit_score_updates_only_a_retained_row() {
     append_combined_entry(
         &input,
         true,
+        false,
         timeframe,
         Some(&source),
         &bars,

@@ -1,7 +1,7 @@
-use super::timeframe_signals::{ScreenerMatch, ScreenerMatches};
 use super::ticker_holdout::{
     has_score_matched_win_probability, load_ticker_holdout_win_rates, ticker_holdout_lookup_key,
 };
+use super::timeframe_signals::{ScreenerMatch, ScreenerMatches};
 use super::*;
 use rusqlite::OptionalExtension;
 
@@ -94,17 +94,24 @@ fn is_unavailable_pintu_signal(row: &SignalScreenerRowSnapshot) -> bool {
 fn score_model_by_strategy() -> std::collections::HashMap<&'static str, &'static str> {
     crate::master_data::master_data_records("signal_strategies")
         .iter()
-        .filter_map(|model| Some((
-            crate::master_data::catalog_string(model, "id")?,
-            crate::master_data::catalog_string(model, "score_model_id")?,
-        )))
+        .filter_map(|model| {
+            Some((
+                crate::master_data::catalog_string(model, "id")?,
+                crate::master_data::catalog_string(model, "score_model_id")?,
+            ))
+        })
         .collect()
 }
 
 fn mark_legacy_score(signal: &mut Value, models: &std::collections::HashMap<&str, &str>) {
     let strategy_id = signal["signal_strategy_id"].as_str().unwrap_or_default();
-    let stored_model_id = signal["score_basis"]["model_id"].as_str().unwrap_or_default();
-    if models.get(strategy_id).is_some_and(|model_id| *model_id != stored_model_id) {
+    let stored_model_id = signal["score_basis"]["model_id"]
+        .as_str()
+        .unwrap_or_default();
+    if models
+        .get(strategy_id)
+        .is_some_and(|model_id| *model_id != stored_model_id)
+    {
         signal["score_status"] = json!("stale");
         signal["market_entry_status"] = json!("NO_MARKET_ENTRY");
         if let Some(basis) = signal["score_basis"].as_object_mut() {
@@ -224,10 +231,7 @@ fn update_signal_market_entry_freshness(
         .unwrap_or_default()
         .to_string();
     let price_bar_time = signal["price_bar_time"].as_i64().unwrap_or_default();
-    let signal_timeframe = signal["timeframe"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
+    let signal_timeframe = signal["timeframe"].as_str().unwrap_or_default().to_string();
     let is_stockbit_persistent = is_stockbit_signal_score_row(
         signal["exchange_id"].as_str().unwrap_or_default(),
         signal["product_id"].as_str().unwrap_or_default(),
@@ -247,8 +251,7 @@ fn update_signal_market_entry_freshness(
     let score_bar_time = signal["score_bar_time"].as_i64().unwrap_or(price_bar_time);
     let score_updated_at = signal["last_updated_at"].as_i64().unwrap_or_default();
     let score_is_recently_updated = now.saturating_sub(score_updated_at) < scan_interval_seconds;
-    let score_bar_duration_ns =
-        crate::timeframe_duration_ns(&signal_timeframe).unwrap_or_default();
+    let score_bar_duration_ns = crate::timeframe_duration_ns(&signal_timeframe).unwrap_or_default();
     let score_bar_is_current = score_bar_duration_ns > 0
         && score_bar_time <= now_ns
         && score_bar_time.saturating_add(score_bar_duration_ns) > now_ns;
@@ -260,12 +263,7 @@ fn update_signal_market_entry_freshness(
             && if score_bar_is_forming {
                 score_bar_is_current
             } else {
-                crate::completed_bar_is_fresh_at(
-                    &symbol,
-                    &signal_timeframe,
-                    score_bar_time,
-                    now_ns,
-                )
+                crate::completed_bar_is_fresh_at(&symbol, &signal_timeframe, score_bar_time, now_ns)
             }
     } else {
         crate::completed_bar_is_fresh_at(&symbol, &timeframe, price_bar_time, now_ns)
@@ -298,8 +296,7 @@ fn update_signal_market_entry_freshness(
     }
     (
         (is_current_price_fresh || is_verified_closed_reference) && score_is_current,
-        is_verified_closed_reference
-            || (!is_current_price_fresh && !is_stockbit_persistent),
+        is_verified_closed_reference || (!is_current_price_fresh && !is_stockbit_persistent),
         !score_is_current,
     )
 }
@@ -361,22 +358,19 @@ pub(super) fn score_basis_matches_indicator_filter(
         normalized_indicator_identity(indicator),
         normalized_indicator_identity(indicator_filter.unwrap_or_default()),
     ];
-    let Some(component) = score_basis["components"]
-        .as_array()
-        .and_then(|components| {
-            components.iter().find(|item| {
-                ["indicator", "indicator_id", "id", "key"]
-                    .into_iter()
-                    .filter_map(|key| item.get(key).and_then(Value::as_str))
-                    .any(|identity| {
-                        let normalized = normalized_indicator_identity(identity);
-                        accepted
-                            .iter()
-                            .any(|candidate| candidate.as_str() == normalized)
-                    })
-            })
+    let Some(component) = score_basis["components"].as_array().and_then(|components| {
+        components.iter().find(|item| {
+            ["indicator", "indicator_id", "id", "key"]
+                .into_iter()
+                .filter_map(|key| item.get(key).and_then(Value::as_str))
+                .any(|identity| {
+                    let normalized = normalized_indicator_identity(identity);
+                    accepted
+                        .iter()
+                        .any(|candidate| candidate.as_str() == normalized)
+                })
         })
-    else {
+    }) else {
         return false;
     };
     let state = component["state"].as_str().unwrap_or_default();
@@ -521,7 +515,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     );
     let mut statement = snapshot_connection.prepare(&query)?;
     let row_mapper = |row: &SignalScreenerRowSnapshot, score_basis: Value| -> Value {
-        let price_fresh_until_ms = row.price_bar_time
+        let price_fresh_until_ms = row
+            .price_bar_time
             .div_euclid(quant_core::NANOS_PER_MILLISECOND)
             .saturating_add(
                 crate::freshness_threshold_seconds(&row.storage_symbol, &row.price_timeframe)
@@ -540,13 +535,11 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         // Keep the saved sign on retained qualifying rows; the live net below
         // is reserved for fresh market entries.
         let last_direction_score = match score_status {
-            "qualifying" | "stale" => Some(
-                if row.direction.eq_ignore_ascii_case("SHORT") {
-                    -setup_strength
-                } else {
-                    setup_strength
-                },
-            ),
+            "qualifying" | "stale" => Some(if row.direction.eq_ignore_ascii_case("SHORT") {
+                -setup_strength
+            } else {
+                setup_strength
+            }),
             _ => None,
         };
         json!({
@@ -649,8 +642,8 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         }
         let score = row.score;
         let timeframe = row.timeframe.as_str();
-        let score_basis = serde_json::from_str::<Value>(&row.score_basis_json)
-            .unwrap_or(Value::Null);
+        let score_basis =
+            serde_json::from_str::<Value>(&row.score_basis_json).unwrap_or(Value::Null);
         let is_stockbit_no_entry = is_stockbit_signal_score_row(
             &row.exchange_id,
             &row.product_id,
@@ -683,7 +676,16 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
             strategy,
             timeframe,
         );
-        let group_by_timeframe = signal["persistent_score"] == true || is_crypto_timeframe_signal;
+        let is_pluang_commodities_timeframe_signal = is_pluang_commodities_combined_entry_score_row(
+            signal["exchange_id"].as_str().unwrap_or_default(),
+            signal["product_id"].as_str().unwrap_or_default(),
+            signal["asset_category_id"].as_str().unwrap_or_default(),
+            strategy,
+            timeframe,
+        );
+        let is_combined_timeframe_signal =
+            is_crypto_timeframe_signal || is_pluang_commodities_timeframe_signal;
+        let group_by_timeframe = signal["persistent_score"] == true || is_combined_timeframe_signal;
         let is_current_market_entry = is_current
             && signal["market_entry_status"].as_str() != Some("NO_MARKET_ENTRY")
             && signal["score_basis"]["status"].as_str() != Some("not_qualifying");
@@ -729,11 +731,11 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         if is_stale_score && !group_by_timeframe {
             stale_score_signal_count = stale_score_signal_count.saturating_add(1);
         }
-        let retain_stale_crypto_setup =
-            is_stale_price && !is_stale_score && is_crypto_timeframe_signal;
+        let retain_stale_combined_setup =
+            is_stale_price && !is_stale_score && is_combined_timeframe_signal;
         let retain_stockbit_setup = signal["persistent_score"] == true
             && signal["score_basis"]["score_model_status"].as_str() != Some("legacy");
-        if !is_current && !retain_stale_crypto_setup && !retain_stockbit_setup {
+        if !is_current && !retain_stale_combined_setup && !retain_stockbit_setup {
             continue;
         }
         if minimum_total_score.is_some_and(|minimum| {
@@ -799,8 +801,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         .filter(|signal| !has_score_matched_win_probability(&signal["win_probability"]))
         .filter_map(|signal| ticker_holdout_lookup_key(signal, &score_model_by_strategy))
         .collect::<std::collections::BTreeSet<_>>();
-    let ticker_holdout_win_rates =
-        load_ticker_holdout_win_rates(connection, &holdout_lookup_keys)?;
+    let ticker_holdout_win_rates = load_ticker_holdout_win_rates(connection, &holdout_lookup_keys)?;
     for signal in &mut signals {
         if has_score_matched_win_probability(&signal["win_probability"]) {
             continue;
@@ -827,6 +828,13 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         };
         let is_single_combined_score = signal["persistent_score"] == true
             || is_crypto_combined_entry_score_row(
+                signal["asset_category_id"].as_str().unwrap_or_default(),
+                signal["signal_strategy_id"].as_str().unwrap_or_default(),
+                signal["timeframe"].as_str().unwrap_or_default(),
+            )
+            || is_pluang_commodities_combined_entry_score_row(
+                signal["exchange_id"].as_str().unwrap_or_default(),
+                signal["product_id"].as_str().unwrap_or_default(),
                 signal["asset_category_id"].as_str().unwrap_or_default(),
                 signal["signal_strategy_id"].as_str().unwrap_or_default(),
                 signal["timeframe"].as_str().unwrap_or_default(),

@@ -81,12 +81,32 @@ providers; stale prices remain ineligible for signals.
 | Pintu | First-party public Retail and Pro listing endpoints, including the public Pro Futures `get-candles` endpoint | Pro Futures supplies 5m, 1h, and 1d OHLCV; 15m is aggregated from three complete native 5m bars | Native Pro Futures candles are enabled; Spot remains research-only |
 | Stockbit | No public complete Stockbit ticker feed or candle API was found; the official IDX listed-company directory is publicly readable | The approved IDX directory snapshot supplies the ticker universe for the Stockbit app choice; Yahoo `.JK` candles stay research-only | Registry provenance identifies IDX, and proxy prices do not establish Stockbit execution availability |
 | Pluang | Official pages document live IDX price, bid/ask, volume, a 5-minute chart, and order book in the app, but no public developer API was found | Requires a partner/data agreement or an approved export | Scraping is not enabled; terms prohibit automated extraction without written permission |
+| Pluang Commodities | Official catalog lists XAUUSD, XAGUSD, and UKOUSD in the Pluang app | Yahoo 15m COMEX gold (`GC=F`), COMEX silver (`SI=F`), and Brent (`BZ=F`) futures, stored under the Pluang product identity | One 15m six-factor combined-score signal; futures are research references, not Pluang quotes or execution evidence |
 | Research reference APIs | Binance, Coinbase, Bybit, and OKX publish public candle endpoints | Used only for external crypto reference series; ticker coverage varies by provider | These series do not confirm app availability, venue liquidity, or execution eligibility |
 
 “No public API was found” is a feasibility result, not proof that a private
 commercial integration cannot exist. The Tokocrypto and Pintu adapters remain
 limited to public market data; account, order, and execution endpoints are out
 of scope.
+
+## Pluang Commodities 15-minute score — 2026-11-23
+
+Pluang's official [Commodities FAQ](https://pluang.com/en/faq/commodities/commodities-features/instrumen-commodities-yang-tersedia-di-pluang)
+lists XAUUSD, XAGUSD, and UKOUSD and says these contracts are accessed through
+the app. The dashboard registers them as `pluang_commodities`; it does not
+scrape Pluang or claim a native Pluang candle feed.
+
+The research references are Yahoo Finance 15-minute futures: `GC=F` for gold,
+`SI=F` for silver, and `BZ=F` for Brent. These prices can differ from Pluang's
+contract quotes because of contract specifications, futures basis, and roll.
+Each source stays in a Pluang-product-scoped series marked `RESEARCH_PROXY`.
+The screener calculates only the six-factor combined score on completed 15m
+bars. It does not also emit separate NWE/DSS plan signals. These references do
+not support fee-aware execution or a Pluang market-entry claim.
+
+The Macro page links directly to [CME FedWatch](https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool)
+for the official market-implied FOMC rate probabilities. The dashboard does
+not rehost or reconstruct those probabilities.
 
 ## Stockbit 15-minute free-source decision — 2026-10-02
 
@@ -469,7 +489,7 @@ marked unverified until a listing source confirms it.
 | --- | --- | --- | --- |
 | Tokocrypto | Public symbol-type-specific kline endpoint | Enabled for supported, discovered symbols; symbol type and quote pair are validated | After native failure: Binance Spot, Coinbase Spot, Bybit Spot, OKX Spot, and Yahoo independently for crypto; Yahoo underlying reference for tokenized stocks. Chart preference: Binance, Coinbase, Bybit, OKX, Yahoo. |
 | Stockbit | No native candle feed configured | Approved IDX directory snapshot supplies the stock ticker universe; it is not a Stockbit-issued availability list | Yahoo `.JK` candles for stocks; research-only |
-| Pluang | No native feed configured | Approved feed required for the exact product and price basis; scraping requires written consent | Binance, Coinbase, Bybit, OKX, and Yahoo for eligible crypto spot; Binance, Bybit, and Yahoo for perpetuals; Yahoo for eligible equity mappings |
+| Pluang | No native feed configured | Approved feed required for the exact product and price basis; scraping requires written consent | Binance, Coinbase, Bybit, OKX, and Yahoo for eligible crypto spot; Binance, Bybit, and Yahoo for perpetuals; Yahoo for eligible equity mappings; Yahoo COMEX/Brent futures for Commodities |
 | Pintu Retail Spot / Pro Spot / Pro Futures | No native candle feed configured | First-party app listings confirm product eligibility; venue-native execution validation still requires an approved candle and product contract | Spot: Binance, Coinbase, Bybit, and OKX. Futures: Binance USDⓈ-M and Bybit Linear. Yahoo is also attempted; none represents Pintu venue pricing |
 
 Stockbit's Yahoo daily candle history is backfilled in bounded pages until the
