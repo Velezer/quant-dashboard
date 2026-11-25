@@ -41,6 +41,11 @@ export function formatUsdPerBarrel(value) {
     return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / bbl`;
 }
 
+export function formatUsdPrice(value) {
+    if (value == null || value === '' || !Number.isFinite(Number(value))) return 'Unavailable';
+    return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
 export function formatMillionBarrels(value) {
     if (value == null || value === '' || !Number.isFinite(Number(value))) return 'Unavailable';
     return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} million bbl`;
@@ -63,6 +68,7 @@ export function formatValue(value, valueFormat = 'percent') {
     if (valueFormat === 'index_0_100') return formatIndex(value);
     if (valueFormat === 'index_points') return formatIndexPoints(value);
     if (valueFormat === 'usd_per_barrel') return formatUsdPerBarrel(value);
+    if (valueFormat === 'usd_price') return formatUsdPrice(value);
     if (valueFormat === 'million_barrels') return formatMillionBarrels(value);
     return formatYield(value);
 }
@@ -127,6 +133,7 @@ function axisValue(value, valueFormat) {
     if (valueFormat === 'index_0_100') return `${Math.round(Number(value))}`;
     if (valueFormat === 'index_points') return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
     if (valueFormat === 'usd_per_barrel') return `$${Number(value).toFixed(2)}`;
+    if (valueFormat === 'usd_price') return formatUsdPrice(value);
     if (valueFormat === 'million_barrels') return Number(value).toFixed(1);
     return `${Number(value).toFixed(2)}%`;
 }

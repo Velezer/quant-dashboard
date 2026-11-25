@@ -83,6 +83,8 @@ jobs:
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
             macro_indicators::tests -- --test-threads=1
           cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
+            macro_indicators::deribit::tests -- --test-threads=1
+          cargo test --locked --release -p rust_chart_api --bin rust_chart_api \
             routes::macro_indicators::tests -- --test-threads=1
           node --test \
             frontend/dashboard/scripts/modules/macro-indicator-view.test.mjs \

@@ -8,6 +8,7 @@ import {
     formatMillionBarrels,
     formatObservationChange,
     formatUsdPerBarrel,
+    formatUsdPrice,
     formatUsdFlow,
     formatValue,
     formatYield,
@@ -38,6 +39,7 @@ test('macro value and change presenters preserve each indicator unit', () => {
     assert.equal(formatIndexPoints(122.6503), '122.65 points');
     assert.equal(formatMillionBarrels(417.797), '417.8 million bbl');
     assert.equal(formatUsdPerBarrel(92.94), '$92.94 / bbl');
+    assert.equal(formatUsdPrice(80_000), '$80,000');
     assert.equal(formatUsdFlow(-125_500_000), '−$125.5M');
     assert.equal(formatUsdFlow(1_250_000_000), '+$1.25B');
     assert.equal(formatValue(2.88, 'percent'), '2.88%');
@@ -45,6 +47,7 @@ test('macro value and change presenters preserve each indicator unit', () => {
     assert.equal(formatValue(11, 'index_0_100'), '11 / 100');
     assert.equal(formatValue(28.44, 'index_points'), '28.44 points');
     assert.equal(formatValue(92.94, 'usd_per_barrel'), '$92.94 / bbl');
+    assert.equal(formatValue(80_000, 'usd_price'), '$80,000');
     assert.equal(formatValue(417.797, 'million_barrels'), '417.8 million bbl');
     assert.equal(formatValue(-125_500_000, 'usd_flow'), '−$125.5M');
     assert.equal(formatBasisPoints(2.88), '+3 bp');
@@ -98,4 +101,14 @@ test('macro charts use fixed bounds for sentiment and show a zero line for flows
     assert.match(pmiChart, /macro-chart-reference/);
     assert.match(pmiChart, />50 · reference<\/text>/);
     assert.match(pmiChart, /Reference line at 50/);
+});
+
+test('Max Pain charts format BTC strike prices and keep expiry levels visible', () => {
+    const chart = renderMacroChart([
+        { date: '2026-11-27', value: 80_000 },
+        { date: '2026-12-25', value: 90_000 },
+    ], 'Bitcoin options Max Pain', 'usd_price');
+    assert.match(chart, /2026-11-27/);
+    assert.match(chart, /2026-12-25/);
+    assert.match(chart, /Latest value \$90,000/);
 });

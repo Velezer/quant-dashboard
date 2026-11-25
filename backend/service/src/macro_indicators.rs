@@ -3,6 +3,7 @@
 
 mod bitcoin;
 mod cboe;
+mod deribit;
 mod ecb;
 mod eia;
 mod federal_reserve;
@@ -26,6 +27,7 @@ pub(crate) enum MacroIndicatorId {
     UsdIdrReferenceRate,
     BitcoinSpotEtfNetFlows,
     BitcoinFearGreedIndex,
+    BitcoinOptionsMaxPain,
     BroadUsDollarIndex,
     TenYearTreasuryNominalYield,
     TenYearBreakevenInflation,
@@ -46,6 +48,7 @@ impl MacroIndicatorId {
             Self::UsdIdrReferenceRate => "usd_idr_daily_reference",
             Self::BitcoinSpotEtfNetFlows => "bitcoin_spot_etf_net_flows",
             Self::BitcoinFearGreedIndex => "bitcoin_fear_greed_index",
+            Self::BitcoinOptionsMaxPain => "bitcoin_options_max_pain",
             Self::BroadUsDollarIndex => "broad_us_dollar_index",
             Self::TenYearTreasuryNominalYield => "ten_year_treasury_nominal_yield",
             Self::TenYearBreakevenInflation => "ten_year_breakeven_inflation",
@@ -68,6 +71,7 @@ impl MacroIndicatorId {
             }
             "bitcoin_spot_etf_net_flows" => Some(Self::BitcoinSpotEtfNetFlows),
             "bitcoin_fear_greed_index" => Some(Self::BitcoinFearGreedIndex),
+            "bitcoin_options_max_pain" => Some(Self::BitcoinOptionsMaxPain),
             "broad_us_dollar_index" => Some(Self::BroadUsDollarIndex),
             "ten_year_treasury_nominal_yield" => Some(Self::TenYearTreasuryNominalYield),
             "ten_year_breakeven_inflation" => Some(Self::TenYearBreakevenInflation),
@@ -162,6 +166,7 @@ fn provider_for(id: MacroIndicatorId) -> &'static dyn MacroSeriesProvider {
         MacroIndicatorId::BitcoinSpotEtfNetFlows | MacroIndicatorId::BitcoinFearGreedIndex => {
             &bitcoin::BITCOIN_PROVIDER
         }
+        MacroIndicatorId::BitcoinOptionsMaxPain => &deribit::DERIBIT_PROVIDER,
         MacroIndicatorId::UsCommercialCrudeStocks
         | MacroIndicatorId::BrentCrudeSpot
         | MacroIndicatorId::WtiCrudeSpot => &eia::EIA_PROVIDER,
@@ -182,15 +187,20 @@ pub(crate) fn read(
     force_refresh: bool,
 ) -> Result<MacroIndicatorData, String> {
     let snapshot = provider_for(id).read_series(id, force_refresh)?;
-    let latest = snapshot
-        .observations
-        .last()
-        .ok_or_else(|| "The macro data provider returned no observations.".to_string())?;
-    let observation_change = observation_change(&snapshot.observations);
+    let latest = if id == MacroIndicatorId::BitcoinOptionsMaxPain {
+        snapshot.observations.first()
+    } else {
+        snapshot.observations.last()
+    }
+    .ok_or_else(|| "The macro data provider returned no observations.".to_string())?;
+    let observation_change = (id != MacroIndicatorId::BitcoinOptionsMaxPain)
+        .then(|| observation_change(&snapshot.observations))
+        .flatten();
     let daily_change_basis_points = match id {
         MacroIndicatorId::UsdIdrReferenceRate
         | MacroIndicatorId::BitcoinSpotEtfNetFlows
         | MacroIndicatorId::BitcoinFearGreedIndex
+        | MacroIndicatorId::BitcoinOptionsMaxPain
         | MacroIndicatorId::BroadUsDollarIndex
         | MacroIndicatorId::UsEquityVolatilityIndex
         | MacroIndicatorId::UsManufacturingIndustrialProduction
@@ -237,6 +247,8 @@ pub(crate) fn read(
                 "The latest U.S. spot Bitcoin ETF flow observation is more than seven days old. Check the flow tracker again later.".to_string(),
             MacroIndicatorId::BitcoinFearGreedIndex =>
                 "The latest Bitcoin Fear & Greed observation is more than seven days old. Check Alternative.me again later.".to_string(),
+            MacroIndicatorId::BitcoinOptionsMaxPain =>
+                "The latest Deribit options snapshot is more than seven days old. Refresh the Max Pain series again later.".to_string(),
             MacroIndicatorId::UsManufacturingIndustrialProduction =>
                 "The latest monthly manufacturing production observation is more than 62 days old. Check the Federal Reserve release again later.".to_string(),
             MacroIndicatorId::ChinaManufacturingPmi =>
@@ -308,6 +320,18 @@ pub(crate) fn read(
             "Crypto Fear & Greed Index",
             "https://alternative.me/crypto/fear-and-greed-index/",
             "from the prior daily reading",
+        ),
+        MacroIndicatorId::BitcoinOptionsMaxPain => (
+            "Bitcoin options Max Pain",
+            "The BTC settlement strike that minimizes estimated intrinsic payouts for open Deribit options, shown separately for each upcoming expiry.",
+            "Calculated from Deribit-reported open interest, which is delayed by 8 hours. The result covers Deribit BTC options only; it is an options positioning statistic, not a price target or forecast.",
+            "USD per BTC",
+            "usd_price",
+            "Current snapshot by expiry",
+            "Deribit",
+            "BTC option open interest · max pain by expiry",
+            "https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency",
+            "by expiry",
         ),
         MacroIndicatorId::BroadUsDollarIndex => (
             "Broad U.S. dollar index",
@@ -430,13 +454,15 @@ pub(crate) fn read(
             "from the prior weekly observation",
         ),
     };
-    let source_series_id = federal_reserve::source_series_id(id)
+    let source_series_id = deribit::source_series_id(id)
+        .or_else(|| federal_reserve::source_series_id(id))
         .or_else(|| cboe::source_series_id(id))
         .or_else(|| treasury::source_series_id(id))
         .or_else(|| eia::source_series_id(id))
         .or_else(|| nbs::source_series_id(id))
         .unwrap_or(source_series_id);
-    let source_url = federal_reserve::source_url(id)
+    let source_url = deribit::source_url(id)
+        .or_else(|| federal_reserve::source_url(id))
         .or_else(|| cboe::source_url(id))
         .or_else(|| treasury::source_url(id))
         .or_else(|| eia::source_url(id))

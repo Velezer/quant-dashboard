@@ -29,6 +29,10 @@ fn macro_route_defaults_to_tips_and_accepts_each_registered_indicator() {
         requested_indicator("/api/macro/indicators?id=bitcoin_fear_greed_index").unwrap(),
         (MacroIndicatorId::BitcoinFearGreedIndex, false)
     );
+    assert_eq!(
+        requested_indicator("/api/macro/indicators?id=bitcoin_options_max_pain").unwrap(),
+        (MacroIndicatorId::BitcoinOptionsMaxPain, false)
+    );
     for (application_id, id) in [
         (
             "broad_us_dollar_index",
