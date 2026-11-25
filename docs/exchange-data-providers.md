@@ -108,6 +108,17 @@ The Macro page links directly to [CME FedWatch](https://www.cmegroup.com/markets
 for the official market-implied FOMC rate probabilities. The dashboard does
 not rehost or reconstruct those probabilities.
 
+## Bitcoin options Max Pain
+
+The Macro page calculates Max Pain independently for each upcoming BTC option
+expiry from Deribit's public [book summary endpoint](https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency).
+For each listed strike, the calculation sums intrinsic call and put payouts
+weighted by open interest, then selects the strike with the lowest combined
+payout. Deribit reports public open interest with an eight-hour delay, so the
+chart is a delayed snapshot of Deribit BTC options only. Max Pain is an options
+positioning statistic, not a price forecast; the chart plots the calculated
+level across expiry dates rather than a historical time series.
+
 ## Stockbit 15-minute free-source decision — 2026-10-02
 
 **Outcome:** Keep Yahoo Finance as the best-effort, research-only `.JK` candle

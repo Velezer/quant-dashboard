@@ -9,6 +9,7 @@ const INDICATORS = Object.freeze([
     { id: 'usd_idr_daily_reference', category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', summary: 'ECB reference USD/IDR cross-rate.', chartHeading: 'Exchange-rate history' },
     { id: 'bitcoin_spot_etf_net_flows', category: 'CRYPTO FUND FLOWS · UNITED STATES', fallbackTitle: 'U.S. spot Bitcoin ETF net flows', summary: 'Net ETF creations and redemptions.', chartHeading: 'Daily net flow history', source: 'The Commoner Bitcoin ETF Tracker by TFTC', sourceUrl: 'https://www.tftc.io/bitcoin-etf-flows' },
     { id: 'bitcoin_fear_greed_index', category: 'CRYPTO MARKET SENTIMENT', fallbackTitle: 'Bitcoin Fear & Greed Index', summary: 'Daily crypto sentiment · 0–100.', chartHeading: 'Sentiment history', source: 'Alternative.me', sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/' },
+    { id: 'bitcoin_options_max_pain', category: 'BITCOIN OPTIONS · DERIBIT', fallbackTitle: 'Bitcoin options Max Pain', summary: 'Calculated strike by options expiry · 8h open-interest delay.', chartHeading: 'Max Pain by expiry', source: 'Deribit', sourceUrl: 'https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency', chartUsesAllObservations: true, hideChange: true, latestLabel: 'Nearest expiry Max Pain', observationLabel: 'Nearest expiry' },
     { id: 'broad_us_dollar_index', category: 'GOLD · SILVER · OIL · USD', fallbackTitle: 'Broad U.S. dollar index', summary: 'Fed trade-weighted dollar index.', chartHeading: 'Dollar history' },
     { id: 'ten_year_treasury_nominal_yield', category: 'GOLD & SILVER · NOMINAL RATE', fallbackTitle: '10-Year U.S. Treasury yield', summary: 'Daily nominal 10-year U.S. yield.', chartHeading: 'Yield history' },
     { id: 'ten_year_breakeven_inflation', category: 'GOLD · INFLATION PRICING', fallbackTitle: '10-Year breakeven inflation rate', summary: '10-year nominal yield minus TIPS yield.', chartHeading: 'Inflation-compensation history' },
@@ -55,7 +56,9 @@ function formatObservationDate(dateString, frequency) {
 
 function renderObservationsTable(record, observations) {
     const table = role(record.card, 'observations-table');
-    const recent = observations.slice(-20).reverse();
+    const recent = record.config.chartUsesAllObservations
+        ? observations.slice(0, 20)
+        : observations.slice(-20).reverse();
     table.replaceChildren(...recent.map(row => {
         const tableRow = document.createElement('tr');
         const dateCell = document.createElement('td');
@@ -82,7 +85,7 @@ function renderSnapshot(record, data) {
     const classificationElement = role(card, 'latest-classification');
     classificationElement.textContent = latestClassification || '';
     classificationElement.hidden = !latestClassification;
-    role(card, 'observation-date').textContent = `Observation period: ${observationDate}`;
+    role(card, 'observation-date').textContent = `${record.config.observationLabel || 'Observation period'}: ${observationDate}`;
     role(card, 'change').textContent = formatObservationChange(
         data.observation_change ?? (data.daily_change_basis_points == null ? null : data.daily_change_basis_points / 100),
         data.latest_value,
@@ -140,7 +143,9 @@ function renderChart(record) {
     const data = record.snapshot;
     if (!data) return;
     const rangeControls = role(record.card, 'range-controls');
-    const observations = observationsForRange(data.observations, record.selectedRange);
+    const observations = record.config.chartUsesAllObservations
+        ? data.observations
+        : observationsForRange(data.observations, record.selectedRange);
     const chart = role(record.card, 'chart');
     chart.innerHTML = renderMacroChart(
         observations,
@@ -148,7 +153,9 @@ function renderChart(record) {
         data.value_format || 'percent',
         record.config.referenceLine,
     );
-    chart.setAttribute('aria-label', `${data.title} history, ${record.selectedRange} range`);
+    chart.setAttribute('aria-label', record.config.chartUsesAllObservations
+        ? `${data.title} levels by options expiration date`
+        : `${data.title} history, ${record.selectedRange} range`);
     rangeControls.querySelectorAll('button[data-range]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.range === record.selectedRange));
     });
@@ -256,6 +263,11 @@ function initializeCard(config) {
     const record = { config, card, snapshot: null, failed: false, selectedRange: '1y' };
     const refreshButton = card.querySelector('[data-action="refresh"]');
     const rangeControls = role(card, 'range-controls');
+    if (config.chartUsesAllObservations) rangeControls.hidden = true;
+    if (config.hideChange) {
+        role(card, 'change-metric').hidden = true;
+        role(card, 'latest-label').textContent = config.latestLabel;
+    }
 
     refreshButton.addEventListener('click', () => loadData(record, { refresh: true }));
     rangeControls.addEventListener('click', event => {

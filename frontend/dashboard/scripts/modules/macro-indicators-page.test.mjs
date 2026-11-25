@@ -79,12 +79,28 @@ const responseFearGreed = {
         { date: today, value: 11, classification: 'Extreme Fear' },
     ],
 };
+const responseMaxPain = {
+    id: 'bitcoin_options_max_pain', title: 'Bitcoin options Max Pain',
+    description: 'Calculated strike by expiry.',
+    limitations: 'Deribit open interest is delayed by 8 hours.',
+    unit: 'USD per BTC', value_format: 'usd_price', frequency: 'Current snapshot by expiry',
+    source: 'Deribit', source_series_id: 'BTC option open interest · max pain by expiry',
+    source_url: 'https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency',
+    freshness: 'current', fetch_status: 'fresh', observation_date: '2026-11-27', latest_value: 80_000,
+    observation_change: null, change_period: 'by expiry', daily_change_basis_points: null,
+    retrieved_at_seconds: Math.floor(Date.now() / 1000), status_note: null, refresh_error: null,
+    observations: [
+        { date: '2026-11-27', value: 80_000 },
+        { date: '2026-12-25', value: 90_000 },
+    ],
+};
 
 function apiDataFor(id) {
     if (id === 'two_year_treasury_nominal_yield') return responseTwoYear;
     if (id === 'usd_idr_daily_reference') return responseFx;
     if (id === 'bitcoin_spot_etf_net_flows') return responseBitcoinFlows;
     if (id === 'bitcoin_fear_greed_index') return responseFearGreed;
+    if (id === 'bitcoin_options_max_pain') return responseMaxPain;
     if (id === 'brent_crude_spot') return {
         ...responseData, id, title: 'Brent crude spot price', value_format: 'usd_per_barrel',
         unit: 'USD per barrel', latest_value: 92.94, observation_change: 0.5,
@@ -189,7 +205,7 @@ class FakeCard extends FakeElement {
     constructor() {
         super();
         for (const name of [
-            'category', 'title', 'description', 'freshness', 'latest', 'observation-date', 'change',
+            'category', 'title', 'description', 'freshness', 'latest', 'latest-label', 'observation-date', 'change', 'change-metric',
             'change-label', 'change-unit', 'retrieved-at', 'latest-classification', 'attribution-link',
             'status', 'stale-note', 'chart-heading',
             'chart-caption', 'range-controls', 'chart', 'source', 'source-series', 'frequency-unit',
@@ -252,8 +268,9 @@ test('macro page renders separate charts, source metadata and independent refres
     const fx = cardFor(elements, 'usd_idr_daily_reference');
     const etfFlows = cardFor(elements, 'bitcoin_spot_etf_net_flows');
     const fearGreed = cardFor(elements, 'bitcoin_fear_greed_index');
+    const maxPain = cardFor(elements, 'bitcoin_options_max_pain');
     const chinaPmi = cardFor(elements, 'china_manufacturing_pmi');
-    assert.equal(elements.get('macro-indicator-grid').children.length, 15);
+    assert.equal(elements.get('macro-indicator-grid').children.length, 16);
     assert.equal(roleFor(chinaPmi, 'latest').textContent, '49.3 points');
     assert.equal(roleFor(chinaPmi, 'description').textContent, 'Monthly factory activity · 50 marks expansion.');
     assert.match(roleFor(chinaPmi, 'chart').innerHTML, /<svg/);
@@ -273,6 +290,15 @@ test('macro page renders separate charts, source metadata and independent refres
     assert.equal(roleFor(etfFlows, 'attribution-link').textContent, responseBitcoinFlows.source);
     assert.equal(roleFor(fearGreed, 'latest').textContent, '11 / 100');
     assert.equal(roleFor(fearGreed, 'latest-classification').textContent, 'Extreme Fear');
+    assert.equal(roleFor(maxPain, 'latest').textContent, '$80,000');
+    assert.equal(roleFor(maxPain, 'latest-label').textContent, 'Nearest expiry Max Pain');
+    assert.equal(roleFor(maxPain, 'observation-date').textContent, 'Nearest expiry: 2026-11-27');
+    assert.match(roleFor(maxPain, 'chart').innerHTML, /<svg/);
+    assert.match(roleFor(maxPain, 'chart').innerHTML, /2026-11-27/);
+    assert.match(roleFor(maxPain, 'chart').innerHTML, /2026-12-25/);
+    assert.match(roleFor(maxPain, 'chart').innerHTML, /Latest value \$90,000/);
+    assert.equal(roleFor(maxPain, 'range-controls').hidden, true);
+    assert.equal(roleFor(maxPain, 'change-metric').hidden, true);
     assert.equal(roleFor(fearGreed, 'change-unit').textContent, 'Index points');
     assert.match(roleFor(fearGreed, 'chart').innerHTML, />100<\/text>/);
     assert.equal(roleFor(fearGreed, 'attribution-link').href, responseFearGreed.source_url);
