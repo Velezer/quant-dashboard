@@ -30,6 +30,20 @@
                 </div>
             </div>
             <p id="macro-status" class="status-message" role="status" aria-live="polite">Loading macroeconomic indicators…</p>
+            <section class="macro-asset-browser" aria-labelledby="macro-asset-filter-title">
+                <div class="macro-asset-browser-heading">
+                    <h2 id="macro-asset-filter-title">Browse by asset</h2>
+                    <p class="small-text">Shared indicators appear under each relevant asset.</p>
+                </div>
+                <div id="macro-asset-filters" class="macro-asset-filters" role="group" aria-label="Filter indicators by asset">
+                    <button type="button" data-asset-filter="all" aria-pressed="true">All assets</button>
+                    <button type="button" data-asset-filter="xauusd" aria-pressed="false">XAUUSD · Gold</button>
+                    <button type="button" data-asset-filter="xagusd" aria-pressed="false">XAGUSD · Silver</button>
+                    <button type="button" data-asset-filter="ukousd" aria-pressed="false">UKOUSD · Brent</button>
+                    <button type="button" data-asset-filter="bitcoin" aria-pressed="false">BTC · Bitcoin</button>
+                    <button type="button" data-asset-filter="usdidr" aria-pressed="false">USD/IDR</button>
+                </div>
+            </section>
             <details class="macro-catalyst-section">
                 <summary class="macro-catalyst-summary" id="macro-catalyst-title"><span><strong>Catalysts</strong><small>XAUUSD · XAGUSD · UKOUSD</small></span></summary>
                 <div class="macro-catalyst-content">

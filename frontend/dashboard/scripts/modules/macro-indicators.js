@@ -4,32 +4,42 @@ import { loadTreasurySnapshot } from './macro-indicator-treasury.js';
 
 const TIPS_ID = 'ten_year_tips_real_yield';
 const INDICATORS = Object.freeze([
-    { id: TIPS_ID, category: 'GOLD & SILVER · REAL RATE', fallbackTitle: '10-Year TIPS real yield', summary: 'Daily inflation-adjusted 10-year U.S. yield.', chartHeading: 'Yield history' },
-    { id: 'two_year_treasury_nominal_yield', category: 'GOLD & SILVER · FED PATH', fallbackTitle: '2-Year U.S. Treasury yield', summary: 'Daily market rate for the expected Fed path.', chartHeading: 'Yield history' },
-    { id: 'usd_idr_daily_reference', category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', summary: 'ECB reference USD/IDR cross-rate.', chartHeading: 'Exchange-rate history' },
-    { id: 'bitcoin_spot_etf_net_flows', category: 'CRYPTO FUND FLOWS · UNITED STATES', fallbackTitle: 'U.S. spot Bitcoin ETF net flows', summary: 'Net ETF creations and redemptions.', chartHeading: 'Daily net flow history', source: 'The Commoner Bitcoin ETF Tracker by TFTC', sourceUrl: 'https://www.tftc.io/bitcoin-etf-flows' },
-    { id: 'bitcoin_fear_greed_index', category: 'CRYPTO MARKET SENTIMENT', fallbackTitle: 'Bitcoin Fear & Greed Index', summary: 'Daily crypto sentiment · 0–100.', chartHeading: 'Sentiment history', source: 'Alternative.me', sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/' },
-    { id: 'bitcoin_options_max_pain', category: 'BITCOIN OPTIONS · DERIBIT', fallbackTitle: 'Bitcoin options Max Pain', summary: 'Calculated strike by options expiry · 8h open-interest delay.', chartHeading: 'Max Pain by expiry', source: 'Deribit', sourceUrl: 'https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency', chartUsesAllObservations: true, hideChange: true, latestLabel: 'Nearest expiry Max Pain', observationLabel: 'Nearest expiry' },
-    { id: 'broad_us_dollar_index', category: 'GOLD · SILVER · OIL · USD', fallbackTitle: 'Broad U.S. dollar index', summary: 'Fed trade-weighted dollar index.', chartHeading: 'Dollar history' },
-    { id: 'ten_year_treasury_nominal_yield', category: 'GOLD & SILVER · NOMINAL RATE', fallbackTitle: '10-Year U.S. Treasury yield', summary: 'Daily nominal 10-year U.S. yield.', chartHeading: 'Yield history' },
-    { id: 'ten_year_breakeven_inflation', category: 'GOLD · INFLATION PRICING', fallbackTitle: '10-Year breakeven inflation rate', summary: '10-year nominal yield minus TIPS yield.', chartHeading: 'Inflation-compensation history' },
-    { id: 'us_equity_volatility_index', category: 'GOLD · RISK APPETITE PROXY', fallbackTitle: 'Cboe VIX volatility index', summary: 'U.S. equity-volatility proxy.', chartHeading: 'Volatility history' },
-    { id: 'us_manufacturing_industrial_production', category: 'SILVER · MONTHLY ACTIVITY PROXY', fallbackTitle: 'U.S. manufacturing industrial production', summary: 'Monthly U.S. manufacturing output.', chartHeading: 'Industrial production history' },
+    { id: TIPS_ID, assets: ['xauusd', 'xagusd', 'bitcoin'], category: 'GOLD & SILVER · REAL RATE', fallbackTitle: '10-Year TIPS real yield', summary: 'Daily inflation-adjusted 10-year U.S. yield.', chartHeading: 'Yield history' },
+    { id: 'two_year_treasury_nominal_yield', assets: ['xauusd', 'xagusd', 'bitcoin'], category: 'GOLD & SILVER · FED PATH', fallbackTitle: '2-Year U.S. Treasury yield', summary: 'Daily market rate for the expected Fed path.', chartHeading: 'Yield history' },
+    { id: 'usd_idr_daily_reference', assets: ['usdidr'], category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', summary: 'ECB reference USD/IDR cross-rate.', chartHeading: 'Exchange-rate history' },
+    { id: 'bitcoin_spot_etf_net_flows', assets: ['bitcoin'], category: 'CRYPTO FUND FLOWS · UNITED STATES', fallbackTitle: 'U.S. spot Bitcoin ETF net flows', summary: 'Net ETF creations and redemptions.', chartHeading: 'Daily net flow history', source: 'The Commoner Bitcoin ETF Tracker by TFTC', sourceUrl: 'https://www.tftc.io/bitcoin-etf-flows' },
+    { id: 'bitcoin_fear_greed_index', assets: ['bitcoin'], category: 'CRYPTO MARKET SENTIMENT', fallbackTitle: 'Bitcoin Fear & Greed Index', summary: 'Daily crypto sentiment · 0–100.', chartHeading: 'Sentiment history', source: 'Alternative.me', sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/' },
+    { id: 'bitcoin_options_max_pain', assets: ['bitcoin'], category: 'BITCOIN OPTIONS · DERIBIT', fallbackTitle: 'Bitcoin options Max Pain', summary: 'Calculated strike by options expiry · 8h open-interest delay.', chartHeading: 'Max Pain by expiry', source: 'Deribit', sourceUrl: 'https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency', chartUsesAllObservations: true, hideChange: true, latestLabel: 'Nearest expiry Max Pain', observationLabel: 'Nearest expiry' },
+    { id: 'broad_us_dollar_index', assets: ['xauusd', 'xagusd', 'ukousd', 'bitcoin', 'usdidr'], category: 'GOLD · SILVER · OIL · USD', fallbackTitle: 'Broad U.S. dollar index', summary: 'Fed trade-weighted dollar index.', chartHeading: 'Dollar history' },
+    { id: 'ten_year_treasury_nominal_yield', assets: ['xauusd', 'xagusd', 'bitcoin'], category: 'GOLD & SILVER · NOMINAL RATE', fallbackTitle: '10-Year U.S. Treasury yield', summary: 'Daily nominal 10-year U.S. yield.', chartHeading: 'Yield history' },
+    { id: 'ten_year_breakeven_inflation', assets: ['xauusd', 'xagusd'], category: 'GOLD · INFLATION PRICING', fallbackTitle: '10-Year breakeven inflation rate', summary: '10-year nominal yield minus TIPS yield.', chartHeading: 'Inflation-compensation history' },
+    { id: 'us_equity_volatility_index', assets: ['xauusd', 'xagusd', 'ukousd', 'bitcoin'], category: 'GOLD · SILVER · RISK PROXY', fallbackTitle: 'Cboe VIX volatility index', summary: 'U.S. equity-volatility proxy.', chartHeading: 'Volatility history' },
+    { id: 'us_manufacturing_industrial_production', assets: ['xagusd', 'ukousd'], category: 'SILVER · MONTHLY ACTIVITY PROXY', fallbackTitle: 'U.S. manufacturing industrial production', summary: 'Monthly U.S. manufacturing output.', chartHeading: 'Industrial production history' },
     {
-        id: 'china_manufacturing_pmi', category: 'SILVER & OIL · CHINA ACTIVITY',
+        id: 'china_manufacturing_pmi', assets: ['xagusd', 'ukousd'], category: 'SILVER & OIL · CHINA ACTIVITY',
         fallbackTitle: 'China official manufacturing PMI', summary: 'Monthly factory activity · 50 marks expansion.', chartHeading: 'Manufacturing PMI history', referenceLine: 50,
     },
-    { id: 'brent_crude_spot', category: 'UKOUSD · BRENT BENCHMARK', fallbackTitle: 'Brent crude spot price', summary: 'Daily EIA Brent spot benchmark.', chartHeading: 'Brent spot history' },
-    { id: 'wti_crude_spot', category: 'UKOUSD · REGIONAL BENCHMARK', fallbackTitle: 'WTI crude spot price', summary: 'Daily EIA WTI spot benchmark.', chartHeading: 'WTI spot history' },
-    { id: 'crude_oil_volatility_index', category: 'UKOUSD · OIL RISK PRICING', fallbackTitle: 'Cboe crude oil volatility index', summary: 'Options volatility for crude oil ETFs.', chartHeading: 'Oil volatility history' },
-    { id: 'us_commercial_crude_stocks', category: 'UKOUSD · WEEKLY SUPPLY BALANCE', fallbackTitle: 'U.S. commercial crude oil stocks', summary: 'Weekly U.S. commercial crude inventory.', chartHeading: 'Inventory history' },
+    { id: 'brent_crude_spot', assets: ['ukousd'], category: 'UKOUSD · BRENT BENCHMARK', fallbackTitle: 'Brent crude spot price', summary: 'Daily EIA Brent spot benchmark.', chartHeading: 'Brent spot history' },
+    { id: 'wti_crude_spot', assets: ['ukousd'], category: 'UKOUSD · REGIONAL BENCHMARK', fallbackTitle: 'WTI crude spot price', summary: 'Daily EIA WTI spot benchmark.', chartHeading: 'WTI spot history' },
+    { id: 'crude_oil_volatility_index', assets: ['ukousd'], category: 'UKOUSD · OIL RISK PRICING', fallbackTitle: 'Cboe crude oil volatility index', summary: 'Options volatility for crude oil ETFs.', chartHeading: 'Oil volatility history' },
+    { id: 'us_commercial_crude_stocks', assets: ['ukousd'], category: 'UKOUSD · WEEKLY SUPPLY BALANCE', fallbackTitle: 'U.S. commercial crude oil stocks', summary: 'Weekly U.S. commercial crude inventory.', chartHeading: 'Inventory history' },
 ]);
 
 const statusElement = document.getElementById('macro-status');
 const refreshButton = document.getElementById('macro-refresh');
 const indicatorGrid = document.getElementById('macro-indicator-grid');
 const cardTemplate = document.getElementById('macro-series-template');
+const assetFilters = document.getElementById('macro-asset-filters');
 const records = new Map();
+
+function applyAssetFilter(assetId) {
+    for (const record of records.values()) {
+        record.card.hidden = assetId !== 'all' && !record.config.assets.includes(assetId);
+    }
+    for (const button of assetFilters.querySelectorAll('button[data-asset-filter]')) {
+        button.setAttribute('aria-pressed', String(button.dataset.assetFilter === assetId));
+    }
+}
 
 function role(card, name) {
     return card.querySelector(`[data-role="${name}"]`);
@@ -283,6 +293,12 @@ function initializeCard(config) {
 }
 
 const initializedRecords = INDICATORS.map(initializeCard);
+
+assetFilters.addEventListener('click', event => {
+    const button = event.target.closest('button[data-asset-filter]');
+    if (!button || !assetFilters.contains(button)) return;
+    applyAssetFilter(button.dataset.assetFilter);
+});
 
 refreshButton.addEventListener('click', async () => {
     refreshButton.disabled = true;

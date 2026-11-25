@@ -12,6 +12,15 @@
 .macro-refresh:hover { background:#16444a; }
 .macro-refresh:disabled { cursor:wait; opacity:.65; }
 .macro-panel > .status-message { max-width:100%; }
+.macro-asset-browser { margin:18px 0 12px; }
+.macro-asset-browser-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 12px; margin-bottom:9px; }
+.macro-asset-browser-heading h2 { margin:0; font-size:1rem; }
+.macro-asset-browser-heading .small-text { margin:0; font-size:.85rem; }
+.macro-asset-filters { display:flex; flex-wrap:wrap; gap:7px; }
+.macro-asset-filters button { min-height:40px; border:1px solid #34485b; border-radius:999px; background:#111e2b; padding:7px 13px; color:#acbfd3; font-size:.85rem; font-weight:650; }
+.macro-asset-filters button:hover { border-color:#5f91a1; color:#e6f0f4; }
+.macro-asset-filters button[aria-pressed="true"] { border-color:#3d8d8a; background:#123a3b; color:#c7f2e9; }
+.macro-asset-filters button:focus-visible { outline:2px solid #75d6cf; outline-offset:2px; }
 .macro-catalyst-section { margin:18px 0 22px; border:1px solid #293b4d; border-radius:8px; background:#0e1925; }
 .macro-catalyst-summary { display:flex; min-height:52px; align-items:center; justify-content:space-between; gap:12px; padding:10px 15px; color:#e6f0f4; cursor:pointer; list-style:none; }
 .macro-catalyst-summary::-webkit-details-marker,.macro-event-watch > summary::-webkit-details-marker { display:none; }

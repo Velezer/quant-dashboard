@@ -226,7 +226,16 @@ function mockDocument() {
         ['macro-status', new FakeElement()],
         ['macro-refresh', new FakeElement()],
         ['macro-indicator-grid', new FakeElement()],
+        ['macro-asset-filters', new FakeElement()],
     ]);
+    elements.get('macro-asset-filters').children = [
+        ['all', 'All assets'], ['xauusd', 'XAUUSD · Gold'], ['xagusd', 'XAGUSD · Silver'],
+        ['ukousd', 'UKOUSD · Brent'], ['bitcoin', 'BTC · Bitcoin'], ['usdidr', 'USD/IDR'],
+    ].map(([assetId]) => {
+        const button = new FakeElement();
+        button.dataset.assetFilter = assetId;
+        return button;
+    });
     const template = new FakeElement();
     template.content = { firstElementChild: { cloneNode: () => new FakeCard() } };
     elements.set('macro-series-template', template);
@@ -306,6 +315,26 @@ test('macro page renders separate charts, source metadata and independent refres
     assert.match(roleFor(cardFor(elements, 'us_commercial_crude_stocks'), 'latest').textContent, /417\.8 million bbl/);
     assert.equal(roleFor(cardFor(elements, 'us_equity_volatility_index'), 'latest').textContent, '28.44 points');
 
+    const filterGroup = elements.get('macro-asset-filters');
+    const shownFor = assetId => elements.get('macro-indicator-grid').children
+        .filter(card => !card.hidden).map(card => card.dataset.macroId).sort();
+    for (const [assetId, expected] of [
+        ['xauusd', ['ten_year_tips_real_yield', 'two_year_treasury_nominal_yield', 'broad_us_dollar_index', 'ten_year_treasury_nominal_yield', 'ten_year_breakeven_inflation', 'us_equity_volatility_index']],
+        ['xagusd', ['ten_year_tips_real_yield', 'two_year_treasury_nominal_yield', 'broad_us_dollar_index', 'ten_year_treasury_nominal_yield', 'ten_year_breakeven_inflation', 'us_equity_volatility_index', 'us_manufacturing_industrial_production', 'china_manufacturing_pmi']],
+        ['ukousd', ['broad_us_dollar_index', 'us_equity_volatility_index', 'us_manufacturing_industrial_production', 'china_manufacturing_pmi', 'brent_crude_spot', 'wti_crude_spot', 'crude_oil_volatility_index', 'us_commercial_crude_stocks']],
+        ['bitcoin', ['ten_year_tips_real_yield', 'two_year_treasury_nominal_yield', 'bitcoin_spot_etf_net_flows', 'bitcoin_fear_greed_index', 'bitcoin_options_max_pain', 'broad_us_dollar_index', 'ten_year_treasury_nominal_yield', 'us_equity_volatility_index']],
+        ['usdidr', ['usd_idr_daily_reference', 'broad_us_dollar_index']],
+    ]) {
+        const button = filterGroup.children.find(item => item.dataset.assetFilter === assetId);
+        filterGroup.listeners.get('click')({ target: { closest: () => button } });
+        assert.deepEqual(shownFor(assetId).sort(), expected.sort(), `${assetId} asset filter`);
+        assert.equal(button.attributes['aria-pressed'], 'true');
+        assert.equal(filterGroup.children.filter(item => item.attributes['aria-pressed'] === 'true').length, 1);
+    }
+    const allAssetsButton = filterGroup.children.find(item => item.dataset.assetFilter === 'all');
+    filterGroup.listeners.get('click')({ target: { closest: () => allAssetsButton } });
+    assert.equal(shownFor('all').length, 16);
+
     const rangeControls = roleFor(tips, 'range-controls');
     const fiveYearButton = rangeControls.rangeButtons.find(button => button.dataset.range === '5y');
     rangeControls.listeners.get('click')({ target: { closest: () => fiveYearButton } });
@@ -358,6 +387,7 @@ test('macro page uses its API response when the browser cannot reach Treasury', 
 test('macro indicators remain discoverable from the screener and their page includes per-series status and provenance', () => {
     assert.match(dashboardTemplate, /<a href="\/macro" aria-label="Open macroeconomic indicators" title="Macroeconomic indicators">\s*<span aria-hidden="true">◒<\/span> Macro indicators<\/a>/);
     assert.match(dashboardTemplate, /<nav id="macroQuickNavigation"[\s\S]*?<a href="\/macro">[\s\S]*?Macroeconomic indicators<\/a>/);
+    assert.match(macroTemplate, /Browse by asset[\s\S]*?data-asset-filter="xauusd"[\s\S]*?data-asset-filter="xagusd"[\s\S]*?data-asset-filter="ukousd"[\s\S]*?data-asset-filter="bitcoin"[\s\S]*?data-asset-filter="usdidr"/);
     assert.match(macroNavigationStyles, /\.tv-terminal \.macro-quick-nav\s*\{\s*display: flex;/);
     assert.match(macroNavigationStyles, /@media \(min-width: 1537px\)[\s\S]*?signals-workspace-active \.macro-quick-nav[\s\S]*?display: none;/);
     assert.match(macroNavigationStyles, /@media \(min-width: 1181px\) and \(max-width: 1536px\)[\s\S]*?desktop-primary-nav a\[href="\/macro"\][\s\S]*?display: none;/);
