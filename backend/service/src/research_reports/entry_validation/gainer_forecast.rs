@@ -250,14 +250,35 @@ pub(super) fn store_forecast_run(
             OR excluded.status<>'INSUFFICIENT_COVERAGE'",
         params![scope.id(), scope.protocol(), cutoff_seconds, computed_at, status, encoded],
     )?;
-    if status != "READY" {
+    let is_provisional = status == "INSUFFICIENT_COVERAGE";
+    let candidates = if status == "READY" {
+        payload
+            .get("candidates")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    } else if is_provisional {
+        payload
+            .get("provisional_candidate")
+            .and_then(Value::as_object)
+            .cloned()
+            .map(Value::Object)
+            .into_iter()
+            .collect()
+    } else {
+        return Ok(());
+    };
+    if candidates.is_empty() {
         return Ok(());
     }
-    let candidates = payload
-        .get("candidates")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+    // A forecast window has one selected top pick. Replace its pending row as
+    // coverage improves so settlement evaluates the final published ranking.
+    connection.execute(
+        "DELETE FROM app.gainer_forecast_predictions
+         WHERE scope_id=?1 AND protocol_id=?2 AND forecast_cutoff=?3
+           AND rank=1 AND settled_at IS NULL",
+        params![scope.id(), scope.protocol(), cutoff_seconds],
+    )?;
     for (index, candidate) in candidates.iter().enumerate() {
         let instrument_id = text(candidate, "instrument_id");
         let reference_bar_time = candidate
@@ -272,6 +293,11 @@ pub(super) fn store_forecast_run(
             .get("forecast_return_pct")
             .and_then(Value::as_f64)
             .unwrap_or(0.0);
+        let rank = if is_provisional {
+            1
+        } else {
+            i64::try_from(index + 1).unwrap_or(i64::MAX)
+        };
         if instrument_id.is_empty()
             || reference_bar_time <= 0
             || !reference_close.is_finite()
@@ -292,7 +318,7 @@ pub(super) fn store_forecast_run(
              VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![
                 scope.id(), scope.protocol(), cutoff_seconds, instrument_id,
-                i64::try_from(index + 1).unwrap_or(i64::MAX), scope.source(),
+                rank, scope.source(),
                 reference_bar_time, reference_close, predicted_return_pct,
                 target_bar_time, computed_at,
             ],
@@ -442,11 +468,36 @@ pub(super) fn observed_outcomes(
             params![scope.id(), scope.protocol()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get::<_, Option<i64>>(2)?.unwrap_or(0), row.get(3)?)),
         )?;
+    let (top_count, top_average, top_positive_count, top_latest_settled_at): (
+        i64,
+        Option<f64>,
+        i64,
+        Option<i64>,
+    ) = connection.query_row(
+        "SELECT COUNT(*),AVG(realized_return_pct),
+                SUM(CASE WHEN realized_return_pct>0 THEN 1 ELSE 0 END),MAX(settled_at)
+         FROM app.gainer_forecast_predictions
+         WHERE scope_id=?1 AND protocol_id=?2 AND rank=1 AND settled_at IS NOT NULL",
+        params![scope.id(), scope.protocol()],
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                row.get(3)?,
+            ))
+        },
+    )?;
     Ok(json!({
         "sample_count": count,
         "mean_realized_return_pct": average_return,
         "positive_return_rate_pct": (count > 0).then_some(positive_count as f64 * 100.0 / count as f64),
         "latest_settled_at": latest_settled_at,
+        "top_candidate_sample_count": top_count,
+        "top_candidate_mean_realized_return_pct": top_average,
+        "top_candidate_positive_return_rate_pct": (top_count > 0)
+            .then_some(top_positive_count as f64 * 100.0 / top_count as f64),
+        "top_candidate_latest_settled_at": top_latest_settled_at,
         "status": "PROSPECTIVE_RESEARCH",
     }))
 }

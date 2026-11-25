@@ -74,6 +74,10 @@ function forecast(overrides = {}, scopeId = 'tokocrypto_spot') {
             mean_realized_return_pct: null,
             positive_return_rate_pct: null,
             latest_settled_at: null,
+            top_candidate_sample_count: 0,
+            top_candidate_mean_realized_return_pct: null,
+            top_candidate_positive_return_rate_pct: null,
+            top_candidate_latest_settled_at: null,
             status: 'PROSPECTIVE_RESEARCH',
         },
         ...overrides,
@@ -257,6 +261,10 @@ test('ready page shows the projected return and prospective outcomes', async () 
                 mean_realized_return_pct: 1.25,
                 positive_return_rate_pct: 75,
                 latest_settled_at: 1_800_000_500,
+                top_candidate_sample_count: 2,
+                top_candidate_mean_realized_return_pct: 2.5,
+                top_candidate_positive_return_rate_pct: 100,
+                top_candidate_latest_settled_at: 1_800_000_400,
             },
         }),
     });
@@ -267,6 +275,8 @@ test('ready page shows the projected return and prospective outcomes', async () 
         assert.match(renderedText, /Latest scheduled Tokocrypto Spot forecast/);
         assert.match(renderedText, /\+8\.25%/);
         assert.match(renderedText, /Mean realized gross return/);
+        assert.match(renderedText, /Settled top-pick observations/);
+        assert.match(renderedText, /Top picks with positive returns/);
     } finally {
         globalThis.fetch = originalFetch;
     }
