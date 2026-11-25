@@ -137,11 +137,23 @@ function normalizeCandidate(candidate, scope) {
 
 function normalizeOutcomes(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return { sample_count: 0, mean_realized_return_pct: null, positive_return_rate_pct: null, latest_settled_at: null };
+        return {
+            sample_count: 0,
+            mean_realized_return_pct: null,
+            positive_return_rate_pct: null,
+            latest_settled_at: null,
+            top_candidate_sample_count: 0,
+            top_candidate_mean_realized_return_pct: null,
+            top_candidate_positive_return_rate_pct: null,
+            top_candidate_latest_settled_at: null,
+        };
     }
     const sampleCount = countValue(value.sample_count, 'settled outcome');
     const mean = value.mean_realized_return_pct;
     const positiveRate = value.positive_return_rate_pct;
+    const topCandidateSampleCount = countValue(value.top_candidate_sample_count ?? 0, 'settled top-pick outcome');
+    const topCandidateMean = value.top_candidate_mean_realized_return_pct;
+    const topCandidatePositiveRate = value.top_candidate_positive_return_rate_pct;
     if (mean !== null && mean !== undefined && (typeof mean !== 'number' || !Number.isFinite(mean))) {
         throw new Error('The forecast response has an invalid mean realized return.');
     }
@@ -149,11 +161,24 @@ function normalizeOutcomes(value) {
         && (typeof positiveRate !== 'number' || !Number.isFinite(positiveRate) || positiveRate < 0 || positiveRate > 100)) {
         throw new Error('The forecast response has an invalid positive outcome rate.');
     }
+    if (topCandidateMean !== null && topCandidateMean !== undefined
+        && (typeof topCandidateMean !== 'number' || !Number.isFinite(topCandidateMean))) {
+        throw new Error('The forecast response has an invalid top-pick realized return.');
+    }
+    if (topCandidatePositiveRate !== null && topCandidatePositiveRate !== undefined
+        && (typeof topCandidatePositiveRate !== 'number' || !Number.isFinite(topCandidatePositiveRate)
+            || topCandidatePositiveRate < 0 || topCandidatePositiveRate > 100)) {
+        throw new Error('The forecast response has an invalid top-pick positive return rate.');
+    }
     return {
         sample_count: sampleCount,
         mean_realized_return_pct: mean ?? null,
         positive_return_rate_pct: positiveRate ?? null,
         latest_settled_at: optionalEpoch(value.latest_settled_at, 'latest settled outcome'),
+        top_candidate_sample_count: topCandidateSampleCount,
+        top_candidate_mean_realized_return_pct: topCandidateMean ?? null,
+        top_candidate_positive_return_rate_pct: topCandidatePositiveRate ?? null,
+        top_candidate_latest_settled_at: optionalEpoch(value.top_candidate_latest_settled_at, 'latest settled top-pick outcome'),
     };
 }
 
@@ -485,6 +510,14 @@ export function initializeGainerForecast(doc = document) {
         const outcomes = payload.outcomes;
         const meta = element('dl', 'gainer-forecast-meta');
         appendMeta(meta, 'Settled Top 5 observations', outcomes.sample_count.toLocaleString('en-US'));
+        appendMeta(meta, 'Settled top-pick observations', outcomes.top_candidate_sample_count.toLocaleString('en-US'));
+        if (outcomes.top_candidate_mean_realized_return_pct !== null) {
+            appendMeta(meta, 'Mean realized return of top picks', outcomes.top_candidate_mean_realized_return_pct.toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%');
+        }
+        if (outcomes.top_candidate_positive_return_rate_pct !== null) {
+            appendMeta(meta, 'Top picks with positive returns', outcomes.top_candidate_positive_return_rate_pct.toLocaleString('en-US', { maximumFractionDigits: 1 }) + '%');
+        }
+        if (outcomes.top_candidate_latest_settled_at) appendMeta(meta, 'Latest top pick settled', formatDate(outcomes.top_candidate_latest_settled_at));
         if (outcomes.mean_realized_return_pct !== null) {
             appendMeta(meta, 'Mean realized gross return', outcomes.mean_realized_return_pct.toLocaleString('en-US', { maximumFractionDigits: 2 }) + '%');
         }

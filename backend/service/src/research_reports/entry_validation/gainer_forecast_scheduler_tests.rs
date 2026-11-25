@@ -339,6 +339,62 @@ fn latest_result_includes_scope_schedule_and_observed_outcomes() {
 }
 
 #[test]
+fn insufficient_coverage_records_the_current_provisional_top_pick() {
+    let connection = schedule_database();
+    let scope = ForecastScope::StockbitIdx;
+    let cutoff = 1_800_000_000;
+    let provisional = |symbol: &str, return_pct: f64| {
+        json!({
+            "status":"INSUFFICIENT_COVERAGE",
+            "provisional_candidate":{
+                "instrument_id":format!("stockbit.stockbit_regular.{}",symbol.to_lowercase()),
+                "forecast_return_pct":return_pct,
+                "reference_bar_time":cutoff - 86_400,
+                "reference_close":100.0
+            }
+        })
+    };
+
+    store_forecast_run(&connection, scope, cutoff, &provisional("AREA", 12.0), cutoff).unwrap();
+    store_forecast_run(&connection, scope, cutoff, &provisional("BBCA", 8.0), cutoff + 60).unwrap();
+
+    let saved: (String, i64, f64) = connection
+        .query_row(
+            "SELECT instrument_id,rank,predicted_return_pct
+             FROM app.gainer_forecast_predictions
+             WHERE scope_id=?1 AND forecast_cutoff=?2 AND settled_at IS NULL",
+            params![scope.id(), cutoff],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(saved, ("stockbit.stockbit_regular.bbca".to_owned(), 1, 8.0));
+}
+
+#[test]
+fn observed_outcomes_report_selected_top_pick_separately_from_top_five() {
+    let connection = schedule_database();
+    let scope = ForecastScope::StockbitIdx;
+    connection.execute(
+        "INSERT INTO app.gainer_forecast_predictions
+            (scope_id,protocol_id,forecast_cutoff,instrument_id,rank,source,
+             reference_bar_time,reference_close,predicted_return_pct,realized_return_pct,created_at,settled_at)
+         VALUES(?1,?2,1800000000,'stockbit.stockbit_regular.area',1,?3,
+                1799913600,100.0,12.0,5.0,1800000000,1800100000),
+               (?1,?2,1800000000,'stockbit.stockbit_regular.bbca',2,?3,
+                1799913600,100.0,9.0,-2.0,1800000000,1800100000)",
+        params![scope.id(), scope.protocol(), "stockbit_regular_yfinance_fallback"],
+    ).unwrap();
+
+    let outcomes = observed_outcomes(&connection, scope).unwrap();
+
+    assert_eq!(outcomes["sample_count"], 2);
+    assert_eq!(outcomes["positive_return_rate_pct"], 50.0);
+    assert_eq!(outcomes["top_candidate_sample_count"], 1);
+    assert_eq!(outcomes["top_candidate_mean_realized_return_pct"], 5.0);
+    assert_eq!(outcomes["top_candidate_positive_return_rate_pct"], 100.0);
+}
+
+#[test]
 fn missing_scope_schedule_returns_a_due_time_without_fabricating_a_forecast() {
     let connection = schedule_database();
     let latest = gainer_forecast_latest(&connection, ForecastScope::StockbitIdx).unwrap();
