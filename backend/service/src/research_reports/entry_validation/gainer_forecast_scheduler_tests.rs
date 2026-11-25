@@ -382,7 +382,7 @@ fn observed_outcomes_report_selected_top_pick_separately_from_top_five() {
                 1799913600,100.0,12.0,5.0,1800000000,1800100000),
                (?1,?2,1800000000,'stockbit.stockbit_regular.bbca',2,?3,
                 1799913600,100.0,9.0,-2.0,1800000000,1800100000)",
-        params![scope.id(), scope.protocol(), scope.source()],
+        params![scope.id(), scope.protocol(), "stockbit_regular_yfinance_fallback"],
     ).unwrap();
 
     let outcomes = observed_outcomes(&connection, scope).unwrap();
