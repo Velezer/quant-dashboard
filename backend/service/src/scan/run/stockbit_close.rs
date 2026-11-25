@@ -10,24 +10,6 @@ pub(super) struct StockbitCloseScanCheckpoint {
     source: String,
     input_fingerprint: String,
 }
-
-
-pub(super) fn expected_stockbit_closed_session_day(now_seconds: i64) -> Option<i64> {
-    let local_seconds = now_seconds.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
-    let day = local_seconds.div_euclid(quant_core::SECONDS_PER_DAY);
-    let weekday = (day + 4).rem_euclid(7); // Sunday = 0, Monday = 1.
-    let second_of_day = local_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
-    if (1..=5).contains(&weekday) {
-        (second_of_day >= 16 * 60 * 60 + 15 * 60).then_some(day)
-    } else if weekday == 6 {
-        Some(day - 1)
-    } else if weekday == 0 {
-        Some(day - 2)
-    } else {
-        None
-    }
-}
-
 #[cfg(not(test))]
 pub(super) fn ensure_stockbit_close_checkpoint_schema(
     connection: &Connection,
@@ -60,6 +42,27 @@ pub(super) fn is_final_stockbit_close_bar(
         && bar_seconds.saturating_add(15 * 60) <= now_seconds
 }
 
+/// A provider may omit the 15:45 or 16:00 candle. After the market closes,
+/// treat its latest completed regular-session 15m bar as the reference for
+/// research scoring. It remains reference-only and cannot create a live entry.
+pub(super) fn is_completed_stockbit_closed_session_bar(
+    bar_time: i64,
+    session_day: i64,
+    now_seconds: i64,
+) -> bool {
+    if is_final_stockbit_close_bar(bar_time, session_day, now_seconds) {
+        return true;
+    }
+    let bar_seconds = bar_time.div_euclid(NANOS_PER_SECOND);
+    let local_seconds = bar_seconds.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
+    let second_of_day = local_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
+    let regular_session_start = 9 * 60 * 60;
+    let regular_session_end = 16 * 60 * 60;
+    local_seconds.div_euclid(quant_core::SECONDS_PER_DAY) == session_day
+        && (regular_session_start..=regular_session_end).contains(&second_of_day)
+        && bar_seconds.saturating_add(15 * 60) <= now_seconds
+}
+
 #[cfg(not(test))]
 pub(super) fn stockbit_closed_session_checkpoint(
     connection: &Connection,
@@ -81,7 +84,7 @@ pub(super) fn stockbit_closed_session_checkpoint(
     let Some(final_bar_time) = state.latest_bar_time else {
         return Ok(None);
     };
-    if !is_final_stockbit_close_bar(final_bar_time, session_day, now_seconds) {
+    if !is_completed_stockbit_closed_session_bar(final_bar_time, session_day, now_seconds) {
         return Ok(None);
     }
 

@@ -62,6 +62,15 @@ lesson only when it will improve future tasks.
   price, retain current-model stale score rows in both API and browser, and
   exclude them from current-entry counts. Never roll a source using another
   source's 15m timestamp. Legacy models still require current-model rescoring.
+- IDX close references must remain valid overnight and before the next 09:00 WIB
+  open; on weekdays, recognize the prior session before open and the current
+  session only after 16:15 WIB. Providers may omit the final 15m candle, so
+  checkpoint the latest completed regular-session bar as a reference while
+  keeping it non-executable, and limit fallback references to four calendar
+  days so provider outages do not revive old scores. Market-data-triggered
+  rescans need a cooldown, not a process-lifetime one-shot flag, so gradual
+  candle ingestion eventually refreshes the Stockbit screener without a scan
+  storm.
 
 - Keep screener cards compact: ticker/timeframe, app/product/model context,
   direction, signed score, price, win-rate availability, and stale/no-entry state.

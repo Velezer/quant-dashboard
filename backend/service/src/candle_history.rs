@@ -473,6 +473,34 @@ pub(super) fn freshness_threshold_seconds(symbol: &str, timeframe: &str) -> i64 
     }
 }
 
+/// Return the most recent Stockbit session that is known to be closed.
+///
+/// During a weekday session there is no closed-session reference. After 16:15
+/// WIB the current session is closed; before the next 09:00 WIB open, resolve
+/// the previous weekday session so the last completed close remains available
+/// overnight and through weekends.
+pub(super) fn expected_stockbit_closed_session_day(now_seconds: i64) -> Option<i64> {
+    let local_seconds = now_seconds.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
+    let day = local_seconds.div_euclid(quant_core::SECONDS_PER_DAY);
+    let weekday = (day + 4).rem_euclid(7); // Sunday = 0, Monday = 1.
+    let second_of_day = local_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
+    let market_open = 9 * 60 * 60;
+    let market_close = 16 * 60 * 60 + 15 * 60;
+    if (1..=5).contains(&weekday) {
+        if second_of_day >= market_close {
+            Some(day)
+        } else if second_of_day < market_open {
+            Some(if weekday == 1 { day - 3 } else { day - 1 })
+        } else {
+            None
+        }
+    } else if weekday == 6 {
+        Some(day - 1)
+    } else {
+        Some(day - 2)
+    }
+}
+
 pub(super) fn completed_bar_is_fresh_at(
     symbol: &str,
     timeframe: &str,
