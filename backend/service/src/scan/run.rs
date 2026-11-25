@@ -7,7 +7,7 @@ mod shared_market_history_tests;
 mod stockbit_close;
 mod types;
 
-use stockbit_close::expected_stockbit_closed_session_day;
+use crate::expected_stockbit_closed_session_day;
 #[cfg(test)]
 use stockbit_close::is_final_stockbit_close_bar;
 #[cfg(not(test))]

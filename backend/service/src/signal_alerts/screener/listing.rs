@@ -121,23 +121,8 @@ fn mark_legacy_score(signal: &mut Value, models: &std::collections::HashMap<&str
     }
 }
 
-fn expected_stockbit_closed_session_day(now: i64) -> Option<i64> {
-    let local_seconds = now.saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
-    let day = local_seconds.div_euclid(quant_core::SECONDS_PER_DAY);
-    let weekday = (day + 4).rem_euclid(7); // Sunday = 0, Monday = 1.
-    let second_of_day = local_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
-    if (1..=5).contains(&weekday) {
-        (second_of_day >= 16 * 60 * 60 + 15 * 60).then_some(day)
-    } else if weekday == 6 {
-        Some(day - 1)
-    } else if weekday == 0 {
-        Some(day - 2)
-    } else {
-        None
-    }
-}
-
 type StockbitCloseReferenceKey = (String, String, String, i64, String);
+const MAX_STOCKBIT_CLOSED_REFERENCE_AGE_DAYS: i64 = 4;
 
 fn load_stockbit_close_references(
     connection: &Connection,
@@ -223,13 +208,18 @@ fn has_verified_stockbit_close_reference(
     }
     let now_ns = now.saturating_mul(crate::NANOS_PER_SECOND);
     let bar_interval_ns = crate::timeframe_duration_ns("15m").unwrap_or_default();
-    let bar_local_day = bar_time
+    let bar_local_seconds = bar_time
         .div_euclid(crate::NANOS_PER_SECOND)
-        .saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS)
-        .div_euclid(quant_core::SECONDS_PER_DAY);
+        .saturating_add(quant_core::JAKARTA_UTC_OFFSET_SECONDS);
+    let bar_local_day = bar_local_seconds.div_euclid(quant_core::SECONDS_PER_DAY);
+    let bar_second_of_day = bar_local_seconds.rem_euclid(quant_core::SECONDS_PER_DAY);
+    let age_days = closed_session_day.saturating_sub(bar_local_day);
+    let regular_session_start = 9 * 60 * 60;
+    let regular_session_end = 16 * 60 * 60;
     bar_interval_ns > 0
         && bar_time.saturating_add(bar_interval_ns) <= now_ns
-        && bar_local_day <= closed_session_day
+        && (0..=MAX_STOCKBIT_CLOSED_REFERENCE_AGE_DAYS).contains(&age_days)
+        && (regular_session_start..=regular_session_end).contains(&bar_second_of_day)
 }
 
 fn update_signal_market_entry_freshness(
@@ -511,7 +501,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let transaction = connection.unchecked_transaction()?;
     let snapshot_connection = &transaction;
     let now = now_secs() as i64;
-    let stockbit_close_session_day = expected_stockbit_closed_session_day(now);
+    let stockbit_close_session_day = crate::expected_stockbit_closed_session_day(now);
     // Load close checkpoints with the screener snapshot. The previous per-row
     // lookup ran one SQLite query for every persisted Stockbit score, which
     // made the full Stockbit screener request stall on large histories.
