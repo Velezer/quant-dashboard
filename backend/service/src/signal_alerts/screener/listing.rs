@@ -137,12 +137,43 @@ fn expected_stockbit_closed_session_day(now: i64) -> Option<i64> {
     }
 }
 
-fn has_verified_stockbit_close_reference(
+type StockbitCloseReferenceKey = (String, String, String, i64, String);
+
+fn load_stockbit_close_references(
     connection: &Connection,
+    session_day: Option<i64>,
+) -> std::collections::HashSet<StockbitCloseReferenceKey> {
+    let Some(session_day) = session_day else {
+        return std::collections::HashSet::new();
+    };
+    let Ok(mut statement) = connection.prepare(
+        "SELECT product_id,asset_category_id,symbol,final_bar_time,source
+           FROM signals.stockbit_close_scan_checkpoints
+          WHERE session_day=?1",
+    ) else {
+        return std::collections::HashSet::new();
+    };
+    let Ok(rows) = statement.query_map([session_day], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, String>(4)?,
+        ))
+    }) else {
+        return std::collections::HashSet::new();
+    };
+    rows.filter_map(Result::ok).collect()
+}
+
+fn has_verified_stockbit_close_reference(
     signal: &Value,
+    session_day: Option<i64>,
+    checkpoints: &std::collections::HashSet<StockbitCloseReferenceKey>,
     now: i64,
 ) -> bool {
-    let Some(session_day) = expected_stockbit_closed_session_day(now) else {
+    let Some(closed_session_day) = session_day else {
         return false;
     };
     let Some(product_id) = signal["product_id"].as_str() else {
@@ -164,26 +195,13 @@ fn has_verified_stockbit_close_reference(
         return false;
     }
 
-    let has_exact_close_checkpoint = connection
-        .query_row(
-            "SELECT 1 FROM signals.stockbit_close_scan_checkpoints
-              WHERE product_id=?1 AND asset_category_id=?2 AND symbol=?3
-                AND session_day=?4 AND final_bar_time=?5 AND source=?6
-              LIMIT 1",
-            rusqlite::params![
-                product_id,
-                category_id,
-                symbol,
-                session_day,
-                price_bar_time,
-                source
-            ],
-            |_| Ok(()),
-        )
-        .optional()
-        .ok()
-        .flatten()
-        .is_some();
+    let has_exact_close_checkpoint = checkpoints.contains(&(
+        product_id.to_string(),
+        category_id.to_string(),
+        symbol.to_string(),
+        price_bar_time,
+        source.to_string(),
+    ));
     if has_exact_close_checkpoint {
         return true;
     }
@@ -211,16 +229,17 @@ fn has_verified_stockbit_close_reference(
         .div_euclid(quant_core::SECONDS_PER_DAY);
     bar_interval_ns > 0
         && bar_time.saturating_add(bar_interval_ns) <= now_ns
-        && bar_local_day <= session_day
+        && bar_local_day <= closed_session_day
 }
 
 fn update_signal_market_entry_freshness(
-    connection: &Connection,
     signal: &mut Value,
     now: i64,
     now_ns: i64,
     scan_interval_seconds: i64,
     strategies: &std::collections::HashMap<&str, &str>,
+    stockbit_close_session_day: Option<i64>,
+    stockbit_close_checkpoints: &std::collections::HashSet<StockbitCloseReferenceKey>,
 ) -> (bool, bool, bool) {
     let symbol = signal["storage_symbol"]
         .as_str()
@@ -243,7 +262,12 @@ fn update_signal_market_entry_freshness(
     mark_legacy_score(signal, strategies);
     let is_verified_closed_reference = is_stockbit_persistent
         && signal["score_basis"]["score_model_status"].as_str() != Some("legacy")
-        && has_verified_stockbit_close_reference(connection, signal, now);
+        && has_verified_stockbit_close_reference(
+            signal,
+            stockbit_close_session_day,
+            stockbit_close_checkpoints,
+            now,
+        );
     let score_bar_is_forming = signal["score_bar_is_forming"].as_bool().unwrap_or(false);
     let price_reference_only = signal["score_basis"]["price_reference_only"]
         .as_bool()
@@ -487,6 +511,17 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
     let transaction = connection.unchecked_transaction()?;
     let snapshot_connection = &transaction;
     let now = now_secs() as i64;
+    let stockbit_close_session_day = expected_stockbit_closed_session_day(now);
+    // Load close checkpoints with the screener snapshot. The previous per-row
+    // lookup ran one SQLite query for every persisted Stockbit score, which
+    // made the full Stockbit screener request stall on large histories.
+    let stockbit_close_checkpoints = if exchange_filter.is_none_or(|exchange| {
+        exchange.eq_ignore_ascii_case("stockbit")
+    }) {
+        load_stockbit_close_references(snapshot_connection, stockbit_close_session_day)
+    } else {
+        std::collections::HashSet::new()
+    };
     let mut query_values = Vec::new();
     let mut where_clause = String::new();
     if let Some(exchange) = exchange_filter {
@@ -664,12 +699,13 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         }
         let mut signal = row_mapper(&row, score_basis);
         let (is_current, is_stale_price, is_stale_score) = update_signal_market_entry_freshness(
-            connection,
             &mut signal,
             now,
             now_ns,
             scan_interval_seconds,
             &score_model_by_strategy,
+            stockbit_close_session_day,
+            &stockbit_close_checkpoints,
         );
         let is_crypto_timeframe_signal = is_crypto_combined_entry_score_row(
             signal["asset_category_id"].as_str().unwrap_or_default(),
