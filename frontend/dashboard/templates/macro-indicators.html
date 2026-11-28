@@ -32,16 +32,17 @@
             <p id="macro-status" class="status-message" role="status" aria-live="polite">Loading macroeconomic indicators…</p>
             <section class="macro-asset-browser" aria-labelledby="macro-asset-filter-title">
                 <div class="macro-asset-browser-heading">
-                    <h2 id="macro-asset-filter-title">Browse by asset</h2>
-                    <p class="small-text">Shared indicators appear under each relevant asset.</p>
+                    <h2 id="macro-asset-filter-title">Browse by asset class</h2>
+                    <p class="small-text">Choose a market to show its relevant indicators.</p>
                 </div>
-                <div id="macro-asset-filters" class="macro-asset-filters" role="group" aria-label="Filter indicators by asset">
-                    <button type="button" data-asset-filter="all" aria-pressed="true">All assets</button>
-                    <button type="button" data-asset-filter="xauusd" aria-pressed="false">XAUUSD · Gold</button>
-                    <button type="button" data-asset-filter="xagusd" aria-pressed="false">XAGUSD · Silver</button>
-                    <button type="button" data-asset-filter="ukousd" aria-pressed="false">UKOUSD · Brent</button>
-                    <button type="button" data-asset-filter="bitcoin" aria-pressed="false">BTC · Bitcoin</button>
-                    <button type="button" data-asset-filter="usdidr" aria-pressed="false">USD/IDR</button>
+                <div id="macro-asset-filters" class="macro-asset-filters" role="group" aria-label="Filter indicators by asset class">
+                    <button type="button" data-asset-filter="all" aria-pressed="true">All indicators</button>
+                    <button type="button" data-asset-filter="precious_metals" aria-pressed="false">Precious metals</button>
+                    <button type="button" data-asset-filter="xauusd" aria-pressed="false">Gold · XAUUSD</button>
+                    <button type="button" data-asset-filter="xagusd" aria-pressed="false">Silver · XAGUSD</button>
+                    <button type="button" data-asset-filter="ukousd" aria-pressed="false">Energy · UKOUSD</button>
+                    <button type="button" data-asset-filter="bitcoin" aria-pressed="false">Crypto · Bitcoin</button>
+                    <button type="button" data-asset-filter="usdidr" aria-pressed="false">FX · USD/IDR</button>
                 </div>
             </section>
             <details class="macro-catalyst-section">

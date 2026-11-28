@@ -3,6 +3,15 @@ import { formatObservationChange, formatValue, observationsForRange, renderMacro
 import { loadTreasurySnapshot } from './macro-indicator-treasury.js';
 
 const TIPS_ID = 'ten_year_tips_real_yield';
+const ASSET_FILTERS = Object.freeze([
+    { id: 'all', label: 'All indicators' },
+    { id: 'precious_metals', label: 'Precious metals', assets: ['xauusd', 'xagusd'] },
+    { id: 'xauusd', label: 'Gold · XAUUSD', assets: ['xauusd'] },
+    { id: 'xagusd', label: 'Silver · XAGUSD', assets: ['xagusd'] },
+    { id: 'ukousd', label: 'Energy · UKOUSD', assets: ['ukousd'] },
+    { id: 'bitcoin', label: 'Crypto · Bitcoin', assets: ['bitcoin'] },
+    { id: 'usdidr', label: 'FX · USD/IDR', assets: ['usdidr'] },
+]);
 const INDICATORS = Object.freeze([
     { id: TIPS_ID, assets: ['xauusd', 'xagusd', 'bitcoin'], category: 'GOLD & SILVER · REAL RATE', fallbackTitle: '10-Year TIPS real yield', summary: 'Daily inflation-adjusted 10-year U.S. yield.', chartHeading: 'Yield history' },
     { id: 'two_year_treasury_nominal_yield', assets: ['xauusd', 'xagusd', 'bitcoin'], category: 'GOLD & SILVER · FED PATH', fallbackTitle: '2-Year U.S. Treasury yield', summary: 'Daily market rate for the expected Fed path.', chartHeading: 'Yield history' },
@@ -33,11 +42,12 @@ const assetFilters = document.getElementById('macro-asset-filters');
 const records = new Map();
 
 function applyAssetFilter(assetId) {
+    const filter = ASSET_FILTERS.find(item => item.id === assetId) || ASSET_FILTERS[0];
     for (const record of records.values()) {
-        record.card.hidden = assetId !== 'all' && !record.config.assets.includes(assetId);
+        record.card.hidden = Boolean(filter.assets && !filter.assets.some(asset => record.config.assets.includes(asset)));
     }
     for (const button of assetFilters.querySelectorAll('button[data-asset-filter]')) {
-        button.setAttribute('aria-pressed', String(button.dataset.assetFilter === assetId));
+        button.setAttribute('aria-pressed', String(button.dataset.assetFilter === filter.id));
     }
 }
 
