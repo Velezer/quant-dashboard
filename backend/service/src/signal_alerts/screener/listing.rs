@@ -523,7 +523,20 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
         query_values.push(rusqlite::types::Value::Text(timeframe.to_string()));
     }
     let page_size = limit.clamp(1, MAX_SIGNAL_SCREENER_PAGE_SIZE);
-    let display_order = signal_screener_display_order_sql();
+    let (index_hint, display_order) = match (exchange_filter, timeframe_filter) {
+        (Some(_), Some(_)) => (
+            " INDEXED BY idx_signal_screener_exchange_timeframe_display_order",
+            signal_screener_exchange_timeframe_display_order_sql(),
+        ),
+        (Some(_), None) => (
+            " INDEXED BY idx_signal_screener_exchange_display_order",
+            signal_screener_exchange_display_order_sql(),
+        ),
+        (None, _) => (
+            " INDEXED BY idx_signal_screener_display_order_combined",
+            signal_screener_display_order_sql(),
+        ),
+    };
     let score_model_by_strategy = score_model_by_strategy();
     let master_data =
         crate::master_data::signal_screener_master_data_for_connection(snapshot_connection)?;
@@ -534,7 +547,7 @@ pub(crate) fn list_signal_screener_page_with_minimum_total_score(
                 data_source,data_provider,data_quality,evidence_status,evidence_source,last_updated_at";
     let query = format!(
         "SELECT {columns}
-           FROM signals.signal_screener_rows WHERE 1=1{where_clause}
+           FROM signals.signal_screener_rows{index_hint} WHERE 1=1{where_clause}
             AND {PINTU_FUTURES_REGISTRY_GUARD}
           ORDER BY {display_order}"
     );
