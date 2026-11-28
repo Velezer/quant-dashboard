@@ -13,6 +13,10 @@ lesson only when it will improve future tasks.
   score scale and rank in the backend before applying page offsets. Keep the
   browser comparator aligned; client-only sorting cannot recover stronger rows
   from later pages.
+- For app/timeframe screener requests, prefix the display-order index with the
+  equality filters and remove those constant keys from the scoped ordering.
+  Keep product/strategy search post-query when they must not change direction
+  aggregates. Verify scoped plans use SEARCH and avoid temporary sorting.
 
 - A 4h chart bucket can exist even when one of its hourly candles is missing.
   For a cross-sectional forecast, require four consecutive native hourly bars

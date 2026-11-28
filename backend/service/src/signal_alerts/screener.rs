@@ -40,6 +40,23 @@ pub(super) fn signal_screener_display_order_sql() -> String {
     )
 }
 
+pub(super) fn signal_screener_exchange_display_order_sql() -> String {
+    format!(
+        "(CASE WHEN timeframe='15m' THEN 0 ELSE 1 END),
+         (CASE WHEN {} THEN 0 ELSE 1 END),
+         score DESC,last_updated_at DESC,product_id,symbol,signal_strategy_id,timeframe",
+        stockbit_signal_score_row_scope_sql()
+    )
+}
+
+pub(super) fn signal_screener_exchange_timeframe_display_order_sql() -> String {
+    format!(
+        "(CASE WHEN {} THEN 0 ELSE 1 END),
+         score DESC,last_updated_at DESC,product_id,symbol,signal_strategy_id",
+        stockbit_signal_score_row_scope_sql()
+    )
+}
+
 fn is_stockbit_signal_score_row(
     exchange_id: &str,
     product_id: &str,
@@ -143,9 +160,16 @@ pub(crate) fn initialize_screener_schema(connection: &Connection) -> Result<(), 
              ON signal_screener_rows(exchange_id,timeframe);",
     )?;
     let display_order = signal_screener_display_order_sql();
+    let exchange_display_order = signal_screener_exchange_display_order_sql();
+    let exchange_timeframe_display_order =
+        signal_screener_exchange_timeframe_display_order_sql();
     connection.execute_batch(&format!(
         "CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_display_order_combined
              ON signal_screener_rows({display_order});
+         CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_exchange_display_order
+             ON signal_screener_rows(exchange_id,{exchange_display_order});
+         CREATE INDEX IF NOT EXISTS signals.idx_signal_screener_exchange_timeframe_display_order
+             ON signal_screener_rows(exchange_id,timeframe,{exchange_timeframe_display_order});
          DROP INDEX IF EXISTS signals.idx_signal_screener_display_order;"
     ))?;
     connection.execute(
