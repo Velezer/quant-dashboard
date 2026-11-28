@@ -63,6 +63,10 @@
 .macro-metric > strong { display:block; margin:7px 0 2px; color:#e8f2f7; font:600 1rem/1.45 ui-monospace,monospace; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .macro-primary-metric > strong { color:#b8eee4; font-size:clamp(1.65rem,3.8vw,2.4rem); }
 .macro-primary-metric > .macro-latest-classification { color:#f1c77c; font-size:1rem; font-weight:650; }
+.macro-bias-panel { display:grid; grid-template-columns:minmax(140px,.35fr) minmax(0,1.65fr); gap:4px 14px; align-items:center; margin:-8px 0 18px; border:1px solid #2a3c4f; border-radius:7px; background:#101d2a; padding:11px 15px; }
+.macro-bias-panel > strong { color:#d6e3ed; font-size:.9rem; }
+.macro-bias-panel > p { margin:0; color:#b8eee4; font-size:.9rem; font-weight:650; line-height:1.5; font-variant-numeric:tabular-nums; }
+.macro-bias-panel > small { grid-column:2; color:#9fb2c9; font-size:.8rem; }
 .macro-attribution-link { color:#9fced1; text-decoration:underline; text-underline-offset:2px; }
 .macro-card-status { margin:0 0 12px; color:#aebfd0; font-size:.85rem; line-height:1.4; }
 .macro-card-status[data-tone="error"] { color:#edcaa3; }
@@ -111,6 +115,8 @@
     .macro-card-actions { width:100%; justify-content:space-between; }
     .macro-metrics { grid-template-columns:1fr 1fr; }
     .macro-primary-metric { grid-column:1/-1; }
+    .macro-bias-panel { grid-template-columns:1fr; }
+    .macro-bias-panel > small { grid-column:auto; }
     .macro-chart-heading { align-items:flex-start; flex-direction:column; }
     .macro-chart { min-height:180px; }
 }

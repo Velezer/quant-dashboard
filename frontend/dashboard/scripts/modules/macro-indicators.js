@@ -13,25 +13,26 @@ const ASSET_FILTERS = Object.freeze([
     { id: 'usdidr', label: 'FX · USD/IDR', assets: ['usdidr'] },
 ]);
 const INDICATORS = Object.freeze([
-    { id: TIPS_ID, assets: ['xauusd', 'xagusd', 'bitcoin'], category: 'GOLD & SILVER · REAL RATE', fallbackTitle: '10-Year TIPS real yield', summary: 'Daily inflation-adjusted 10-year U.S. yield.', chartHeading: 'Yield history' },
-    { id: 'two_year_treasury_nominal_yield', assets: ['xauusd', 'xagusd', 'bitcoin'], category: 'GOLD & SILVER · FED PATH', fallbackTitle: '2-Year U.S. Treasury yield', summary: 'Daily market rate for the expected Fed path.', chartHeading: 'Yield history' },
-    { id: 'usd_idr_daily_reference', assets: ['usdidr'], category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', summary: 'ECB reference USD/IDR cross-rate.', chartHeading: 'Exchange-rate history' },
-    { id: 'bitcoin_spot_etf_net_flows', assets: ['bitcoin'], category: 'CRYPTO FUND FLOWS · UNITED STATES', fallbackTitle: 'U.S. spot Bitcoin ETF net flows', summary: 'Net ETF creations and redemptions.', chartHeading: 'Daily net flow history', source: 'The Commoner Bitcoin ETF Tracker by TFTC', sourceUrl: 'https://www.tftc.io/bitcoin-etf-flows' },
-    { id: 'bitcoin_fear_greed_index', assets: ['bitcoin'], category: 'CRYPTO MARKET SENTIMENT', fallbackTitle: 'Bitcoin Fear & Greed Index', summary: 'Daily crypto sentiment · 0–100.', chartHeading: 'Sentiment history', source: 'Alternative.me', sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/' },
-    { id: 'bitcoin_options_max_pain', assets: ['bitcoin'], category: 'BITCOIN OPTIONS · DERIBIT', fallbackTitle: 'Bitcoin options Max Pain', summary: 'Calculated strike by options expiry · 8h open-interest delay.', chartHeading: 'Max Pain by expiry', source: 'Deribit', sourceUrl: 'https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency', chartUsesAllObservations: true, hideChange: true, latestLabel: 'Nearest expiry Max Pain', observationLabel: 'Nearest expiry' },
-    { id: 'broad_us_dollar_index', assets: ['xauusd', 'xagusd', 'ukousd', 'bitcoin', 'usdidr'], category: 'GOLD · SILVER · OIL · USD', fallbackTitle: 'Broad U.S. dollar index', summary: 'Fed trade-weighted dollar index.', chartHeading: 'Dollar history' },
-    { id: 'ten_year_treasury_nominal_yield', assets: ['xauusd', 'xagusd', 'bitcoin'], category: 'GOLD & SILVER · NOMINAL RATE', fallbackTitle: '10-Year U.S. Treasury yield', summary: 'Daily nominal 10-year U.S. yield.', chartHeading: 'Yield history' },
-    { id: 'ten_year_breakeven_inflation', assets: ['xauusd', 'xagusd'], category: 'GOLD · INFLATION PRICING', fallbackTitle: '10-Year breakeven inflation rate', summary: '10-year nominal yield minus TIPS yield.', chartHeading: 'Inflation-compensation history' },
-    { id: 'us_equity_volatility_index', assets: ['xauusd', 'xagusd', 'ukousd', 'bitcoin'], category: 'GOLD · SILVER · RISK PROXY', fallbackTitle: 'Cboe VIX volatility index', summary: 'U.S. equity-volatility proxy.', chartHeading: 'Volatility history' },
-    { id: 'us_manufacturing_industrial_production', assets: ['xagusd', 'ukousd'], category: 'SILVER · MONTHLY ACTIVITY PROXY', fallbackTitle: 'U.S. manufacturing industrial production', summary: 'Monthly U.S. manufacturing output.', chartHeading: 'Industrial production history' },
+    // biasByAsset polarity: 1 means rising values favor that asset; -1 means falling values do.
+    { id: TIPS_ID, assets: ['xauusd', 'xagusd', 'bitcoin'], biasByAsset: { xauusd: -1, xagusd: -1, bitcoin: -1 }, category: 'GOLD & SILVER · REAL RATE', fallbackTitle: '10-Year TIPS real yield', summary: 'Daily inflation-adjusted 10-year U.S. yield.', chartHeading: 'Yield history' },
+    { id: 'two_year_treasury_nominal_yield', assets: ['xauusd', 'xagusd', 'bitcoin'], biasByAsset: { xauusd: -1, xagusd: -1, bitcoin: -1 }, category: 'GOLD & SILVER · FED PATH', fallbackTitle: '2-Year U.S. Treasury yield', summary: 'Daily market rate for the expected Fed path.', chartHeading: 'Yield history' },
+    { id: 'usd_idr_daily_reference', assets: ['usdidr'], biasByAsset: { usdidr: 1 }, category: 'FOREIGN EXCHANGE · INDONESIA', fallbackTitle: 'USD/IDR exchange rate', summary: 'ECB reference USD/IDR cross-rate.', chartHeading: 'Exchange-rate history' },
+    { id: 'bitcoin_spot_etf_net_flows', assets: ['bitcoin'], biasByAsset: { bitcoin: 1 }, biasMode: 'level', biasReference: 0, category: 'CRYPTO FUND FLOWS · UNITED STATES', fallbackTitle: 'U.S. spot Bitcoin ETF net flows', summary: 'Net ETF creations and redemptions.', chartHeading: 'Daily net flow history', source: 'The Commoner Bitcoin ETF Tracker by TFTC', sourceUrl: 'https://www.tftc.io/bitcoin-etf-flows' },
+    { id: 'bitcoin_fear_greed_index', assets: ['bitcoin'], biasByAsset: { bitcoin: 1 }, biasMode: 'level', biasReference: 50, category: 'CRYPTO MARKET SENTIMENT', fallbackTitle: 'Bitcoin Fear & Greed Index', summary: 'Daily crypto sentiment · 0–100.', chartHeading: 'Sentiment history', source: 'Alternative.me', sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/' },
+    { id: 'bitcoin_options_max_pain', assets: ['bitcoin'], biasMode: 'context', category: 'BITCOIN OPTIONS · DERIBIT', fallbackTitle: 'Bitcoin options Max Pain', summary: 'Calculated strike by options expiry · 8h open-interest delay.', chartHeading: 'Max Pain by expiry', source: 'Deribit', sourceUrl: 'https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency', chartUsesAllObservations: true, hideChange: true, latestLabel: 'Nearest expiry Max Pain', observationLabel: 'Nearest expiry' },
+    { id: 'broad_us_dollar_index', assets: ['xauusd', 'xagusd', 'ukousd', 'bitcoin', 'usdidr'], biasByAsset: { xauusd: -1, xagusd: -1, ukousd: -1, bitcoin: -1, usdidr: 1 }, category: 'GOLD · SILVER · OIL · USD', fallbackTitle: 'Broad U.S. dollar index', summary: 'Fed trade-weighted dollar index.', chartHeading: 'Dollar history' },
+    { id: 'ten_year_treasury_nominal_yield', assets: ['xauusd', 'xagusd', 'bitcoin'], biasByAsset: { xauusd: -1, xagusd: -1, bitcoin: -1 }, category: 'GOLD & SILVER · NOMINAL RATE', fallbackTitle: '10-Year U.S. Treasury yield', summary: 'Daily nominal 10-year U.S. yield.', chartHeading: 'Yield history' },
+    { id: 'ten_year_breakeven_inflation', assets: ['xauusd', 'xagusd'], biasByAsset: { xauusd: 1, xagusd: 1 }, category: 'GOLD · INFLATION PRICING', fallbackTitle: '10-Year breakeven inflation rate', summary: '10-year nominal yield minus TIPS yield.', chartHeading: 'Inflation-compensation history' },
+    { id: 'us_equity_volatility_index', assets: ['xauusd', 'xagusd', 'ukousd', 'bitcoin'], biasByAsset: { xauusd: 1, xagusd: -1, ukousd: -1, bitcoin: -1 }, category: 'GOLD · SILVER · RISK PROXY', fallbackTitle: 'Cboe VIX volatility index', summary: 'U.S. equity-volatility proxy.', chartHeading: 'Volatility history' },
+    { id: 'us_manufacturing_industrial_production', assets: ['xagusd', 'ukousd'], biasByAsset: { xagusd: 1, ukousd: 1 }, category: 'SILVER · MONTHLY ACTIVITY PROXY', fallbackTitle: 'U.S. manufacturing industrial production', summary: 'Monthly U.S. manufacturing output.', chartHeading: 'Industrial production history' },
     {
-        id: 'china_manufacturing_pmi', assets: ['xagusd', 'ukousd'], category: 'SILVER & OIL · CHINA ACTIVITY',
+        id: 'china_manufacturing_pmi', assets: ['xagusd', 'ukousd'], biasByAsset: { xagusd: 1, ukousd: 1 }, biasMode: 'level', biasReference: 50, category: 'SILVER & OIL · CHINA ACTIVITY',
         fallbackTitle: 'China official manufacturing PMI', summary: 'Monthly factory activity · 50 marks expansion.', chartHeading: 'Manufacturing PMI history', referenceLine: 50,
     },
-    { id: 'brent_crude_spot', assets: ['ukousd'], category: 'UKOUSD · BRENT BENCHMARK', fallbackTitle: 'Brent crude spot price', summary: 'Daily EIA Brent spot benchmark.', chartHeading: 'Brent spot history' },
-    { id: 'wti_crude_spot', assets: ['ukousd'], category: 'UKOUSD · REGIONAL BENCHMARK', fallbackTitle: 'WTI crude spot price', summary: 'Daily EIA WTI spot benchmark.', chartHeading: 'WTI spot history' },
-    { id: 'crude_oil_volatility_index', assets: ['ukousd'], category: 'UKOUSD · OIL RISK PRICING', fallbackTitle: 'Cboe crude oil volatility index', summary: 'Options volatility for crude oil ETFs.', chartHeading: 'Oil volatility history' },
-    { id: 'us_commercial_crude_stocks', assets: ['ukousd'], category: 'UKOUSD · WEEKLY SUPPLY BALANCE', fallbackTitle: 'U.S. commercial crude oil stocks', summary: 'Weekly U.S. commercial crude inventory.', chartHeading: 'Inventory history' },
+    { id: 'brent_crude_spot', assets: ['ukousd'], biasByAsset: { ukousd: 1 }, category: 'UKOUSD · BRENT BENCHMARK', fallbackTitle: 'Brent crude spot price', summary: 'Daily EIA Brent spot benchmark.', chartHeading: 'Brent spot history' },
+    { id: 'wti_crude_spot', assets: ['ukousd'], biasByAsset: { ukousd: 1 }, category: 'UKOUSD · REGIONAL BENCHMARK', fallbackTitle: 'WTI crude spot price', summary: 'Daily EIA WTI spot benchmark.', chartHeading: 'WTI spot history' },
+    { id: 'crude_oil_volatility_index', assets: ['ukousd'], biasMode: 'context', category: 'UKOUSD · OIL RISK PRICING', fallbackTitle: 'Cboe crude oil volatility index', summary: 'Options volatility for crude oil ETFs.', chartHeading: 'Oil volatility history' },
+    { id: 'us_commercial_crude_stocks', assets: ['ukousd'], biasByAsset: { ukousd: -1 }, category: 'UKOUSD · WEEKLY SUPPLY BALANCE', fallbackTitle: 'U.S. commercial crude oil stocks', summary: 'Weekly U.S. commercial crude inventory.', chartHeading: 'Inventory history' },
 ]);
 
 const statusElement = document.getElementById('macro-status');
@@ -40,11 +41,71 @@ const indicatorGrid = document.getElementById('macro-indicator-grid');
 const cardTemplate = document.getElementById('macro-series-template');
 const assetFilters = document.getElementById('macro-asset-filters');
 const records = new Map();
+let selectedAssetFilter = ASSET_FILTERS[0];
+
+const ASSET_LABELS = Object.freeze({
+    xauusd: 'Gold', xagusd: 'Silver', ukousd: 'Brent', bitcoin: 'Bitcoin', usdidr: 'USD/IDR',
+});
+
+function standardDeviation(values) {
+    if (!values.length) return 0;
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return Math.sqrt(values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length);
+}
+
+function directionalBias(record, assetId) {
+    const { config, snapshot } = record;
+    if (config.biasMode === 'context' || !config.biasByAsset?.[assetId]) return null;
+    const observations = (snapshot.observations || []).filter(item => Number.isFinite(Number(item.value)));
+    const values = observations.map(item => Number(item.value));
+    let signedMove;
+    let scale;
+
+    if (config.biasMode === 'level') {
+        const reference = Number(config.biasReference ?? 0);
+        signedMove = (Number(snapshot.latest_value) - reference) * config.biasByAsset[assetId];
+        scale = standardDeviation(values.map(value => value - reference));
+    } else {
+        if (values.length < 3) return null;
+        const moves = values.slice(1).map((value, index) => value - values[index]);
+        const latestChange = snapshot.observation_change != null && Number.isFinite(Number(snapshot.observation_change))
+            ? Number(snapshot.observation_change)
+            : moves.at(-1);
+        signedMove = latestChange * config.biasByAsset[assetId];
+        scale = standardDeviation(moves.slice(0, -1));
+        if (!scale) scale = standardDeviation(moves);
+    }
+
+    if (!Number.isFinite(signedMove) || !Number.isFinite(scale) || scale <= 0) return null;
+    const zScore = signedMove / scale;
+    const strength = Math.min(35, 35 * Math.tanh(Math.abs(zScore) / 2));
+    const bullish = Math.round(50 + Math.sign(zScore) * strength);
+    return { bullish, bearish: 100 - bullish };
+}
+
+function renderDirectionalBias(record) {
+    const target = role(record.card, 'bias');
+    if (record.config.biasMode === 'context') {
+        target.textContent = 'Context only · no directional score';
+        return;
+    }
+    const activeAssets = selectedAssetFilter.assets || record.config.assets;
+    const lines = activeAssets
+        .filter(asset => record.config.assets.includes(asset))
+        .map(asset => {
+            const score = directionalBias(record, asset);
+            if (!score) return `${ASSET_LABELS[asset]} · unavailable`;
+            return `${ASSET_LABELS[asset]} · ${score.bullish}% bullish / ${score.bearish}% bearish`;
+        });
+    target.textContent = lines.length ? lines.join('  ·  ') : 'No directional reading for this asset';
+}
 
 function applyAssetFilter(assetId) {
     const filter = ASSET_FILTERS.find(item => item.id === assetId) || ASSET_FILTERS[0];
+    selectedAssetFilter = filter;
     for (const record of records.values()) {
         record.card.hidden = Boolean(filter.assets && !filter.assets.some(asset => record.config.assets.includes(asset)));
+        if (record.snapshot) renderDirectionalBias(record);
     }
     for (const button of assetFilters.querySelectorAll('button[data-asset-filter]')) {
         button.setAttribute('aria-pressed', String(button.dataset.assetFilter === filter.id));
@@ -119,6 +180,7 @@ function renderSnapshot(record, data) {
     role(card, 'frequency-unit').textContent = `${data.frequency} · ${data.unit}`;
     role(card, 'source-definition').textContent = data.description;
     role(card, 'limitations').textContent = data.limitations || 'Observations may be revised by the source.';
+    renderDirectionalBias(record);
 
     const sourceLink = role(card, 'source-link');
     sourceLink.href = data.source_url;
@@ -188,6 +250,7 @@ function renderUnavailable(record, message) {
     role(record.card, 'observation-date').textContent = 'No observation loaded';
     role(record.card, 'change').textContent = 'Unavailable';
     role(record.card, 'change-unit').textContent = 'No prior observation';
+    role(record.card, 'bias').textContent = 'Directional bias unavailable';
     role(record.card, 'retrieved-at').textContent = 'Unavailable';
     role(record.card, 'freshness').textContent = 'Unavailable';
     role(record.card, 'freshness').className = 'state-badge error';
