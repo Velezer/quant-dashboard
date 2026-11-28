@@ -208,7 +208,7 @@ class FakeCard extends FakeElement {
             'category', 'title', 'description', 'freshness', 'latest', 'latest-label', 'observation-date', 'change', 'change-metric',
             'change-label', 'change-unit', 'retrieved-at', 'latest-classification', 'attribution-link',
             'status', 'stale-note', 'chart-heading',
-            'chart-caption', 'range-controls', 'chart', 'source', 'source-series', 'frequency-unit',
+            'chart-caption', 'range-controls', 'chart', 'bias', 'source', 'source-series', 'frequency-unit',
             'source-definition', 'limitations', 'source-link', 'observations-table',
         ]) this.roles.set(name, new FakeElement());
         const retry = new FakeElement();
@@ -287,6 +287,8 @@ test('macro page renders separate charts, source metadata and independent refres
     assert.match(roleFor(chinaPmi, 'chart').innerHTML, /macro-chart-reference/);
     assert.equal(roleFor(chinaPmi, 'attribution-link').href, apiDataFor('china_manufacturing_pmi').source_url);
     assert.equal(roleFor(tips, 'latest').textContent, '2.88%');
+    assert.match(roleFor(tips, 'bias').textContent, /Gold · \d+% bullish \/ \d+% bearish/);
+    assert.match(roleFor(tips, 'bias').textContent, /Silver · \d+% bullish \/ \d+% bearish/);
     assert.equal(roleFor(tips, 'description').textContent, 'Daily inflation-adjusted 10-year U.S. yield.');
     assert.equal(roleFor(tips, 'status').hidden, true);
     assert.equal(roleFor(twoYear, 'latest').textContent, '2.88%');
@@ -309,6 +311,7 @@ test('macro page renders separate charts, source metadata and independent refres
     assert.match(roleFor(maxPain, 'chart').innerHTML, /Latest value \$90,000/);
     assert.equal(roleFor(maxPain, 'range-controls').hidden, true);
     assert.equal(roleFor(maxPain, 'change-metric').hidden, true);
+    assert.equal(roleFor(maxPain, 'bias').textContent, 'Context only · no directional score');
     assert.equal(roleFor(fearGreed, 'change-unit').textContent, 'Index points');
     assert.match(roleFor(fearGreed, 'chart').innerHTML, />100<\/text>/);
     assert.equal(roleFor(fearGreed, 'attribution-link').href, responseFearGreed.source_url);
@@ -333,6 +336,10 @@ test('macro page renders separate charts, source metadata and independent refres
         assert.equal(button.attributes['aria-pressed'], 'true');
         assert.equal(filterGroup.children.filter(item => item.attributes['aria-pressed'] === 'true').length, 1);
     }
+    filterGroup.listeners.get('click')({ target: { closest: () => filterGroup.children.find(item => item.dataset.assetFilter === 'xauusd') } });
+    assert.match(roleFor(tips, 'bias').textContent, /^Gold · \d+% bullish \/ \d+% bearish$/);
+    filterGroup.listeners.get('click')({ target: { closest: () => filterGroup.children.find(item => item.dataset.assetFilter === 'bitcoin') } });
+    assert.match(roleFor(tips, 'bias').textContent, /^Bitcoin · \d+% bullish \/ \d+% bearish$/);
     const allAssetsButton = filterGroup.children.find(item => item.dataset.assetFilter === 'all');
     filterGroup.listeners.get('click')({ target: { closest: () => allAssetsButton } });
     assert.equal(shownFor('all').length, 16);
