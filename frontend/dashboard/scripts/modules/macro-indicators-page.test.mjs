@@ -229,8 +229,9 @@ function mockDocument() {
         ['macro-asset-filters', new FakeElement()],
     ]);
     elements.get('macro-asset-filters').children = [
-        ['all', 'All assets'], ['xauusd', 'XAUUSD · Gold'], ['xagusd', 'XAGUSD · Silver'],
-        ['ukousd', 'UKOUSD · Brent'], ['bitcoin', 'BTC · Bitcoin'], ['usdidr', 'USD/IDR'],
+        ['all', 'All indicators'], ['precious_metals', 'Precious metals'],
+        ['xauusd', 'Gold · XAUUSD'], ['xagusd', 'Silver · XAGUSD'],
+        ['ukousd', 'Energy · UKOUSD'], ['bitcoin', 'Crypto · Bitcoin'], ['usdidr', 'FX · USD/IDR'],
     ].map(([assetId]) => {
         const button = new FakeElement();
         button.dataset.assetFilter = assetId;
@@ -319,6 +320,7 @@ test('macro page renders separate charts, source metadata and independent refres
     const shownFor = assetId => elements.get('macro-indicator-grid').children
         .filter(card => !card.hidden).map(card => card.dataset.macroId).sort();
     for (const [assetId, expected] of [
+        ['precious_metals', ['ten_year_tips_real_yield', 'two_year_treasury_nominal_yield', 'broad_us_dollar_index', 'ten_year_treasury_nominal_yield', 'ten_year_breakeven_inflation', 'us_equity_volatility_index', 'us_manufacturing_industrial_production', 'china_manufacturing_pmi']],
         ['xauusd', ['ten_year_tips_real_yield', 'two_year_treasury_nominal_yield', 'broad_us_dollar_index', 'ten_year_treasury_nominal_yield', 'ten_year_breakeven_inflation', 'us_equity_volatility_index']],
         ['xagusd', ['ten_year_tips_real_yield', 'two_year_treasury_nominal_yield', 'broad_us_dollar_index', 'ten_year_treasury_nominal_yield', 'ten_year_breakeven_inflation', 'us_equity_volatility_index', 'us_manufacturing_industrial_production', 'china_manufacturing_pmi']],
         ['ukousd', ['broad_us_dollar_index', 'us_equity_volatility_index', 'us_manufacturing_industrial_production', 'china_manufacturing_pmi', 'brent_crude_spot', 'wti_crude_spot', 'crude_oil_volatility_index', 'us_commercial_crude_stocks']],
@@ -387,7 +389,7 @@ test('macro page uses its API response when the browser cannot reach Treasury', 
 test('macro indicators remain discoverable from the screener and their page includes per-series status and provenance', () => {
     assert.match(dashboardTemplate, /<a href="\/macro" aria-label="Open macroeconomic indicators" title="Macroeconomic indicators">\s*<span aria-hidden="true">◒<\/span> Macro indicators<\/a>/);
     assert.match(dashboardTemplate, /<nav id="macroQuickNavigation"[\s\S]*?<a href="\/macro">[\s\S]*?Macroeconomic indicators<\/a>/);
-    assert.match(macroTemplate, /Browse by asset[\s\S]*?data-asset-filter="xauusd"[\s\S]*?data-asset-filter="xagusd"[\s\S]*?data-asset-filter="ukousd"[\s\S]*?data-asset-filter="bitcoin"[\s\S]*?data-asset-filter="usdidr"/);
+    assert.match(macroTemplate, /Browse by asset class[\s\S]*?data-asset-filter="precious_metals"[\s\S]*?data-asset-filter="xauusd"[\s\S]*?data-asset-filter="xagusd"[\s\S]*?data-asset-filter="ukousd"[\s\S]*?data-asset-filter="bitcoin"[\s\S]*?data-asset-filter="usdidr"/);
     assert.match(macroNavigationStyles, /\.tv-terminal \.macro-quick-nav\s*\{\s*display: flex;/);
     assert.match(macroNavigationStyles, /@media \(min-width: 1537px\)[\s\S]*?signals-workspace-active \.macro-quick-nav[\s\S]*?display: none;/);
     assert.match(macroNavigationStyles, /@media \(min-width: 1181px\) and \(max-width: 1536px\)[\s\S]*?desktop-primary-nav a\[href="\/macro"\][\s\S]*?display: none;/);
